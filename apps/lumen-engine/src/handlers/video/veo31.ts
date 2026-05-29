@@ -31,7 +31,7 @@ export async function execute(
   const durationSeconds = readNumberSetting(settings, 'duration') ?? 8;
 
   const operation = await client.models.generateVideos({
-    model: 'veo-3.1-generate-preview',
+    model: 'veo-3.1-generate-001',
     prompt: input.prompt,
     config: {
       aspectRatio,
