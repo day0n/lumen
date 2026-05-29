@@ -114,14 +114,14 @@ type CanvasSaveState = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 interface CanvasActions {
   runSingleNode: (nodeId: string) => void;
   updateNodeData: (nodeId: string, patch: Partial<LumenNodeData>) => void;
-  connected: boolean;
+  connectionError: string | null;
   canRunNode: (nodeId: string) => boolean;
 }
 
 const CanvasActionsContext = createContext<CanvasActions>({
   runSingleNode: () => {},
   updateNodeData: () => {},
-  connected: false,
+  connectionError: null,
   canRunNode: () => false,
 });
 
@@ -623,7 +623,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     [setNodes],
   );
 
-  const { connected, runNodes } = useWorkflowWs({
+  const { connectionError, runNodes } = useWorkflowWs({
     url: wsUrl,
     projectId: currentProjectId,
     onNodeStateChange: handleNodeStateChange,
@@ -1113,7 +1113,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     <main className="relative h-screen overflow-hidden bg-[#050607] text-white">
       <CanvasGrid />
       <CanvasActionsContext.Provider
-        value={{ runSingleNode, updateNodeData, connected, canRunNode }}
+        value={{ runSingleNode, updateNodeData, connectionError, canRunNode }}
       >
         <div className="absolute inset-0 z-10">
           <ReactFlow
@@ -1176,7 +1176,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
                   <GroupFrame
                     key={group.id}
                     bounds={group.bounds}
-                    canRun={connected && group.canRun}
+                    canRun={group.canRun}
                     name={group.name}
                     onRun={() => runGroup(group.id)}
                     onUngroup={() => ungroupNodes(group.id)}
@@ -1887,12 +1887,13 @@ const waveformBars = [
 
 function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
-  const { runSingleNode, updateNodeData, connected, canRunNode } = useContext(CanvasActionsContext);
+  const { runSingleNode, updateNodeData, connectionError, canRunNode } =
+    useContext(CanvasActionsContext);
   const styles = nodeKindStyles[data.kind];
   const status = data.status ?? 'idle';
   const modelId = resolveModelId(data);
   const progress = data.progress ?? (status === 'running' ? 0.45 : 0);
-  const canRun = connected && canRunNode(id);
+  const canRun = canRunNode(id);
   const nodeTitle = getNodeTitle(data);
   const inputImage = getSettingString(data.settings, 'inputImage');
   const aspectRatio = getAspectRatio(data.settings);
@@ -2101,10 +2102,10 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
               </div>
             ) : null}
 
-            {!connected ? (
+            {connectionError ? (
               <div className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-white/30">
                 <IconAlertTriangle size={13} stroke={2.2} />
-                工作流引擎未连接
+                {connectionError}
               </div>
             ) : null}
           </div>

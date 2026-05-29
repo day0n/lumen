@@ -8,10 +8,7 @@ import type {
   TextareaHTMLAttributes,
 } from 'react';
 
-type ImeTextareaProps = Omit<
-  TextareaHTMLAttributes<HTMLTextAreaElement>,
-  'value' | 'onChange'
-> & {
+type ImeTextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onChange'> & {
   value: string;
   onValueChange: (next: string) => void;
 };

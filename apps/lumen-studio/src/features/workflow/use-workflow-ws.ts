@@ -40,34 +40,30 @@ export function useWorkflowWs({
   onNodeStateChange,
   onFlowDone,
 }: UseWorkflowWsOptions) {
-  const wsRef = useRef<WebSocket | null>(null);
-  const [connected, setConnected] = useState(false);
+  const socketsRef = useRef<Set<WebSocket>>(new Set());
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [nodeStates, setNodeStates] = useState<Record<string, NodeState>>({});
 
   useEffect(() => {
-    if (!url) return;
-
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
-
-    ws.onmessage = (evt) => {
-      try {
-        const event = JSON.parse(evt.data) as ServerEvent;
-        handleEvent(event);
-      } catch {
-        // ignore malformed messages
-      }
-    };
-
     return () => {
-      ws.close();
-      wsRef.current = null;
+      for (const ws of socketsRef.current) {
+        ws.close();
+      }
+      socketsRef.current.clear();
     };
-  }, [url]);
+  }, []);
+
+  const updateNode = useCallback(
+    (nodeId: string, update: NodeState | ((prev: NodeState) => NodeState)) => {
+      setNodeStates((prev) => {
+        const current = prev[nodeId] ?? { status: 'idle', output: null, error: null, progress: 0 };
+        const next = typeof update === 'function' ? update(current) : update;
+        onNodeStateChange?.(nodeId, next);
+        return { ...prev, [nodeId]: next };
+      });
+    },
+    [onNodeStateChange],
+  );
 
   const handleEvent = useCallback(
     (event: ServerEvent) => {
@@ -97,16 +93,30 @@ export function useWorkflowWs({
           break;
       }
     },
-    [onFlowDone],
+    [onFlowDone, updateNode],
   );
 
-  const updateNode = useCallback(
-    (nodeId: string, update: NodeState | ((prev: NodeState) => NodeState)) => {
+  const markRunConnectionFailed = useCallback(
+    (nodeIds: string[], error: string) => {
       setNodeStates((prev) => {
-        const current = prev[nodeId] ?? { status: 'idle', output: null, error: null, progress: 0 };
-        const next = typeof update === 'function' ? update(current) : update;
-        onNodeStateChange?.(nodeId, next);
-        return { ...prev, [nodeId]: next };
+        const nextStates = { ...prev };
+        for (const nodeId of nodeIds) {
+          const current = nextStates[nodeId] ?? {
+            status: 'idle',
+            output: null,
+            error: null,
+            progress: 0,
+          };
+          if (current.status === 'success') continue;
+          const next: NodeState = {
+            ...current,
+            status: 'error',
+            error,
+          };
+          nextStates[nodeId] = next;
+          onNodeStateChange?.(nodeId, next);
+        }
+        return nextStates;
       });
     },
     [onNodeStateChange],
@@ -114,7 +124,13 @@ export function useWorkflowWs({
 
   const runNodes = useCallback(
     (nodeIds: string[] | undefined, nodes: WorkflowNode[], edges: WorkflowEdge[]) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      const targetNodeIds = nodeIds && nodeIds.length > 0 ? nodeIds : nodes.map((node) => node.id);
+      if (!url) {
+        const error = '工作流引擎地址不可用';
+        setConnectionError(error);
+        markRunConnectionFailed(targetNodeIds, error);
+        return;
+      }
 
       const message = {
         runId: nanoid(16),
@@ -123,10 +139,53 @@ export function useWorkflowWs({
         nodes,
         edges,
       };
-      wsRef.current.send(JSON.stringify(message));
+
+      const ws = new WebSocket(url);
+      socketsRef.current.add(ws);
+      let opened = false;
+      let flowDone = false;
+
+      const closeSocket = () => {
+        socketsRef.current.delete(ws);
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      };
+
+      ws.onopen = () => {
+        opened = true;
+        setConnectionError(null);
+        ws.send(JSON.stringify(message));
+      };
+
+      ws.onmessage = (evt) => {
+        try {
+          const event = JSON.parse(evt.data) as ServerEvent;
+          handleEvent(event);
+          if (event.event === 'flow:done') {
+            flowDone = true;
+            closeSocket();
+          }
+        } catch {
+          // ignore malformed messages
+        }
+      };
+
+      ws.onerror = () => {
+        const error = opened ? '工作流连接异常' : '工作流引擎连接失败';
+        setConnectionError(error);
+      };
+
+      ws.onclose = () => {
+        socketsRef.current.delete(ws);
+        if (flowDone) return;
+        const error = opened ? '工作流连接已断开' : '工作流引擎连接失败';
+        setConnectionError(error);
+        markRunConnectionFailed(targetNodeIds, error);
+      };
     },
-    [projectId],
+    [handleEvent, markRunConnectionFailed, projectId, url],
   );
 
-  return { connected, nodeStates, runNodes };
+  return { connectionError, nodeStates, runNodes };
 }
