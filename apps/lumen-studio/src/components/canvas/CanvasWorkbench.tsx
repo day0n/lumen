@@ -16,6 +16,7 @@ import {
   IconFolderPlus,
   IconGridDots,
   IconLayoutGrid,
+  IconLoader2,
   IconMusic,
   IconPhoto,
   IconPlayerPlay,
@@ -390,6 +391,10 @@ function getNodeTitle(data: LumenNodeData) {
   return data.title;
 }
 
+function isWorkflowNodeBusy(status?: LumenNodeData['status']) {
+  return status === 'queued' || status === 'running';
+}
+
 function canConnectNodeKinds(sourceKind: NodeKind, targetKind: NodeKind) {
   return compatibleTargetKinds[sourceKind].includes(targetKind);
 }
@@ -564,6 +569,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         nodes: groupNodes,
         bounds: getNodeBounds(groupNodes, 20),
         selected: groupNodes.some((node) => node.selected),
+        running: groupNodes.some((node) => isWorkflowNodeBusy(node.data.status)),
         canRun: canRunSelectedNodes({
           selectedIds: groupNodes.map((node) => node.id),
           nodes,
@@ -1180,6 +1186,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
                     name={group.name}
                     onRun={() => runGroup(group.id)}
                     onUngroup={() => ungroupNodes(group.id)}
+                    running={group.running}
                     selected={group.selected}
                   />
                 ) : null,
@@ -1295,6 +1302,7 @@ function GroupFrame({
   name,
   onRun,
   onUngroup,
+  running,
   selected,
 }: {
   bounds: FlowBounds;
@@ -1302,6 +1310,7 @@ function GroupFrame({
   name: string;
   onRun: () => void;
   onUngroup: () => void;
+  running: boolean;
   selected: boolean;
 }) {
   return [
@@ -1317,7 +1326,11 @@ function GroupFrame({
     >
       <div
         className={`absolute inset-0 rounded-[16px] border bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] ${
-          selected ? 'border-white/42' : 'border-white/[0.16]'
+          running
+            ? 'lumen-group-frame--running border-[#79e4ff]/42'
+            : selected
+              ? 'border-white/42'
+              : 'border-white/[0.16]'
         }`}
       />
       <div className="absolute left-3 top-[-20px] flex items-center gap-1.5 text-[11px] font-bold text-white/44">
@@ -1342,12 +1355,21 @@ function GroupFrame({
         <button
           type="button"
           aria-label="整组执行"
-          disabled={!canRun}
+          aria-busy={running}
+          disabled={!canRun || running}
           onClick={onRun}
-          className="flex h-8 items-center gap-1.5 rounded-[13px] px-2.5 text-[12px] font-black text-white/72 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-30"
+          className={`flex h-8 items-center gap-1.5 rounded-[13px] px-2.5 text-[12px] font-black transition-colors disabled:cursor-not-allowed ${
+            running
+              ? 'bg-white text-[#111315] shadow-[0_0_22px_rgba(121,228,255,0.2)]'
+              : 'text-white/72 hover:bg-white/[0.08] hover:text-white disabled:opacity-30'
+          }`}
         >
-          <IconPlayerPlay size={14} stroke={2.4} />
-          整组执行
+          {running ? (
+            <IconLoader2 size={14} className="animate-spin" stroke={2.4} />
+          ) : (
+            <IconPlayerPlay size={14} stroke={2.4} />
+          )}
+          {running ? '运行中' : '整组执行'}
         </button>
         <button
           type="button"
@@ -1894,6 +1916,8 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const modelId = resolveModelId(data);
   const progress = data.progress ?? (status === 'running' ? 0.45 : 0);
   const canRun = canRunNode(id);
+  const isNodeBusy = isWorkflowNodeBusy(status);
+  const progressPercent = Math.max(isNodeBusy ? 14 : 0, Math.round(progress * 100));
   const nodeTitle = getNodeTitle(data);
   const inputImage = getSettingString(data.settings, 'inputImage');
   const aspectRatio = getAspectRatio(data.settings);
@@ -1938,11 +1962,11 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const handleRun = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
-      if (!canRun) return;
+      if (!canRun || isNodeBusy) return;
       if (!data.modelId) updateNodeData(id, { modelId });
       runSingleNode(id);
     },
-    [canRun, data.modelId, id, modelId, runSingleNode, updateNodeData],
+    [canRun, data.modelId, id, isNodeBusy, modelId, runSingleNode, updateNodeData],
   );
 
   const handlePromptKeyDown = useCallback(
@@ -1962,16 +1986,17 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
 
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         event.preventDefault();
-        if (!canRun) return;
+        if (!canRun || isNodeBusy) return;
         runSingleNode(id);
       }
     },
-    [canRun, id, runSingleNode],
+    [canRun, id, isNodeBusy, runSingleNode],
   );
 
   return (
     <div
       className={`group relative ${styles.shell} text-white`}
+      aria-busy={isNodeBusy}
       onMouseDownCapture={handleNodePointerDownCapture}
       onPointerDownCapture={handleNodePointerDownCapture}
     >
@@ -1982,9 +2007,14 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       />
 
       <div
-        className={`relative overflow-hidden rounded-[13px] bg-[#202123]/96 ring-1 backdrop-blur-xl transition-all duration-200 ${
-          selected ? `ring-white/28 ${styles.glow}` : 'ring-white/[0.1] hover:ring-white/[0.16]'
+        className={`lumen-node-card relative overflow-hidden rounded-[13px] bg-[#202123]/96 ring-1 backdrop-blur-xl transition-all duration-200 ${
+          isNodeBusy
+            ? 'lumen-node-card--running ring-[#79e4ff]/42 shadow-[0_18px_60px_rgba(0,0,0,0.42),0_0_34px_rgba(121,228,255,0.12)]'
+            : selected
+              ? `ring-white/28 ${styles.glow}`
+              : 'ring-white/[0.1] hover:ring-white/[0.16]'
         }`}
+        data-run-state={isNodeBusy ? status : undefined}
       >
         <div className="border-b border-white/[0.06] p-2.5">
           <input
@@ -1993,16 +2023,21 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
             onChange={(event) => updateNodeData(id, { title: event.target.value })}
             value={nodeTitle}
           />
-          <div className={`relative overflow-hidden rounded-[10px] ${styles.preview}`}>
+          <div
+            className={`relative overflow-hidden rounded-[10px] ${styles.preview} ${
+              isNodeBusy ? 'lumen-node-preview--running' : ''
+            }`}
+          >
             <NodeOutputEditor
               data={data}
               onChange={(output) => updateNodeData(id, { output: output || null })}
             />
-            {status === 'running' || status === 'queued' ? (
+            {isNodeBusy ? <div className="lumen-node-running-overlay absolute inset-0" /> : null}
+            {isNodeBusy ? (
               <div className="absolute inset-x-0 bottom-0 h-1 bg-white/[0.06]">
                 <div
-                  className="h-full rounded-r-full bg-white/70 transition-all duration-300"
-                  style={{ width: `${Math.max(8, Math.round(progress * 100))}%` }}
+                  className="lumen-node-progress-bar h-full rounded-r-full transition-all duration-300"
+                  style={{ width: `${progressPercent}%` }}
                 />
               </div>
             ) : null}
@@ -2087,12 +2122,21 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
               <button
                 type="button"
                 aria-label="运行节点"
-                title="运行节点"
-                disabled={!canRun}
-                className={`nodrag flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-black shadow-[0_12px_28px_rgba(0,0,0,0.22)] transition-colors disabled:opacity-30 ${styles.primaryButton}`}
+                aria-busy={isNodeBusy}
+                title={isNodeBusy ? '运行中' : '运行节点'}
+                disabled={!canRun || isNodeBusy}
+                className={`nodrag flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-black shadow-[0_12px_28px_rgba(0,0,0,0.22)] transition-colors disabled:cursor-not-allowed ${
+                  isNodeBusy
+                    ? 'bg-white text-[#111315] shadow-[0_0_28px_rgba(121,228,255,0.25),0_12px_28px_rgba(0,0,0,0.28)]'
+                    : `${styles.primaryButton} disabled:opacity-30`
+                }`}
                 onClick={handleRun}
               >
-                <IconPlayerPlay size={15} stroke={2.5} />
+                {isNodeBusy ? (
+                  <IconLoader2 size={16} className="animate-spin" stroke={2.6} />
+                ) : (
+                  <IconPlayerPlay size={15} stroke={2.5} />
+                )}
               </button>
             </div>
 
