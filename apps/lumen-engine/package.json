@@ -1,0 +1,31 @@
+{
+  "name": "@lumen/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "lint": "biome check src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^2.6.0",
+    "@lumen/shared": "workspace:*",
+    "dotenv": "^16.4.5",
+    "graphology": "^0.25.4",
+    "graphology-dag": "^0.4.1",
+    "ioredis": "^5.4.1",
+    "nanoid": "^5.0.7",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "undici": "^8.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

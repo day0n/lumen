@@ -1,0 +1,37 @@
+{
+  "name": "@lumen/agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "lint": "biome check src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.1",
+    "@hono/node-server": "^1.13.7",
+    "@lumen/shared": "workspace:*",
+    "dotenv": "^16.4.5",
+    "hono": "^4.6.10",
+    "https-proxy-agent": "^9.0.0",
+    "ioredis": "^5.4.1",
+    "jose": "^6.2.3",
+    "mongodb": "^6.10.0",
+    "nanoid": "^5.0.7",
+    "openai": "^4.73.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "undici": "^8.3.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.1",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

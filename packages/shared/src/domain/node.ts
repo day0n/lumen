@@ -1,0 +1,43 @@
+import { z } from 'zod';
+
+export const NodeTypeSchema = z.enum(['text', 'image', 'video', 'audio']);
+export type NodeType = z.infer<typeof NodeTypeSchema>;
+
+export const NodeStatusSchema = z.enum(['idle', 'queued', 'running', 'success', 'error']);
+export type NodeStatus = z.infer<typeof NodeStatusSchema>;
+
+export const NodeInputSchema = z.object({
+  prompt: z.string().default(''),
+  image: z.string().nullable().default(null),
+  video: z.string().nullable().default(null),
+});
+export type NodeInput = z.infer<typeof NodeInputSchema>;
+
+export const ModelConfigSchema = z.object({
+  id: z.string(),
+  settings: z.record(z.unknown()).default({}),
+});
+export type ModelConfig = z.infer<typeof ModelConfigSchema>;
+
+export const NodeSchema = z.object({
+  id: z.string(),
+  type: NodeTypeSchema,
+  position: z.object({ x: z.number(), y: z.number() }),
+  output: z.string().nullable().default(null),
+  input: NodeInputSchema,
+  model: ModelConfigSchema,
+});
+export type WorkflowNode = z.infer<typeof NodeSchema>;
+
+export const EdgeSchema = z.object({
+  id: z.string(),
+  source: z.string(),
+  target: z.string(),
+});
+export type WorkflowEdge = z.infer<typeof EdgeSchema>;
+
+export const NodeOutputSchema = z.object({
+  type: NodeTypeSchema,
+  value: z.string(),
+});
+export type NodeOutput = z.infer<typeof NodeOutputSchema>;

@@ -1,0 +1,25 @@
+{
+  "name": "lumen",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Lumen — AIGC 带货视频生成系统（monorepo root）",
+  "scripts": {
+    "dev:studio": "pnpm --filter @lumen/studio dev",
+    "dev:agent": "pnpm --filter @lumen/agent dev",
+    "dev:engine": "pnpm --filter @lumen/engine dev",
+    "build:studio": "pnpm --filter @lumen/studio build",
+    "build:shared": "pnpm --filter @lumen/shared build",
+    "lint": "pnpm -r lint",
+    "format": "biome format --write .",
+    "check": "biome check ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.0"
+}
