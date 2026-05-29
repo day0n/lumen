@@ -1,9 +1,11 @@
 'use client';
 
+import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
+import { isLoginRequiredPath } from '@/lib/protected-paths';
 import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { motion } from 'motion/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 interface Slide {
   id: string;
@@ -79,6 +81,7 @@ const FEATURED_POSTERS: Slide[] = [
 ];
 
 export function FeaturedCarousel() {
+  const { isLoaded: authLoaded, requireLogin } = useLoginRedirect();
   const [remoteSlides, setRemoteSlides] = useState<Slide[]>([]);
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -122,6 +125,14 @@ export function FeaturedCarousel() {
   const prev = useCallback(() => {
     setCurrent((c) => (c - 1 + slides.length) % slides.length);
   }, [slides.length]);
+
+  const handleSlideClick = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>, href: string) => {
+      if (!authLoaded || !isLoginRequiredPath(href)) return;
+      if (!requireLogin(href)) event.preventDefault();
+    },
+    [authLoaded, requireLogin],
+  );
 
   useEffect(() => {
     if (paused) return;
@@ -173,6 +184,7 @@ export function FeaturedCarousel() {
               slide={slide}
               slideHeight={slideHeight}
               slideWidth={slideWidth}
+              onClick={handleSlideClick}
             />
           );
         })}
@@ -216,12 +228,14 @@ export function FeaturedCarousel() {
 function PosterSlide({
   slide,
   diff,
+  onClick,
   sideOffset,
   slideHeight,
   slideWidth,
 }: {
   slide: Slide;
   diff: number;
+  onClick: (event: MouseEvent<HTMLAnchorElement>, href: string) => void;
   sideOffset: number;
   slideHeight: number;
   slideWidth: number;
@@ -237,6 +251,7 @@ function PosterSlide({
     <motion.a
       href={slide.href}
       aria-label={slide.title}
+      onClick={(event) => onClick(event, slide.href)}
       className="absolute left-1/2 top-1/2 block overflow-hidden rounded-[22px] bg-[#111315] text-left ring-1 ring-white/[0.09]"
       style={{
         boxShadow: isCenter ? '0 28px 86px -56px rgba(255,255,255,0.34)' : undefined,

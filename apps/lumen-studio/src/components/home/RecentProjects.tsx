@@ -1,8 +1,11 @@
 'use client';
 
+import { useLoginRedirect } from '@/lib/auth-redirect';
+import { isLoginRequiredPath } from '@/lib/protected-paths';
 import { IconArrowRight, IconDots, IconMovie, IconPhoto, IconPlus } from '@tabler/icons-react';
 import { motion } from 'motion/react';
 import Link from 'next/link';
+import type { MouseEvent } from 'react';
 
 interface RecentProject {
   id: string;
@@ -35,12 +38,20 @@ const RECENT: RecentProject[] = [
 ];
 
 export function RecentProjects() {
+  const { isLoaded: authLoaded, requireLogin } = useLoginRedirect();
+
+  const handleProtectedLinkClick = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (!authLoaded || !isLoginRequiredPath(href)) return;
+    if (!requireLogin(href)) event.preventDefault();
+  };
+
   return (
     <section className="mx-auto mt-16 max-w-[1260px] px-6">
       <div className="mb-4 flex items-center">
         <h2 className="text-[18px] font-bold text-white">最近项目</h2>
         <Link
           href="/canvas/projects"
+          onClick={(event) => handleProtectedLinkClick(event, '/canvas/projects')}
           className="ml-auto inline-flex items-center gap-1 text-[12px] text-white/42 transition-colors hover:text-white"
         >
           全部项目
@@ -51,6 +62,7 @@ export function RecentProjects() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Link
           href="/canvas/new"
+          onClick={(event) => handleProtectedLinkClick(event, '/canvas/new')}
           className="group flex min-h-[138px] flex-col overflow-hidden rounded-xl bg-[#202327] ring-1 ring-white/[0.06] transition-colors hover:bg-[#252a30]"
         >
           <div className="flex flex-1 items-center justify-center bg-[linear-gradient(135deg,#33383e,#202a38)]">

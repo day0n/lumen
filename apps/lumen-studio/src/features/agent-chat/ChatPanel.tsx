@@ -8,6 +8,7 @@
  */
 
 import { LumenMark } from '@/components/ui/LumenMark';
+import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import {
   IconArrowUp,
@@ -32,8 +33,6 @@ import {
   useState,
 } from 'react';
 
-import { useAuth } from '@clerk/nextjs';
-
 import {
   type AgentChatStatus,
   type ChatMessage,
@@ -48,7 +47,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({ sessionId, initialPrompt, defaultOpen = false }: ChatPanelProps) {
   const { messages, status, errorText, send, stop } = useAgentChat({ sessionId });
-  const { isLoaded: authReady } = useAuth();
+  const { isLoaded: authReady, isSignedIn, requireLogin } = useLoginRedirect();
   const [open, setOpen] = useState(defaultOpen);
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -59,13 +58,17 @@ export function ChatPanel({ sessionId, initialPrompt, defaultOpen = false }: Cha
 
   useEffect(() => {
     if (autoSentRef.current || !authReady) return;
+    if (!isSignedIn) {
+      requireLogin();
+      return;
+    }
     const trimmed = initialPrompt?.trim();
     if (!trimmed) return;
     autoSentRef.current = true;
     setOpen(true);
     void send(trimmed);
     router.replace(pathname, { scroll: false });
-  }, [initialPrompt, send, router, pathname, authReady]);
+  }, [initialPrompt, send, router, pathname, authReady, isSignedIn, requireLogin]);
 
   const streamKey = useMemo(
     () =>
@@ -101,6 +104,7 @@ export function ChatPanel({ sessionId, initialPrompt, defaultOpen = false }: Cha
   const submit = () => {
     const text = draft.trim();
     if (!text || busy) return;
+    if (!requireLogin()) return;
     setDraft('');
     void send(text);
   };

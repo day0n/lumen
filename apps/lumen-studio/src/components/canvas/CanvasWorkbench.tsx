@@ -78,9 +78,9 @@ import type { ChangeEvent, MouseEvent, KeyboardEvent as ReactKeyboardEvent } fro
 import { ChatPanel } from '@/features/agent-chat/ChatPanel';
 import { useWorkflowWs } from '@/features/workflow/use-workflow-ws';
 import type { NodeState } from '@/features/workflow/use-workflow-ws';
+import { useLoginRedirect } from '@/lib/auth-redirect';
 import { checkCycle } from '@/lib/canvas/cycle-detection';
 import { canRunSelectedNodes, canRunSingleNode } from '@/lib/canvas/node-run-check';
-import { useAuth } from '@clerk/nextjs';
 
 type NodeKind = 'text' | 'image' | 'video' | 'audio';
 
@@ -523,7 +523,7 @@ export function CanvasWorkbench({ projectId, createOnMount = false }: CanvasWork
 function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isLoaded: authReady } = useAuth();
+  const { isLoaded: authReady, isSignedIn, requireLogin } = useLoginRedirect();
   const initialPrompt = useMemo(() => searchParams?.get('prompt') ?? null, [searchParams]);
   const shouldOpenAgentChat = searchParams?.get('agent') === 'chat';
   const [activeKind, setActiveKind] = useState<NodeKind>('text');
@@ -692,7 +692,18 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   );
 
   useEffect(() => {
-    if (!createOnMount || currentProjectId || hasRequestedCreate.current || !authReady) {
+    if (!authReady || isSignedIn) return;
+    requireLogin();
+  }, [authReady, isSignedIn, requireLogin]);
+
+  useEffect(() => {
+    if (
+      !createOnMount ||
+      currentProjectId ||
+      hasRequestedCreate.current ||
+      !authReady ||
+      !isSignedIn
+    ) {
       return;
     }
 
@@ -752,10 +763,11 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     setEdges,
     setNodes,
     shouldOpenAgentChat,
+    isSignedIn,
   ]);
 
   useEffect(() => {
-    if (!currentProjectId || !authReady) {
+    if (!currentProjectId || !authReady || !isSignedIn) {
       return;
     }
 
@@ -785,10 +797,10 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
     void loadProject();
     return () => controller.abort();
-  }, [authReady, currentProjectId, setEdges, setNodes]);
+  }, [authReady, currentProjectId, isSignedIn, setEdges, setNodes]);
 
   useEffect(() => {
-    if (!currentProjectId || !hasHydratedProject.current || !authReady) {
+    if (!currentProjectId || !hasHydratedProject.current || !authReady || !isSignedIn) {
       return;
     }
 
@@ -823,7 +835,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [authReady, currentProjectId, edges, nodes]);
+  }, [authReady, currentProjectId, edges, isSignedIn, nodes]);
 
   const addCanvasNode = useCallback(
     (template = getTemplate(activeKind), position?: XYPosition) => {

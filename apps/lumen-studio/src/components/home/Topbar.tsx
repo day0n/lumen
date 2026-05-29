@@ -2,12 +2,15 @@
 
 import { NotificationsPopover } from '@/components/home/NotificationsPopover';
 import { LumenMark } from '@/components/ui/LumenMark';
+import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
+import { isLoginRequiredPath } from '@/lib/protected-paths';
 import { Show, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs';
 import { IconChartBar, IconDeviceTv, IconFolder, IconHome } from '@tabler/icons-react';
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { MouseEvent } from 'react';
 
 const navItems = [
   { label: '主页', href: '/', icon: IconHome },
@@ -18,6 +21,12 @@ const navItems = [
 
 export function Topbar() {
   const pathname = usePathname();
+  const { isLoaded: authLoaded, requireLogin } = useLoginRedirect();
+
+  const handleProtectedNavClick = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (!authLoaded || !isLoginRequiredPath(href)) return;
+    if (!requireLogin(href)) event.preventDefault();
+  };
 
   return (
     <header className="fixed inset-x-0 top-0 z-40">
@@ -42,6 +51,7 @@ export function Topbar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={(event) => handleProtectedNavClick(event, item.href)}
                   className={cn(
                     'relative flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium transition-colors',
                     active ? 'text-white' : 'text-white/55 hover:text-white',
@@ -66,7 +76,7 @@ export function Topbar() {
 
             <Show when="signed-out">
               <div className="hidden items-center gap-2 sm:flex">
-                <SignInButton mode="modal">
+                <SignInButton fallbackRedirectUrl={pathname || '/'}>
                   <button
                     type="button"
                     className="rounded-full px-3.5 py-1.5 text-[13px] font-medium text-white/70 transition-colors hover:text-white"
@@ -74,7 +84,7 @@ export function Topbar() {
                     登录
                   </button>
                 </SignInButton>
-                <SignUpButton mode="modal">
+                <SignUpButton fallbackRedirectUrl={pathname || '/'}>
                   <button
                     type="button"
                     className="rounded-full bg-white px-3.5 py-1.5 text-[13px] font-semibold text-black transition-opacity hover:opacity-90"
@@ -111,6 +121,7 @@ export function Topbar() {
               key={item.href}
               href={item.href}
               aria-label={item.label}
+              onClick={(event) => handleProtectedNavClick(event, item.href)}
               className={cn(
                 'relative flex h-11 items-center justify-center rounded-xl transition-colors',
                 active ? 'text-[#111315]' : 'text-white/58 hover:text-white',

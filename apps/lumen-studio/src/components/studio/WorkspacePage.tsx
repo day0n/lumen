@@ -2,6 +2,7 @@
 
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
+import { useLoginRedirect } from '@/lib/auth-redirect';
 import {
   IconDotsVertical,
   IconFolderPlus,
@@ -41,10 +42,17 @@ type ProjectsApiResponse =
     };
 
 export function WorkspacePage() {
+  const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [projects, setProjects] = useState<StudioProject[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!authLoaded) return;
+    if (!isSignedIn) {
+      requireLogin('/canvas/projects');
+      return;
+    }
+
     const controller = new AbortController();
 
     async function loadProjects() {
@@ -67,7 +75,7 @@ export function WorkspacePage() {
 
     void loadProjects();
     return () => controller.abort();
-  }, []);
+  }, [authLoaded, isSignedIn, requireLogin]);
 
   const visibleProjects = useMemo(() => projects, [projects]);
 

@@ -1,7 +1,9 @@
 'use client';
 
+import { useLoginRedirect } from '@/lib/auth-redirect';
 import { IconArrowRight, IconSearch, IconSparkles } from '@tabler/icons-react';
 import { motion } from 'motion/react';
+import { useRouter } from 'next/navigation';
 
 interface CanvasPick {
   id: string;
@@ -122,6 +124,15 @@ const CANVAS_PICKS: CanvasPick[] = [
 ];
 
 export function TemplateRail() {
+  const router = useRouter();
+  const { requireLogin } = useLoginRedirect();
+
+  const openTemplate = (templateId: string) => {
+    const target = `/canvas/new?template=${encodeURIComponent(templateId)}`;
+    if (!requireLogin(target)) return;
+    router.push(target);
+  };
+
   return (
     <section className="mx-auto mt-14 max-w-[1260px] px-6 pb-20">
       <div className="mb-5 flex flex-wrap items-center gap-3">
@@ -153,17 +164,31 @@ export function TemplateRail() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {CANVAS_PICKS.map((pick, index) => (
-          <CanvasPickCard key={pick.id} pick={pick} index={index} />
+          <CanvasPickCard
+            key={pick.id}
+            pick={pick}
+            index={index}
+            onOpen={() => openTemplate(pick.id)}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function CanvasPickCard({ pick, index }: { pick: CanvasPick; index: number }) {
+function CanvasPickCard({
+  pick,
+  index,
+  onOpen,
+}: {
+  pick: CanvasPick;
+  index: number;
+  onOpen: () => void;
+}) {
   return (
     <motion.button
       type="button"
+      onClick={onOpen}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, delay: index * 0.025, ease: [0.32, 0.72, 0, 1] }}

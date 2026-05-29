@@ -1,5 +1,6 @@
 'use client';
 
+import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import {
   IconBell,
@@ -35,6 +36,7 @@ type NotificationsApiResponse =
     };
 
 export function NotificationsPopover() {
+  const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<OfficialNotification[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -47,6 +49,16 @@ export function NotificationsPopover() {
   );
 
   useEffect(() => {
+    if (!authLoaded) return;
+
+    if (!isSignedIn) {
+      setNotifications([]);
+      setExpandedId(null);
+      setErrorText(null);
+      setLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
 
     async function loadNotifications() {
@@ -75,7 +87,7 @@ export function NotificationsPopover() {
 
     void loadNotifications();
     return () => controller.abort();
-  }, []);
+  }, [authLoaded, isSignedIn]);
 
   useEffect(() => {
     if (!open) return;
@@ -109,7 +121,10 @@ export function NotificationsPopover() {
       <button
         type="button"
         aria-label="通知"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          if (!requireLogin()) return;
+          setOpen(true);
+        }}
         className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.06] text-white/65 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.1] hover:text-white"
       >
         <IconBell size={17} stroke={2.1} />

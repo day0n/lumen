@@ -1,5 +1,6 @@
 'use client';
 
+import { useLoginRedirect } from '@/lib/auth-redirect';
 import {
   IconArrowUp,
   IconArrowUpRight,
@@ -54,6 +55,7 @@ const COVER_GRADIENTS = [
 
 export function Hero() {
   const router = useRouter();
+  const { requireLogin } = useLoginRedirect();
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
@@ -163,6 +165,7 @@ export function Hero() {
 
   const goCreate = async () => {
     const prompt = value.trim();
+    const target = prompt ? `/canvas/new?prompt=${encodeURIComponent(prompt)}` : '/canvas/new';
 
     if (attachedImages.length > 0 && typeof window !== 'undefined') {
       try {
@@ -184,7 +187,8 @@ export function Hero() {
       sessionStorage.removeItem(HERO_ATTACHMENTS_STORAGE_KEY);
     }
 
-    router.push(prompt ? `/canvas/new?prompt=${encodeURIComponent(prompt)}` : '/canvas/new');
+    if (!requireLogin(target)) return;
+    router.push(target);
   };
 
   const voiceLabel = !speechSupported

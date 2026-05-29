@@ -2,6 +2,7 @@
 
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
+import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { useUser } from '@clerk/nextjs';
 import type { HotVideoRecord } from '@lumen/db';
@@ -177,7 +178,8 @@ function toView(record: HotVideoRecord): HotVideoView {
 
 export function HotVideosPage() {
   const { user } = useUser();
-  const currentClerkUserId = user?.id;
+  const { isSignedIn, requireLogin } = useLoginRedirect();
+  const currentClerkUserId = isSignedIn ? user?.id : undefined;
   const [referenceInput, setReferenceInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');
@@ -199,6 +201,13 @@ export function HotVideosPage() {
   }, [searchQuery]);
 
   useEffect(() => {
+    if (filters.owner === '仅我的' && !isSignedIn) {
+      setVideos([]);
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
+
     const controller = new AbortController();
     setLoading(true);
     setLoadError(null);
@@ -223,7 +232,7 @@ export function HotVideosPage() {
 
     void load();
     return () => controller.abort();
-  }, [filters, appliedQuery]);
+  }, [filters, appliedQuery, isSignedIn]);
 
   const totalSales = videos.reduce((sum, v) => sum + v.sales, 0);
   const avgViewsLabel = useMemo(() => {
@@ -242,12 +251,17 @@ export function HotVideosPage() {
       : (replicaPreview ?? undefined);
 
   const handleFilterChange = (key: FilterKey, value: string) => {
+    if (key === 'owner' && value === '仅我的' && !requireLogin('/hot-videos')) {
+      return;
+    }
     setFilters((current) => ({ ...current, [key]: value }));
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (parseLoading) return;
+    if (!requireLogin('/hot-videos')) return;
+
     const value = referenceInput.trim();
 
     if (!value) {
@@ -459,9 +473,11 @@ export function HotVideosPage() {
                   key={video.id}
                   index={index}
                   video={video}
+                  signedIn={isSignedIn}
                   ownedByMe={Boolean(
                     currentClerkUserId && video.ownerUserId === currentClerkUserId,
                   )}
+                  onRequireLogin={() => requireLogin('/hot-videos')}
                   onUse={() => startReplicaFromVideo(video)}
                   onPreview={() => setPreviewVideo(video)}
                 />
@@ -490,12 +506,16 @@ function HotVideoCard({
   video,
   index,
   ownedByMe,
+  signedIn,
+  onRequireLogin,
   onUse,
   onPreview,
 }: {
   video: HotVideoView;
   index: number;
   ownedByMe: boolean;
+  signedIn: boolean;
+  onRequireLogin: () => boolean;
   onUse: () => void;
   onPreview: () => void;
 }) {
@@ -597,24 +617,41 @@ function HotVideoCard({
 
         <button
           type="button"
-          disabled={!ownedByMe}
+          disabled={signedIn && !ownedByMe}
           onClick={(event) => {
             stop(event);
+            if (!signedIn) {
+              onRequireLogin();
+              return;
+            }
             if (!ownedByMe) return;
             onUse();
           }}
-          title={ownedByMe ? '基于该视频生成新内容' : '只能复刻自己下载的视频'}
+          title={
+            !signedIn
+              ? '登录后可下载并复刻视频'
+              : ownedByMe
+                ? '基于该视频生成新内容'
+                : '只能复刻自己下载的视频'
+          }
           className={cn(
             'flex h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[12px] font-semibold transition-colors',
             ownedByMe
               ? 'bg-white/[0.075] text-white/82 ring-1 ring-white/[0.06] hover:bg-white hover:text-[#111315]'
-              : 'cursor-not-allowed bg-white/[0.035] text-white/32 ring-1 ring-white/[0.04]',
+              : !signedIn
+                ? 'bg-white/[0.055] text-white/62 ring-1 ring-white/[0.05] hover:bg-white hover:text-[#111315]'
+                : 'cursor-not-allowed bg-white/[0.035] text-white/32 ring-1 ring-white/[0.04]',
           )}
         >
           {ownedByMe ? (
             <>
               <IconCheck size={14} stroke={2.4} />
               爆款复刻
+            </>
+          ) : !signedIn ? (
+            <>
+              <IconLock size={13} stroke={2.4} />
+              登录后复刻
             </>
           ) : (
             <>
