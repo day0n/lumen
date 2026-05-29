@@ -1,10 +1,10 @@
 import type { WorkflowEdge, WorkflowNode } from '@lumen/shared/domain';
-import { DirectedGraph } from 'graphology';
+import Graph from 'graphology';
 
-export type WorkflowGraph = DirectedGraph<WorkflowNode, WorkflowEdge>;
+export type WorkflowGraph = Graph<WorkflowNode, WorkflowEdge>;
 
 export function buildGraph(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowGraph {
-  const graph = new DirectedGraph<WorkflowNode, WorkflowEdge>();
+  const graph = new Graph<WorkflowNode, WorkflowEdge>({ type: 'directed' });
 
   for (const node of nodes) {
     graph.addNode(node.id, node);
