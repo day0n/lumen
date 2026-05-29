@@ -52,54 +52,6 @@ export class WorkflowExecutor {
     for (const nodeId of sorted) {
       const node = graph.getNodeAttributes(nodeId) as WorkflowNode;
 
-      // Skip nodes that already have output
-      if (node.output) {
-        logger.debug({ nodeId }, 'node already has output, skipping');
-        const input = resolveInput(graph, nodeId);
-        try {
-          const stored = await persistNodeOutput({
-            output: { type: node.type, value: node.output },
-            runId,
-            projectId,
-            nodeId,
-          });
-          graph.setNodeAttribute(nodeId, 'output', stored.value);
-          summary.skipped += 1;
-          await this.workflowStore.markNodeSkipped({
-            runId,
-            projectId,
-            node,
-            input,
-            error: 'skipped: node already has output',
-            outputType: stored.type,
-            outputValue: stored.value,
-            asset: stored.asset,
-          });
-          await this.publisher.publish(channelId, {
-            event: 'node:done',
-            nodeId,
-            output: stored.value,
-          });
-        } catch (err) {
-          failedIds.add(nodeId);
-          summary.failed += 1;
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          await this.workflowStore.markNodeFailed({
-            runId,
-            projectId,
-            node,
-            input,
-            error: errorMsg,
-          });
-          await this.publisher.publish(channelId, {
-            event: 'node:error',
-            nodeId,
-            error: errorMsg,
-          });
-        }
-        continue;
-      }
-
       // Skip if any upstream node failed
       const upstreamFailed = graph.inNeighbors(nodeId).some((id) => failedIds.has(id));
       if (upstreamFailed) {
