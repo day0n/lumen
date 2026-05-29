@@ -1943,6 +1943,14 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
 
   const handlePromptKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      // Prevent React Flow from intercepting keys (esp. Space for IME)
+      event.stopPropagation();
+
+      // Don't react to keys while IME is composing (Chinese, Japanese, Korean input)
+      if (event.nativeEvent.isComposing || event.keyCode === 229) {
+        return;
+      }
+
       if (event.key === 'Escape') {
         event.currentTarget.blur();
         return;
@@ -2155,6 +2163,7 @@ function NodeOutputEditor({
       aria-label="输出"
       className="nodrag nowheel block min-h-[104px] w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/26"
       onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => event.stopPropagation()}
       placeholder="双击开始编辑..."
       value={output}
     />
