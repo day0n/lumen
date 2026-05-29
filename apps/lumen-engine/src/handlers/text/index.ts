@@ -4,7 +4,7 @@ import type { ExecuteFn, NodeOutput } from '../base.js';
 
 const registry: Record<string, () => Promise<{ execute: ExecuteFn }>> = {
   'doubao-seed-2.0-pro': () => import('./doubao-seed.js'),
-  'gemini-3.5-flash-lite': () => import('./gemini-flash-lite.js'),
+  'gemini-3.1-flash-lite': () => import('./gemini-flash-lite.js'),
 };
 
 export async function executeText(input: ResolvedInput, model: ModelConfig): Promise<NodeOutput> {

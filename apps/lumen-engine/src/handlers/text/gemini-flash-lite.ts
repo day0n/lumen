@@ -10,7 +10,7 @@ export async function execute(
   const client = getGoogleClient();
 
   const response = await client.models.generateContent({
-    model: 'gemini-3.5-flash-lite-preview-06-17',
+    model: 'gemini-3.1-flash-lite-preview',
     contents: [{ role: 'user', parts: [{ text: input.prompt }] }],
   });
 
