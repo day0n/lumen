@@ -5,6 +5,7 @@ APP_DIR=~/lumen
 export FNM_PATH="$HOME/.local/share/fnm"
 export PATH="$FNM_PATH:$PATH"
 eval "$(fnm env)"
+export NODE_BIN="$(command -v node)"
 
 cd "$APP_DIR"
 
@@ -29,7 +30,7 @@ echo "==> Building engine..."
 pnpm --filter @lumen/engine build
 
 echo "==> Restarting services..."
-pm2 reload ecosystem.config.cjs
+pm2 reload ecosystem.config.cjs --update-env
 
 echo "==> Done!"
 pm2 status
