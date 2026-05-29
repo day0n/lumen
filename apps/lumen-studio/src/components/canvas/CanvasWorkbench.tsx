@@ -197,7 +197,7 @@ const nodeCatalog = [
 
 const defaultModels: Record<NodeKind, { id: string; label: string }[]> = {
   text: [
-    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
+    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
     { id: 'doubao-seed-2.0-pro', label: '豆包 Seed 2.0' },
   ],
   image: [
