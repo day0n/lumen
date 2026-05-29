@@ -5,6 +5,7 @@ import type { WorkflowGraph } from './graph.js';
 export interface ResolvedInput {
   prompt: string;
   image: string | null;
+  lastFrameImage: string | null;
   video: string | null;
 }
 
@@ -14,6 +15,7 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
   const resolved: ResolvedInput = {
     prompt: node.input.prompt,
     image: node.input.image,
+    lastFrameImage: node.input.lastFrameImage,
     video: node.input.video,
   };
 
@@ -33,7 +35,11 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
         }
         break;
       case 'image':
-        if (!resolved.image) resolved.image = upstreamOutput;
+        if (!resolved.image) {
+          resolved.image = upstreamOutput;
+        } else if (!resolved.lastFrameImage && upstreamOutput !== resolved.image) {
+          resolved.lastFrameImage = upstreamOutput;
+        }
         break;
       case 'video':
         if (!resolved.video) resolved.video = upstreamOutput;

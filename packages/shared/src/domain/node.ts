@@ -9,6 +9,7 @@ export type NodeStatus = z.infer<typeof NodeStatusSchema>;
 export const NodeInputSchema = z.object({
   prompt: z.string().default(''),
   image: z.string().nullable().default(null),
+  lastFrameImage: z.string().nullable().default(null),
   video: z.string().nullable().default(null),
 });
 export type NodeInput = z.infer<typeof NodeInputSchema>;

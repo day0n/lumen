@@ -15,6 +15,7 @@ function getSettingString(settings: Record<string, unknown>, key: string) {
 function hasOwnInput(node: CanvasNodeShape): boolean {
   if (node.data.prompt.trim().length > 0) return true;
   if (getSettingString(node.data.settings, 'inputImage')) return true;
+  if (getSettingString(node.data.settings, 'inputLastFrameImage')) return true;
   if (getSettingString(node.data.settings, 'inputVideo')) return true;
   return false;
 }

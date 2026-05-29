@@ -359,6 +359,7 @@ function compactNodeInput(input: NodeInput): NodeInput {
   return {
     prompt: input.prompt,
     image: compactMediaRef(input.image),
+    lastFrameImage: compactMediaRef(input.lastFrameImage),
     video: compactMediaRef(input.video),
   };
 }

@@ -430,6 +430,7 @@ function readFileAsDataUrl(file: File) {
 function toWorkflowNodes(nodes: LumenNode[]) {
   return nodes.map((node) => {
     const inputImage = getSettingString(node.data.settings, 'inputImage');
+    const inputLastFrameImage = getSettingString(node.data.settings, 'inputLastFrameImage');
     const inputVideo = getSettingString(node.data.settings, 'inputVideo');
 
     return {
@@ -440,6 +441,7 @@ function toWorkflowNodes(nodes: LumenNode[]) {
       input: {
         prompt: node.data.prompt,
         image: inputImage || null,
+        lastFrameImage: inputLastFrameImage || null,
         video: inputVideo || null,
       },
       model: { id: resolveModelId(node.data), settings: node.data.settings },
@@ -2013,6 +2015,51 @@ function ModelPicker({
   );
 }
 
+function FrameImageSlot({
+  image,
+  label,
+  onClear,
+  onUpload,
+}: {
+  image: string;
+  label: string;
+  onClear?: () => void;
+  onUpload: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div className="nodrag group/upload relative h-[58px] w-[74px] overflow-hidden rounded-[10px] bg-[#2d2e30]/86 text-white/42 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.08] hover:text-white/74">
+      <label className="absolute inset-0 flex cursor-pointer items-center justify-center">
+        {image ? (
+          <img
+            alt={label}
+            className="absolute inset-0 h-full w-full object-cover opacity-75 transition-opacity group-hover/upload:opacity-55"
+            src={image}
+          />
+        ) : (
+          <IconUpload size={18} stroke={2.2} />
+        )}
+        <span className="absolute inset-x-0 bottom-0 bg-black/50 py-1 text-center text-[10px] font-black text-white/78 transition-opacity group-hover/upload:opacity-100">
+          {image ? label : '上传'}
+        </span>
+        <input className="sr-only" type="file" accept="image/*" onChange={onUpload} />
+      </label>
+      {image && onClear ? (
+        <button
+          type="button"
+          aria-label={`清除${label}`}
+          className="absolute right-1 top-1 z-10 rounded-full bg-black/54 px-1.5 py-0.5 text-[10px] font-black text-white/78 opacity-0 transition-opacity hover:bg-black/72 group-hover/upload:opacity-100"
+          onClick={(event) => {
+            event.stopPropagation();
+            onClear();
+          }}
+        >
+          清除
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
   const { runSingleNode, updateNodeData, connectionError, canRunNode } =
@@ -2026,6 +2073,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const progressPercent = Math.max(isNodeBusy ? 14 : 0, Math.round(progress * 100));
   const nodeTitle = getNodeTitle(data);
   const inputImage = getSettingString(data.settings, 'inputImage');
+  const inputLastFrameImage = getSettingString(data.settings, 'inputLastFrameImage');
   const aspectRatio = getAspectRatio(data.settings);
   const acceptsImageInput = data.kind === 'image' || data.kind === 'video';
 
@@ -2054,13 +2102,13 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   );
 
   const handleAssetUpload = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
+    async (event: ChangeEvent<HTMLInputElement>, settingKey = 'inputImage') => {
       const file = event.target.files?.[0];
       event.target.value = '';
       if (!file) return;
 
       const dataUrl = await readFileAsDataUrl(file);
-      updateSettings({ inputImage: dataUrl });
+      updateSettings({ [settingKey]: dataUrl });
     },
     [updateSettings],
   );
@@ -2153,27 +2201,29 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
         {selected ? (
           <div className="bg-[#242527]/95 p-2.5">
             {acceptsImageInput ? (
-              <div className="mb-2 grid grid-cols-[auto_1fr] gap-2">
-                <label className="nodrag group/upload relative flex h-[58px] w-[74px] cursor-pointer items-center justify-center overflow-hidden rounded-[10px] bg-[#2d2e30]/86 text-white/42 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.08] hover:text-white/74">
-                  {inputImage ? (
-                    <img
-                      alt="输入图片"
-                      className="absolute inset-0 h-full w-full object-cover opacity-75 transition-opacity group-hover/upload:opacity-55"
-                      src={inputImage}
-                    />
-                  ) : (
-                    <IconUpload size={18} stroke={2.2} />
-                  )}
-                  <span className="absolute inset-x-0 bottom-0 bg-black/42 py-1 text-center text-[10px] font-black text-white/70 opacity-0 transition-opacity group-hover/upload:opacity-100">
-                    上传
-                  </span>
-                  <input
-                    className="sr-only"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAssetUpload}
+              <div
+                className={`mb-2 grid gap-2 ${
+                  data.kind === 'video' ? 'grid-cols-[auto_auto_1fr]' : 'grid-cols-[auto_1fr]'
+                }`}
+              >
+                <FrameImageSlot
+                  image={inputImage}
+                  label={data.kind === 'video' ? '首帧' : '输入图'}
+                  onClear={inputImage ? () => updateSettings({ inputImage: '' }) : undefined}
+                  onUpload={(event) => handleAssetUpload(event, 'inputImage')}
+                />
+                {data.kind === 'video' ? (
+                  <FrameImageSlot
+                    image={inputLastFrameImage}
+                    label="尾帧"
+                    onClear={
+                      inputLastFrameImage
+                        ? () => updateSettings({ inputLastFrameImage: '' })
+                        : undefined
+                    }
+                    onUpload={(event) => handleAssetUpload(event, 'inputLastFrameImage')}
                   />
-                </label>
+                ) : null}
                 <div className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-[10px] bg-[#2d2e30]/86 p-1.5 ring-1 ring-white/[0.07]">
                   {aspectRatioOptions.map((ratio) => (
                     <button
@@ -2189,11 +2239,11 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
                       {ratio}
                     </button>
                   ))}
-                  {inputImage ? (
+                  {inputImage || inputLastFrameImage ? (
                     <button
                       type="button"
                       className="nodrag ml-auto h-7 rounded-[9px] px-2 text-[11px] font-black text-white/34 transition-colors hover:bg-white/[0.08] hover:text-white/76"
-                      onClick={() => updateSettings({ inputImage: '' })}
+                      onClick={() => updateSettings({ inputImage: '', inputLastFrameImage: '' })}
                     >
                       清除
                     </button>

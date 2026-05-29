@@ -3,6 +3,12 @@ import type { ResolvedInput } from '../../engine/resolver.js';
 import { logger } from '../../utils/logger.js';
 import type { NodeOutput } from '../base.js';
 
+interface VeoImage {
+  gcsUri?: string;
+  imageBytes?: string;
+  mimeType?: string;
+}
+
 interface GeneratedVideo {
   video?: {
     gcsUri?: string;
@@ -33,13 +39,22 @@ export async function execute(
     readStringSetting(settings, 'aspectRatio') ??
     '16:9';
   const durationSeconds = readNumberSetting(settings, 'duration') ?? 8;
+  const image = await toVeoImage(input.image);
+  const lastFrame = image ? await toVeoImage(input.lastFrameImage) : null;
+
+  logger.info(
+    { aspectRatio, durationSeconds, hasImage: Boolean(image), hasLastFrame: Boolean(lastFrame) },
+    'starting veo 3.1 video generation',
+  );
 
   const operation = await client.models.generateVideos({
     model: 'veo-3.1-generate-001',
     prompt: input.prompt,
+    ...(image ? { image } : {}),
     config: {
       aspectRatio,
       durationSeconds,
+      ...(lastFrame ? { lastFrame } : {}),
     },
   });
 
@@ -94,4 +109,55 @@ function readNumberSetting(settings: Record<string, unknown>, key: string): numb
   if (typeof value !== 'string' || !value.trim()) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function toVeoImage(value: string | null): Promise<VeoImage | null> {
+  if (!value?.trim()) return null;
+  const source = value.trim();
+
+  if (source.startsWith('gs://')) {
+    return { gcsUri: source };
+  }
+
+  const dataUrl = parseImageDataUrl(source);
+  if (dataUrl) return dataUrl;
+
+  if (isHttpUrl(source)) {
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(`failed to fetch veo input image: HTTP ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type') ?? '';
+    const mimeType = contentType.split(';')[0]?.trim() || guessImageMimeType(source);
+    if (!mimeType.startsWith('image/')) {
+      throw new Error(`veo input URL is not an image: ${mimeType || 'unknown content-type'}`);
+    }
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return { imageBytes: bytes.toString('base64'), mimeType };
+  }
+
+  throw new Error('unsupported veo input image format');
+}
+
+function parseImageDataUrl(value: string): VeoImage | null {
+  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s.exec(value);
+  if (!match) return null;
+  const mimeType = match[1];
+  const imageBytes = match[2];
+  if (!mimeType || !imageBytes) return null;
+  return { mimeType, imageBytes: imageBytes.replace(/\s/g, '') };
+}
+
+function isHttpUrl(value: string): boolean {
+  return value.startsWith('http://') || value.startsWith('https://');
+}
+
+function guessImageMimeType(value: string): string {
+  const pathname = new URL(value).pathname.toLowerCase();
+  if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg';
+  if (pathname.endsWith('.webp')) return 'image/webp';
+  if (pathname.endsWith('.gif')) return 'image/gif';
+  return 'image/png';
 }

@@ -10,7 +10,12 @@ export interface WorkflowNode {
   type: 'text' | 'image' | 'video' | 'audio';
   position: { x: number; y: number };
   output: string | null;
-  input: { prompt: string; image: string | null; video: string | null };
+  input: {
+    prompt: string;
+    image: string | null;
+    lastFrameImage: string | null;
+    video: string | null;
+  };
   model: { id: string; settings: Record<string, unknown> };
 }
 
