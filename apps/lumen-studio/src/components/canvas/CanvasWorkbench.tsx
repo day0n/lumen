@@ -5,6 +5,7 @@ import {
   IconAlertTriangle,
   IconArrowLeft,
   IconBell,
+  IconCheck,
   IconChevronDown,
   IconChevronLeft,
   IconClock,
@@ -24,6 +25,7 @@ import {
   IconSearch,
   IconSelectAll,
   IconShare3,
+  IconSparkles,
   IconStarFilled,
   IconTrash,
   IconUpload,
@@ -92,6 +94,12 @@ type NodeTemplate = {
   title: string;
   icon: typeof IconPlus;
   tone: string;
+};
+
+type ModelOption = {
+  id: string;
+  label: string;
+  badges: string[];
 };
 
 type LumenNodeData = Record<string, unknown> & {
@@ -198,22 +206,26 @@ const nodeCatalog = [
   },
 ] satisfies [NodeTemplate, ...NodeTemplate[]];
 
-const defaultModels: Record<NodeKind, { id: string; label: string }[]> = {
+const defaultModels: Record<NodeKind, ModelOption[]> = {
   text: [
-    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-    { id: 'doubao-seed-2.0-pro', label: '豆包 Seed 2.0' },
+    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', badges: ['快速高效', '通用', '10 ~ 20s'] },
+    { id: 'doubao-seed-2.0-pro', label: '豆包 Seed 2.0', badges: ['中文创作', '稳定', '10 ~ 20s'] },
   ],
   image: [
-    { id: 'nano-banana2', label: 'Nano Banana 2' },
-    { id: 'doubao-seedream-3.0', label: 'Seedream 3.0' },
+    { id: 'nano-banana2', label: 'Nano Banana 2', badges: ['写实图片', '高质量', '10 ~ 20s'] },
+    {
+      id: 'doubao-seedream-3.0',
+      label: 'Seedream 3.0',
+      badges: ['中文友好', '多风格', '10 ~ 20s'],
+    },
   ],
   video: [
-    { id: 'veo-3.1', label: 'Veo 3.1' },
-    { id: 'seedance-1.5-pro', label: 'Seedance 1.5' },
+    { id: 'veo-3.1', label: 'Veo 3.1', badges: ['高质量视频', '4K', '60 ~ 120s'] },
+    { id: 'seedance-1.5-pro', label: 'Seedance 1.5', badges: ['快速成片', '动态强', '30 ~ 90s'] },
   ],
   audio: [
-    { id: 'fish-tts', label: 'Fish TTS' },
-    { id: 'doubao-tts', label: '豆包 TTS' },
+    { id: 'fish-tts', label: 'Fish TTS', badges: ['自然音色', '多语种', '5 ~ 10s'] },
+    { id: 'doubao-tts', label: '豆包 TTS', badges: ['中文配音', '快速', '5 ~ 10s'] },
   ],
 };
 
@@ -1907,6 +1919,100 @@ const waveformBars = [
   { id: 'end', height: 40 },
 ];
 
+function ModelPicker({
+  disabled,
+  kind,
+  onChange,
+  value,
+}: {
+  disabled?: boolean;
+  kind: NodeKind;
+  onChange: (modelId: string) => void;
+  value: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const models = defaultModels[kind];
+  const selected = models.find((model) => model.id === value) ?? models[0];
+
+  return (
+    <div
+      className="nodrag nopan relative min-w-0 flex-1"
+      onBlur={(event) => {
+        const nextFocus = event.relatedTarget;
+        if (nextFocus instanceof HTMLElement && event.currentTarget.contains(nextFocus)) return;
+        setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label="选择模型"
+        disabled={disabled}
+        className={`flex h-9 w-full min-w-0 items-center gap-2 rounded-[13px] px-2.5 text-left text-[12px] font-black outline-none ring-1 transition-colors disabled:cursor-not-allowed ${
+          open
+            ? 'bg-white text-[#111315] ring-white/24'
+            : 'bg-white/[0.075] text-white/78 ring-white/[0.08] hover:bg-white/[0.11] hover:text-white'
+        } ${disabled ? 'opacity-45' : ''}`}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <IconSparkles size={13} stroke={2.4} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{selected?.label ?? '选择模型'}</span>
+        <IconChevronDown
+          size={14}
+          stroke={2.5}
+          className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open ? (
+        <div className="absolute bottom-[calc(100%+8px)] left-0 z-[120] max-h-[252px] w-[min(292px,calc(100vw-32px))] overflow-y-auto rounded-[12px] bg-[#2a2b2e]/98 p-1.5 text-white shadow-[0_24px_72px_rgba(0,0,0,0.56)] ring-1 ring-white/[0.14] backdrop-blur-xl">
+          {models.map((model) => {
+            const selectedModel = model.id === selected?.id;
+            return (
+              <button
+                key={model.id}
+                type="button"
+                aria-pressed={selectedModel}
+                className={`flex w-full items-start gap-2.5 rounded-[10px] px-2.5 py-2 text-left transition-colors ${
+                  selectedModel ? 'bg-white/[0.12]' : 'hover:bg-white/[0.07]'
+                }`}
+                onClick={() => {
+                  onChange(model.id);
+                  setOpen(false);
+                }}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+                  {selectedModel ? (
+                    <IconCheck size={15} className="text-white" stroke={3} />
+                  ) : (
+                    <IconSparkles size={13} className="text-white/58" stroke={2.4} />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-black text-white/90">
+                    {model.label}
+                  </span>
+                  <span className="mt-1 flex min-w-0 flex-wrap gap-1">
+                    {model.badges.map((badge) => (
+                      <span
+                        key={badge}
+                        className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[10px] font-bold text-white/48"
+                      >
+                        {badge}
+                      </span>
+                    ))}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
   const { runSingleNode, updateNodeData, connectionError, canRunNode } =
@@ -2107,18 +2213,12 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
             </div>
 
             <div className="mt-2 flex items-center gap-2">
-              <select
-                aria-label="选择模型"
-                className="nodrag h-9 min-w-0 flex-1 cursor-pointer rounded-[13px] bg-white/[0.065] px-2.5 text-[12px] font-bold text-white/72 outline-none ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1]"
-                onChange={(event) => updateNodeData(id, { modelId: event.target.value })}
+              <ModelPicker
+                disabled={isNodeBusy}
+                kind={data.kind}
+                onChange={(nextModelId) => updateNodeData(id, { modelId: nextModelId })}
                 value={modelId}
-              >
-                {defaultModels[data.kind].map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label}
-                  </option>
-                ))}
-              </select>
+              />
               <button
                 type="button"
                 aria-label="运行节点"
