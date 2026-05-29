@@ -1,16 +1,20 @@
+const path = require('node:path');
+
 const nodeInterpreter = process.env.NODE_BIN || process.execPath;
+const tsxInterpreter = process.env.TSX_BIN || 'tsx';
+const runtimePath = [path.dirname(nodeInterpreter), process.env.PATH].filter(Boolean).join(':');
 
 module.exports = {
   apps: [
     {
       name: 'lumen-studio',
       cwd: './apps/lumen-studio',
-      script: './node_modules/tsx/dist/cli.mjs',
-      args: 'server.ts',
-      interpreter: nodeInterpreter,
+      script: 'server.ts',
+      interpreter: tsxInterpreter,
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
+        PATH: runtimePath,
       },
     },
     {
@@ -21,6 +25,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3001,
+        PATH: runtimePath,
       },
     },
     {
@@ -30,6 +35,7 @@ module.exports = {
       interpreter: nodeInterpreter,
       env: {
         NODE_ENV: 'production',
+        PATH: runtimePath,
       },
     },
   ],
