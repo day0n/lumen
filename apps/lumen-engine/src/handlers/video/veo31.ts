@@ -5,7 +5,11 @@ import type { NodeOutput } from '../base.js';
 
 interface GeneratedVideo {
   video?: {
+    gcsUri?: string;
+    mimeType?: string;
     uri?: string;
+    videoBytes?: string;
+    bytesBase64Encoded?: string;
   };
 }
 
@@ -57,16 +61,22 @@ export async function execute(
     throw new Error('veo 3.1 returned no videos');
   }
 
-  const videoUri = videos[0]?.video?.uri;
-  if (!videoUri) {
-    throw new Error('veo 3.1 video has no URI');
+  const video = videos[0]?.video;
+  const videoUri = video?.uri ?? video?.gcsUri;
+  if (videoUri) {
+    const videoUrl = videoUri.replace('gs://', 'https://storage.googleapis.com/');
+    logger.info({ videoUrl }, 'veo 3.1 video generated');
+    return { type: 'video', value: videoUrl };
   }
 
-  // GCS URI → public HTTPS URL
-  const videoUrl = videoUri.replace('gs://', 'https://storage.googleapis.com/');
-  logger.info({ videoUrl }, 'veo 3.1 video generated');
+  const videoBytes = video?.videoBytes ?? video?.bytesBase64Encoded;
+  if (videoBytes) {
+    const mimeType = video?.mimeType ?? 'video/mp4';
+    logger.info({ mimeType, bytes: videoBytes.length }, 'veo 3.1 inline video generated');
+    return { type: 'video', value: `data:${mimeType};base64,${videoBytes}` };
+  }
 
-  return { type: 'video', value: videoUrl };
+  throw new Error('veo 3.1 video has no URI or inline bytes');
 }
 
 function sleep(ms: number): Promise<void> {
