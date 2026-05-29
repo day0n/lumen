@@ -3,7 +3,7 @@ import 'server-only';
 import type { MaterialAssetKind, MaterialAssetRecord } from '@lumen/db';
 
 import { requireStudioUser } from './auth';
-import { getMaterialAssetRepository } from './db';
+import { getMaterialAssetRepository, getProjectRepository } from './db';
 
 export interface ListStudioMaterialAssetsOptions {
   workflowId?: string;
@@ -16,9 +16,17 @@ export async function listStudioMaterialAssets(
 ): Promise<MaterialAssetRecord[]> {
   const user = await requireStudioUser();
   const repository = await getMaterialAssetRepository();
+  let ownerId = user.id;
+
+  if (options.workflowId) {
+    const projectRepository = await getProjectRepository();
+    const project = await projectRepository.get(user.id, options.workflowId);
+    if (!project) return [];
+    ownerId = project.ownerId;
+  }
 
   return repository.list({
-    ownerId: user.id,
+    ownerId,
     workflowId: options.workflowId,
     kind: options.kind,
     limit: options.limit ?? 200,

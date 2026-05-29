@@ -1218,18 +1218,16 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         </div>
 
         <CanvasTopbar projectId={currentProjectId} saveState={saveState} title={projectTitle} />
-        {materialPanelOpen || historyPanelOpen ? null : (
-          <LeftToolbar
-            activeKind={activeKind}
-            historyPanelOpen={historyPanelOpen}
-            materialPanelOpen={materialPanelOpen}
-            menuOpen={nodeMenuOpen}
-            onPickTemplate={onPickTemplate}
-            onToggleHistoryPanel={toggleHistoryPanel}
-            onToggleMaterialPanel={toggleMaterialPanel}
-            onToggleMenu={toggleNodeMenu}
-          />
-        )}
+        <LeftToolbar
+          activeKind={activeKind}
+          historyPanelOpen={historyPanelOpen}
+          materialPanelOpen={materialPanelOpen}
+          menuOpen={nodeMenuOpen}
+          onPickTemplate={onPickTemplate}
+          onToggleHistoryPanel={toggleHistoryPanel}
+          onToggleMaterialPanel={toggleMaterialPanel}
+          onToggleMenu={toggleNodeMenu}
+        />
         {materialPanelOpen ? (
           <MaterialLibraryPanel
             projectId={currentProjectId}
@@ -1660,6 +1658,7 @@ function MaterialLibraryPanel({
 }) {
   const [activeCategory, setActiveCategory] = useState<MaterialAssetCategory>('my_assets');
   const [activeKind, setActiveKind] = useState<MaterialAssetKind>('image');
+  const [myAssetsExpanded, setMyAssetsExpanded] = useState(true);
   const [assets, setAssets] = useState<MaterialAssetRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1729,7 +1728,7 @@ function MaterialLibraryPanel({
   }, [assets]);
 
   return (
-    <section className="absolute left-5 top-[92px] bottom-24 z-30 flex w-[calc(100vw-40px)] max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-[#111315]/94 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.09] backdrop-blur-2xl sm:w-[340px]">
+    <section className="absolute left-24 top-[92px] bottom-24 z-30 flex w-[calc(100vw-116px)] max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-[#111315]/94 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.09] backdrop-blur-2xl sm:w-[340px]">
       <div className="flex items-center gap-2 px-4 pt-4">
         <button
           type="button"
@@ -1754,7 +1753,14 @@ function MaterialLibraryPanel({
               <div key={category.id}>
                 <button
                   type="button"
-                  onClick={() => setActiveCategory(category.id)}
+                  onClick={() => {
+                    setActiveCategory(category.id);
+                    if (category.id === 'my_assets') {
+                      setMyAssetsExpanded((expanded) => !expanded);
+                    } else {
+                      setMyAssetsExpanded(false);
+                    }
+                  }}
                   className={`group flex h-12 w-full items-center gap-2 rounded-2xl px-2 text-left transition-colors ${
                     active ? 'bg-white/[0.1]' : 'hover:bg-white/[0.06]'
                   }`}
@@ -1762,7 +1768,7 @@ function MaterialLibraryPanel({
                   <IconChevronDown
                     size={16}
                     className={`shrink-0 text-white/42 transition-transform ${
-                      category.id === 'my_assets' && active ? 'rotate-0' : '-rotate-90'
+                      category.id === 'my_assets' && myAssetsExpanded ? 'rotate-0' : '-rotate-90'
                     }`}
                     stroke={2.2}
                   />
@@ -1780,7 +1786,7 @@ function MaterialLibraryPanel({
                     {categoryCounts[category.id] ?? 0}
                   </span>
                 </button>
-                {category.id === 'my_assets' && active ? (
+                {category.id === 'my_assets' && myAssetsExpanded ? (
                   <div className="mt-1 space-y-1 pl-10">
                     {materialKinds.map((kind) => (
                       <MaterialKindButton
@@ -1869,7 +1875,7 @@ function ProjectHistoryPanel({
   }, [projectId]);
 
   return (
-    <section className="absolute left-5 top-[92px] bottom-24 z-30 flex w-[calc(100vw-40px)] max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-[#111315]/94 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.09] backdrop-blur-2xl sm:w-[340px]">
+    <section className="absolute left-24 top-[92px] bottom-24 z-30 flex w-[calc(100vw-116px)] max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-[#111315]/94 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.09] backdrop-blur-2xl sm:w-[340px]">
       <div className="flex items-center gap-2 px-4 pt-4">
         <button
           type="button"
