@@ -35,6 +35,8 @@ export interface NodeState {
 interface UseWorkflowWsOptions {
   url: string;
   projectId?: string | null;
+  workflowId?: string | null;
+  userId?: string | null;
   onNodeStateChange?: (nodeId: string, state: NodeState) => void;
   onFlowDone?: () => void;
 }
@@ -42,6 +44,8 @@ interface UseWorkflowWsOptions {
 export function useWorkflowWs({
   url,
   projectId,
+  workflowId,
+  userId,
   onNodeStateChange,
   onFlowDone,
 }: UseWorkflowWsOptions) {
@@ -140,6 +144,8 @@ export function useWorkflowWs({
       const message = {
         runId: nanoid(16),
         projectId: projectId ?? undefined,
+        workflowId: workflowId ?? projectId ?? undefined,
+        userId: userId ?? undefined,
         nodeIds,
         nodes,
         edges,
@@ -189,7 +195,7 @@ export function useWorkflowWs({
         markRunConnectionFailed(targetNodeIds, error);
       };
     },
-    [handleEvent, markRunConnectionFailed, projectId, url],
+    [handleEvent, markRunConnectionFailed, projectId, url, userId, workflowId],
   );
 
   return { connectionError, nodeStates, runNodes };

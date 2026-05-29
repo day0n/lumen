@@ -4,6 +4,7 @@ const StudioServerConfigSchema = z
   .object({
     MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
     MONGODB_DB: z.string().min(1).default('lumen_app'),
+    WORKFLOW_MONGODB_DB: z.string().min(1).default('lumen_engine'),
     REDIS_URL: z.string().optional().default(''),
     APIFY_API_TOKEN: z.string().optional().default(''),
     R2_ACCOUNT_ID: z.string().optional().default(''),
@@ -18,6 +19,7 @@ export type StudioServerConfig = Pick<
   z.infer<typeof StudioServerConfigSchema>,
   | 'MONGODB_URI'
   | 'MONGODB_DB'
+  | 'WORKFLOW_MONGODB_DB'
   | 'REDIS_URL'
   | 'APIFY_API_TOKEN'
   | 'R2_ACCOUNT_ID'

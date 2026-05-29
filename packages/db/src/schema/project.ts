@@ -69,6 +69,7 @@ export const ProjectDocumentSchema = z
     description: z.string().trim().max(1000).optional(),
     status: ProjectStatusSchema.default('draft'),
     thumbnail: z.string().trim().optional(),
+    share_id: z.string().trim().min(1).optional(),
     canvas: ProjectCanvasSchema.default({ nodes: [], edges: [] }),
     created_at: z.date(),
     updated_at: z.date(),

@@ -4,7 +4,9 @@ import {
   HomeFeaturedRepository,
   HotVideoRepository,
   JsonCache,
+  MaterialAssetRepository,
   NotificationRepository,
+  ProjectHistoryRepository,
   ProjectRepository,
   UserRepository,
   getMongoDatabase,
@@ -18,6 +20,8 @@ let userRepositoryPromise: Promise<UserRepository> | null = null;
 let homeFeaturedRepositoryPromise: Promise<HomeFeaturedRepository> | null = null;
 let hotVideoRepositoryPromise: Promise<HotVideoRepository> | null = null;
 let notificationRepositoryPromise: Promise<NotificationRepository> | null = null;
+let materialAssetRepositoryPromise: Promise<MaterialAssetRepository> | null = null;
+let projectHistoryRepositoryPromise: Promise<ProjectHistoryRepository> | null = null;
 let cache: JsonCache | null = null;
 
 async function getDb() {
@@ -26,6 +30,15 @@ async function getDb() {
     uri: config.MONGODB_URI,
     dbName: config.MONGODB_DB,
     appName: 'lumen-studio',
+  });
+}
+
+async function getWorkflowDb() {
+  const config = getStudioServerConfig();
+  return getMongoDatabase({
+    uri: config.MONGODB_URI,
+    dbName: config.WORKFLOW_MONGODB_DB,
+    appName: 'lumen-studio-workflow',
   });
 }
 
@@ -92,6 +105,32 @@ export async function getNotificationRepository(): Promise<NotificationRepositor
   })();
 
   return notificationRepositoryPromise;
+}
+
+export async function getMaterialAssetRepository(): Promise<MaterialAssetRepository> {
+  if (materialAssetRepositoryPromise) return materialAssetRepositoryPromise;
+
+  materialAssetRepositoryPromise = (async () => {
+    const db = await getWorkflowDb();
+    const repository = new MaterialAssetRepository(db);
+    await repository.ensureIndexes();
+    return repository;
+  })();
+
+  return materialAssetRepositoryPromise;
+}
+
+export async function getProjectHistoryRepository(): Promise<ProjectHistoryRepository> {
+  if (projectHistoryRepositoryPromise) return projectHistoryRepositoryPromise;
+
+  projectHistoryRepositoryPromise = (async () => {
+    const db = await getDb();
+    const repository = new ProjectHistoryRepository(db);
+    await repository.ensureIndexes();
+    return repository;
+  })();
+
+  return projectHistoryRepositoryPromise;
 }
 
 export function getStudioCache(): JsonCache {

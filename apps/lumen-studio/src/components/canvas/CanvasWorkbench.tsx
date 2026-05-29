@@ -9,12 +9,10 @@ import {
   IconChevronDown,
   IconChevronLeft,
   IconClock,
-  IconDots,
   IconFileText,
   IconFocusCentered,
   IconFolder,
   IconFolderFilled,
-  IconFolderPlus,
   IconGridDots,
   IconLayoutGrid,
   IconLoader2,
@@ -22,14 +20,11 @@ import {
   IconPhoto,
   IconPlayerPlay,
   IconPlus,
-  IconSearch,
   IconSelectAll,
   IconShare3,
   IconSparkles,
-  IconStarFilled,
   IconTrash,
   IconUpload,
-  IconUserSquareRounded,
   IconVideo,
   IconZoomIn,
   IconZoomOut,
@@ -134,21 +129,39 @@ const CanvasActionsContext = createContext<CanvasActions>({
   canRunNode: () => false,
 });
 
-type MaterialFolderId = 'character' | 'scene' | 'item' | 'style' | 'sound' | 'others';
+type MaterialAssetKind = 'image' | 'video' | 'audio';
+type MaterialAssetCategory = 'my_assets' | 'character' | 'scene' | 'item';
 
-type MaterialFolder = {
-  id: MaterialFolderId;
-  label: string;
-  count: number;
+type MaterialAssetRecord = {
+  id: string;
+  category: MaterialAssetCategory;
+  kind: MaterialAssetKind;
+  title: string;
+  url: string;
+  thumbnailUrl?: string;
+  source: 'workflow_result' | 'user_upload' | 'manual';
+  workflowId?: string;
+  runId?: string;
+  nodeId?: string;
+  nodeType?: string;
+  contentType?: string;
+  size?: number;
+  inputPrompt?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
-type MaterialLibraryItem = {
+type ProjectHistoryRecord = {
   id: string;
-  folderId: MaterialFolderId;
   title: string;
-  meta: string;
-  type: 'image' | 'video' | 'audio';
-  previewClass: string;
+  action: 'created' | 'updated' | 'restored';
+  canvas: {
+    nodes: LumenNode[];
+    edges: LumenEdge[];
+  };
+  nodeCount: number;
+  edgeCount: number;
+  createdAt: string;
 };
 
 interface CanvasWorkbenchProps {
@@ -158,6 +171,7 @@ interface CanvasWorkbenchProps {
 
 interface CanvasProjectPayload {
   id: string;
+  ownerId: string;
   title: string;
   canvas: {
     nodes: LumenNode[];
@@ -170,6 +184,48 @@ type ProjectApiResponse =
       ok: true;
       data: {
         project: CanvasProjectPayload;
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        message: string;
+      };
+    };
+
+type ShareProjectApiResponse =
+  | {
+      ok: true;
+      data: {
+        shareUrl: string;
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        message: string;
+      };
+    };
+
+type MaterialAssetsApiResponse =
+  | {
+      ok: true;
+      data: {
+        assets: MaterialAssetRecord[];
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        message: string;
+      };
+    };
+
+type ProjectHistoryApiResponse =
+  | {
+      ok: true;
+      data: {
+        history: ProjectHistoryRecord[];
       };
     }
   | {
@@ -244,90 +300,6 @@ const compatibleTargetKinds: Record<NodeKind, NodeKind[]> = {
   video: ['text', 'video'],
   audio: ['text', 'audio'],
 };
-
-const materialFolders = [
-  { id: 'character', label: '角色', count: 12 },
-  { id: 'scene', label: '场景', count: 8 },
-  { id: 'item', label: '道具', count: 16 },
-  { id: 'style', label: '风格', count: 7 },
-  { id: 'sound', label: '音效', count: 21 },
-  { id: 'others', label: 'Others', count: 5 },
-] satisfies MaterialFolder[];
-
-const materialLibraryItems = [
-  {
-    id: 'host-shot',
-    folderId: 'character',
-    title: '直播口播主理人',
-    meta: '人物 / 竖屏',
-    type: 'image',
-    previewClass:
-      'bg-[radial-gradient(circle_at_36%_24%,rgba(255,255,255,0.86),transparent_16%),radial-gradient(circle_at_58%_32%,rgba(121,228,255,0.72),transparent_20%),linear-gradient(145deg,#32445f,#111315_72%)]',
-  },
-  {
-    id: 'try-on-model',
-    folderId: 'character',
-    title: '试穿展示模特',
-    meta: '人物 / 半身',
-    type: 'image',
-    previewClass:
-      'bg-[radial-gradient(circle_at_62%_22%,rgba(247,201,106,0.74),transparent_20%),radial-gradient(circle_at_36%_48%,rgba(157,168,255,0.74),transparent_24%),linear-gradient(145deg,#26313d,#101113_76%)]',
-  },
-  {
-    id: 'studio-softbox',
-    folderId: 'scene',
-    title: '柔光棚拍桌面',
-    meta: '场景 / 商品',
-    type: 'image',
-    previewClass:
-      'bg-[radial-gradient(circle_at_44%_34%,rgba(245,247,250,0.76),transparent_22%),linear-gradient(145deg,#38414b,#131619_70%)]',
-  },
-  {
-    id: 'outdoor-cafe',
-    folderId: 'scene',
-    title: '户外咖啡街角',
-    meta: '场景 / 生活方式',
-    type: 'video',
-    previewClass:
-      'bg-[radial-gradient(circle_at_28%_36%,rgba(121,228,255,0.58),transparent_22%),radial-gradient(circle_at_78%_24%,rgba(245,199,106,0.64),transparent_24%),linear-gradient(145deg,#233141,#0e1115_72%)]',
-  },
-  {
-    id: 'gift-box',
-    folderId: 'item',
-    title: '开箱礼盒彩带',
-    meta: '道具 / 节日',
-    type: 'image',
-    previewClass:
-      'bg-[radial-gradient(circle_at_52%_40%,rgba(255,255,255,0.76),transparent_18%),radial-gradient(circle_at_34%_28%,rgba(255,117,146,0.62),transparent_24%),linear-gradient(145deg,#3a2f3d,#111315_72%)]',
-  },
-  {
-    id: 'clean-gradient',
-    folderId: 'style',
-    title: '清透科技蓝',
-    meta: '风格 / 背景',
-    type: 'image',
-    previewClass:
-      'bg-[radial-gradient(circle_at_78%_20%,rgba(121,228,255,0.78),transparent_26%),radial-gradient(circle_at_26%_78%,rgba(157,168,255,0.5),transparent_30%),linear-gradient(145deg,#14212b,#0a0d10_72%)]',
-  },
-  {
-    id: 'notification-pop',
-    folderId: 'sound',
-    title: '轻快提示音',
-    meta: '音效 / 0:03',
-    type: 'audio',
-    previewClass:
-      'bg-[repeating-linear-gradient(90deg,rgba(121,228,255,0.26)_0,rgba(121,228,255,0.26)_4px,transparent_4px,transparent_10px),linear-gradient(145deg,#23303a,#111315_74%)]',
-  },
-  {
-    id: 'brand-bumper',
-    folderId: 'others',
-    title: '品牌片头贴片',
-    meta: '素材 / 0:05',
-    type: 'video',
-    previewClass:
-      'bg-[radial-gradient(circle_at_30%_24%,rgba(245,199,106,0.62),transparent_22%),radial-gradient(circle_at_70%_70%,rgba(121,228,255,0.54),transparent_26%),linear-gradient(145deg,#2b2e34,#101113_74%)]',
-  },
-] satisfies MaterialLibraryItem[];
 
 function createNodeData(template: NodeTemplate): LumenNodeData {
   return {
@@ -550,7 +522,9 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const [activeKind, setActiveKind] = useState<NodeKind>('text');
   const [nodeMenuOpen, setNodeMenuOpen] = useState(false);
   const [materialPanelOpen, setMaterialPanelOpen] = useState(false);
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState(projectId ?? null);
+  const [currentOwnerId, setCurrentOwnerId] = useState<string | null>(null);
   const [projectTitle, setProjectTitle] = useState('未命名画布');
   const [saveState, setSaveState] = useState<CanvasSaveState>(projectId ? 'loading' : 'idle');
   const [nodes, setNodes, onNodesChange] = useNodesState<LumenNode>([]);
@@ -646,6 +620,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const { connectionError, runNodes } = useWorkflowWs({
     url: wsUrl,
     projectId: currentProjectId,
+    workflowId: currentProjectId,
+    userId: currentOwnerId,
     onNodeStateChange: handleNodeStateChange,
   });
 
@@ -749,6 +725,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         });
         const project = await readProjectResponse(response);
         setCurrentProjectId(project.id);
+        setCurrentOwnerId(project.ownerId);
         setProjectTitle(project.title);
         setNodes(withCanvasNodeLayering(project.canvas.nodes));
         setEdges(withCanvasEdgeLayering(project.canvas.edges));
@@ -804,6 +781,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           signal: controller.signal,
         });
         const project = await readProjectResponse(response);
+        setCurrentOwnerId(project.ownerId);
         setProjectTitle(project.title);
         setNodes(withCanvasNodeLayering(project.canvas.nodes));
         setEdges(withCanvasEdgeLayering(project.canvas.edges));
@@ -1114,6 +1092,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       const nextOpen = !open;
       if (nextOpen) {
         setMaterialPanelOpen(false);
+        setHistoryPanelOpen(false);
       }
       return nextOpen;
     });
@@ -1124,10 +1103,32 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       const nextOpen = !open;
       if (nextOpen) {
         setNodeMenuOpen(false);
+        setHistoryPanelOpen(false);
       }
       return nextOpen;
     });
   }, []);
+
+  const toggleHistoryPanel = useCallback(() => {
+    setHistoryPanelOpen((open) => {
+      const nextOpen = !open;
+      if (nextOpen) {
+        setNodeMenuOpen(false);
+        setMaterialPanelOpen(false);
+      }
+      return nextOpen;
+    });
+  }, []);
+
+  const restoreHistoryRecord = useCallback(
+    (record: ProjectHistoryRecord) => {
+      setProjectTitle(record.title);
+      setNodes(withCanvasNodeLayering(record.canvas.nodes));
+      setEdges(withCanvasEdgeLayering(record.canvas.edges));
+      setHistoryPanelOpen(false);
+    },
+    [setEdges, setNodes],
+  );
 
   return (
     <main className="relative h-screen overflow-hidden bg-[#050607] text-white">
@@ -1216,19 +1217,31 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           </ReactFlow>
         </div>
 
-        <CanvasTopbar saveState={saveState} title={projectTitle} />
-        {materialPanelOpen ? null : (
+        <CanvasTopbar projectId={currentProjectId} saveState={saveState} title={projectTitle} />
+        {materialPanelOpen || historyPanelOpen ? null : (
           <LeftToolbar
             activeKind={activeKind}
+            historyPanelOpen={historyPanelOpen}
             materialPanelOpen={materialPanelOpen}
             menuOpen={nodeMenuOpen}
             onPickTemplate={onPickTemplate}
+            onToggleHistoryPanel={toggleHistoryPanel}
             onToggleMaterialPanel={toggleMaterialPanel}
             onToggleMenu={toggleNodeMenu}
           />
         )}
         {materialPanelOpen ? (
-          <MaterialLibraryPanel onClose={() => setMaterialPanelOpen(false)} />
+          <MaterialLibraryPanel
+            projectId={currentProjectId}
+            onClose={() => setMaterialPanelOpen(false)}
+          />
+        ) : null}
+        {historyPanelOpen ? (
+          <ProjectHistoryPanel
+            projectId={currentProjectId}
+            onClose={() => setHistoryPanelOpen(false)}
+            onRestore={restoreHistoryRecord}
+          />
         ) : null}
         <BottomControls
           onDeleteSelected={deleteSelectedElements}
@@ -1434,8 +1447,39 @@ function SelectionGroupToolbar({
   );
 }
 
-function CanvasTopbar({ saveState, title }: { saveState: CanvasSaveState; title: string }) {
+function CanvasTopbar({
+  projectId,
+  saveState,
+  title,
+}: {
+  projectId: string | null;
+  saveState: CanvasSaveState;
+  title: string;
+}) {
   const saveLabel = getSaveLabel(saveState);
+  const [shareState, setShareState] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
+
+  const shareProject = useCallback(async () => {
+    if (!projectId || shareState === 'copying') return;
+
+    setShareState('copying');
+    try {
+      const response = await fetch(`/api/projects/${projectId}/share`, { method: 'POST' });
+      const payload = (await response.json()) as ShareProjectApiResponse;
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.ok ? '分享链接生成失败' : payload.error.message);
+      }
+
+      await navigator.clipboard.writeText(payload.data.shareUrl);
+      setShareState('copied');
+      window.setTimeout(() => setShareState('idle'), 1600);
+    } catch (error) {
+      console.error(error);
+      setShareState('error');
+      window.setTimeout(() => setShareState('idle'), 2200);
+    }
+  }, [projectId, shareState]);
 
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex h-20 items-center justify-between px-5">
@@ -1475,10 +1519,23 @@ function CanvasTopbar({ saveState, title }: { saveState: CanvasSaveState; title:
         </button>
         <button
           type="button"
+          aria-label={shareState === 'copied' ? '分享链接已复制' : '分享项目'}
+          disabled={!projectId || shareState === 'copying'}
+          onClick={shareProject}
           className="flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-[13px] font-bold text-[#111315] shadow-[0_16px_40px_rgba(0,0,0,0.28)] transition-transform hover:scale-[1.02]"
         >
-          <IconShare3 size={16} stroke={2.3} />
-          分享项目
+          {shareState === 'copying' ? (
+            <IconLoader2 size={16} className="animate-spin" stroke={2.3} />
+          ) : shareState === 'copied' ? (
+            <IconCheck size={16} stroke={2.8} />
+          ) : (
+            <IconShare3 size={16} stroke={2.3} />
+          )}
+          {shareState === 'copied'
+            ? '已复制链接'
+            : shareState === 'error'
+              ? '复制失败'
+              : '分享项目'}
         </button>
       </div>
     </header>
@@ -1501,16 +1558,20 @@ function getSaveLabel(saveState: CanvasSaveState) {
 
 function LeftToolbar({
   activeKind,
+  historyPanelOpen,
   materialPanelOpen,
   menuOpen,
   onPickTemplate,
+  onToggleHistoryPanel,
   onToggleMaterialPanel,
   onToggleMenu,
 }: {
   activeKind: NodeKind;
+  historyPanelOpen: boolean;
   materialPanelOpen: boolean;
   menuOpen: boolean;
   onPickTemplate: (template: NodeTemplate) => void;
+  onToggleHistoryPanel: () => void;
   onToggleMaterialPanel: () => void;
   onToggleMenu: () => void;
 }) {
@@ -1538,7 +1599,13 @@ function LeftToolbar({
             label="素材库"
             onClick={onToggleMaterialPanel}
           />
-          <ToolbarButton ariaLabel="历史版本" icon={IconClock} label="历史" />
+          <ToolbarButton
+            active={historyPanelOpen}
+            ariaLabel="历史版本"
+            icon={IconClock}
+            label="历史"
+            onClick={onToggleHistoryPanel}
+          />
         </div>
 
         <div className="mt-auto h-px w-8 bg-white/[0.1]" />
@@ -1584,12 +1651,82 @@ function ToolbarButton({
   );
 }
 
-function MaterialLibraryPanel({ onClose }: { onClose: () => void }) {
-  const [activeFolder, setActiveFolder] = useState<MaterialFolderId>('character');
-  const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  const visibleItems = materialLibraryItems.filter((item) => item.folderId === activeFolder);
-  const activeFolderLabel =
-    materialFolders.find((folder) => folder.id === activeFolder)?.label ?? '素材';
+function MaterialLibraryPanel({
+  onClose,
+  projectId,
+}: {
+  onClose: () => void;
+  projectId: string | null;
+}) {
+  const [activeCategory, setActiveCategory] = useState<MaterialAssetCategory>('my_assets');
+  const [activeKind, setActiveKind] = useState<MaterialAssetKind>('image');
+  const [assets, setAssets] = useState<MaterialAssetRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!projectId) {
+      setAssets([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoading(true);
+
+    async function loadAssets() {
+      try {
+        const response = await fetch(`/api/material-assets?workflowId=${projectId}`, {
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as MaterialAssetsApiResponse;
+
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.ok ? '素材读取失败' : payload.error.message);
+        }
+
+        setAssets(payload.data.assets);
+        setError(null);
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setError(loadError instanceof Error ? loadError.message : '素材读取失败');
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+
+    void loadAssets();
+    return () => controller.abort();
+  }, [projectId]);
+
+  const visibleAssets = useMemo(() => {
+    if (activeCategory === 'my_assets') {
+      return assets.filter((asset) => asset.category === 'my_assets' && asset.kind === activeKind);
+    }
+    return assets.filter((asset) => asset.category === activeCategory);
+  }, [activeCategory, activeKind, assets]);
+
+  const categoryCounts = useMemo(() => {
+    return materialCategories.reduce(
+      (counts, category) => {
+        counts[category.id] = assets.filter((asset) => asset.category === category.id).length;
+        return counts;
+      },
+      {} as Record<MaterialAssetCategory, number>,
+    );
+  }, [assets]);
+
+  const kindCounts = useMemo(() => {
+    return materialKinds.reduce(
+      (counts, kind) => {
+        counts[kind.id] = assets.filter(
+          (asset) => asset.category === 'my_assets' && asset.kind === kind.id,
+        ).length;
+        return counts;
+      },
+      {} as Record<MaterialAssetKind, number>,
+    );
+  }, [assets]);
 
   return (
     <section className="absolute left-5 top-[92px] bottom-24 z-30 flex w-[calc(100vw-40px)] max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-[#111315]/94 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.09] backdrop-blur-2xl sm:w-[340px]">
@@ -1605,144 +1742,322 @@ function MaterialLibraryPanel({ onClose }: { onClose: () => void }) {
         <h2 className="min-w-0 flex-1 truncate font-display text-[24px] font-black tracking-tight text-white">
           素材库
         </h2>
-        <button
-          type="button"
-          className="flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-white/[0.1] px-3 text-[13px] font-bold text-white/86 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.15]"
-        >
-          <IconUserSquareRounded size={17} stroke={2.1} />
-          AI 角色
-        </button>
-        <div className="relative">
-          <button
-            type="button"
-            aria-expanded={createMenuOpen}
-            aria-label="新建素材"
-            onClick={() => setCreateMenuOpen((open) => !open)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.1] text-white/84 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.15] hover:text-white"
-          >
-            <IconPlus size={20} stroke={2.3} />
-          </button>
-          {createMenuOpen ? (
-            <div className="absolute right-0 top-11 z-40 w-[220px] rounded-[22px] bg-[#2a2b2d]/98 p-2 shadow-[0_24px_70px_rgba(0,0,0,0.48)] ring-1 ring-white/[0.1] backdrop-blur-2xl">
-              <button
-                type="button"
-                onClick={() => setCreateMenuOpen(false)}
-                className="flex w-full items-center gap-3 rounded-[15px] px-3 py-3 text-left text-[14px] font-bold text-white/88 transition-colors hover:bg-white/[0.08]"
-              >
-                <IconUpload size={19} stroke={2.2} />
-                上传
-              </button>
-              <button
-                type="button"
-                onClick={() => setCreateMenuOpen(false)}
-                className="flex w-full items-center gap-3 rounded-[15px] px-3 py-3 text-left text-[14px] font-bold text-white/88 transition-colors hover:bg-white/[0.08]"
-              >
-                <IconFolderPlus size={19} stroke={2.2} />
-                新建文件夹
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="px-4 pt-4">
-        <label className="flex h-10 items-center gap-2 rounded-2xl bg-black/20 px-3 text-white/42 ring-1 ring-white/[0.08]">
-          <IconSearch size={18} stroke={2.1} />
-          <input
-            className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-white outline-none placeholder:text-white/36"
-            placeholder="搜索"
-          />
-        </label>
       </div>
 
       <div className="mt-3 flex-1 overflow-y-auto px-4 pb-4">
-        <button
-          type="button"
-          className="flex h-12 w-full items-center gap-3 rounded-2xl px-2 text-left text-[14px] font-bold text-white/74 transition-colors hover:bg-white/[0.06] hover:text-white"
-        >
-          <IconStarFilled size={20} className="text-white/72" />
-          收藏
-        </button>
-
-        <div className="my-3 h-px bg-white/[0.08]" />
-
-        <div className="mb-2 px-2 text-[12px] font-bold text-white/36">文件夹</div>
+        <div className="mb-2 px-2 text-[12px] font-bold text-white/36">分类</div>
         <div className="space-y-1">
-          {materialFolders.map((folder) => {
-            const active = folder.id === activeFolder;
+          {materialCategories.map((category) => {
+            const active = category.id === activeCategory;
 
             return (
-              <button
-                key={folder.id}
-                type="button"
-                onClick={() => setActiveFolder(folder.id)}
-                className={`group flex h-12 w-full items-center gap-2 rounded-2xl px-2 text-left transition-colors ${
-                  active ? 'bg-white/[0.1]' : 'hover:bg-white/[0.06]'
-                }`}
-              >
-                <IconChevronDown
-                  size={16}
-                  className={`shrink-0 text-white/42 transition-transform ${
-                    active ? 'rotate-0' : '-rotate-90'
+              <div key={category.id}>
+                <button
+                  type="button"
+                  onClick={() => setActiveCategory(category.id)}
+                  className={`group flex h-12 w-full items-center gap-2 rounded-2xl px-2 text-left transition-colors ${
+                    active ? 'bg-white/[0.1]' : 'hover:bg-white/[0.06]'
                   }`}
-                  stroke={2.2}
-                />
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-white/68 ring-1 ring-white/[0.06]">
-                  {active ? (
-                    <IconFolderFilled size={21} className="text-white/76" />
-                  ) : (
-                    <IconFolder size={21} stroke={2.05} />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[14px] font-bold text-white/72 group-hover:text-white">
-                  {folder.label}
-                </span>
-                <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold text-white/36">
-                  {folder.count}
-                </span>
-              </button>
+                >
+                  <IconChevronDown
+                    size={16}
+                    className={`shrink-0 text-white/42 transition-transform ${
+                      category.id === 'my_assets' && active ? 'rotate-0' : '-rotate-90'
+                    }`}
+                    stroke={2.2}
+                  />
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-white/68 ring-1 ring-white/[0.06]">
+                    {active ? (
+                      <IconFolderFilled size={21} className="text-white/76" />
+                    ) : (
+                      <IconFolder size={21} stroke={2.05} />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[14px] font-bold text-white/72 group-hover:text-white">
+                    {category.label}
+                  </span>
+                  <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold text-white/36">
+                    {categoryCounts[category.id] ?? 0}
+                  </span>
+                </button>
+                {category.id === 'my_assets' && active ? (
+                  <div className="mt-1 space-y-1 pl-10">
+                    {materialKinds.map((kind) => (
+                      <MaterialKindButton
+                        active={activeKind === kind.id}
+                        count={kindCounts[kind.id] ?? 0}
+                        kind={kind}
+                        key={kind.id}
+                        onClick={() => setActiveKind(kind.id)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </div>
 
-        <div className="mt-5 flex items-center justify-between px-2">
-          <div className="text-[12px] font-bold text-white/36">{activeFolderLabel}</div>
-          <button
-            type="button"
-            aria-label="更多"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-white/36 transition-colors hover:bg-white/[0.07] hover:text-white"
-          >
-            <IconDots size={18} stroke={2.2} />
-          </button>
+        <div className="mt-5 px-2 text-[12px] font-bold text-white/36">
+          {activeCategory === 'my_assets'
+            ? materialKinds.find((kind) => kind.id === activeKind)?.label
+            : materialCategories.find((category) => category.id === activeCategory)?.label}
         </div>
 
         <div className="mt-2 space-y-2">
-          {visibleItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className="flex w-full items-center gap-3 rounded-2xl bg-white/[0.045] p-2 text-left ring-1 ring-white/[0.055] transition-colors hover:bg-white/[0.08]"
-            >
-              <span
-                className={`h-12 w-12 shrink-0 overflow-hidden rounded-xl ${item.previewClass}`}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-bold text-white/84">
-                  {item.title}
-                </span>
-                <span className="mt-1 block truncate text-[11px] font-medium text-white/38">
-                  {item.meta}
-                </span>
-              </span>
-              <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase text-white/32">
-                {item.type}
-              </span>
-            </button>
-          ))}
+          {loading ? (
+            <PanelEmptyState label="正在读取素材" />
+          ) : error ? (
+            <PanelEmptyState label={error} tone="error" />
+          ) : visibleAssets.length === 0 ? (
+            <PanelEmptyState label="暂无真实素材" />
+          ) : (
+            visibleAssets.map((asset) => <MaterialAssetCard asset={asset} key={asset.id} />)
+          )}
         </div>
       </div>
     </section>
   );
+}
+
+function ProjectHistoryPanel({
+  onClose,
+  onRestore,
+  projectId,
+}: {
+  onClose: () => void;
+  onRestore: (record: ProjectHistoryRecord) => void;
+  projectId: string | null;
+}) {
+  const [history, setHistory] = useState<ProjectHistoryRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!projectId) {
+      setHistory([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoading(true);
+
+    async function loadHistory() {
+      try {
+        const response = await fetch(`/api/projects/${projectId}/history`, {
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as ProjectHistoryApiResponse;
+
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.ok ? '历史读取失败' : payload.error.message);
+        }
+
+        setHistory(payload.data.history);
+        setError(null);
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setError(loadError instanceof Error ? loadError.message : '历史读取失败');
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+
+    void loadHistory();
+    return () => controller.abort();
+  }, [projectId]);
+
+  return (
+    <section className="absolute left-5 top-[92px] bottom-24 z-30 flex w-[calc(100vw-40px)] max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-[#111315]/94 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.09] backdrop-blur-2xl sm:w-[340px]">
+      <div className="flex items-center gap-2 px-4 pt-4">
+        <button
+          type="button"
+          aria-label="收起历史"
+          onClick={onClose}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/52 transition-colors hover:bg-white/[0.08] hover:text-white"
+        >
+          <IconChevronLeft size={19} stroke={2.2} />
+        </button>
+        <h2 className="min-w-0 flex-1 truncate font-display text-[24px] font-black tracking-tight text-white">
+          历史
+        </h2>
+      </div>
+
+      <div className="mt-3 flex-1 overflow-y-auto px-4 pb-4">
+        <div className="mb-2 px-2 text-[12px] font-bold text-white/36">最近三次编辑</div>
+        <div className="space-y-2">
+          {loading ? (
+            <PanelEmptyState label="正在读取历史" />
+          ) : error ? (
+            <PanelEmptyState label={error} tone="error" />
+          ) : history.length === 0 ? (
+            <PanelEmptyState label="暂无真实编辑历史" />
+          ) : (
+            history.map((record) => (
+              <button
+                key={record.id}
+                type="button"
+                onClick={() => onRestore(record)}
+                className="flex w-full items-center gap-3 rounded-2xl bg-white/[0.045] p-3 text-left ring-1 ring-white/[0.055] transition-colors hover:bg-white/[0.08]"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-white/70 ring-1 ring-white/[0.06]">
+                  <IconClock size={19} stroke={2.1} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-bold text-white/84">
+                    {historyActionLabel(record.action)}
+                  </span>
+                  <span className="mt-1 block truncate text-[11px] font-medium text-white/38">
+                    {formatMaterialDate(record.createdAt)} · {record.nodeCount} 节点 /{' '}
+                    {record.edgeCount} 连接
+                  </span>
+                </span>
+                <span className="rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-bold text-white/42">
+                  恢复
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MaterialAssetCard({ asset }: { asset: MaterialAssetRecord }) {
+  return (
+    <button
+      type="button"
+      onClick={() => window.open(asset.url, '_blank', 'noopener,noreferrer')}
+      className="flex w-full items-center gap-3 rounded-2xl bg-white/[0.045] p-2 text-left ring-1 ring-white/[0.055] transition-colors hover:bg-white/[0.08]"
+    >
+      <span className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-[#202328] ring-1 ring-white/[0.06]">
+        {asset.kind === 'image' && (asset.thumbnailUrl || asset.url) ? (
+          <img
+            alt=""
+            className="h-full w-full object-cover"
+            src={asset.thumbnailUrl ?? asset.url}
+          />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_32%_24%,rgba(121,228,255,0.32),transparent_24%),linear-gradient(145deg,#25282d,#111315)] text-white/54">
+            {asset.kind === 'video' ? (
+              <IconVideo size={20} stroke={2.1} />
+            ) : asset.kind === 'audio' ? (
+              <IconMusic size={20} stroke={2.1} />
+            ) : (
+              <IconPhoto size={20} stroke={2.1} />
+            )}
+          </span>
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-bold text-white/84">{asset.title}</span>
+        <span className="mt-1 block truncate text-[11px] font-medium text-white/38">
+          {materialKindLabel(asset.kind)} · {formatMaterialDate(asset.updatedAt)}
+        </span>
+      </span>
+      <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase text-white/32">
+        {asset.kind}
+      </span>
+    </button>
+  );
+}
+
+function PanelEmptyState({ label, tone = 'muted' }: { label: string; tone?: 'muted' | 'error' }) {
+  return (
+    <div
+      className={`rounded-2xl px-3 py-5 text-center text-[12px] font-bold ring-1 ${
+        tone === 'error'
+          ? 'bg-[#2a171a]/60 text-[#ffabb6] ring-[#ff5d73]/16'
+          : 'bg-white/[0.035] text-white/34 ring-white/[0.055]'
+      }`}
+    >
+      {label}
+    </div>
+  );
+}
+
+const materialCategories = [
+  { id: 'my_assets', label: '我的资产' },
+  { id: 'character', label: '角色' },
+  { id: 'scene', label: '场景' },
+  { id: 'item', label: '道具' },
+] satisfies Array<{ id: MaterialAssetCategory; label: string }>;
+
+const materialKinds = [
+  { id: 'image', label: '图片', icon: IconPhoto },
+  { id: 'video', label: '视频', icon: IconVideo },
+  { id: 'audio', label: '音乐', icon: IconMusic },
+] satisfies Array<{ id: MaterialAssetKind; label: string; icon: typeof IconPlus }>;
+
+function MaterialKindButton({
+  active,
+  count,
+  kind,
+  onClick,
+}: {
+  active: boolean;
+  count: number;
+  kind: (typeof materialKinds)[number];
+  onClick: () => void;
+}) {
+  const Icon = kind.icon;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex h-9 w-full items-center gap-2 rounded-xl px-2 text-left text-[12px] font-bold transition-colors ${
+        active
+          ? 'bg-white/[0.1] text-white'
+          : 'text-white/52 hover:bg-white/[0.06] hover:text-white/78'
+      }`}
+    >
+      <Icon size={15} stroke={2.1} />
+      <span className="min-w-0 flex-1 truncate">{kind.label}</span>
+      <span className="text-[11px] text-white/34">{count}</span>
+    </button>
+  );
+}
+
+function materialKindLabel(kind: MaterialAssetKind) {
+  switch (kind) {
+    case 'image':
+      return '图片';
+    case 'video':
+      return '视频';
+    case 'audio':
+      return '音乐';
+  }
+}
+
+function historyActionLabel(action: ProjectHistoryRecord['action']) {
+  switch (action) {
+    case 'created':
+      return '创建工作流';
+    case 'updated':
+      return '编辑工作流';
+    case 'restored':
+      return '恢复工作流';
+  }
+}
+
+function formatMaterialDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '刚刚';
+
+  const diffMs = Math.max(0, Date.now() - date.getTime());
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} 天前`;
+
+  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 }
 
 function NodeAddMenu({

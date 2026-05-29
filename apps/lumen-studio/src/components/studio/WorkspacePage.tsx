@@ -3,13 +3,7 @@
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
 import { useLoginRedirect } from '@/lib/auth-redirect';
-import {
-  IconDotsVertical,
-  IconFolderPlus,
-  IconPhoto,
-  IconPlus,
-  IconSearch,
-} from '@tabler/icons-react';
+import { IconDotsVertical, IconPhoto, IconPlus, IconSearch } from '@tabler/icons-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -99,14 +93,6 @@ export function WorkspacePage() {
                 placeholder="搜索"
               />
             </label>
-
-            <button
-              type="button"
-              aria-label="导入素材"
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#202225] text-white/75 ring-1 ring-white/[0.08] transition-colors hover:bg-[#2a2d30] hover:text-white"
-            >
-              <IconFolderPlus size={18} stroke={2.1} />
-            </button>
           </div>
         </div>
 

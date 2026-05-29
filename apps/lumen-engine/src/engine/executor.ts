@@ -18,6 +18,8 @@ export class WorkflowExecutor {
   async execute(message: ClientMessage, channelId: string): Promise<void> {
     const runId = message.runId ?? nanoid(16);
     const projectId = message.projectId ?? null;
+    const workflowId = message.workflowId ?? projectId;
+    const userId = message.userId ?? null;
     const { nodes, edges, nodeIds } = message;
     const graph = buildGraph(nodes, edges);
 
@@ -34,6 +36,8 @@ export class WorkflowExecutor {
     await this.workflowStore.createRun({
       runId,
       projectId,
+      workflowId,
+      userId,
       requestedNodeIds: targetIds,
       nodeIds: sorted,
       nodes,
@@ -44,7 +48,14 @@ export class WorkflowExecutor {
     for (const nodeId of sorted) {
       const node = graph.getNodeAttributes(nodeId) as WorkflowNode;
       const input = resolveInput(graph, nodeId);
-      await this.workflowStore.markNodeQueued({ runId, projectId, node, input });
+      await this.workflowStore.markNodeQueued({
+        runId,
+        projectId,
+        workflowId,
+        userId,
+        node,
+        input,
+      });
       await this.publisher.publish(channelId, { event: 'node:queued', nodeId });
     }
 
@@ -60,6 +71,8 @@ export class WorkflowExecutor {
         await this.workflowStore.markNodeSkipped({
           runId,
           projectId,
+          workflowId,
+          userId,
           node,
           input: resolveInput(graph, nodeId),
           error: 'skipped: upstream node failed',
@@ -74,7 +87,10 @@ export class WorkflowExecutor {
 
       const startedAt = new Date();
       const input = resolveInput(graph, nodeId);
-      await this.workflowStore.markNodeStarted({ runId, projectId, node, input }, startedAt);
+      await this.workflowStore.markNodeStarted(
+        { runId, projectId, workflowId, userId, node, input },
+        startedAt,
+      );
       await this.publisher.publish(channelId, { event: 'node:start', nodeId });
 
       try {
@@ -91,6 +107,8 @@ export class WorkflowExecutor {
         await this.workflowStore.markNodeSucceeded({
           runId,
           projectId,
+          workflowId,
+          userId,
           node,
           input,
           outputType: stored.type,
@@ -113,6 +131,8 @@ export class WorkflowExecutor {
         await this.workflowStore.markNodeFailed({
           runId,
           projectId,
+          workflowId,
+          userId,
           node,
           input,
           error: errorMsg,

@@ -27,6 +27,7 @@ export class ProjectRepository {
     await collection.createIndex({ owner_id: 1, updated_at: -1 });
     await collection.createIndex({ owner_id: 1, deleted_at: 1 });
     await collection.createIndex({ owner_id: 1, title: 1 });
+    await collection.createIndex({ share_id: 1 }, { unique: true, sparse: true });
   }
 
   async create(input: CreateProjectInput): Promise<ProjectRecord> {
@@ -76,6 +77,44 @@ export class ProjectRepository {
     });
 
     return document ? toProjectRecord(document) : null;
+  }
+
+  async getByShareId(shareId: string): Promise<ProjectRecord | null> {
+    const document = await this.collection().findOne({
+      share_id: shareId,
+      deleted_at: { $exists: false },
+    });
+
+    return document ? toProjectRecord(document) : null;
+  }
+
+  async ensureShareId(ownerId: string, projectId: string): Promise<string | null> {
+    const current = await this.collection().findOne({
+      _id: projectId,
+      owner_id: ownerId,
+      deleted_at: { $exists: false },
+    });
+
+    if (!current) return null;
+    if (current.share_id) return current.share_id;
+
+    const shareId = randomUUID().replaceAll('-', '');
+    const document = await this.collection().findOneAndUpdate(
+      {
+        _id: projectId,
+        owner_id: ownerId,
+        deleted_at: { $exists: false },
+      },
+      {
+        $set: {
+          share_id: shareId,
+          updated_at: new Date(),
+        },
+      },
+      { returnDocument: 'after' },
+    );
+
+    return document?.share_id ?? null;
   }
 
   async update(
