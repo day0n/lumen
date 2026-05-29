@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { EdgeSchema, NodeSchema } from '../domain/node.js';
 
 export const ClientMessageSchema = z.object({
+  runId: z.string().min(1).optional(),
+  projectId: z.string().min(1).optional(),
   nodeIds: z.array(z.string()).optional(),
   nodes: z.array(NodeSchema),
   edges: z.array(EdgeSchema),

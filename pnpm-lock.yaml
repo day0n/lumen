@@ -81,6 +81,9 @@ importers:
 
   apps/lumen-engine:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1054.0
+        version: 3.1054.0
       '@google/genai':
         specifier: ^2.6.0
         version: 2.6.0
@@ -99,6 +102,9 @@ importers:
       ioredis:
         specifier: ^5.4.1
         version: 5.10.1
+      mongodb:
+        specifier: ^6.10.0
+        version: 6.21.0
       nanoid:
         specifier: ^5.0.7
         version: 5.1.11

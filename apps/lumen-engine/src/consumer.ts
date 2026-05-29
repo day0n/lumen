@@ -1,5 +1,6 @@
 import { ClientMessageSchema } from '@lumen/shared/protocols';
 import type Redis from 'ioredis';
+import type { WorkflowStore } from './database/workflow-store.js';
 import { WorkflowExecutor } from './engine/executor.js';
 import { EventPublisher } from './publisher.js';
 import { logger } from './utils/logger.js';
@@ -12,9 +13,12 @@ export class StreamConsumer {
   private running = false;
   private executor: WorkflowExecutor;
 
-  constructor(private redis: Redis) {
+  constructor(
+    private redis: Redis,
+    workflowStore: WorkflowStore,
+  ) {
     const publisher = new EventPublisher(redis);
-    this.executor = new WorkflowExecutor(publisher);
+    this.executor = new WorkflowExecutor(publisher, workflowStore);
   }
 
   async start(): Promise<void> {

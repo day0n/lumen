@@ -44,11 +44,23 @@ Frontend ──── SSE ──────────► lumen-agent  :3001  
 |---|---|---|
 | `lumen-agent` | `lumen_agent` | 会话、消息、工具 trace |
 | `lumen-studio` | `lumen_app` | 项目 / 素材 / 模板 / 爆款 |
-| `lumen-engine` | `lumen_engine` | flow / run 状态 |
+| `lumen-engine` | `lumen_engine` | workflow run / node result |
 
 - **MongoDB**：Atlas Cluster0
 - **Redis**：Redis Cloud（Stream 任务队列 + Pub/Sub 事件）
+- **Cloudflare R2/CDN**：工作流图片、视频、音频结果先上传 R2，再把 CDN URL 写入 MongoDB 和画布节点 output
 - **LLM**：豆包（火山方舟，OpenAI 兼容）/ Anthropic / Vertex Gemini
+
+### 工作流持久化
+
+Engine 会在 `lumen_engine` 里维护两张 collection：
+
+| Collection | 粒度 | 关键字段 |
+|---|---|---|
+| `workflow_runs` | 一次工作流运行 | `_id`/`runId`、`project_id`、`status`、`requested_node_ids`、`node_ids`、`graph`、`summary`、`started_at`、`completed_at` |
+| `workflow_node_results` | 一次运行中的单个节点 | `run_id`、`project_id`、`node_id`、`node_type`、`status`、`model`、`input`、`output_type`、`output_value`、`asset`、`error`、`duration_ms` |
+
+`output_value` 是最终可回放的结果。文本节点直接存文本；图片、视频、音频节点会先上传到 Cloudflare R2，`output_value` 存 CDN URL，`asset` 存 R2 key、content type、size、原始 URL 等元信息。Studio 收到的 WebSocket `node:done.output` 也是这个 CDN URL，因此项目画布自动保存后，下次打开同一个项目还能看到节点结果。
 
 ## 开发
 

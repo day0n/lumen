@@ -11,12 +11,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1054.0",
     "@google/genai": "^2.6.0",
     "@lumen/shared": "workspace:*",
     "dotenv": "^16.4.5",
     "graphology": "^0.25.4",
     "graphology-dag": "^0.4.1",
     "ioredis": "^5.4.1",
+    "mongodb": "^6.10.0",
     "nanoid": "^5.0.7",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",

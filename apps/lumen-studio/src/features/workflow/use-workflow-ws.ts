@@ -2,6 +2,7 @@
 
 import type { NodeStatus } from '@lumen/shared/domain';
 import type { ServerEvent } from '@lumen/shared/protocols';
+import { nanoid } from 'nanoid';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface WorkflowNode {
@@ -28,11 +29,17 @@ export interface NodeState {
 
 interface UseWorkflowWsOptions {
   url: string;
+  projectId?: string | null;
   onNodeStateChange?: (nodeId: string, state: NodeState) => void;
   onFlowDone?: () => void;
 }
 
-export function useWorkflowWs({ url, onNodeStateChange, onFlowDone }: UseWorkflowWsOptions) {
+export function useWorkflowWs({
+  url,
+  projectId,
+  onNodeStateChange,
+  onFlowDone,
+}: UseWorkflowWsOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [nodeStates, setNodeStates] = useState<Record<string, NodeState>>({});
@@ -109,10 +116,16 @@ export function useWorkflowWs({ url, onNodeStateChange, onFlowDone }: UseWorkflo
     (nodeIds: string[] | undefined, nodes: WorkflowNode[], edges: WorkflowEdge[]) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
-      const message = { nodeIds, nodes, edges };
+      const message = {
+        runId: nanoid(16),
+        projectId: projectId ?? undefined,
+        nodeIds,
+        nodes,
+        edges,
+      };
       wsRef.current.send(JSON.stringify(message));
     },
-    [],
+    [projectId],
   );
 
   return { connected, nodeStates, runNodes };

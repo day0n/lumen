@@ -625,6 +625,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
   const { connected, runNodes } = useWorkflowWs({
     url: wsUrl,
+    projectId: currentProjectId,
     onNodeStateChange: handleNodeStateChange,
   });
 
@@ -2132,7 +2133,7 @@ function NodeOutputEditor({
   if (
     trimmedOutput &&
     data.kind === 'image' &&
-    (trimmedOutput.startsWith('data:image') || trimmedOutput.startsWith('http'))
+    (trimmedOutput.startsWith('data:image') || isHttpUrl(trimmedOutput))
   ) {
     return (
       <img
@@ -2146,16 +2147,37 @@ function NodeOutputEditor({
     );
   }
 
-  if (trimmedOutput.startsWith('data:audio')) {
+  if (
+    trimmedOutput &&
+    data.kind === 'video' &&
+    (trimmedOutput.startsWith('data:video') || isHttpUrl(trimmedOutput))
+  ) {
     return (
-      <div className="flex h-[86px] items-center gap-1.5">
-        {waveformBars.map((bar) => (
-          <span
-            key={bar.id}
-            className="w-1.5 rounded-full bg-white/28"
-            style={{ height: bar.height }}
-          />
-        ))}
+      <video className="h-full w-full object-cover" controls muted playsInline src={trimmedOutput}>
+        <track kind="captions" />
+      </video>
+    );
+  }
+
+  if (
+    trimmedOutput &&
+    data.kind === 'audio' &&
+    (trimmedOutput.startsWith('data:audio') || isHttpUrl(trimmedOutput))
+  ) {
+    return (
+      <div className="flex h-[104px] w-full flex-col justify-center gap-3 px-3">
+        <div className="flex items-center gap-1.5">
+          {waveformBars.map((bar) => (
+            <span
+              key={bar.id}
+              className="w-1.5 rounded-full bg-white/28"
+              style={{ height: bar.height }}
+            />
+          ))}
+        </div>
+        <audio className="h-8 w-full" controls src={trimmedOutput}>
+          <track kind="captions" />
+        </audio>
       </div>
     );
   }
@@ -2169,6 +2191,10 @@ function NodeOutputEditor({
       value={output}
     />
   );
+}
+
+function isHttpUrl(value: string): boolean {
+  return value.startsWith('http://') || value.startsWith('https://');
 }
 
 function LumenSmoothEdge(props: EdgeProps<LumenEdge>) {
