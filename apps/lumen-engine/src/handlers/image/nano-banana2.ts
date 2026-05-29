@@ -16,7 +16,10 @@ export async function execute(
 ): Promise<NodeOutput> {
   const client = getGoogleClient();
 
-  const aspectRatio = (settings.aspect_ratio as string) ?? '16:9';
+  const aspectRatio =
+    readStringSetting(settings, 'aspect_ratio') ??
+    readStringSetting(settings, 'aspectRatio') ??
+    '16:9';
 
   const response = await client.models.generateContent({
     model: 'gemini-3-pro-image-preview',
@@ -47,4 +50,9 @@ export async function execute(
   logger.info({ mimeType, bytes: base64.length }, 'nano-banana2 image generated');
 
   return { type: 'image', value: dataUrl };
+}
+
+function readStringSetting(settings: Record<string, unknown>, key: string): string | null {
+  const value = settings[key];
+  return typeof value === 'string' && value.trim() ? value : null;
 }

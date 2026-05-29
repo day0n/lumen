@@ -24,8 +24,11 @@ export async function execute(
 ): Promise<NodeOutput> {
   const client = getGoogleClient();
 
-  const aspectRatio = (settings.aspect_ratio as string) ?? '16:9';
-  const durationSeconds = (settings.duration as number) ?? 8;
+  const aspectRatio =
+    readStringSetting(settings, 'aspect_ratio') ??
+    readStringSetting(settings, 'aspectRatio') ??
+    '16:9';
+  const durationSeconds = readNumberSetting(settings, 'duration') ?? 8;
 
   const operation = await client.models.generateVideos({
     model: 'veo-3.1-generate-preview',
@@ -68,4 +71,17 @@ export async function execute(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readStringSetting(settings: Record<string, unknown>, key: string): string | null {
+  const value = settings[key];
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function readNumberSetting(settings: Record<string, unknown>, key: string): number | null {
+  const value = settings[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
