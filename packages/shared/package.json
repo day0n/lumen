@@ -3,14 +3,24 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./domain": "./src/domain/index.ts",
-    "./protocols": "./src/protocols/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./domain": {
+      "types": "./dist/domain/index.d.ts",
+      "default": "./dist/domain/index.js"
+    },
+    "./protocols": {
+      "types": "./dist/protocols/index.d.ts",
+      "default": "./dist/protocols/index.js"
+    }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.json",
     "lint": "biome check src",
     "typecheck": "tsc --noEmit"
   },

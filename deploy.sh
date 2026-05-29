@@ -15,7 +15,7 @@ echo "==> Installing dependencies..."
 pnpm install --frozen-lockfile
 
 echo "==> Building shared..."
-pnpm build:shared 2>/dev/null || true
+pnpm build:shared
 
 echo "==> Building studio..."
 pnpm build:studio
