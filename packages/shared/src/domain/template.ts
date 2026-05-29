@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EdgeSchema, NodeSchema } from './node';
+import { EdgeSchema, NodeSchema } from './node.js';
 
 export const TemplateExposedInputSchema = z.object({
   nodeId: z.string(),

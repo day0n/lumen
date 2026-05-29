@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EdgeSchema, NodeSchema } from './node';
+import { EdgeSchema, NodeSchema } from './node.js';
 
 export const ProjectStatusSchema = z.enum(['draft', 'running', 'done', 'failed']);
 export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
