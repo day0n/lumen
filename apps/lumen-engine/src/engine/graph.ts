@@ -24,7 +24,10 @@ export function buildGraph(nodes: WorkflowNode[], edges: WorkflowEdge[]): Workfl
 }
 
 export function topologicalSort(graph: WorkflowGraph, nodeIds?: string[]): string[] {
-  const targetIds = nodeIds && nodeIds.length > 0 ? new Set(nodeIds) : new Set(graph.nodes());
+  const targetIds =
+    nodeIds && nodeIds.length > 0
+      ? collectDependencyClosure(graph, nodeIds)
+      : new Set(graph.nodes());
 
   const inDegree = new Map<string, number>();
   for (const id of targetIds) {
@@ -56,4 +59,23 @@ export function topologicalSort(graph: WorkflowGraph, nodeIds?: string[]): strin
   }
 
   return sorted;
+}
+
+function collectDependencyClosure(graph: WorkflowGraph, nodeIds: string[]): Set<string> {
+  const targetIds = new Set<string>();
+
+  const visit = (nodeId: string) => {
+    if (!graph.hasNode(nodeId) || targetIds.has(nodeId)) return;
+    targetIds.add(nodeId);
+
+    for (const predecessor of graph.inNeighbors(nodeId)) {
+      visit(predecessor);
+    }
+  };
+
+  for (const nodeId of nodeIds) {
+    visit(nodeId);
+  }
+
+  return targetIds;
 }
