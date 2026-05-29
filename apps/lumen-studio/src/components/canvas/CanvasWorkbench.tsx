@@ -82,6 +82,8 @@ import { useLoginRedirect } from '@/lib/auth-redirect';
 import { checkCycle } from '@/lib/canvas/cycle-detection';
 import { canRunSelectedNodes, canRunSingleNode } from '@/lib/canvas/node-run-check';
 
+import { ImeTextarea } from './ImeTextarea';
+
 type NodeKind = 'text' | 'image' | 'video' | 'audio';
 
 type NodeTemplate = {
@@ -2057,9 +2059,9 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
               </div>
             ) : null}
             <div className="rounded-[10px] bg-[#2d2e30]/86 p-3 ring-1 ring-white/[0.07]">
-              <textarea
+              <ImeTextarea
                 aria-label="输入"
-                onChange={(event) => updateNodeData(id, { prompt: event.target.value })}
+                onValueChange={(next) => updateNodeData(id, { prompt: next })}
                 onKeyDown={handlePromptKeyDown}
                 className="nodrag nowheel block min-h-[112px] w-full resize-none bg-transparent text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/32"
                 placeholder={styles.promptPlaceholder}
@@ -2159,11 +2161,10 @@ function NodeOutputEditor({
   }
 
   return (
-    <textarea
+    <ImeTextarea
       aria-label="输出"
       className="nodrag nowheel block min-h-[104px] w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/26"
-      onChange={(event) => onChange(event.target.value)}
-      onKeyDown={(event) => event.stopPropagation()}
+      onValueChange={onChange}
       placeholder="双击开始编辑..."
       value={output}
     />
