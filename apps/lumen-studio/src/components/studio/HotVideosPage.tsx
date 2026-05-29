@@ -629,7 +629,7 @@ function HotVideoCard({
           }}
           title={
             !signedIn
-              ? '登录后可下载并复刻视频'
+              ? '注册后可下载并复刻视频'
               : ownedByMe
                 ? '基于该视频生成新内容'
                 : '只能复刻自己下载的视频'
@@ -651,7 +651,7 @@ function HotVideoCard({
           ) : !signedIn ? (
             <>
               <IconLock size={13} stroke={2.4} />
-              登录后复刻
+              注册后复刻
             </>
           ) : (
             <>

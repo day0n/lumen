@@ -7,15 +7,16 @@ export function useLoginRedirect() {
   const { isLoaded, isSignedIn } = useAuth();
   const clerk = useClerk();
 
-  const redirectToLogin = useCallback(
+  const redirectToRegistration = useCallback(
     (target?: string) => {
       if (!isLoaded) return false;
       if (isSignedIn) return true;
 
       const redirectUrl = resolveRedirectUrl(target);
-      void clerk.redirectToSignIn({
+      void clerk.redirectToSignUp({
         redirectUrl,
         signInFallbackRedirectUrl: redirectUrl,
+        signUpFallbackRedirectUrl: redirectUrl,
       });
       return false;
     },
@@ -25,8 +26,9 @@ export function useLoginRedirect() {
   return {
     isLoaded,
     isSignedIn: Boolean(isSignedIn),
-    redirectToLogin,
-    requireLogin: redirectToLogin,
+    redirectToLogin: redirectToRegistration,
+    redirectToRegistration,
+    requireLogin: redirectToRegistration,
   };
 }
 

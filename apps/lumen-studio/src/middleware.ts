@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+import { NextResponse } from 'next/server';
 
 const isProtectedRoute = createRouteMatcher([
   '/agent-chat(.*)',
@@ -7,11 +8,25 @@ const isProtectedRoute = createRouteMatcher([
   '/materials(.*)',
 ]);
 
-export default clerkMiddleware(async (auth, request) => {
-  if (isProtectedRoute(request)) {
-    await auth.protect();
-  }
-});
+export default clerkMiddleware(
+  async (auth, request) => {
+    if (isProtectedRoute(request)) {
+      const { userId } = await auth();
+      if (!userId) {
+        const signUpUrl = new URL('/sign-up', request.url);
+        signUpUrl.searchParams.set(
+          'redirect_url',
+          `${request.nextUrl.pathname}${request.nextUrl.search}`,
+        );
+        return NextResponse.redirect(signUpUrl);
+      }
+    }
+  },
+  {
+    signInUrl: '/sign-in',
+    signUpUrl: '/sign-up',
+  },
+);
 
 export const config = {
   matcher: [

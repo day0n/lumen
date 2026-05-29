@@ -41,7 +41,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ColorSchemeScript defaultColorScheme="dark" forceColorScheme="dark" />
       </head>
       <body>
-        <ClerkProvider>
+        <ClerkProvider
+          signInUrl="/sign-in"
+          signUpUrl="/sign-up"
+          signInFallbackRedirectUrl="/"
+          signUpFallbackRedirectUrl="/"
+        >
           <Providers>{children}</Providers>
         </ClerkProvider>
       </body>
