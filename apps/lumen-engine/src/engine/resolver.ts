@@ -9,6 +9,30 @@ export interface ResolvedInput {
   video: string | null;
 }
 
+function uniqueOutputs(outputs: string[]) {
+  return outputs.filter((output, index) => output && outputs.indexOf(output) === index);
+}
+
+function applyVideoFrameInputs(resolved: ResolvedInput, upstreamImages: string[]) {
+  const distinctUpstreamImages = uniqueOutputs(upstreamImages);
+
+  if (!resolved.image && !resolved.lastFrameImage) {
+    const [upstreamFirst, upstreamLast] = distinctUpstreamImages;
+    if (!upstreamFirst || !upstreamLast) return;
+    resolved.image = upstreamFirst;
+    resolved.lastFrameImage = upstreamLast;
+    return;
+  }
+
+  if (resolved.image && !resolved.lastFrameImage) {
+    resolved.lastFrameImage =
+      distinctUpstreamImages.find((output) => output !== resolved.image) ?? null;
+  } else if (!resolved.image && resolved.lastFrameImage) {
+    resolved.image =
+      distinctUpstreamImages.find((output) => output !== resolved.lastFrameImage) ?? null;
+  }
+}
+
 export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInput {
   const node = graph.getNodeAttributes(nodeId) as WorkflowNode;
 
@@ -18,6 +42,7 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
     lastFrameImage: node.input.lastFrameImage,
     video: node.input.video,
   };
+  const upstreamImages: string[] = [];
 
   for (const predecessorId of graph.inNeighbors(nodeId)) {
     const predecessor = graph.getNodeAttributes(predecessorId) as WorkflowNode;
@@ -35,6 +60,10 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
         }
         break;
       case 'image':
+        if (node.type === 'video') {
+          upstreamImages.push(upstreamOutput);
+          break;
+        }
         if (!resolved.image) {
           resolved.image = upstreamOutput;
         } else if (!resolved.lastFrameImage && upstreamOutput !== resolved.image) {
@@ -47,6 +76,10 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
       case 'audio':
         break;
     }
+  }
+
+  if (node.type === 'video') {
+    applyVideoFrameInputs(resolved, upstreamImages);
   }
 
   return resolved;

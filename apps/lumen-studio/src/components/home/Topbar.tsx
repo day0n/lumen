@@ -5,7 +5,7 @@ import { LumenMark } from '@/components/ui/LumenMark';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { isLoginRequiredPath } from '@/lib/protected-paths';
-import { Show, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs';
+import { UserButton } from '@clerk/nextjs';
 import { IconChartBar, IconDeviceTv, IconFolder, IconHome } from '@tabler/icons-react';
 import { motion } from 'motion/react';
 import Link from 'next/link';
@@ -21,7 +21,8 @@ const navItems = [
 
 export function Topbar() {
   const pathname = usePathname();
-  const { isLoaded: authLoaded, requireLogin } = useLoginRedirect();
+  const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
+  const authRedirect = encodeURIComponent(pathname || '/');
 
   const handleProtectedNavClick = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
     if (!authLoaded || !isLoginRequiredPath(href)) return;
@@ -74,28 +75,24 @@ export function Topbar() {
           <div className="ml-auto flex items-center gap-2">
             <NotificationsPopover />
 
-            <Show when="signed-out">
+            {(!authLoaded || !isSignedIn) && (
               <div className="hidden items-center gap-2 sm:flex">
-                <SignInButton fallbackRedirectUrl={pathname || '/'}>
-                  <button
-                    type="button"
-                    className="rounded-full px-3.5 py-1.5 text-[13px] font-medium text-white/70 transition-colors hover:text-white"
-                  >
-                    登录
-                  </button>
-                </SignInButton>
-                <SignUpButton fallbackRedirectUrl={pathname || '/'}>
-                  <button
-                    type="button"
-                    className="rounded-full bg-white px-3.5 py-1.5 text-[13px] font-semibold text-black transition-opacity hover:opacity-90"
-                  >
-                    注册
-                  </button>
-                </SignUpButton>
+                <Link
+                  href={`/sign-in?redirect_url=${authRedirect}`}
+                  className="rounded-full px-3.5 py-1.5 text-[13px] font-medium text-white/70 transition-colors hover:text-white"
+                >
+                  登录
+                </Link>
+                <Link
+                  href={`/sign-up?redirect_url=${authRedirect}`}
+                  className="rounded-full bg-white px-3.5 py-1.5 text-[13px] font-semibold text-black transition-opacity hover:opacity-90"
+                >
+                  注册
+                </Link>
               </div>
-            </Show>
+            )}
 
-            <Show when="signed-in">
+            {authLoaded && isSignedIn && (
               <UserButton
                 appearance={{
                   elements: {
@@ -103,7 +100,7 @@ export function Topbar() {
                   },
                 }}
               />
-            </Show>
+            )}
           </div>
         </div>
       </div>

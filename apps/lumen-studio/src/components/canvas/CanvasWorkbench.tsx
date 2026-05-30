@@ -394,14 +394,27 @@ function getVideoResolution(
     : '720p';
 }
 
-// 与 engine/resolver.ts 的图片合并逻辑保持一致：手动上传优先，上游图片依次填入首帧、尾帧。
+// 与 engine/resolver.ts 的图片合并逻辑保持一致：手动上传优先，上游图片必须成对出现才填入首/尾帧。
 function resolveFrames(inputImage: string, inputLastFrameImage: string, upstreamImages: string[]) {
   let first = inputImage;
   let last = inputLastFrameImage;
-  for (const output of upstreamImages) {
-    if (!first) first = output;
-    else if (!last && output !== first) last = output;
+
+  const distinctUpstreamImages = upstreamImages.filter(
+    (output, index) => output && upstreamImages.indexOf(output) === index,
+  );
+
+  if (!first && !last) {
+    const [upstreamFirst, upstreamLast] = distinctUpstreamImages;
+    if (!upstreamFirst || !upstreamLast) return { first: '', last: '' };
+    return { first: upstreamFirst, last: upstreamLast };
   }
+
+  if (first && !last) {
+    last = distinctUpstreamImages.find((output) => output !== first) ?? '';
+  } else if (!first && last) {
+    first = distinctUpstreamImages.find((output) => output !== last) ?? '';
+  }
+
   return { first, last };
 }
 
@@ -2522,7 +2535,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const videoDuration = getVideoDuration(data.settings);
   const videoResolution = getVideoResolution(data.settings);
 
-  // 读取上游图片节点的输出，直接在首/尾帧槽位展示（与 engine/resolver.ts 合并逻辑一致）。
+  // 读取上游图片节点的输出；上游图片只有成对时才展示为首/尾帧。
   const incomingConnections = useNodeConnections({ handleType: 'target' });
   const upstreamNodeIds = useMemo(
     () => incomingConnections.map((connection) => connection.source),
