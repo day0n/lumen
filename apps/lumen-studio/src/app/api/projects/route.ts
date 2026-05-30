@@ -1,10 +1,10 @@
-import { failJson, okJson, readJson, routeError } from '@/server/http';
+import { failJson, okJson, readJson, routeError, withApiRouteSpan } from '@/server/http';
 import { createStudioProject, listStudioProjects } from '@/server/projects';
 import { CreateProjectInputSchema } from '@lumen/db';
 
 export const runtime = 'nodejs';
 
-export async function GET(request: Request) {
+export const GET = withApiRouteSpan('GET /api/projects', async (request: Request) => {
   try {
     const url = new URL(request.url);
     const query = url.searchParams.get('q') ?? undefined;
@@ -16,9 +16,9 @@ export async function GET(request: Request) {
   } catch (error) {
     return routeError(error);
   }
-}
+});
 
-export async function POST(request: Request) {
+export const POST = withApiRouteSpan('POST /api/projects', async (request: Request) => {
   try {
     const body = await readJson(request);
     const input = CreateProjectInputSchema.omit({ ownerId: true }).partial().parse(body);
@@ -30,4 +30,4 @@ export async function POST(request: Request) {
     }
     return routeError(error);
   }
-}
+});

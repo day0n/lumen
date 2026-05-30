@@ -1,6 +1,6 @@
 import { getClerkUserId } from '@/server/auth';
 import { listHotVideos } from '@/server/hotVideos';
-import { failJson, okJson, routeError } from '@/server/http';
+import { failJson, okJson, routeError, withApiRouteSpan } from '@/server/http';
 import {
   HotVideoOwnerScopeSchema,
   HotVideoPublishedRangeSchema,
@@ -10,7 +10,7 @@ import {
 
 export const runtime = 'nodejs';
 
-export async function GET(request: Request) {
+export const GET = withApiRouteSpan('GET /api/hot-videos', async (request: Request) => {
   try {
     const url = new URL(request.url);
     const ownerScope = HotVideoOwnerScopeSchema.optional().parse(
@@ -50,7 +50,7 @@ export async function GET(request: Request) {
     }
     return routeError(error);
   }
-}
+});
 
 function parseIntParam(value: string | null, fallback: number): number {
   if (value === null) return fallback;

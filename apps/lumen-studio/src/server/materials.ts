@@ -16,13 +16,12 @@ export async function listStudioMaterialAssets(
 ): Promise<MaterialAssetRecord[]> {
   const user = await requireStudioUser();
   const repository = await getMaterialAssetRepository();
-  let ownerId = user.id;
+  const ownerId = user.id;
 
   if (options.workflowId) {
     const projectRepository = await getProjectRepository();
-    const project = await projectRepository.get(user.id, options.workflowId);
-    if (!project) return [];
-    ownerId = project.ownerId;
+    const exists = await projectRepository.exists(user.id, options.workflowId);
+    if (!exists) return [];
   }
 
   const query = {

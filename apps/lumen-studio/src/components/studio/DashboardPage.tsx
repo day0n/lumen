@@ -3,7 +3,7 @@
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
 import { useLoginRedirect } from '@/lib/auth-redirect';
-import type { HotVideoRecord, MaterialAssetRecord, ProjectRecord } from '@lumen/db';
+import type { HotVideoRecord, MaterialAssetRecord, ProjectListRecord } from '@lumen/db';
 import {
   IconArrowUpRight,
   IconChartBar,
@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from 'react';
 type DashboardStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 type ProjectsPayload =
-  | { ok: true; data: { projects: ProjectRecord[] } }
+  | { ok: true; data: { projects: ProjectListRecord[] } }
   | { ok: false; error: { message: string } };
 
 type AssetsPayload =
@@ -33,7 +33,7 @@ type HotVideosPayload =
   | { ok: false; error: { message: string } };
 
 interface DashboardData {
-  projects: ProjectRecord[];
+  projects: ProjectListRecord[];
   assets: MaterialAssetRecord[];
   hotVideos: HotVideoRecord[];
 }
@@ -69,10 +69,9 @@ export function DashboardPage() {
           fetchJson<AssetsPayload>('/api/material-assets?limit=80', controller.signal).then(
             (payload) => payload.data.assets,
           ),
-          fetchJson<HotVideosPayload>(
-            '/api/hot-videos?owner=me&limit=20',
-            controller.signal,
-          ).then((payload) => payload.data.items),
+          fetchJson<HotVideosPayload>('/api/hot-videos?owner=me&limit=20', controller.signal).then(
+            (payload) => payload.data.items,
+          ),
         ]);
 
         setData({ projects, assets, hotVideos });
@@ -345,18 +344,18 @@ function AssetMetric({
 }
 
 function LoadingRows({ count }: { count: number }) {
-  return Array.from({ length: count }).map((_, index) => (
+  return Array.from({ length: count }, (_, index) => `loading-row-${index}`).map((key) => (
     <div
-      key={index}
+      key={key}
       className="h-[54px] animate-pulse rounded-lg bg-white/[0.045] ring-1 ring-white/[0.03]"
     />
   ));
 }
 
 function LoadingTiles({ count }: { count: number }) {
-  return Array.from({ length: count }).map((_, index) => (
+  return Array.from({ length: count }, (_, index) => `loading-tile-${index}`).map((key) => (
     <div
-      key={index}
+      key={key}
       className="min-h-[112px] animate-pulse rounded-lg bg-white/[0.045] ring-1 ring-white/[0.03]"
     />
   ));

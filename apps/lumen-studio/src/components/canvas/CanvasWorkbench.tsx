@@ -158,7 +158,7 @@ type ProjectHistoryRecord = {
   id: string;
   title: string;
   action: 'created' | 'updated' | 'restored';
-  canvas: {
+  canvas?: {
     nodes: LumenNode[];
     edges: LumenEdge[];
   };
@@ -229,6 +229,25 @@ type ProjectHistoryApiResponse =
       ok: true;
       data: {
         history: ProjectHistoryRecord[];
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        message: string;
+      };
+    };
+
+type ProjectHistoryRecordApiResponse =
+  | {
+      ok: true;
+      data: {
+        history: ProjectHistoryRecord & {
+          canvas: {
+            nodes: LumenNode[];
+            edges: LumenEdge[];
+          };
+        };
       };
     }
   | {
@@ -1214,13 +1233,35 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   }, []);
 
   const restoreHistoryRecord = useCallback(
-    (record: ProjectHistoryRecord) => {
-      setProjectTitle(record.title);
-      setNodes(withCanvasNodeLayering(record.canvas.nodes));
-      setEdges(withCanvasEdgeLayering(record.canvas.edges));
+    async (record: ProjectHistoryRecord) => {
+      if (!currentProjectId) {
+        throw new Error('项目不存在');
+      }
+
+      let snapshot = record;
+      if (!snapshot.canvas) {
+        const response = await fetch(
+          `/api/projects/${currentProjectId}/history/${encodeURIComponent(record.id)}`,
+        );
+        const payload = (await response.json()) as ProjectHistoryRecordApiResponse;
+
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.ok ? '历史读取失败' : payload.error.message);
+        }
+
+        snapshot = payload.data.history;
+      }
+
+      if (!snapshot.canvas) {
+        throw new Error('历史记录缺少画布快照');
+      }
+
+      setProjectTitle(snapshot.title);
+      setNodes(withCanvasNodeLayering(snapshot.canvas.nodes));
+      setEdges(withCanvasEdgeLayering(snapshot.canvas.edges));
       setHistoryPanelOpen(false);
     },
-    [setEdges, setNodes],
+    [currentProjectId, setEdges, setNodes],
   );
 
   const canvasActions = useMemo<CanvasActions>(
@@ -1963,11 +2004,12 @@ function ProjectHistoryPanel({
   projectId,
 }: {
   onClose: () => void;
-  onRestore: (record: ProjectHistoryRecord) => void;
+  onRestore: (record: ProjectHistoryRecord) => Promise<void> | void;
   projectId: string | null;
 }) {
   const [history, setHistory] = useState<ProjectHistoryRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -2005,6 +2047,18 @@ function ProjectHistoryPanel({
     return () => controller.abort();
   }, [projectId]);
 
+  const handleRestore = async (record: ProjectHistoryRecord) => {
+    setRestoringId(record.id);
+    setError(null);
+    try {
+      await onRestore(record);
+    } catch (restoreError) {
+      setError(restoreError instanceof Error ? restoreError.message : '历史恢复失败');
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   return (
     <section className="absolute left-24 top-[92px] bottom-24 z-30 flex w-[calc(100vw-116px)] max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-[#111315]/94 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.09] backdrop-blur-2xl sm:w-[340px]">
       <div className="flex items-center gap-2 px-4 pt-4">
@@ -2035,7 +2089,8 @@ function ProjectHistoryPanel({
               <button
                 key={record.id}
                 type="button"
-                onClick={() => onRestore(record)}
+                disabled={restoringId !== null}
+                onClick={() => void handleRestore(record)}
                 className="flex w-full items-center gap-3 rounded-2xl bg-white/[0.045] p-3 text-left ring-1 ring-white/[0.055] transition-colors hover:bg-white/[0.08]"
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-white/70 ring-1 ring-white/[0.06]">
@@ -2051,7 +2106,7 @@ function ProjectHistoryPanel({
                   </span>
                 </span>
                 <span className="rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-bold text-white/42">
-                  恢复
+                  {restoringId === record.id ? '读取' : '恢复'}
                 </span>
               </button>
             ))

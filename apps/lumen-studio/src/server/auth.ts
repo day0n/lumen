@@ -28,6 +28,15 @@ export async function getClerkUserId(): Promise<string | null> {
  * Use this in API routes and server actions that need an owner_id.
  */
 export async function requireStudioUser(): Promise<UserRecord> {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new UnauthorizedError();
+  }
+
+  const repository = await getUserRepository();
+  const cachedUser = await repository.getByClerkId(userId);
+  if (cachedUser) return cachedUser;
+
   const clerkUser = await currentUser();
   if (!clerkUser) {
     throw new UnauthorizedError();
@@ -39,7 +48,6 @@ export async function requireStudioUser(): Promise<UserRecord> {
 
   const fullName = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ').trim();
 
-  const repository = await getUserRepository();
   return repository.upsertFromClerk({
     clerkUserId: clerkUser.id,
     email: primaryEmail,

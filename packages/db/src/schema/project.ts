@@ -93,6 +93,9 @@ export const ProjectRecordSchema = z
   .strict();
 export type ProjectRecord = z.infer<typeof ProjectRecordSchema>;
 
+export const ProjectListRecordSchema = ProjectRecordSchema.omit({ canvas: true }).strict();
+export type ProjectListRecord = z.infer<typeof ProjectListRecordSchema>;
+
 export const CreateProjectInputSchema = z
   .object({
     ownerId: z.string().min(1),

@@ -5,8 +5,8 @@
  * 不开 Session Replay（PII + 带宽成本）。
  *
  * ClerkJS 会请求 clerk.lumenstudio.tech；Clerk CORS 不允许 sentry-trace /
- * baggage 预检头，所以这里关闭浏览器自动 fetch/XHR tracing。Agent / workflow
- * 链路在业务代码里显式传递 trace，不依赖这个自动注入。
+ * baggage 预检头，所以 trace 只传播到 Lumen 自己的 API / Agent 入口。
+ * Workflow WebSocket 仍在业务代码里显式传递 trace。
  */
 
 import * as Sentry from '@sentry/nextjs';
@@ -17,10 +17,11 @@ Sentry.init({
   tracesSampleRate: process.env.SENTRY_TRACES_SAMPLE_RATE
     ? Number(process.env.SENTRY_TRACES_SAMPLE_RATE)
     : 1,
+  tracePropagationTargets: [/^https?:\/\/[^/]+\/api\//, /^https?:\/\/[^/]+\/v1\/agent\//],
   integrations: [
     Sentry.browserTracingIntegration({
-      traceFetch: false,
-      traceXHR: false,
+      traceFetch: true,
+      traceXHR: true,
     }),
   ],
 });
