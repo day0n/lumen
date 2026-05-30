@@ -29,6 +29,8 @@ const DEFAULT_OFFICIAL_NOTIFICATIONS: CreateOfficialNotificationInput[] = [
   },
 ];
 
+let ensureDefaultNotificationsPromise: Promise<void> | null = null;
+
 export interface OfficialNotificationsResponse {
   notifications: OfficialNotificationRecord[];
   unreadCount: number;
@@ -37,7 +39,7 @@ export interface OfficialNotificationsResponse {
 export async function listOfficialNotifications(): Promise<OfficialNotificationsResponse> {
   const user = await requireStudioUser();
   const repository = await getNotificationRepository();
-  await repository.ensureDefaultOfficialNotifications(DEFAULT_OFFICIAL_NOTIFICATIONS);
+  await ensureDefaultNotifications(repository);
 
   const notifications = await repository.listOfficialForUser(user.id);
   return {
@@ -49,6 +51,15 @@ export async function listOfficialNotifications(): Promise<OfficialNotifications
 export async function markOfficialNotificationRead(notificationId: string): Promise<boolean> {
   const user = await requireStudioUser();
   const repository = await getNotificationRepository();
-  await repository.ensureDefaultOfficialNotifications(DEFAULT_OFFICIAL_NOTIFICATIONS);
+  await ensureDefaultNotifications(repository);
   return repository.markOfficialRead(user.id, notificationId);
+}
+
+function ensureDefaultNotifications(
+  repository: Awaited<ReturnType<typeof getNotificationRepository>>,
+) {
+  ensureDefaultNotificationsPromise ??= repository.ensureDefaultOfficialNotifications(
+    DEFAULT_OFFICIAL_NOTIFICATIONS,
+  );
+  return ensureDefaultNotificationsPromise;
 }

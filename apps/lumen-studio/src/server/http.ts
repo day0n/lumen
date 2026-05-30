@@ -53,14 +53,32 @@ export function withApiRouteSpan<Args extends unknown[]>(
         const startedAt = performance.now();
         try {
           const response = await handler(...args);
+          const durationMs = Math.round(performance.now() - startedAt);
+          recordApiRouteTelemetry(route, durationMs, response.status);
           span.setAttribute('http.response.status_code', response.status);
-          span.setAttribute('lumen.duration_ms', Math.round(performance.now() - startedAt));
+          span.setAttribute('lumen.duration_ms', durationMs);
           return response;
         } catch (error) {
-          span.setAttribute('lumen.duration_ms', Math.round(performance.now() - startedAt));
+          const durationMs = Math.round(performance.now() - startedAt);
+          recordApiRouteTelemetry(route, durationMs, 500);
+          span.setAttribute('lumen.duration_ms', durationMs);
           span.setStatus({ code: 2, message: error instanceof Error ? error.message : 'error' });
           throw error;
         }
       },
     );
+}
+
+function recordApiRouteTelemetry(route: string, durationMs: number, statusCode: number) {
+  const [method = 'UNKNOWN', ...routeParts] = route.split(' ');
+  const routePath = routeParts.join(' ') || route;
+  Sentry.metrics.distribution('lumen.studio.api.duration', durationMs, {
+    unit: 'millisecond',
+    attributes: {
+      route,
+      method,
+      path: routePath,
+      status_code: statusCode,
+    },
+  });
 }
