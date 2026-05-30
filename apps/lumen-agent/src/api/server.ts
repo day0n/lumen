@@ -41,6 +41,8 @@ const CreateRunSchema = z.object({
   client_request_id: z.string().optional(),
 });
 
+const SSE_HEARTBEAT_MS = 15_000;
+
 export interface ServerDeps {
   agentLoop: AgentLoop;
   sessionManager: SessionManager;
@@ -145,8 +147,27 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
     }
 
     const lastEventId = c.req.header('Last-Event-ID') ?? c.req.query('last_event_id') ?? null;
+    c.header('cache-control', 'no-cache, no-transform');
+    c.header('x-accel-buffering', 'no');
 
     return streamSSE(c, async (stream) => {
+      let heartbeatTimer: NodeJS.Timeout | null = null;
+      let resolveClose: (() => void) | null = null;
+      const closed = new Promise<void>((resolve) => {
+        resolveClose = resolve;
+      });
+
+      const closeStream = async () => {
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+        if (resolveClose) {
+          resolveClose();
+          resolveClose = null;
+        }
+      };
+
       const subscription = runStore.subscribe(runId, lastEventId, async (entry) => {
         if (entry.event.event === '__terminal__') {
           await closeStream();
@@ -160,25 +181,30 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
         });
       });
 
+      heartbeatTimer = setInterval(() => {
+        if (stream.aborted || stream.closed) {
+          void closeStream();
+          return;
+        }
+        void stream
+          .writeSSE({
+            event: 'agent.heartbeat',
+            data: JSON.stringify({ run_id: runId, ts: Date.now() }),
+          })
+          .catch((err) => {
+            logger.warn({ err, run_id: runId }, 'agent SSE heartbeat failed');
+            void closeStream();
+          });
+      }, SSE_HEARTBEAT_MS);
+
       if (!subscription) {
         await stream.writeSSE({
           event: 'agent.failed',
           data: JSON.stringify({ error: 'run_not_found', code: 'run_not_found' }),
         });
+        await closeStream();
         return;
       }
-
-      let resolveClose: (() => void) | null = null;
-      const closed = new Promise<void>((resolve) => {
-        resolveClose = resolve;
-      });
-
-      const closeStream = async () => {
-        if (resolveClose) {
-          resolveClose();
-          resolveClose = null;
-        }
-      };
 
       stream.onAbort(() => {
         subscription.unsubscribe();
@@ -199,6 +225,7 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
       }
 
       if (subscription.terminal) {
+        await closeStream();
         return;
       }
 
