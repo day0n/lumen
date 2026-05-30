@@ -2,6 +2,7 @@ import Redis from 'ioredis';
 import type { WebSocket } from 'ws';
 
 import { getStudioServerConfig } from '../config';
+import { logger } from '../logger';
 
 type ConnectionMap = Map<string, WebSocket>;
 
@@ -12,13 +13,13 @@ export class EventSubscriber {
   start(): void {
     const cfg = getStudioServerConfig();
     if (!cfg.REDIS_URL) {
-      console.warn('[ws] REDIS_URL 未配置，flow event subscriber 不启动');
+      logger.warn('REDIS_URL 未配置，flow event subscriber 不启动');
       return;
     }
 
     this.subscriber = new Redis(cfg.REDIS_URL, { maxRetriesPerRequest: null });
     this.subscriber.on('error', (err) => {
-      console.error('[ws] event subscriber redis error', err);
+      logger.error({ err }, 'event subscriber redis error');
     });
 
     this.subscriber.on('pmessage', (_pattern, channel, message) => {

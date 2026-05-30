@@ -1,3 +1,6 @@
+// ⚠ 必须第一行：Sentry.init 要早于任何 SDK / HTTP 库被 import 才能自动埋点。
+import './instrument.js';
+
 import Redis from 'ioredis';
 import { config } from './config.js';
 import { StreamConsumer } from './consumer.js';

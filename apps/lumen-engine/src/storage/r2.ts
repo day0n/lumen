@@ -1,5 +1,6 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { NodeType } from '@lumen/shared/domain';
+import * as Sentry from '@sentry/node';
 import { customAlphabet } from 'nanoid';
 
 import { config } from '../config.js';
@@ -155,14 +156,26 @@ async function uploadBuffer(args: {
     '',
   )}`;
 
-  await getClient(args.settings).send(
-    new PutObjectCommand({
-      Bucket: args.settings.bucket,
-      Key: key,
-      Body: args.body,
-      ContentType: args.contentType,
-      CacheControl: 'public, max-age=31536000, immutable',
-    }),
+  await Sentry.startSpan(
+    {
+      name: 'r2.upload',
+      op: 'http.client',
+      attributes: {
+        'r2.key': key,
+        content_type: args.contentType,
+        bytes: args.body.byteLength,
+      },
+    },
+    () =>
+      getClient(args.settings).send(
+        new PutObjectCommand({
+          Bucket: args.settings.bucket,
+          Key: key,
+          Body: args.body,
+          ContentType: args.contentType,
+          CacheControl: 'public, max-age=31536000, immutable',
+        }),
+      ),
   );
 
   const base = args.settings.publicBaseUrl.replace(/\/+$/, '');

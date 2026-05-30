@@ -9,6 +9,9 @@
  *   5. Hono server.listen
  */
 
+// ⚠ 必须第一行：Sentry.init 要早于任何 SDK / HTTP 库被 import 才能自动埋点。
+import './instrument.js';
+
 import { resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 

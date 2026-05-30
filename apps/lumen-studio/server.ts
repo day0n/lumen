@@ -1,9 +1,14 @@
+// ⚠ 必须第一行：在 next() / WS gateway 之前 init Sentry（自定义 server 不经
+// instrumentation.ts register 钩子，WS gateway 也不在 Next 请求链里）。
+import './src/sentry.server.config';
+
 import { createServer } from 'node:http';
 import { parse } from 'node:url';
 
 import next from 'next';
 import { WebSocketServer } from 'ws';
 
+import { logger } from './src/server/logger';
 import {
   handleFlowConnection,
   initFlowGateway,
@@ -42,12 +47,12 @@ async function main() {
   });
 
   server.listen(port, hostname, () => {
-    console.log(`> lumen-studio ready on http://${hostname}:${port}`);
-    console.log('> ws/flow gateway listening on /ws/flow');
+    logger.info({ url: `http://${hostname}:${port}` }, 'lumen-studio ready');
+    logger.info('ws/flow gateway listening on /ws/flow');
   });
 
   const shutdown = async (signal: string) => {
-    console.log(`Received ${signal}, shutting down...`);
+    logger.info({ signal }, 'shutting down');
     await stopFlowGateway();
     wss.close();
     server.close();
@@ -59,6 +64,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('fatal: lumen-studio 启动失败', err);
+  logger.error({ err }, 'fatal: lumen-studio 启动失败');
   process.exit(1);
 });

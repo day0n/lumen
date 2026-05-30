@@ -41,8 +41,7 @@ export async function execute(
   const resolution = readStringSetting(settings, 'resolution');
   // 1080p / 4k 仅支持 8s（Veo 约束），其余尊重用户选择，默认 8s。
   const requestedDuration = readNumberSetting(settings, 'duration') ?? 8;
-  const durationSeconds =
-    resolution === '1080p' || resolution === '4k' ? 8 : requestedDuration;
+  const durationSeconds = resolution === '1080p' || resolution === '4k' ? 8 : requestedDuration;
   const image = await toVeoImage(input.image);
   const lastFrame = image ? await toVeoImage(input.lastFrameImage) : null;
 

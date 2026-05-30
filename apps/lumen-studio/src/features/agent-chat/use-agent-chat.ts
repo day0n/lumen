@@ -10,6 +10,7 @@
 
 import { useAuth } from '@clerk/nextjs';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
+import * as Sentry from '@sentry/nextjs';
 import { nanoid } from 'nanoid';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -296,6 +297,11 @@ export function useAgentChat({ sessionId, profile = 'main' }: UseAgentChatOption
 
       const eventsHeaders: Record<string, string> = { accept: 'text/event-stream' };
       if (token) eventsHeaders.authorization = `Bearer ${token}`;
+      const eventsTrace = Sentry.getTraceData();
+      if (eventsTrace['sentry-trace']) {
+        eventsHeaders['sentry-trace'] = eventsTrace['sentry-trace'];
+        if (eventsTrace.baggage) eventsHeaders.baggage = eventsTrace.baggage;
+      }
 
       try {
         await fetchEventSource(`${AGENT_URL}/v1/agent/runs/${encodeURIComponent(runId)}/events`, {
@@ -445,6 +451,13 @@ async function createRun(params: {
 
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (params.token) headers.authorization = `Bearer ${params.token}`;
+  // browserTracingIntegration 应该会自动给 fetch 注入；这里再手动兜底一次，
+  // 防止第三方封装把头吞掉，保证 Flow A（对话）一定串到 agent 的 trace。
+  const td = Sentry.getTraceData();
+  if (td['sentry-trace']) {
+    headers['sentry-trace'] = td['sentry-trace'];
+    if (td.baggage) headers.baggage = td.baggage;
+  }
 
   while (attempt < MAX_CREATE_ATTEMPTS) {
     attempt += 1;

@@ -2,6 +2,7 @@
 
 import type { NodeStatus } from '@lumen/shared/domain';
 import type { ServerEvent } from '@lumen/shared/protocols';
+import * as Sentry from '@sentry/nextjs';
 import { nanoid } from 'nanoid';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -134,12 +135,37 @@ export function useWorkflowWs({
   const runNodes = useCallback(
     (nodeIds: string[] | undefined, nodes: WorkflowNode[], edges: WorkflowEdge[]) => {
       const targetNodeIds = nodeIds && nodeIds.length > 0 ? nodeIds : nodes.map((node) => node.id);
+
+      // 立即把目标节点标记为排队中，不等 websocket 握手 —— 点击运行就有反馈。
+      setNodeStates((prev) => {
+        const nextStates = { ...prev };
+        for (const nodeId of targetNodeIds) {
+          const next: NodeState = { status: 'queued', output: null, error: null, progress: 0 };
+          nextStates[nodeId] = next;
+          onNodeStateChange?.(nodeId, next);
+        }
+        return nextStates;
+      });
+
       if (!url) {
         const error = '工作流引擎地址不可用';
         setConnectionError(error);
         markRunConnectionFailed(targetNodeIds, error);
         return;
       }
+
+      // 客户端 ws.flow.run span：量用户视角的整条工作流耗时，onclose 时收尾。
+      // 在它的 scope 内取 trace 注入消息，让 engine 的 workflow.execute 挂到它下面。
+      const flowSpan = Sentry.startInactiveSpan({
+        name: 'ws.flow.run',
+        op: 'websocket.client',
+        attributes: {
+          run_id: undefined,
+          project_id: projectId ?? undefined,
+          node_count: targetNodeIds.length,
+        },
+      });
+      const td = Sentry.withActiveSpan(flowSpan, () => Sentry.getTraceData());
 
       const message = {
         runId: nanoid(16),
@@ -149,6 +175,9 @@ export function useWorkflowWs({
         nodeIds,
         nodes,
         edges,
+        trace: td['sentry-trace']
+          ? { sentryTrace: td['sentry-trace'], baggage: td.baggage }
+          : undefined,
       };
 
       const ws = new WebSocket(url);
@@ -189,13 +218,16 @@ export function useWorkflowWs({
 
       ws.onclose = () => {
         socketsRef.current.delete(ws);
+        // 收尾 ws.flow.run span：flowDone=正常完成，否则标记异常。
+        flowSpan.setStatus({ code: flowDone ? 1 : 2 });
+        flowSpan.end();
         if (flowDone) return;
         const error = opened ? '工作流连接已断开' : '工作流引擎连接失败';
         setConnectionError(error);
         markRunConnectionFailed(targetNodeIds, error);
       };
     },
-    [handleEvent, markRunConnectionFailed, projectId, url, userId, workflowId],
+    [handleEvent, markRunConnectionFailed, onNodeStateChange, projectId, url, userId, workflowId],
   );
 
   return { connectionError, nodeStates, runNodes };

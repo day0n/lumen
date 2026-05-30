@@ -9,6 +9,8 @@
 
 import { setTimeout as sleep } from 'node:timers/promises';
 
+import * as Sentry from '@sentry/node';
+
 import { logger } from '../observability/logger.js';
 import type {
   AssistantMessage,
@@ -168,51 +170,71 @@ export abstract class LLMProvider {
       'LLM 流式请求',
     );
 
-    for (let attempt = 1; attempt <= CHAT_RETRY_DELAYS_MS.length; attempt += 1) {
-      let firstChunkReceived = false;
-      try {
-        for await (const chunk of this.chatStream(opts)) {
-          firstChunkReceived = true;
-          yield chunk;
-          if (chunk.finishReason && chunk.usage) {
-            logger.info(
-              { provider, model: resolvedModel, attempt, usage: chunk.usage },
-              'LLM stream done',
-            );
+    // gen_ai span 覆盖整个流式 + 重试过程，量到的就是对模型 API 的真实耗时。
+    // 用 inactive span + try/finally，保证生成器任意退出路径都能 end()。
+    const span = Sentry.startInactiveSpan({
+      name: 'llm.chat',
+      op: 'gen_ai.chat',
+      attributes: {
+        'gen_ai.system': provider,
+        'gen_ai.request.model': resolvedModel,
+        message_count: opts.messages.length,
+        tool_count: opts.tools?.length ?? 0,
+      },
+    });
+
+    try {
+      for (let attempt = 1; attempt <= CHAT_RETRY_DELAYS_MS.length; attempt += 1) {
+        let firstChunkReceived = false;
+        try {
+          for await (const chunk of this.chatStream(opts)) {
+            firstChunkReceived = true;
+            yield chunk;
+            if (chunk.finishReason && chunk.usage) {
+              for (const [k, v] of Object.entries(chunk.usage)) {
+                span.setAttribute(`gen_ai.usage.${k}`, v);
+              }
+              logger.info(
+                { provider, model: resolvedModel, attempt, usage: chunk.usage },
+                'LLM stream done',
+              );
+            }
           }
+          return;
+        } catch (err) {
+          const errStr = err instanceof Error ? err.message : String(err);
+          if (firstChunkReceived) {
+            logger.error({ err, provider, model: resolvedModel }, 'LLM 流式响应中断');
+            yield { finishReason: 'error', errorContent: `Stream interrupted: ${errStr}` };
+            return;
+          }
+
+          const transient = LLMProvider.isTransient(errStr);
+          if (!transient) {
+            logger.warn({ err, provider }, 'LLM 流式请求遇到不可重试错误');
+            yield { finishReason: 'error', errorContent: `Error calling LLM: ${errStr}` };
+            return;
+          }
+
+          const delay = CHAT_RETRY_DELAYS_MS[attempt - 1] ?? 4000;
+          logger.warn(
+            { provider, model: resolvedModel, attempt, delay_ms: delay, err: errStr.slice(0, 200) },
+            'LLM 流式请求遇到可重试异常',
+          );
+          await sleep(delay);
         }
-        return;
+      }
+
+      // 最后一次裸跑，不再重试
+      try {
+        yield* this.chatStream(opts);
       } catch (err) {
         const errStr = err instanceof Error ? err.message : String(err);
-        if (firstChunkReceived) {
-          logger.error({ err, provider, model: resolvedModel }, 'LLM 流式响应中断');
-          yield { finishReason: 'error', errorContent: `Stream interrupted: ${errStr}` };
-          return;
-        }
-
-        const transient = LLMProvider.isTransient(errStr);
-        if (!transient) {
-          logger.warn({ err, provider }, 'LLM 流式请求遇到不可重试错误');
-          yield { finishReason: 'error', errorContent: `Error calling LLM: ${errStr}` };
-          return;
-        }
-
-        const delay = CHAT_RETRY_DELAYS_MS[attempt - 1] ?? 4000;
-        logger.warn(
-          { provider, model: resolvedModel, attempt, delay_ms: delay, err: errStr.slice(0, 200) },
-          'LLM 流式请求遇到可重试异常',
-        );
-        await sleep(delay);
+        logger.error({ err }, 'LLM 流式请求重试后仍失败');
+        yield { finishReason: 'error', errorContent: `Error calling LLM after retries: ${errStr}` };
       }
-    }
-
-    // 最后一次裸跑，不再重试
-    try {
-      yield* this.chatStream(opts);
-    } catch (err) {
-      const errStr = err instanceof Error ? err.message : String(err);
-      logger.error({ err }, 'LLM 流式请求重试后仍失败');
-      yield { finishReason: 'error', errorContent: `Error calling LLM after retries: ${errStr}` };
+    } finally {
+      span.end();
     }
   }
 

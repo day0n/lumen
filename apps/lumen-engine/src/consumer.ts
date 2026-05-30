@@ -1,4 +1,5 @@
 import { ClientMessageSchema } from '@lumen/shared/protocols';
+import * as Sentry from '@sentry/node';
 import type Redis from 'ioredis';
 import type { WorkflowStore } from './database/workflow-store.js';
 import { WorkflowExecutor } from './engine/executor.js';
@@ -71,17 +72,26 @@ export class StreamConsumer {
       return;
     }
 
-    try {
-      const payload = JSON.parse(data.payload ?? '{}');
-      const message = ClientMessageSchema.parse(payload);
+    // studio XADD 时把浏览器发起的 trace 写进了 stream fields，这里续接同一条 trace。
+    const runProcessing = () =>
+      Sentry.continueTrace(
+        { sentryTrace: data.sentryTrace ?? undefined, baggage: data.baggage ?? undefined },
+        async () => {
+          try {
+            const payload = JSON.parse(data.payload ?? '{}');
+            const message = ClientMessageSchema.parse(payload);
 
-      logger.info({ messageId, nodeIds: message.nodeIds }, 'processing task');
-      await this.executor.execute(message, channelId);
-    } catch (err) {
-      logger.error({ err, messageId }, 'task execution failed');
-    } finally {
-      await this.redis.xack(STREAM_KEY, GROUP_NAME, messageId);
-    }
+            logger.info({ messageId, nodeIds: message.nodeIds }, 'processing task');
+            await this.executor.execute(message, channelId);
+          } catch (err) {
+            logger.error({ err, messageId }, 'task execution failed');
+          } finally {
+            await this.redis.xack(STREAM_KEY, GROUP_NAME, messageId);
+          }
+        },
+      );
+
+    await runProcessing();
   }
 
   private async ensureGroup(): Promise<void> {

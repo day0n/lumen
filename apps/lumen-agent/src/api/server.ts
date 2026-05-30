@@ -18,6 +18,8 @@ import { streamSSE } from 'hono/streaming';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 
+import * as Sentry from '@sentry/node';
+
 import type { AgentEvent } from '../core/events.js';
 import type { AgentLoop } from '../core/loop.js';
 import { logger } from '../observability/logger.js';
@@ -66,6 +68,13 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
 
     runStore.create(runId);
 
+    // 在 HTTP 请求 trace 还活跃时抓取上下文，传给后台 run 续接（fire-and-forget
+    // 在响应返回后才真正执行，那时请求 span 已结束）。
+    const td = Sentry.getTraceData();
+    const traceData = td['sentry-trace']
+      ? { sentryTrace: td['sentry-trace'], baggage: td.baggage }
+      : undefined;
+
     void deps.agentLoop
       .run(
         {
@@ -73,6 +82,7 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
           userId: authUser.userId,
           message: body.message,
           metadata: body.metadata,
+          traceData,
         },
         body.profile,
         async (event: AgentEvent) => {
