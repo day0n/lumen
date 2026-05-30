@@ -36,7 +36,10 @@ const envSchema = z.object({
   // storage
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
   MONGODB_DB: z.string().default('lumen_agent'),
+  STUDIO_MONGODB_DB: z.string().default('lumen_app'),
+  WORKFLOW_MONGODB_DB: z.string().default('lumen_engine'),
   REDIS_URL: z.string().optional().default(''),
+  WORKFLOW_STREAM_KEY: z.string().default('lumen:flow:tasks'),
 
   // tools
   BRAVE_API_KEY: z.string().optional().default(''),

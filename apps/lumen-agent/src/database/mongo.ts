@@ -16,17 +16,36 @@ import { logger } from '../observability/logger.js';
 let client: MongoClient | null = null;
 let db: Db | null = null;
 
-export async function getMongo(): Promise<Db> {
-  if (db) return db;
+async function getClient(): Promise<MongoClient> {
+  if (client) return client;
   const cfg = getConfig();
   client = new MongoClient(cfg.MONGODB_URI, {
     appName: 'lumen-agent',
   });
   await client.connect();
-  db = client.db(cfg.MONGODB_DB);
+  return client;
+}
+
+export async function getMongo(): Promise<Db> {
+  if (db) return db;
+  const cfg = getConfig();
+  const mongoClient = await getClient();
+  db = mongoClient.db(cfg.MONGODB_DB);
   await ensureIndexes(db);
   logger.info({ db: cfg.MONGODB_DB }, 'MongoDB 已连接');
   return db;
+}
+
+export async function getStudioMongo(): Promise<Db> {
+  const cfg = getConfig();
+  const mongoClient = await getClient();
+  return mongoClient.db(cfg.STUDIO_MONGODB_DB);
+}
+
+export async function getWorkflowMongo(): Promise<Db> {
+  const cfg = getConfig();
+  const mongoClient = await getClient();
+  return mongoClient.db(cfg.WORKFLOW_MONGODB_DB);
 }
 
 async function ensureIndexes(d: Db): Promise<void> {

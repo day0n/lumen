@@ -8,6 +8,7 @@
 import { logger } from '../../observability/logger.js';
 import { type ToolResult, isToolResult } from '../../schemas/tools.js';
 import { type OpenAIFunctionSchema, type Tool, appendErrorHint } from './base.js';
+import { withToolEventEmitter } from './runtime.js';
 
 export class ToolRegistry {
   private tools = new Map<string, Tool>();
@@ -49,7 +50,16 @@ export class ToolRegistry {
     return out;
   }
 
-  async execute(name: string, params: Record<string, unknown>): Promise<string | ToolResult> {
+  async execute(
+    name: string,
+    params: Record<string, unknown>,
+    opts: {
+      onToolEvent?: (event: {
+        name: string;
+        data: Record<string, unknown>;
+      }) => void | Promise<void>;
+    } = {},
+  ): Promise<string | ToolResult> {
     const tool = this.tools.get(name);
     if (!tool) {
       logger.error({ tool_name: name, available_tools: this.toolNames }, 'Tool registry miss');
@@ -70,7 +80,10 @@ export class ToolRegistry {
         );
         return `Error: Invalid parameters for tool '${name}': ${errors.join('; ')}\n\n[Analyze the error above and try a different approach.]`;
       }
-      const result = await tool.execute(cast);
+      const runTool = () => tool.execute(cast);
+      const result = opts.onToolEvent
+        ? await withToolEventEmitter(opts.onToolEvent, runTool)
+        : await runTool();
       logger.info(
         {
           tool_name: name,

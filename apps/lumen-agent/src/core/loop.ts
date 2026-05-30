@@ -43,12 +43,14 @@ import { AgentFactory } from './factory.js';
 import { type MemoryManager, formatMemoriesForPrompt } from './memory.js';
 import type { AgentContext, AgentInstance, AgentProfile, ProfileRegistry } from './profile.js';
 import { buildMessages } from './prompt/builder.js';
+import { withAgentRequestContext } from './requestContext.js';
 import type { SkillsLoader } from './skills.js';
 
 export interface RunInput {
   sessionId: string;
   userId: string;
   message: string | Array<Record<string, unknown>>;
+  context?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   /** 浏览器→agent HTTP 请求的 trace 上下文，用于在 fire-and-forget 后台任务里续接同一条 trace。 */
   traceData?: { sentryTrace: string; baggage?: string };
@@ -113,9 +115,13 @@ export class AgentLoop {
             try {
               await emit(agentStarted(input.sessionId, runId));
 
+              const projectId = readContextString(input.context, 'project_id', 'projectId');
+              const workflowId =
+                readContextString(input.context, 'workflow_id', 'workflowId') ?? projectId;
               const session = await this.opts.sessionManager.getOrCreate(
                 input.sessionId,
                 input.userId,
+                workflowId,
               );
               const instance = this.buildInstance(profile);
 
@@ -147,10 +153,21 @@ export class AgentLoop {
                 tools: instance.tools,
                 maxIterations: instance.maxIterations,
                 maxTokens: this.opts.defaultMaxTokens,
-                hooks: this.makeHooks(emit),
+                hooks: this.makeHooks(emit, session),
               });
 
-              const result = await executor.run(messages);
+              const result = await withAgentRequestContext(
+                {
+                  sessionId: input.sessionId,
+                  userId: input.userId,
+                  runId,
+                  projectId: projectId ?? undefined,
+                  workflowId: workflowId ?? undefined,
+                  metadata: input.metadata,
+                  context: input.context,
+                },
+                () => executor.run(messages),
+              );
 
               // 持久化最终的 assistant 消息（最后一条 assistant or final content）
               session.appendAssistantFinal(result.content);
@@ -222,7 +239,7 @@ export class AgentLoop {
     return factory.build(profile);
   }
 
-  private makeHooks(emit: EventEmitter): ExecutorHooks {
+  private makeHooks(emit: EventEmitter, session: Session): ExecutorHooks {
     // 工具 start/end 是两个回调，用 tool_call_id 把 inactive span 串起来。
     // 在 onToolStart 时活跃 span 是 agent.run，startInactiveSpan 会自动挂为其子 span。
     const toolSpans = new Map<string, Span>();
@@ -240,6 +257,15 @@ export class AgentLoop {
         return Promise.resolve(emit(thinkingDelta(text)));
       },
       onToolStart: (name, id, args) => {
+        appendDisplayMessage(session, {
+          role: 'tool_call',
+          content: null,
+          turn: session.turnCount,
+          tool_call_id: id,
+          tool_name: name,
+          tool_call: args,
+          created_at: new Date().toISOString(),
+        });
         toolSpans.set(
           id,
           Sentry.startInactiveSpan({
@@ -253,6 +279,19 @@ export class AgentLoop {
         );
       },
       onToolEnd: (name, id, bytes, error, _args, status, durationMs) => {
+        appendDisplayMessage(session, {
+          role: 'tool_result',
+          content: null,
+          turn: session.turnCount,
+          tool_call_id: id,
+          tool_name: name,
+          status,
+          error,
+          duration_ms: durationMs,
+          output_size_bytes: bytes,
+          truncated: false,
+          created_at: new Date().toISOString(),
+        });
         const span = toolSpans.get(id);
         if (span) {
           span.setAttributes({ output_size_bytes: bytes, status });
@@ -274,9 +313,38 @@ export class AgentLoop {
           ),
         );
       },
-      onToolEvent: (name, ev) => {
-        return Promise.resolve(emit(toolEvent({ tool_name: name, event: ev.name, data: ev.data })));
+      onToolEvent: (name, ev, id) => {
+        appendDisplayMessage(session, {
+          role: 'tool_event',
+          content: null,
+          turn: session.turnCount,
+          tool_call_id: id,
+          tool_name: name,
+          event: ev.name,
+          event_data: ev.data,
+          created_at: new Date().toISOString(),
+        });
+        return Promise.resolve(
+          emit(toolEvent({ tool_name: name, tool_call_id: id, event: ev.name, data: ev.data })),
+        );
       },
     };
   }
+}
+
+function readContextString(
+  context: Record<string, unknown> | undefined,
+  ...keys: string[]
+): string | null {
+  if (!context) return null;
+  for (const key of keys) {
+    const value = context[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function appendDisplayMessage(session: Session, message: Session['messages'][number]): void {
+  session.messages.push(message);
+  session.messageCount += 1;
 }

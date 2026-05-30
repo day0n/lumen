@@ -1,6 +1,5 @@
 /**
- * Main agent profile —— 第一阶段配置：3 个工具 + 一段 system prompt。
- * Skills 暂时全空，等业务工具进来后再补 lumen-script-writing 等 .md。
+ * Main agent profile —— Studio agent tools + dynamically loadable workflow skills.
  */
 
 import { readFileSync } from 'node:fs';
@@ -11,6 +10,11 @@ import type { AgentProfile, ToolFactory } from '../../core/profile.js';
 import { MediaUnderstandingTool } from '../../core/tools/mediaUnderstanding.js';
 import { VideoSearchTool } from '../../core/tools/videoSearch.js';
 import { WebSearchTool } from '../../core/tools/web.js';
+import {
+  EditWorkflowTool,
+  GetWorkflowTool,
+  RunWorkflowNodeTool,
+} from '../../core/tools/workflow.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT = readFileSync(join(__dirname, 'prompt.md'), 'utf-8');
@@ -34,12 +38,23 @@ const mediaUnderstanding: ToolFactory = (ctx) =>
     vertexProject: ctx.toolEnv.vertexProject,
   });
 
+const getWorkflow: ToolFactory = () => new GetWorkflowTool();
+const editWorkflow: ToolFactory = () => new EditWorkflowTool();
+const runWorkflowNode: ToolFactory = () => new RunWorkflowNodeTool();
+
 export const MAIN_PROFILE: AgentProfile = {
   name: 'main',
   description: 'Primary conversational agent for the Lumen video studio',
   systemPrompt: SYSTEM_PROMPT,
-  toolFactories: [webSearch, videoSearch, mediaUnderstanding],
+  toolFactories: [
+    webSearch,
+    videoSearch,
+    mediaUnderstanding,
+    getWorkflow,
+    editWorkflow,
+    runWorkflowNode,
+  ],
   inlineSkills: [],
-  loadableSkills: [],
+  loadableSkills: ['workflow-core'],
   maxIterations: 40,
 };

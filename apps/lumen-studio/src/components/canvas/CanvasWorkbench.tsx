@@ -747,6 +747,57 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     requireLogin();
   }, [authReady, isSignedIn, requireLogin]);
 
+  const refreshProject = useCallback(
+    async (options: { signal?: AbortSignal; silent?: boolean } = {}) => {
+      if (!currentProjectId) return null;
+      if (!options.silent) setSaveState('loading');
+
+      const response = await fetch(`/api/projects/${currentProjectId}`, {
+        signal: options.signal,
+      });
+      const project = await readProjectResponse(response);
+      setCurrentOwnerId(project.ownerId);
+      setProjectTitle(project.title);
+      setNodes(withCanvasNodeLayering(project.canvas.nodes));
+      setEdges(withCanvasEdgeLayering(project.canvas.edges));
+      lastSavedCanvas.current = JSON.stringify(project.canvas);
+      hasHydratedProject.current = true;
+      setSaveState('saved');
+      return project;
+    },
+    [currentProjectId, setEdges, setNodes],
+  );
+
+  const handleAgentWorkflowUpdate = useCallback(
+    async (data: Record<string, unknown>) => {
+      const eventProjectId = readEventString(data.project_id);
+      if (!currentProjectId || eventProjectId !== currentProjectId) return;
+      try {
+        await refreshProject({ silent: true });
+      } catch (error) {
+        console.error(error);
+        setSaveState('error');
+      }
+    },
+    [currentProjectId, refreshProject],
+  );
+
+  const handleAgentWorkflowNodeStatus = useCallback(
+    (data: Record<string, unknown>) => {
+      const eventProjectId = readEventString(data.project_id);
+      const nodeId = readEventString(data.node_id);
+      const status = readNodeStatus(data.status);
+      if (!currentProjectId || eventProjectId !== currentProjectId || !nodeId || !status) return;
+      handleNodeStateChange(nodeId, {
+        status,
+        output: readEventString(data.output),
+        error: readEventString(data.error),
+        progress: readEventNumber(data.progress) ?? (status === 'success' ? 1 : 0),
+      });
+    },
+    [currentProjectId, handleNodeStateChange],
+  );
+
   useEffect(() => {
     if (
       !createOnMount ||
@@ -829,17 +880,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
     async function loadProject() {
       try {
-        const response = await fetch(`/api/projects/${currentProjectId}`, {
-          signal: controller.signal,
-        });
-        const project = await readProjectResponse(response);
-        setCurrentOwnerId(project.ownerId);
-        setProjectTitle(project.title);
-        setNodes(withCanvasNodeLayering(project.canvas.nodes));
-        setEdges(withCanvasEdgeLayering(project.canvas.edges));
-        lastSavedCanvas.current = JSON.stringify(project.canvas);
-        hasHydratedProject.current = true;
-        setSaveState('saved');
+        await refreshProject({ signal: controller.signal });
       } catch (error) {
         if (!controller.signal.aborted) {
           console.error(error);
@@ -850,7 +891,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
     void loadProject();
     return () => controller.abort();
-  }, [authReady, currentProjectId, isSignedIn, setEdges, setNodes]);
+  }, [authReady, currentProjectId, isSignedIn, refreshProject]);
 
   useEffect(() => {
     if (!currentProjectId || !hasHydratedProject.current || !authReady || !isSignedIn) {
@@ -1302,9 +1343,12 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           selectedElementCount={selectedElementCount}
         />
         <ChatPanel
+          projectId={currentProjectId ?? undefined}
           sessionId={currentProjectId ?? undefined}
           initialPrompt={currentProjectId ? initialPrompt : null}
           defaultOpen={shouldOpenAgentChat}
+          onWorkflowUpdate={handleAgentWorkflowUpdate}
+          onWorkflowNodeStatus={handleAgentWorkflowNodeStatus}
         />
         {quickMenuState?.visible ? (
           <QuickNodeMenu
@@ -1334,6 +1378,27 @@ function serializeCanvas(nodes: LumenNode[], edges: LumenEdge[]) {
       zIndex: undefined,
     })),
   };
+}
+
+function readEventString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function readEventNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readNodeStatus(value: unknown): NodeState['status'] | null {
+  if (
+    value === 'idle' ||
+    value === 'queued' ||
+    value === 'running' ||
+    value === 'success' ||
+    value === 'error'
+  ) {
+    return value;
+  }
+  return null;
 }
 
 async function readProjectResponse(response: Response): Promise<CanvasProjectPayload> {

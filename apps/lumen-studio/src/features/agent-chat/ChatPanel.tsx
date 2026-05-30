@@ -36,17 +36,37 @@ import {
 import {
   type AgentChatStatus,
   type ChatMessage,
+  type ChatTimelineItem,
   useAgentChat,
 } from '@/features/agent-chat/use-agent-chat';
 
 interface ChatPanelProps {
+  projectId?: string;
   sessionId?: string;
   initialPrompt?: string | null;
   defaultOpen?: boolean;
+  onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
+  onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
 }
 
-export function ChatPanel({ sessionId, initialPrompt, defaultOpen = false }: ChatPanelProps) {
-  const { messages, status, errorText, send, stop } = useAgentChat({ sessionId });
+export function ChatPanel({
+  projectId,
+  sessionId,
+  initialPrompt,
+  defaultOpen = false,
+  onWorkflowUpdate,
+  onWorkflowNodeStatus,
+}: ChatPanelProps) {
+  const agentContext = useMemo(
+    () => (projectId ? { project_id: projectId, workflow_id: projectId } : undefined),
+    [projectId],
+  );
+  const { messages, status, errorText, send, stop } = useAgentChat({
+    sessionId,
+    context: agentContext,
+    onWorkflowUpdate,
+    onWorkflowNodeStatus,
+  });
   const { isLoaded: authReady, isSignedIn, requireLogin } = useLoginRedirect();
   const [open, setOpen] = useState(defaultOpen);
   const [draft, setDraft] = useState('');
@@ -326,6 +346,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         ) : null}
 
         {isStreaming ? <ThinkingLine label={liveLabel} /> : null}
+        <Timeline items={message.events} />
         {message.content && !isStreaming && !isFailed ? <MessageActions /> : null}
 
         {isFailed ? (
@@ -344,6 +365,33 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         ) : null}
       </div>
     </motion.li>
+  );
+}
+
+function Timeline({ items }: { items?: ChatTimelineItem[] }) {
+  const visible = (items ?? [])
+    .filter((item) => item.kind !== 'connection' && item.kind !== 'thinking')
+    .slice(-6);
+
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="mt-4 max-w-[92%] space-y-1.5">
+      {visible.map((item) => (
+        <div
+          key={item.id}
+          className="flex min-w-0 items-center gap-2 text-[12px] leading-5 text-white/38"
+        >
+          <span
+            className={cn('h-1.5 w-1.5 shrink-0 rounded-full', timelineStatusClass(item.status))}
+          />
+          <span className="min-w-0 truncate text-white/52">{item.title}</span>
+          {item.detail ? (
+            <span className="min-w-0 truncate text-white/30">{item.detail}</span>
+          ) : null}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -476,6 +524,21 @@ function getLiveLabel(message: ChatMessage): string {
   if (current.kind === 'tool') return current.title;
   if (current.kind === 'step') return 'Thinking...';
   return current.title;
+}
+
+function timelineStatusClass(status: ChatTimelineItem['status']) {
+  switch (status) {
+    case 'queued':
+      return 'bg-white/34';
+    case 'running':
+      return 'bg-[#79e4ff] shadow-[0_0_12px_rgba(121,228,255,0.55)]';
+    case 'success':
+      return 'bg-[#7ee787]';
+    case 'error':
+      return 'bg-[#ff7b8a]';
+    default:
+      return 'bg-white/24';
+  }
 }
 
 function isBusy(status: AgentChatStatus): boolean {

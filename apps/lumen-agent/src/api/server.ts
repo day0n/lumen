@@ -81,6 +81,7 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
           sessionId: body.session_id,
           userId: authUser.userId,
           message: body.message,
+          context: body.context,
           metadata: body.metadata,
           traceData,
         },

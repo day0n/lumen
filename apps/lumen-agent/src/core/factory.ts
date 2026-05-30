@@ -7,6 +7,7 @@ import type { LLMProvider } from '../providers/base.js';
 import type { AgentContext, AgentInstance, AgentProfile, ProfileRegistry } from './profile.js';
 import type { SkillsLoader } from './skills.js';
 import { ToolRegistry } from './tools/registry.js';
+import { LoadSkillTool } from './tools/skills.js';
 
 export class AgentFactory {
   constructor(
@@ -26,6 +27,9 @@ export class AgentFactory {
     const allowed = [...profile.inlineSkills, ...profile.loadableSkills];
     const filteredSkills =
       allowed.length > 0 ? this.skillsLoader.filtered(allowed) : this.skillsLoader.filtered([]);
+    if (allowed.length > 0) {
+      tools.register(new LoadSkillTool(filteredSkills));
+    }
 
     let systemPrompt: string;
     if (typeof profile.systemPrompt === 'function') {

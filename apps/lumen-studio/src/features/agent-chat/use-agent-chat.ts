@@ -61,6 +61,9 @@ export type AgentChatStatus = 'idle' | 'creating' | 'streaming' | 'reconnecting'
 interface UseAgentChatOptions {
   sessionId?: string;
   profile?: string;
+  context?: Record<string, unknown>;
+  onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
+  onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
 }
 
 interface SseEnvelope {
@@ -118,7 +121,13 @@ interface ApiError {
 
 type CreateRunPayload = WrappedCreateRunResponse | DirectCreateRunResponse | ApiError;
 
-export function useAgentChat({ sessionId, profile = 'main' }: UseAgentChatOptions = {}) {
+export function useAgentChat({
+  sessionId,
+  profile = 'main',
+  context,
+  onWorkflowUpdate,
+  onWorkflowNodeStatus,
+}: UseAgentChatOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<AgentChatStatus>('idle');
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -237,6 +246,7 @@ export function useAgentChat({ sessionId, profile = 'main' }: UseAgentChatOption
           sessionId: sid,
           profile,
           message: trimmed,
+          context,
           signal: controller.signal,
           token,
         });
@@ -346,7 +356,10 @@ export function useAgentChat({ sessionId, profile = 'main' }: UseAgentChatOption
             }
 
             const env: SseEnvelope = { event: msg.event, data };
-            handleEvent(env, assistantMessage.id, updateMessage);
+            handleEvent(env, assistantMessage.id, updateMessage, {
+              onWorkflowUpdate,
+              onWorkflowNodeStatus,
+            });
 
             if (env.event === 'agent.completed' || env.event === 'run.completed') {
               terminalReason = 'completed';
@@ -433,7 +446,7 @@ export function useAgentChat({ sessionId, profile = 'main' }: UseAgentChatOption
           activeAssistantIdRef.current = null;
       }
     },
-    [profile, sid, updateMessage, getToken],
+    [profile, sid, context, onWorkflowUpdate, onWorkflowNodeStatus, updateMessage, getToken],
   );
 
   return { messages, status, errorText, send, stop, sessionId: sid };
@@ -443,6 +456,7 @@ async function createRun(params: {
   sessionId: string;
   profile: string;
   message: string;
+  context?: Record<string, unknown>;
   signal: AbortSignal;
   token: string | null;
 }): Promise<string> {
@@ -469,6 +483,7 @@ async function createRun(params: {
           session_id: params.sessionId,
           message: params.message,
           profile: params.profile,
+          context: params.context,
           client_request_id: nanoid(),
         }),
         signal: params.signal,
@@ -510,6 +525,10 @@ function handleEvent(
     id: string,
     patch: Partial<ChatMessage> | ((prev: ChatMessage) => Partial<ChatMessage>),
   ) => void,
+  handlers: {
+    onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
+    onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
+  } = {},
 ) {
   switch (env.event) {
     case 'agent.started': {
@@ -605,13 +624,14 @@ function handleEvent(
       const toolName = readString(env.data.tool_name) ?? 'tool';
       const eventName = readString(env.data.event) ?? 'event';
       const data = asRecord(env.data.data);
+      notifyWorkflowHandler(eventName, data, handlers);
       updateMessage(assistantId, (prev) => ({
         events: appendTimeline(prev.events, {
           id: `tool.event.${nanoid(8)}`,
           kind: 'tool_event',
-          status: 'info',
-          title: formatEventName(eventName),
-          detail: summarizeArguments(data) || formatToolName(toolName),
+          status: workflowTimelineStatus(eventName, data),
+          title: formatWorkflowEventTitle(eventName, data),
+          detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName),
           toolName,
           eventName,
           payload: data,
@@ -778,6 +798,82 @@ function readApiError(payload: CreateRunPayload | null): string | null {
   if (typeof payload.error === 'string') return payload.error;
   if (payload.error && typeof payload.error.message === 'string') return payload.error.message;
   return null;
+}
+
+function notifyWorkflowHandler(
+  eventName: string,
+  data: Record<string, unknown>,
+  handlers: {
+    onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
+    onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
+  },
+) {
+  const handler =
+    eventName === 'workflow_update'
+      ? handlers.onWorkflowUpdate
+      : eventName === 'workflow_node_status'
+        ? handlers.onWorkflowNodeStatus
+        : undefined;
+  if (!handler) return;
+  void Promise.resolve(handler(data)).catch((error) => {
+    console.error('workflow event handler failed', error);
+  });
+}
+
+function workflowTimelineStatus(
+  eventName: string,
+  data: Record<string, unknown>,
+): ChatTimelineStatus {
+  if (eventName !== 'workflow_node_status') return 'info';
+  const status = readString(data.status);
+  if (status === 'queued') return 'queued';
+  if (status === 'running') return 'running';
+  if (status === 'success') return 'success';
+  if (status === 'error') return 'error';
+  return 'info';
+}
+
+function formatWorkflowEventTitle(eventName: string, data: Record<string, unknown>): string {
+  if (eventName === 'workflow_update') return '画布已更新';
+  if (eventName === 'workflow_completed') return '工作流运行完成';
+  if (eventName === 'workflow_node_status') {
+    const status = readString(data.status);
+    if (status === 'queued') return '节点已排队';
+    if (status === 'running') return '节点运行中';
+    if (status === 'success') return '节点已完成';
+    if (status === 'error') return '节点运行失败';
+    return '节点状态更新';
+  }
+  return formatEventName(eventName);
+}
+
+function summarizeWorkflowEventDetail(
+  eventName: string,
+  data: Record<string, unknown>,
+): string | undefined {
+  if (eventName === 'workflow_update') {
+    const nodeCount = readNumber(data.node_count);
+    const edgeCount = readNumber(data.edge_count);
+    const reason = readString(data.reason);
+    const parts = [
+      nodeCount !== null ? `${nodeCount} nodes` : null,
+      edgeCount !== null ? `${edgeCount} edges` : null,
+      reason,
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+  }
+  if (eventName === 'workflow_node_status') {
+    const nodeId = readString(data.node_id);
+    const progress = readNumber(data.progress);
+    const error = readString(data.error);
+    if (error) return compactText(error, 90);
+    const parts = [
+      nodeId ? `node ${nodeId}` : null,
+      progress !== null ? `${Math.round(progress * 100)}%` : null,
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+  }
+  return summarizeArguments(data);
 }
 
 function upsertTimeline(

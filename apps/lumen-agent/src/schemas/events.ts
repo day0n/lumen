@@ -56,6 +56,7 @@ export type ToolFailedData = z.infer<typeof ToolFailedDataSchema>;
 
 export const ToolEventDataSchema = z.object({
   tool_name: z.string(),
+  tool_call_id: z.string().optional(),
   event: z.string(),
   data: z.record(z.string(), z.unknown()).default({}),
 });

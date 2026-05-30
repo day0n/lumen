@@ -57,6 +57,7 @@ export interface ExecutorHooks {
   onToolEvent?: (
     toolName: string,
     event: { name: string; data: Record<string, unknown> },
+    toolCallId: string,
   ) => Promise<void> | void;
 }
 
@@ -233,12 +234,20 @@ export class AgentExecutor {
       const tool = this.tools.get(toolName);
       const timeoutSec = tool?.timeoutSeconds ?? null;
       const result = timeoutSec
-        ? await withTimeout(this.tools.execute(toolName, args), timeoutSec * 1000, toolName)
-        : await this.tools.execute(toolName, args);
+        ? await withTimeout(
+            this.tools.execute(toolName, args, {
+              onToolEvent: (ev) => this.hooks.onToolEvent?.(toolName, ev, toolCallId),
+            }),
+            timeoutSec * 1000,
+            toolName,
+          )
+        : await this.tools.execute(toolName, args, {
+            onToolEvent: (ev) => this.hooks.onToolEvent?.(toolName, ev, toolCallId),
+          });
 
       if (isToolResult(result)) {
         for (const ev of result.events) {
-          await this.hooks.onToolEvent?.(toolName, ev);
+          await this.hooks.onToolEvent?.(toolName, ev, toolCallId);
         }
         resultText = result.content;
       } else {
