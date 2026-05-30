@@ -35,7 +35,7 @@ type NotificationsApiResponse =
       };
     };
 
-export function NotificationsPopover() {
+export function NotificationsPopover({ triggerClassName }: { triggerClassName?: string } = {}) {
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<OfficialNotification[]>([]);
@@ -125,7 +125,10 @@ export function NotificationsPopover() {
           if (!requireLogin()) return;
           setOpen(true);
         }}
-        className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.06] text-white/65 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.1] hover:text-white"
+        className={cn(
+          'relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.06] text-white/65 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.1] hover:text-white',
+          triggerClassName,
+        )}
       >
         <IconBell size={17} stroke={2.1} />
         {unreadCount > 0 ? (

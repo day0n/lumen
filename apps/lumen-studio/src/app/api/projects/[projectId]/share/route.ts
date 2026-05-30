@@ -1,5 +1,6 @@
 import { failJson, okJson, routeError } from '@/server/http';
 import { createProjectShare } from '@/server/projects';
+import { getPublicAppOrigin } from '@/server/public-url';
 
 export const runtime = 'nodejs';
 
@@ -13,8 +14,7 @@ export async function POST(request: Request, context: ProjectShareRouteContext) 
   try {
     const { projectId } = await context.params;
     const { shareId, project } = await createProjectShare(projectId);
-    const url = new URL(request.url);
-    const shareUrl = `${url.origin}/share/${shareId}`;
+    const shareUrl = `${getPublicAppOrigin(request)}/share/${shareId}`;
 
     return okJson({ project, shareId, shareUrl });
   } catch (error) {

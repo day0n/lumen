@@ -1,11 +1,11 @@
 'use client';
 
 import { LumenMark } from '@/components/ui/LumenMark';
+import { NotificationsPopover } from '@/components/home/NotificationsPopover';
 import {
   IconAlertTriangle,
   IconArrowLeft,
   IconArrowsExchange2,
-  IconBell,
   IconCheck,
   IconChevronDown,
   IconChevronLeft,
@@ -1563,13 +1563,7 @@ function CanvasTopbar({
       </div>
 
       <div className="pointer-events-auto flex items-center gap-2">
-        <button
-          type="button"
-          aria-label="通知"
-          className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.07] text-white/66 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.12] hover:text-white"
-        >
-          <IconBell size={17} stroke={2.1} />
-        </button>
+        <NotificationsPopover triggerClassName="h-10 w-10 rounded-2xl bg-white/[0.07] text-white/66 ring-white/[0.08] hover:bg-white/[0.12]" />
         <button
           type="button"
           aria-label={shareState === 'copied' ? '分享链接已复制' : '分享项目'}
