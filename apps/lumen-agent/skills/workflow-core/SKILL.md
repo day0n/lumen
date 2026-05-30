@@ -79,6 +79,8 @@ Rules:
 
 - Split work when intermediate outputs are useful to inspect or reuse.
 - Connect every node through explicit edges so downstream nodes receive upstream output.
+- Give image/video nodes concise direct prompts. Upstream text is useful context,
+  but the media node prompt must still stand on its own.
 - Do not create orphan nodes unless they are deliberate alternatives and clearly titled.
 - Prefer 6-12 nodes for a complex product-video workflow; use more only when the user asks for variants, multiple scenes, or batch output.
 - Put related nodes on the same horizontal band and use readable titles, for example `卖点策略`, `15秒口播`, `镜头1主视觉`, `镜头1视频`.

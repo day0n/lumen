@@ -4,6 +4,7 @@ import {
   type ModelConfig,
   NodeInputSchema,
   NodeSchema,
+  type NodeType,
   NodeTypeSchema,
 } from './node.js';
 
@@ -109,6 +110,8 @@ export interface WorkflowEditSummary {
   addedEdges: number;
   removedEdges: number;
 }
+
+export const MEDIA_TEXT_CONTEXT_CHAR_LIMIT = 1200;
 
 export function getDefaultWorkflowModelId(kind: z.infer<typeof NodeTypeSchema>): string {
   return WorkflowModelCatalog[kind][0]?.id ?? '';
@@ -217,6 +220,23 @@ export function updateCanvasNodeData(
   };
 }
 
+export function mergeTextOutputIntoNodePrompt(input: {
+  targetKind: NodeType;
+  currentPrompt: string;
+  upstreamOutput: string;
+}): string {
+  const upstreamOutput = input.upstreamOutput.trim();
+  if (!upstreamOutput) return input.currentPrompt;
+
+  if (input.targetKind === 'image' || input.targetKind === 'video') {
+    const context = truncateTextContext(upstreamOutput, MEDIA_TEXT_CONTEXT_CHAR_LIMIT);
+    if (!input.currentPrompt.trim()) return context;
+    return `${input.currentPrompt}\n\nUpstream text context (for reference only):\n${context}`;
+  }
+
+  return input.currentPrompt ? `${upstreamOutput}\n\n${input.currentPrompt}` : upstreamOutput;
+}
+
 export function computeSingleNodeInput(canvas: LumenCanvas, nodeId: string) {
   const node = canvas.nodes.find((item) => item.id === nodeId);
   if (!node) throw new Error(`node not found: ${nodeId}`);
@@ -240,7 +260,11 @@ export function computeSingleNodeInput(canvas: LumenCanvas, nodeId: string) {
     }
     switch (source.data.kind) {
       case 'text':
-        resolved.prompt = resolved.prompt ? `${output}\n\n${resolved.prompt}` : output;
+        resolved.prompt = mergeTextOutputIntoNodePrompt({
+          targetKind: node.data.kind,
+          currentPrompt: resolved.prompt,
+          upstreamOutput: output,
+        });
         break;
       case 'image':
         if (!resolved.image) resolved.image = output;
@@ -256,6 +280,11 @@ export function computeSingleNodeInput(canvas: LumenCanvas, nodeId: string) {
   }
 
   return { input: resolved, missingInputs: missing };
+}
+
+function truncateTextContext(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit).trimEnd()}\n...[truncated]`;
 }
 
 function getSettingString(settings: Record<string, unknown>, key: string): string {

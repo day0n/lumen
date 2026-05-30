@@ -1,4 +1,8 @@
-import type { NodeType, WorkflowNode } from '@lumen/shared/domain';
+import {
+  type NodeType,
+  type WorkflowNode,
+  mergeTextOutputIntoNodePrompt,
+} from '@lumen/shared/domain';
 
 import type { WorkflowGraph } from './graph.js';
 
@@ -53,11 +57,11 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
 
     switch (upstreamType) {
       case 'text':
-        if (!resolved.prompt) {
-          resolved.prompt = upstreamOutput;
-        } else {
-          resolved.prompt = `${upstreamOutput}\n\n${resolved.prompt}`;
-        }
+        resolved.prompt = mergeTextOutputIntoNodePrompt({
+          targetKind: node.type,
+          currentPrompt: resolved.prompt,
+          upstreamOutput,
+        });
         break;
       case 'image':
         if (node.type === 'video') {
