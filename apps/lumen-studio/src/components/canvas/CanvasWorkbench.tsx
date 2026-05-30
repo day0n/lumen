@@ -305,7 +305,7 @@ const resolutionRequiresEightSeconds = (resolution: string) =>
 
 const compatibleTargetKinds: Record<NodeKind, NodeKind[]> = {
   text: ['text', 'image', 'video', 'audio'],
-  image: ['text', 'image'],
+  image: ['text', 'image', 'video'],
   video: ['text', 'video'],
   audio: ['text', 'audio'],
 };
@@ -375,7 +375,9 @@ function getAspectRatio(settings: Record<string, unknown>) {
   return aspectRatioOptions.includes(value as (typeof aspectRatioOptions)[number]) ? value : '16:9';
 }
 
-function getVideoDuration(settings: Record<string, unknown>): (typeof videoDurationOptions)[number] {
+function getVideoDuration(
+  settings: Record<string, unknown>,
+): (typeof videoDurationOptions)[number] {
   const raw = settings.duration;
   const value = typeof raw === 'number' ? raw : Number(raw);
   return videoDurationOptions.includes(value as (typeof videoDurationOptions)[number])
