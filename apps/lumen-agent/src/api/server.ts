@@ -64,7 +64,10 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 500) : 200;
     const session = await deps.sessionManager.getExisting(sessionId);
 
-    if (!session || session.userId !== authUser.userId) {
+    if (
+      !session ||
+      (session.userId !== authUser.userId && session.userId !== authUser.clerkUserId)
+    ) {
       return c.json({ error: 'session_not_found' }, 404);
     }
 
@@ -89,7 +92,7 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
     const runId = nanoid(16);
     const authUser = c.get('authUser') as AuthUser;
 
-    runStore.create(runId);
+    runStore.create(runId, authUser.userId);
 
     // 在 HTTP 请求 trace 还活跃时抓取上下文，传给后台 run 续接（fire-and-forget
     // 在响应返回后才真正执行，那时请求 span 已结束）。
@@ -136,7 +139,8 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
   // ── 2. 订阅 run 事件流 ───────────────────────────────────────────
   app.get('/v1/agent/runs/:runId/events', async (c) => {
     const runId = c.req.param('runId');
-    if (!runStore.has(runId)) {
+    const authUser = c.get('authUser') as AuthUser;
+    if (!runStore.has(runId, authUser.userId)) {
       return c.json({ error: 'run_not_found' }, 404);
     }
 
@@ -207,7 +211,8 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
   // ── 3. 取消 run ──────────────────────────────────────────────────
   app.post('/v1/agent/runs/:runId/cancel', (c) => {
     const runId = c.req.param('runId');
-    const ok = runStore.cancel(runId);
+    const authUser = c.get('authUser') as AuthUser;
+    const ok = runStore.cancel(runId, authUser.userId);
     if (!ok) return c.json({ error: 'run_not_found' }, 404);
     runStore.publish(runId, { event: 'agent.stopped', data: { run_id: runId } });
     runStore.publish(runId, { event: 'run.cancelled', data: { run_id: runId } });
