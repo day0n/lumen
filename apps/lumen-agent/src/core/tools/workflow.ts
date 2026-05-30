@@ -84,6 +84,50 @@ function workflowEventSummary(project: WorkflowProject, reason: string) {
   };
 }
 
+const RUNNABLE_MODEL_OVERRIDES = {
+  text: {
+    'doubao-seed-2.0-pro': 'gemini-3.5-flash',
+  },
+  image: {
+    'doubao-seedream-3.0': 'nano-banana2',
+  },
+  video: {
+    'seedance-1.5-pro': 'veo-3.1',
+  },
+  audio: {
+    'doubao-tts': 'fish-tts',
+  },
+} as const;
+
+function enforceRunnableModels(canvas: LumenCanvas): {
+  canvas: LumenCanvas;
+  overrides: Array<{ node_id: string; from: string; to: string }>;
+} {
+  const overrides: Array<{ node_id: string; from: string; to: string }> = [];
+  const nodes = canvas.nodes.map((node) => {
+    const modelId = node.data.modelId?.trim();
+    const replacement =
+      modelId &&
+      RUNNABLE_MODEL_OVERRIDES[node.data.kind][
+        modelId as keyof (typeof RUNNABLE_MODEL_OVERRIDES)[typeof node.data.kind]
+      ];
+    if (!replacement) return node;
+    overrides.push({ node_id: node.id, from: modelId, to: replacement });
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        modelId: replacement,
+      },
+    };
+  });
+
+  return {
+    canvas: overrides.length > 0 ? { ...canvas, nodes } : canvas,
+    overrides,
+  };
+}
+
 export class GetWorkflowTool extends Tool {
   override readonly name = 'get_workflow';
   override readonly timeoutSeconds = 20;
@@ -151,7 +195,8 @@ export class EditWorkflowTool extends Tool {
   override async execute(args: Record<string, unknown>): Promise<string> {
     const parsed = WorkflowEditInputSchema.parse(args);
     const { store, project, projectId, userId } = await loadProject(parsed);
-    const canvas = normalizeWorkflowCanvas(parsed.canvas);
+    const normalizedCanvas = normalizeWorkflowCanvas(parsed.canvas);
+    const { canvas, overrides } = enforceRunnableModels(normalizedCanvas);
     const validationErrors = validateWorkflowCanvas(canvas);
     if (validationErrors.length > 0) {
       return `Error: workflow canvas is invalid: ${validationErrors.join('; ')}`;
@@ -174,6 +219,7 @@ export class EditWorkflowTool extends Tool {
       ...workflowEventSummary(update.project, 'edit_workflow'),
       intent: parsed.intent ?? null,
       summary: update.summary,
+      model_overrides: overrides,
     });
 
     return JSON.stringify({
@@ -181,6 +227,7 @@ export class EditWorkflowTool extends Tool {
       project_id: update.project.id,
       title: update.project.title,
       summary: update.summary,
+      model_overrides: overrides,
       refetch_required: true,
       message: `Workflow saved: ${formatEditSummary(update.summary)}.`,
     });

@@ -40,12 +40,16 @@ A canvas is a JSON object:
 
 Supported node kinds: `text`, `image`, `video`, `audio`.
 
-Default models:
+Default production-backed models:
 
-- `text`: `gemini-3.5-flash` or `doubao-seed-2.0-pro`
-- `image`: `nano-banana2` or `doubao-seedream-3.0`
-- `video`: `veo-3.1` or `seedance-1.5-pro`
-- `audio`: `fish-tts` or `doubao-tts`
+- `text`: `gemini-3.5-flash`
+- `image`: `nano-banana2`
+- `video`: `veo-3.1`
+- `audio`: `fish-tts`
+
+Avoid placeholder / non-production models such as `doubao-seed-2.0-pro`,
+`doubao-seedream-3.0`, `seedance-1.5-pro`, and `doubao-tts` unless the user
+explicitly asks for them.
 
 ## Editing Rules
 
