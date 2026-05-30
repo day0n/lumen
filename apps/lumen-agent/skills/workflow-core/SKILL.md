@@ -85,12 +85,16 @@ Use `run_workflow_node` to execute exactly one node.
 
 Important:
 
+- `load_skill` is only preparation. It never satisfies a run request.
+- For every run request, call `get_workflow` after loading this skill and inspect the current canvas.
 - Run upstream nodes first. A node can only run if all direct upstream nodes already have `data.output`.
 - After a node succeeds, its output is saved back to the canvas by the tool.
 - If a node fails, summarize the failure and decide whether to edit the node or ask the user.
 - Do not call `run_workflow_node` for a downstream video node until its image/text inputs are ready.
 - For a complex workflow, run nodes in topological order. After each successful run, treat the saved canvas output as the source of truth before choosing the next node.
 - If a node fails, stop the run plan, explain the failed node, and either edit that node or ask the user for the missing input.
+- Do not claim a node has run unless `run_workflow_node` returned success for that node in the current request.
+- If the user says "run until node X", run all missing upstream dependencies for X first, one node per tool call, then run X.
 
 Typical order for a product video:
 
