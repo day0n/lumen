@@ -23,6 +23,7 @@ import * as Sentry from '@sentry/node';
 import type { AgentEvent } from '../core/events.js';
 import type { AgentLoop } from '../core/loop.js';
 import { logger } from '../observability/logger.js';
+import type { SessionManager } from '../session/manager.js';
 
 import type { AuthUser } from './auth.js';
 import { clerkAuth } from './auth.js';
@@ -42,6 +43,7 @@ const CreateRunSchema = z.object({
 
 export interface ServerDeps {
   agentLoop: AgentLoop;
+  sessionManager: SessionManager;
   corsOrigins: string[];
   clerkIssuer: string;
 }
@@ -54,6 +56,27 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
   app.use('*', clerkAuth({ issuer: deps.clerkIssuer, skipPaths: ['/healthz'] }));
 
   app.get('/healthz', (c) => c.json({ ok: true, service: 'lumen-agent', ts: Date.now() }));
+
+  app.get('/v1/agent/sessions/:sessionId/messages', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    const authUser = c.get('authUser') as AuthUser;
+    const limitParam = Number.parseInt(c.req.query('limit') ?? '200', 10);
+    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 500) : 200;
+    const session = await deps.sessionManager.getExisting(sessionId);
+
+    if (!session || session.userId !== authUser.userId) {
+      return c.json({ error: 'session_not_found' }, 404);
+    }
+
+    c.header('cache-control', 'no-store');
+    return c.json({
+      session_id: session.sessionId,
+      workflow_id: session.workflowId,
+      revision: session.revision,
+      updated_at: session.updatedAt.toISOString(),
+      messages: session.messages.slice(-limit),
+    });
+  });
 
   // ── 1. 创建 run ──────────────────────────────────────────────────
   app.post('/v1/agent/runs', async (c) => {

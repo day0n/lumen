@@ -11,15 +11,23 @@ import { LumenMark } from '@/components/ui/LumenMark';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import {
+  IconActivity,
+  IconAlertCircle,
   IconArrowUp,
+  IconBrain,
+  IconCheck,
   IconChevronDown,
+  IconCircleDot,
   IconCopy,
+  IconGitBranch,
   IconLoader2,
   IconMinus,
   IconPlayerStopFilled,
   IconPlus,
   IconThumbDown,
   IconThumbUp,
+  IconTool,
+  IconX,
 } from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname, useRouter } from 'next/navigation';
@@ -369,30 +377,72 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
 }
 
 function Timeline({ items }: { items?: ChatTimelineItem[] }) {
-  const visible = (items ?? [])
-    .filter((item) => item.kind !== 'connection' && item.kind !== 'thinking')
-    .slice(-6);
+  const visible = (items ?? []).filter((item) => item.kind !== 'connection').slice(-12);
 
   if (visible.length === 0) return null;
 
   return (
-    <div className="mt-4 max-w-[92%] space-y-1.5">
+    <div className="mt-4 max-w-[94%] space-y-2 border-l border-white/[0.1] pl-3">
       {visible.map((item) => (
         <div
           key={item.id}
-          className="flex min-w-0 items-center gap-2 text-[12px] leading-5 text-white/38"
+          className="group flex min-w-0 items-start gap-2.5 text-[12px] leading-5 text-white/42"
         >
-          <span
-            className={cn('h-1.5 w-1.5 shrink-0 rounded-full', timelineStatusClass(item.status))}
-          />
-          <span className="min-w-0 truncate text-white/52">{item.title}</span>
-          {item.detail ? (
-            <span className="min-w-0 truncate text-white/30">{item.detail}</span>
-          ) : null}
+          <TimelineIcon item={item} />
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate font-medium text-white/68">{item.title}</span>
+              <span
+                className={cn(
+                  'shrink-0 rounded-full border px-1.5 py-0 text-[10px] leading-[16px]',
+                  timelineBadgeClass(item.status),
+                )}
+              >
+                {timelineStatusLabel(item)}
+              </span>
+            </div>
+            {item.detail ? (
+              <div className="mt-0.5 min-w-0 truncate text-white/32">{item.detail}</div>
+            ) : null}
+          </div>
         </div>
       ))}
     </div>
   );
+}
+
+function TimelineIcon({ item }: { item: ChatTimelineItem }) {
+  const className = cn(
+    'mt-[3px] flex h-4 w-4 shrink-0 items-center justify-center',
+    item.status === 'running'
+      ? 'text-[#79e4ff]'
+      : item.status === 'success'
+        ? 'text-[#7ee787]'
+        : item.status === 'error'
+          ? 'text-[#ff7b8a]'
+          : 'text-white/34',
+  );
+
+  if (item.status === 'running') {
+    return <IconLoader2 size={15} className={cn(className, 'animate-spin')} stroke={2.4} />;
+  }
+  if (item.status === 'success') return <IconCheck size={15} className={className} stroke={2.6} />;
+  if (item.status === 'error') return <IconX size={15} className={className} stroke={2.6} />;
+
+  switch (item.kind) {
+    case 'thinking':
+      return <IconBrain size={15} className={className} stroke={2.2} />;
+    case 'tool':
+      return <IconTool size={15} className={className} stroke={2.2} />;
+    case 'tool_event':
+      return <IconActivity size={15} className={className} stroke={2.2} />;
+    case 'step':
+      return <IconGitBranch size={15} className={className} stroke={2.2} />;
+    case 'error':
+      return <IconAlertCircle size={15} className={className} stroke={2.2} />;
+    default:
+      return <IconCircleDot size={15} className={className} stroke={2.2} />;
+  }
 }
 
 function MessageActions() {
@@ -526,18 +576,41 @@ function getLiveLabel(message: ChatMessage): string {
   return current.title;
 }
 
-function timelineStatusClass(status: ChatTimelineItem['status']) {
+function timelineStatusLabel(item: ChatTimelineItem) {
+  if (item.kind === 'tool') {
+    if (item.status === 'running') return '调用中';
+    if (item.status === 'success') return '执行成功';
+    if (item.status === 'error') return '执行失败';
+  }
+  if (item.kind === 'thinking') {
+    return item.status === 'running' ? '思考中' : '已记录';
+  }
+  switch (item.status) {
+    case 'queued':
+      return '排队中';
+    case 'running':
+      return '进行中';
+    case 'success':
+      return '成功';
+    case 'error':
+      return '失败';
+    default:
+      return '事件';
+  }
+}
+
+function timelineBadgeClass(status: ChatTimelineItem['status']) {
   switch (status) {
     case 'queued':
-      return 'bg-white/34';
+      return 'border-white/12 bg-white/[0.04] text-white/42';
     case 'running':
-      return 'bg-[#79e4ff] shadow-[0_0_12px_rgba(121,228,255,0.55)]';
+      return 'border-[#79e4ff]/22 bg-[#79e4ff]/10 text-[#9defff]';
     case 'success':
-      return 'bg-[#7ee787]';
+      return 'border-[#7ee787]/22 bg-[#7ee787]/10 text-[#a7f3b4]';
     case 'error':
-      return 'bg-[#ff7b8a]';
+      return 'border-[#ff7b8a]/25 bg-[#ff7b8a]/10 text-[#ffadb7]';
     default:
-      return 'bg-white/24';
+      return 'border-white/10 bg-white/[0.03] text-white/34';
   }
 }
 

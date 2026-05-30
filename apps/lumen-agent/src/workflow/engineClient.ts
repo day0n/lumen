@@ -69,6 +69,8 @@ export class WorkflowEngineClient {
     await emitToolEvent('workflow_node_status', {
       project_id: input.project.id,
       node_id: target.id,
+      node_title: target.data.title,
+      node_kind: target.data.kind,
       run_id: runId,
       status: 'queued',
       progress: 0,
@@ -82,6 +84,8 @@ export class WorkflowEngineClient {
         userId: input.userId,
         projectId: input.project.id,
         nodeId: target.id,
+        nodeTitle: target.data.title,
+        nodeKind: target.data.kind,
         node: workflowNode,
       });
     } catch (err) {
@@ -100,6 +104,8 @@ export class WorkflowEngineClient {
         project_id: input.project.id,
         reason: 'run_workflow_node_error',
         node_id: target.id,
+        node_title: target.data.title,
+        node_kind: target.data.kind,
         run_id: runId,
         node_count: errorCanvas.nodes.length,
         edge_count: errorCanvas.edges.length,
@@ -124,6 +130,8 @@ export class WorkflowEngineClient {
       project_id: input.project.id,
       reason: 'run_workflow_node',
       node_id: target.id,
+      node_title: target.data.title,
+      node_kind: target.data.kind,
       run_id: runId,
       node_count: nextCanvas.nodes.length,
       edge_count: nextCanvas.edges.length,
@@ -158,6 +166,8 @@ export class WorkflowEngineClient {
     userId: string;
     projectId: string;
     nodeId: string;
+    nodeTitle: string;
+    nodeKind: string;
     node: ReturnType<typeof canvasNodeToWorkflowNode>;
   }): Promise<string> {
     const subscriber = this.redis!.duplicate({ maxRetriesPerRequest: null });
@@ -180,7 +190,10 @@ export class WorkflowEngineClient {
           if (settled) return;
           try {
             const event = JSON.parse(raw) as ServerEvent;
-            void this.handleEngineEvent(input.projectId, input.runId, event);
+            void this.handleEngineEvent(input.projectId, input.runId, event, {
+              nodeTitle: input.nodeTitle,
+              nodeKind: input.nodeKind,
+            });
             if (event.event === 'node:done' && event.nodeId === input.nodeId) {
               settled = true;
               clearTimeout(timer);
@@ -212,6 +225,8 @@ export class WorkflowEngineClient {
       await emitToolEvent('workflow_node_status', {
         project_id: input.projectId,
         node_id: input.nodeId,
+        node_title: input.nodeTitle,
+        node_kind: input.nodeKind,
         run_id: input.runId,
         status: 'queued',
         progress: 0,
@@ -245,6 +260,7 @@ export class WorkflowEngineClient {
     projectId: string,
     runId: string,
     event: ServerEvent,
+    nodeMeta: { nodeTitle: string; nodeKind: string },
   ): Promise<void> {
     switch (event.event) {
       case 'node:queued':
@@ -252,6 +268,8 @@ export class WorkflowEngineClient {
           project_id: projectId,
           run_id: runId,
           node_id: event.nodeId,
+          node_title: nodeMeta.nodeTitle,
+          node_kind: nodeMeta.nodeKind,
           status: 'queued',
           progress: 0,
         });
@@ -261,6 +279,8 @@ export class WorkflowEngineClient {
           project_id: projectId,
           run_id: runId,
           node_id: event.nodeId,
+          node_title: nodeMeta.nodeTitle,
+          node_kind: nodeMeta.nodeKind,
           status: 'running',
           progress: 0.35,
         });
@@ -270,6 +290,8 @@ export class WorkflowEngineClient {
           project_id: projectId,
           run_id: runId,
           node_id: event.nodeId,
+          node_title: nodeMeta.nodeTitle,
+          node_kind: nodeMeta.nodeKind,
           status: 'running',
           progress: event.progress,
         });
@@ -279,6 +301,8 @@ export class WorkflowEngineClient {
           project_id: projectId,
           run_id: runId,
           node_id: event.nodeId,
+          node_title: nodeMeta.nodeTitle,
+          node_kind: nodeMeta.nodeKind,
           status: 'success',
           progress: 1,
           output: event.output,
@@ -289,6 +313,8 @@ export class WorkflowEngineClient {
           project_id: projectId,
           run_id: runId,
           node_id: event.nodeId,
+          node_title: nodeMeta.nodeTitle,
+          node_kind: nodeMeta.nodeKind,
           status: 'error',
           error: event.error,
         });
