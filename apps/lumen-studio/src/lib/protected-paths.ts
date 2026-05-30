@@ -1,4 +1,4 @@
-const LOGIN_REQUIRED_PREFIXES = ['/canvas', '/dashboard', '/materials'] as const;
+const LOGIN_REQUIRED_PREFIXES = ['/canvas', '/materials'] as const;
 
 export function isLoginRequiredPath(href: string): boolean {
   const pathname = readPathname(href);
