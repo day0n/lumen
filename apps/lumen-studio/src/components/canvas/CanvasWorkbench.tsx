@@ -1,7 +1,7 @@
 'use client';
 
-import { LumenMark } from '@/components/ui/LumenMark';
 import { NotificationsPopover } from '@/components/home/NotificationsPopover';
+import { LumenMark } from '@/components/ui/LumenMark';
 import {
   IconAlertTriangle,
   IconArrowLeft,
@@ -1705,9 +1705,9 @@ function MaterialLibraryPanel({
   onClose: () => void;
   projectId: string | null;
 }) {
-  const [activeCategory, setActiveCategory] = useState<MaterialAssetCategory>('my_assets');
+  const [activeCategory, setActiveCategory] = useState<MaterialAssetCategory | null>(null);
   const [activeKind, setActiveKind] = useState<MaterialAssetKind>('image');
-  const [myAssetsExpanded, setMyAssetsExpanded] = useState(true);
+  const [myAssetsExpanded, setMyAssetsExpanded] = useState(false);
   const [assets, setAssets] = useState<MaterialAssetRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1748,6 +1748,7 @@ function MaterialLibraryPanel({
   }, [projectId]);
 
   const visibleAssets = useMemo(() => {
+    if (!activeCategory) return [];
     if (activeCategory === 'my_assets') {
       return assets.filter((asset) => asset.category === 'my_assets' && asset.kind === activeKind);
     }
@@ -1803,12 +1804,15 @@ function MaterialLibraryPanel({
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveCategory(category.id);
                     if (category.id === 'my_assets') {
-                      setMyAssetsExpanded((expanded) => !expanded);
-                    } else {
-                      setMyAssetsExpanded(false);
+                      const nextExpanded = !(activeCategory === 'my_assets' && myAssetsExpanded);
+                      setMyAssetsExpanded(nextExpanded);
+                      setActiveCategory(nextExpanded ? 'my_assets' : null);
+                      return;
                     }
+
+                    setActiveCategory(category.id);
+                    setMyAssetsExpanded(false);
                   }}
                   className={`group flex h-12 w-full items-center gap-2 rounded-2xl px-2 text-left transition-colors ${
                     active ? 'bg-white/[0.1]' : 'hover:bg-white/[0.06]'
@@ -1839,11 +1843,14 @@ function MaterialLibraryPanel({
                   <div className="mt-1 space-y-1 pl-10">
                     {materialKinds.map((kind) => (
                       <MaterialKindButton
-                        active={activeKind === kind.id}
+                        active={activeCategory === 'my_assets' && activeKind === kind.id}
                         count={kindCounts[kind.id] ?? 0}
                         kind={kind}
                         key={kind.id}
-                        onClick={() => setActiveKind(kind.id)}
+                        onClick={() => {
+                          setActiveCategory('my_assets');
+                          setActiveKind(kind.id);
+                        }}
                       />
                     ))}
                   </div>
@@ -1854,18 +1861,28 @@ function MaterialLibraryPanel({
         </div>
 
         <div className="mt-5 px-2 text-[12px] font-bold text-white/36">
-          {activeCategory === 'my_assets'
-            ? materialKinds.find((kind) => kind.id === activeKind)?.label
-            : materialCategories.find((category) => category.id === activeCategory)?.label}
+          {!activeCategory
+            ? '选择分类'
+            : activeCategory === 'my_assets'
+              ? materialKinds.find((kind) => kind.id === activeKind)?.label
+              : materialCategories.find((category) => category.id === activeCategory)?.label}
         </div>
 
         <div className="mt-2 space-y-2">
-          {loading ? (
-            <PanelEmptyState label="正在读取素材" />
+          {!activeCategory ? (
+            <PanelEmptyState label={loading ? '正在同步运行结果' : '选择一个分类查看历史结果'} />
+          ) : loading ? (
+            <PanelEmptyState label="正在同步运行结果" />
           ) : error ? (
             <PanelEmptyState label={error} tone="error" />
           ) : visibleAssets.length === 0 ? (
-            <PanelEmptyState label="暂无真实素材" />
+            <PanelEmptyState
+              label={
+                activeCategory === 'my_assets'
+                  ? '当前工作流暂无成功生成结果'
+                  : '当前工作流暂无此类素材'
+              }
+            />
           ) : (
             visibleAssets.map((asset) => <MaterialAssetCard asset={asset} key={asset.id} />)
           )}
@@ -2914,21 +2931,22 @@ function NodeOutputEditor({
   const output = data.output ?? '';
   const trimmedOutput = output.trim();
 
-  if (
-    trimmedOutput &&
-    data.kind === 'image' &&
-    (trimmedOutput.startsWith('data:image') || isHttpUrl(trimmedOutput))
-  ) {
-    return (
-      <img
-        alt="图片"
-        className="h-full w-full object-cover"
-        onError={(event) => {
-          event.currentTarget.style.opacity = '0';
-        }}
-        src={trimmedOutput}
-      />
-    );
+  if (data.kind === 'image') {
+    if (trimmedOutput && (trimmedOutput.startsWith('data:image') || isHttpUrl(trimmedOutput))) {
+      return (
+        <img
+          alt="图片"
+          className="h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.style.opacity = '0';
+          }}
+          src={trimmedOutput}
+        />
+      );
+    }
+
+    // 图片节点的输出会传给下游节点，只能是图片：无结果时提供点击上传占位
+    return <ImageOutputUpload onChange={onChange} />;
   }
 
   if (
@@ -2983,6 +3001,27 @@ function NodeOutputEditor({
       placeholder="双击开始编辑..."
       value={output}
     />
+  );
+}
+
+function ImageOutputUpload({ onChange }: { onChange: (output: string) => void }) {
+  const handleUpload = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+      const dataUrl = await readFileAsDataUrl(file);
+      onChange(dataUrl);
+    },
+    [onChange],
+  );
+
+  return (
+    <label className="nodrag group/output flex min-h-[104px] w-full cursor-pointer flex-col items-center justify-center gap-2 px-3 py-2.5 text-white/30 transition-colors hover:text-white/64">
+      <IconPhoto size={30} stroke={1.6} className="opacity-70" />
+      <span className="text-[12px] font-bold">点击上传图片</span>
+      <input className="sr-only" type="file" accept="image/*" onChange={handleUpload} />
+    </label>
   );
 }
 

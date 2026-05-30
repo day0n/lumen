@@ -49,6 +49,20 @@ export class MaterialAssetRepository {
     await collection.createIndex({ owner_id: 1, category: 1, kind: 1, updated_at: -1 });
     await collection.createIndex({ owner_id: 1, workflow_id: 1, kind: 1, updated_at: -1 });
     await collection.createIndex({ workflow_id: 1, run_id: 1, node_id: 1 });
+
+    const workflowResults = this.workflowResultCollection();
+    await workflowResults.createIndex({
+      project_id: 1,
+      status: 1,
+      output_type: 1,
+      completed_at: -1,
+    });
+    await workflowResults.createIndex({
+      workflow_id: 1,
+      status: 1,
+      output_type: 1,
+      completed_at: -1,
+    });
   }
 
   async list(input: ListMaterialAssetsInput): Promise<MaterialAssetRecord[]> {
@@ -74,6 +88,7 @@ export class MaterialAssetRepository {
     const parsed = ListMaterialAssetsInputSchema.parse(input);
     if (!parsed.workflowId) return [];
     if (parsed.category && parsed.category !== 'my_assets') return [];
+    const workflowId = parsed.workflowId;
 
     const outputTypes = parsed.kind ? [parsed.kind] : [...WORKFLOW_RESULT_MATERIAL_KINDS];
     const filter: Filter<WorkflowNodeResultDocument> = {
@@ -81,13 +96,9 @@ export class MaterialAssetRepository {
       output_type: { $in: outputTypes },
       output_value: { $ne: '' },
       $and: [
-        { $or: [{ project_id: parsed.workflowId }, { workflow_id: parsed.workflowId }] },
+        { $or: [{ project_id: workflowId }, { workflow_id: workflowId }] },
         {
-          $or: [
-            { user_id: parsed.ownerId },
-            { user_id: null },
-            { user_id: { $exists: false } },
-          ],
+          $or: [{ user_id: parsed.ownerId }, { user_id: null }, { user_id: { $exists: false } }],
         },
       ],
     };
@@ -99,7 +110,7 @@ export class MaterialAssetRepository {
       .toArray();
 
     return documents
-      .map((document) => toWorkflowResultAssetRecord(document, parsed.ownerId, parsed.workflowId))
+      .map((document) => toWorkflowResultAssetRecord(document, parsed.ownerId, workflowId))
       .filter((record): record is MaterialAssetRecord => Boolean(record));
   }
 
@@ -195,24 +206,30 @@ function toWorkflowResultAssetRecord(
   const url = normalizedString(document.asset?.url) ?? normalizedString(document.output_value);
   if (!kind || !url) return null;
 
-  const updatedAt = document.completed_at ?? document.updated_at ?? document.created_at ?? new Date();
+  const updatedAt =
+    document.completed_at ?? document.updated_at ?? document.created_at ?? new Date();
   const createdAt = document.created_at ?? updatedAt;
   const inputPrompt = normalizedString(document.input?.prompt);
 
   return MaterialAssetRecordSchema.parse({
     id: `workflow-result:${document.run_id}:${document.node_id}`,
     ownerId: normalizedString(document.user_id) ?? ownerId,
-    workflowId: normalizedString(document.workflow_id) ?? normalizedString(document.project_id) ?? workflowId,
+    workflowId:
+      normalizedString(document.workflow_id) ?? normalizedString(document.project_id) ?? workflowId,
     runId: document.run_id,
     nodeId: document.node_id,
-    ...(normalizedString(document.node_type) ? { nodeType: normalizedString(document.node_type) } : {}),
+    ...(normalizedString(document.node_type)
+      ? { nodeType: normalizedString(document.node_type) }
+      : {}),
     category: 'my_assets',
     kind,
     source: 'workflow_result',
     title: workflowResultTitle(kind, document.node_id, inputPrompt),
     url,
     ...(kind === 'image' ? { thumbnailUrl: url } : {}),
-    ...(normalizedString(document.asset?.key) ? { r2Key: normalizedString(document.asset?.key) } : {}),
+    ...(normalizedString(document.asset?.key)
+      ? { r2Key: normalizedString(document.asset?.key) }
+      : {}),
     ...(normalizedString(document.asset?.content_type)
       ? { contentType: normalizedString(document.asset?.content_type) }
       : {}),
