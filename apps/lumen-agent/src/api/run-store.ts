@@ -90,7 +90,7 @@ export class RunStore {
       }
     }
 
-    if (isTerminal(event) || event.event === 'agent.failed') {
+    if (isTerminal(event) || event.event === 'run:error') {
       this.markTerminal(record);
     }
 

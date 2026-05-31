@@ -22,7 +22,7 @@ export interface AgentEvent {
   data: Record<string, unknown>;
 }
 
-const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
+const TERMINAL = new Set(['run:done', 'run:abort', 'run:cancel']);
 
 export function isTerminal(e: AgentEvent): boolean {
   return TERMINAL.has(e.event);
@@ -35,12 +35,12 @@ export function agentStarted(sessionId: string, runId?: string): AgentEvent {
     session_id: sessionId,
     run_id: runId ?? nanoid(12),
   };
-  return { event: 'agent.started', data };
+  return { event: 'run:open', data };
 }
 
 export function agentCompleted(content: string, usage?: Record<string, number>): AgentEvent {
   const data: AgentCompletedData = { content, usage };
-  return { event: 'agent.completed', data };
+  return { event: 'run:answer', data };
 }
 
 export function agentFailed(
@@ -48,65 +48,65 @@ export function agentFailed(
   opts: { code?: string; category?: string; details?: Record<string, unknown> } = {},
 ): AgentEvent {
   const data: AgentFailedData = { error, ...opts };
-  return { event: 'agent.failed', data };
+  return { event: 'run:error', data };
 }
 
 export function agentStopped(): AgentEvent {
-  return { event: 'agent.stopped', data: {} };
+  return { event: 'run:halt', data: {} };
 }
 
 export function agentHeartbeat(): AgentEvent {
-  return { event: 'agent.heartbeat', data: {} };
+  return { event: 'run:ping', data: {} };
 }
 
 // ── streaming deltas ─────────────────────────────────────────────
 
 export function messageDelta(content: string): AgentEvent {
-  return { event: 'message.delta', data: { content } };
+  return { event: 'stream:text', data: { content } };
 }
 
 export function thinkingDelta(content: string): AgentEvent {
-  return { event: 'thinking.delta', data: { content } };
+  return { event: 'stream:reasoning', data: { content } };
 }
 
 // ── steps ────────────────────────────────────────────────────────
 
 export function stepStarted(iteration: number): AgentEvent {
-  return { event: 'step.started', data: { iteration } };
+  return { event: 'turn:enter', data: { iteration } };
 }
 
 export function stepCompleted(iteration: number): AgentEvent {
-  return { event: 'step.completed', data: { iteration } };
+  return { event: 'turn:leave', data: { iteration } };
 }
 
 // ── tool events ──────────────────────────────────────────────────
 
 export function toolStarted(d: ToolStartedData): AgentEvent {
-  return { event: 'tool.started', data: d };
+  return { event: 'call:begin', data: d };
 }
 
 export function toolCompleted(d: ToolCompletedData): AgentEvent {
-  return { event: 'tool.completed', data: d };
+  return { event: 'call:finish', data: d };
 }
 
 export function toolFailed(d: ToolFailedData): AgentEvent {
-  return { event: 'tool.failed', data: d };
+  return { event: 'call:error', data: d };
 }
 
 export function toolEvent(d: ToolEventData): AgentEvent {
-  return { event: 'tool.event', data: d };
+  return { event: 'call:signal', data: d };
 }
 
 // ── run lifecycle ────────────────────────────────────────────────
 
 export function runCompleted(runId: string): AgentEvent {
-  return { event: 'run.completed', data: { run_id: runId } };
+  return { event: 'run:done', data: { run_id: runId } };
 }
 
 export function runFailed(runId: string, error: string): AgentEvent {
-  return { event: 'run.failed', data: { run_id: runId, error } };
+  return { event: 'run:abort', data: { run_id: runId, error } };
 }
 
 export function runCancelled(runId: string): AgentEvent {
-  return { event: 'run.cancelled', data: { run_id: runId } };
+  return { event: 'run:cancel', data: { run_id: runId } };
 }

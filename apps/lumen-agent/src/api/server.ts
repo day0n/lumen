@@ -133,7 +133,7 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
         },
         body.profile,
         async (event: AgentEvent) => {
-          if (runStore.isCancelled(runId) && event.event !== 'run.cancelled') {
+          if (runStore.isCancelled(runId) && event.event !== 'run:cancel') {
             return;
           }
           runStore.publish(runId, event);
@@ -144,11 +144,11 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
         const message = err instanceof Error ? err.message : String(err);
         logger.error({ err, run_id: runId }, 'ChatRunner crashed outside event loop');
         runStore.publish(runId, {
-          event: 'agent.failed',
+          event: 'run:error',
           data: { error: message, code: 'internal_error' },
         });
         runStore.publish(runId, {
-          event: 'run.failed',
+          event: 'run:abort',
           data: { run_id: runId, error: message },
         });
       });
@@ -206,7 +206,7 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
         }
         void stream
           .writeSSE({
-            event: 'agent.heartbeat',
+            event: 'run:ping',
             data: JSON.stringify({ run_id: runId, ts: Date.now() }),
           })
           .catch((err) => {
@@ -217,7 +217,7 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
 
       if (!subscription) {
         await stream.writeSSE({
-          event: 'agent.failed',
+          event: 'run:error',
           data: JSON.stringify({ error: 'run_not_found', code: 'run_not_found' }),
         });
         await closeStream();
@@ -259,8 +259,8 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
     const authUser = c.get('authUser') as AuthUser;
     const ok = runStore.cancel(runId, authUser.userId);
     if (!ok) return c.json({ error: 'run_not_found' }, 404);
-    runStore.publish(runId, { event: 'agent.stopped', data: { run_id: runId } });
-    runStore.publish(runId, { event: 'run.cancelled', data: { run_id: runId } });
+    runStore.publish(runId, { event: 'run:halt', data: { run_id: runId } });
+    runStore.publish(runId, { event: 'run:cancel', data: { run_id: runId } });
     return c.json({ ok: true });
   });
 

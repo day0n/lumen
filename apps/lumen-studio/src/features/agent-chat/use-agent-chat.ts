@@ -95,12 +95,12 @@ const MAX_SEEN_IDS = 500;
 const MAX_TIMELINE_ITEMS = 80;
 
 const TERMINAL_EVENT_NAMES = new Set([
-  'agent.completed',
-  'agent.failed',
-  'agent.stopped',
-  'run.completed',
-  'run.failed',
-  'run.cancelled',
+  'run:answer',
+  'run:error',
+  'run:halt',
+  'run:done',
+  'run:abort',
+  'run:cancel',
 ]);
 
 interface WrappedCreateRunResponse {
@@ -436,15 +436,15 @@ export function useAgentChat({
               onWorkflowNodeStatus,
             });
 
-            if (env.event === 'agent.completed' || env.event === 'run.completed') {
+            if (env.event === 'run:answer' || env.event === 'run:done') {
               terminalReason = 'completed';
               throw new TerminalSignal('completed');
             }
-            if (env.event === 'agent.failed' || env.event === 'run.failed') {
+            if (env.event === 'run:error' || env.event === 'run:abort') {
               terminalReason = 'failed';
               throw new TerminalSignal('failed');
             }
-            if (env.event === 'agent.stopped' || env.event === 'run.cancelled') {
+            if (env.event === 'run:halt' || env.event === 'run:cancel') {
               terminalReason = 'stopped';
               throw new TerminalSignal('stopped');
             }
@@ -807,12 +807,12 @@ function handleEvent(
   } = {},
 ) {
   switch (env.event) {
-    case 'agent.started': {
+    case 'run:open': {
       const runId = readString(env.data.run_id);
       updateMessage(assistantId, (prev) => ({
         runId: runId ?? prev.runId,
         events: upsertTimeline(prev.events, {
-          id: 'agent.started',
+          id: 'run:open',
           kind: 'run',
           status: 'running',
           title: 'Agent 已启动',
@@ -823,14 +823,14 @@ function handleEvent(
       return;
     }
 
-    case 'message.delta': {
+    case 'stream:text': {
       const delta = readString(env.data.content) ?? '';
       if (!delta) return;
       updateMessage(assistantId, (prev) => ({ content: prev.content + delta }));
       return;
     }
 
-    case 'thinking.delta': {
+    case 'stream:reasoning': {
       const delta = readString(env.data.content) ?? '';
       if (!delta) return;
       updateMessage(assistantId, (prev) => ({
@@ -847,7 +847,7 @@ function handleEvent(
       return;
     }
 
-    case 'step.started': {
+    case 'turn:enter': {
       const iteration = readNumber(env.data.iteration);
       const id = `step.${iteration ?? 'unknown'}`;
       updateMessage(assistantId, (prev) => ({
@@ -862,7 +862,7 @@ function handleEvent(
       return;
     }
 
-    case 'step.completed': {
+    case 'turn:leave': {
       const iteration = readNumber(env.data.iteration);
       const id = `step.${iteration ?? 'unknown'}`;
       updateMessage(assistantId, (prev) => ({
@@ -877,7 +877,7 @@ function handleEvent(
       return;
     }
 
-    case 'tool.started': {
+    case 'call:begin': {
       const toolName = readString(env.data.tool_name) ?? 'tool';
       const toolCallId = readString(env.data.tool_call_id) ?? nanoid(8);
       const args = asRecord(env.data.arguments);
@@ -896,7 +896,7 @@ function handleEvent(
       return;
     }
 
-    case 'tool.event': {
+    case 'call:signal': {
       const toolName = readString(env.data.tool_name) ?? 'tool';
       const eventName = readString(env.data.event) ?? 'event';
       const toolCallId = readString(env.data.tool_call_id) ?? nanoid(8);
@@ -918,7 +918,7 @@ function handleEvent(
       return;
     }
 
-    case 'tool.completed': {
+    case 'call:finish': {
       const toolName = readString(env.data.tool_name) ?? 'tool';
       const toolCallId = readString(env.data.tool_call_id) ?? nanoid(8);
       const status = readString(env.data.status) === 'error' ? 'error' : 'success';
@@ -943,7 +943,7 @@ function handleEvent(
       return;
     }
 
-    case 'tool.failed': {
+    case 'call:error': {
       const toolName = readString(env.data.tool_name) ?? 'tool';
       const toolCallId = readString(env.data.tool_call_id) ?? nanoid(8);
       const error = readString(env.data.error) ?? '工具执行失败';
@@ -961,7 +961,7 @@ function handleEvent(
       return;
     }
 
-    case 'agent.completed': {
+    case 'run:answer': {
       const final = readString(env.data.content);
       const usage = asNumberRecord(env.data.usage);
       updateMessage(assistantId, (prev) => ({
@@ -969,7 +969,7 @@ function handleEvent(
         content: final && final.length > 0 ? final : prev.content,
         usage: usage ?? prev.usage,
         events: upsertTimeline(prev.events, {
-          id: 'agent.completed',
+          id: 'run:answer',
           kind: 'message',
           status: 'success',
           title: '回复已完成',
@@ -979,10 +979,10 @@ function handleEvent(
       return;
     }
 
-    case 'run.completed': {
+    case 'run:done': {
       updateMessage(assistantId, (prev) => ({
         events: upsertTimeline(prev.events, {
-          id: 'run.completed',
+          id: 'run:done',
           kind: 'run',
           status: 'success',
           title: '任务已完成',
@@ -992,12 +992,12 @@ function handleEvent(
       return;
     }
 
-    case 'agent.stopped':
-    case 'run.cancelled': {
+    case 'run:halt':
+    case 'run:cancel': {
       updateMessage(assistantId, (prev) => ({
         status: 'done',
         events: upsertTimeline(prev.events, {
-          id: 'run.cancelled',
+          id: 'run:cancel',
           kind: 'run',
           status: 'info',
           title: '任务已停止',
@@ -1007,8 +1007,8 @@ function handleEvent(
       return;
     }
 
-    case 'agent.failed':
-    case 'run.failed': {
+    case 'run:error':
+    case 'run:abort': {
       const error = readString(env.data.error) ?? '生成失败';
       updateMessage(assistantId, (prev) => ({
         status: 'failed',
@@ -1017,7 +1017,7 @@ function handleEvent(
           id: env.event,
           kind: 'error',
           status: 'error',
-          title: env.event === 'run.failed' ? '任务执行失败' : 'Agent 执行失败',
+          title: env.event === 'run:abort' ? '任务执行失败' : 'Agent 执行失败',
           detail: error,
           createdAt: Date.now(),
         }),
@@ -1025,7 +1025,7 @@ function handleEvent(
       return;
     }
 
-    case 'agent.heartbeat':
+    case 'run:ping':
       return;
 
     default:
