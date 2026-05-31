@@ -750,7 +750,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
       const toolName = item.tool_name ?? 'tool';
       const eventName = item.event ?? 'event';
       const data = asRecord(item.event_data);
-      assistant.events = appendTimeline(assistant.events, {
+      assistant.events = upsertTimeline(assistant.events, {
         id: workflowTimelineId(item.tool_call_id ?? `history-${index}`, eventName, data),
         kind: 'act_event',
         status: workflowTimelineStatus(eventName, data),
