@@ -177,7 +177,7 @@ abstract class OpenAICompatProvider extends LLMProvider {
               { err: e, raw: tc.argumentsAcc.slice(0, 200) },
               'tool_call arguments JSON parse 失败',
             );
-            parsed = { _raw: tc.argumentsAcc };
+            parsed = { _unparsed: tc.argumentsAcc };
           }
         }
         completed.push({ id: tc.id, name: tc.name, arguments: parsed });

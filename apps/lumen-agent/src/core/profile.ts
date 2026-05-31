@@ -1,16 +1,16 @@
 /**
- * AgentProfile —— 声明式描述一个 agent 的能力。
+ * AgentBlueprint —— 声明式描述一个 agent 的能力。
  *
- * Profile 是不可变的；AgentFactory 把它物化成 AgentInstance（带 ToolRegistry /
+ * Profile 是不可变的；AgentBuilder 把它物化成 BuiltAgent（带 ToolCatalog /
  * system prompt / model）。
  */
 
-import type { SkillsLoader } from './skills.js';
+import type { SkillLibrary } from './skills.js';
 import type { Tool } from './tools/base.js';
-import type { ToolRegistry } from './tools/registry.js';
+import type { ToolCatalog } from './tools/registry.js';
 
 /** 工具构造时需要的全局上下文。前期只放最小集，后续按需加。 */
-export interface AgentContext {
+export interface AgentDeps {
   workspaceDir: string;
 
   /** 出站代理 URL，可选。 */
@@ -33,14 +33,14 @@ export interface AgentContext {
   };
 }
 
-export type ToolFactory = (ctx: AgentContext) => Tool;
+export type ToolFactory = (ctx: AgentDeps) => Tool;
 
 export type SystemPromptBuilder = (input: {
-  skillsLoader: SkillsLoader;
+  skillsLoader: SkillLibrary;
   toolNames: string[];
 }) => string;
 
-export interface AgentProfile {
+export interface AgentBlueprint {
   readonly name: string;
   readonly description: string;
   readonly systemPrompt: string | SystemPromptBuilder;
@@ -51,25 +51,25 @@ export interface AgentProfile {
   readonly maxIterations: number;
 }
 
-export interface AgentInstance {
-  readonly tools: ToolRegistry;
+export interface BuiltAgent {
+  readonly tools: ToolCatalog;
   readonly systemPrompt: string;
   readonly model: string;
   readonly maxIterations: number;
 }
 
-export class ProfileRegistry {
-  private profiles = new Map<string, AgentProfile>();
+export class BlueprintRegistry {
+  private profiles = new Map<string, AgentBlueprint>();
 
-  register(profile: AgentProfile): void {
+  register(profile: AgentBlueprint): void {
     this.profiles.set(profile.name, profile);
   }
 
-  get(name: string): AgentProfile | undefined {
+  get(name: string): AgentBlueprint | undefined {
     return this.profiles.get(name);
   }
 
-  list(): AgentProfile[] {
+  list(): AgentBlueprint[] {
     return [...this.profiles.values()];
   }
 
@@ -78,7 +78,7 @@ export class ProfileRegistry {
   }
 
   /** main 之外的所有 profile（subagent 用），前期占位。 */
-  subagentProfiles(): AgentProfile[] {
+  subagentProfiles(): AgentBlueprint[] {
     return this.list().filter((p) => p.name !== 'main');
   }
 }

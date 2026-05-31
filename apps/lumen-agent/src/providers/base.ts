@@ -1,7 +1,7 @@
 /**
  * LLMProvider 抽象基类（流式优先）。
  *
- * AgentExecutor 默认走 chatStreamWithRetry。保留：
+ * InferenceLoop 默认走 chatStreamWithRetry。保留：
  * - GenerationSettings 默认参数
  * - 重试规则（transient / non-retry / context-limit 三类错误）
  * - 流式重试三级策略：连接失败 / 首 chunk 是 error / 中途断流
@@ -68,41 +68,57 @@ export interface LLMStreamChunk {
   errorContent?: string;
 }
 
-const CHAT_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+// 重试节奏：指数退避，第 n 次失败后等待 BASE * 2^(n-1) 毫秒。
+const RETRY_BASE_DELAY_MS = 800;
+const MAX_STREAM_RETRIES = 3;
 
-const TRANSIENT_MARKERS = [
+function retryDelayMs(attempt: number): number {
+  return RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+}
+
+// HTTP 状态码语义是通用约定：5xx 与限流通常值得重试，4xx 多为请求本身的问题。
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const FATAL_STATUS = new Set([400, 401, 403, 404, 422]);
+
+const RETRYABLE_PHRASES = [
   'rate limit',
+  'too many requests',
   'overloaded',
   'timeout',
   'timed out',
-  'connection',
+  'connection reset',
+  'connection error',
+  'econnreset',
+  'etimedout',
   'server error',
+  'service unavailable',
   'temporarily unavailable',
 ];
 
-const TRANSIENT_STATUS_CODES = [429, 500, 502, 503, 504];
-
-const NON_RETRY_STATUS_CODES = [400, 401, 403, 404, 422];
-
-const CONTEXT_LIMIT_MARKERS = [
+const CONTEXT_OVERFLOW_PHRASES = [
   'prompt is too long',
-  'maximum context length',
-  'context length exceeded',
+  'maximum context',
+  'context length',
   'context_length_exceeded',
   'too many tokens',
-  'exceeds maximum',
+  'exceeds the maximum',
 ];
 
-const NON_RETRY_MARKERS = [
-  ...CONTEXT_LIMIT_MARKERS,
+const FATAL_PHRASES = [
+  ...CONTEXT_OVERFLOW_PHRASES,
   'invalid_request_error',
   'bad request',
   'unauthorized',
   'forbidden',
 ];
 
-function hasStatusCode(s: string, code: number): boolean {
-  return new RegExp(`(?<!\\d)${code}(?!\\d)`).test(s);
+/** 从错误文本里抠出独立出现的三位数状态码（"12429" 这类不会被误判）。 */
+function extractStatusCodes(text: string): Set<number> {
+  const codes = new Set<number>();
+  for (const m of text.matchAll(/(?<!\d)(\d{3})(?!\d)/g)) {
+    codes.add(Number(m[1]));
+  }
+  return codes;
 }
 
 export abstract class LLMProvider {
@@ -184,7 +200,7 @@ export abstract class LLMProvider {
     });
 
     try {
-      for (let attempt = 1; attempt <= CHAT_RETRY_DELAYS_MS.length; attempt += 1) {
+      for (let attempt = 1; attempt <= MAX_STREAM_RETRIES; attempt += 1) {
         let firstChunkReceived = false;
         try {
           for await (const chunk of this.chatStream(opts)) {
@@ -216,7 +232,7 @@ export abstract class LLMProvider {
             return;
           }
 
-          const delay = CHAT_RETRY_DELAYS_MS[attempt - 1] ?? 4000;
+          const delay = retryDelayMs(attempt);
           logger.warn(
             { provider, model: resolvedModel, attempt, delay_ms: delay, err: errStr.slice(0, 200) },
             'LLM 流式请求遇到可重试异常',
@@ -243,19 +259,21 @@ export abstract class LLMProvider {
   static isTransient(content: string | null | undefined): boolean {
     const err = (content ?? '').toLowerCase();
     if (LLMProvider.isNonRetryable(err)) return false;
-    if (TRANSIENT_STATUS_CODES.some((c) => hasStatusCode(err, c))) return true;
-    return TRANSIENT_MARKERS.some((m) => err.includes(m));
+    const codes = extractStatusCodes(err);
+    if ([...codes].some((c) => RETRYABLE_STATUS.has(c))) return true;
+    return RETRYABLE_PHRASES.some((m) => err.includes(m));
   }
 
   static isNonRetryable(content: string | null | undefined): boolean {
     const err = (content ?? '').toLowerCase();
-    if (NON_RETRY_STATUS_CODES.some((c) => hasStatusCode(err, c))) return true;
-    return NON_RETRY_MARKERS.some((m) => err.includes(m));
+    const codes = extractStatusCodes(err);
+    if ([...codes].some((c) => FATAL_STATUS.has(c))) return true;
+    return FATAL_PHRASES.some((m) => err.includes(m));
   }
 
   static isContextLimit(content: string | null | undefined): boolean {
     const err = (content ?? '').toLowerCase();
-    return CONTEXT_LIMIT_MARKERS.some((m) => err.includes(m));
+    return CONTEXT_OVERFLOW_PHRASES.some((m) => err.includes(m));
   }
 }
 

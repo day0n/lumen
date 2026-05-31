@@ -1,25 +1,25 @@
 /**
- * AgentFactory —— 把 AgentProfile 物化成可运行的 AgentInstance。
+ * AgentBuilder —— 把 AgentBlueprint 物化成可运行的 BuiltAgent。
  */
 
 import { logger } from '../observability/logger.js';
 import type { LLMProvider } from '../providers/base.js';
-import type { AgentContext, AgentInstance, AgentProfile, ProfileRegistry } from './profile.js';
-import type { SkillsLoader } from './skills.js';
-import { ToolRegistry } from './tools/registry.js';
+import type { AgentBlueprint, AgentDeps, BlueprintRegistry, BuiltAgent } from './profile.js';
+import type { SkillLibrary } from './skills.js';
+import { ToolCatalog } from './tools/registry.js';
 import { LoadSkillTool } from './tools/skills.js';
 
-export class AgentFactory {
+export class AgentBuilder {
   constructor(
-    public readonly context: AgentContext,
-    public readonly skillsLoader: SkillsLoader,
+    public readonly context: AgentDeps,
+    public readonly skillsLoader: SkillLibrary,
     public readonly provider: LLMProvider,
     public readonly defaultModel: string,
-    public readonly profileRegistry: ProfileRegistry,
+    public readonly profileRegistry: BlueprintRegistry,
   ) {}
 
-  build(profile: AgentProfile): AgentInstance {
-    const tools = new ToolRegistry();
+  build(profile: AgentBlueprint): BuiltAgent {
+    const tools = new ToolCatalog();
     for (const factory of profile.toolFactories) {
       tools.register(factory(this.context));
     }
@@ -52,7 +52,7 @@ export class AgentFactory {
         model,
         max_iterations: profile.maxIterations,
       },
-      'AgentFactory build',
+      'AgentBuilder build',
     );
 
     return {

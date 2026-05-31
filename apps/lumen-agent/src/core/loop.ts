@@ -1,10 +1,10 @@
 /**
- * AgentLoop —— 顶层处理引擎。
+ * ChatRunner —— 顶层处理引擎。
  *
  *   1. 加载 session（消息历史）
- *   2. AgentFactory.build → 拿到 ToolRegistry / system prompt / model
+ *   2. AgentBuilder.build → 拿到 ToolCatalog / system prompt / model
  *   3. PromptBuilder 拼接 messages
- *   4. AgentExecutor.run（流式，hooks 转 SSE 事件）
+ *   4. InferenceLoop.run（流式，hooks 转 SSE 事件）
  *   5. 把新消息追加到 session，持久化
  *   6. emit run.completed
  *
@@ -19,7 +19,7 @@ import type { Span } from '@sentry/node';
 
 import { logger, withLogContext } from '../observability/logger.js';
 import type { LLMProvider } from '../providers/base.js';
-import type { ProviderRouter } from '../providers/router.js';
+import type { ModelRouter } from '../providers/router.js';
 import type { MessageList } from '../schemas/messages.js';
 import type { Session, SessionManager } from '../session/manager.js';
 
@@ -38,13 +38,13 @@ import {
   toolEvent,
   toolStarted,
 } from './events.js';
-import { AgentExecutor, type ExecutorHooks } from './executor.js';
-import { AgentFactory } from './factory.js';
+import { type InferenceHooks, InferenceLoop } from './executor.js';
+import { AgentBuilder } from './factory.js';
 import { type MemoryManager, formatMemoriesForPrompt } from './memory.js';
-import type { AgentContext, AgentInstance, AgentProfile, ProfileRegistry } from './profile.js';
+import type { AgentBlueprint, AgentDeps, BlueprintRegistry, BuiltAgent } from './profile.js';
 import { buildMessages } from './prompt/builder.js';
 import { withAgentRequestContext } from './requestContext.js';
-import type { SkillsLoader } from './skills.js';
+import type { SkillLibrary } from './skills.js';
 
 export interface RunInput {
   sessionId: string;
@@ -56,12 +56,12 @@ export interface RunInput {
   traceData?: { sentryTrace: string; baggage?: string };
 }
 
-export interface AgentLoopOptions {
-  context: AgentContext;
-  skillsLoader: SkillsLoader;
-  profileRegistry: ProfileRegistry;
+export interface ChatRunnerOptions {
+  context: AgentDeps;
+  skillsLoader: SkillLibrary;
+  profileRegistry: BlueprintRegistry;
   sessionManager: SessionManager;
-  providerRouter: ProviderRouter;
+  providerRouter: ModelRouter;
   defaultModel: string;
   defaultMaxTokens?: number;
   memory?: MemoryManager | null;
@@ -69,10 +69,10 @@ export interface AgentLoopOptions {
 
 type EventEmitter = (event: AgentEvent) => void | Promise<void>;
 
-export class AgentLoop {
-  private readonly opts: AgentLoopOptions;
+export class ChatRunner {
+  private readonly opts: ChatRunnerOptions;
 
-  constructor(opts: AgentLoopOptions) {
+  constructor(opts: ChatRunnerOptions) {
     this.opts = opts;
   }
 
@@ -147,7 +147,7 @@ export class AgentLoop {
               // 把当前 user 消息也写入 session 的内部存储（display 用）
               session.appendUserMessage(input.message, input.metadata);
 
-              const executor = new AgentExecutor({
+              const executor = new InferenceLoop({
                 provider,
                 model: instance.model,
                 tools: instance.tools,
@@ -228,8 +228,8 @@ export class AgentLoop {
     return this.opts.providerRouter.pick(model).provider;
   }
 
-  private buildInstance(profile: AgentProfile): AgentInstance {
-    const factory = new AgentFactory(
+  private buildInstance(profile: AgentBlueprint): BuiltAgent {
+    const factory = new AgentBuilder(
       this.opts.context,
       this.opts.skillsLoader,
       this.resolveProvider(profile.model ?? this.opts.defaultModel),
@@ -239,7 +239,7 @@ export class AgentLoop {
     return factory.build(profile);
   }
 
-  private makeHooks(emit: EventEmitter, session: Session): ExecutorHooks {
+  private makeHooks(emit: EventEmitter, session: Session): InferenceHooks {
     // 工具 start/end 是两个回调，用 tool_call_id 把 inactive span 串起来。
     // 在 onToolStart 时活跃 span 是 agent.run，startInactiveSpan 会自动挂为其子 span。
     const toolSpans = new Map<string, Span>();

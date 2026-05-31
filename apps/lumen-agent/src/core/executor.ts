@@ -1,39 +1,32 @@
 /**
- * AgentExecutor —— LLM / tool 流式迭代引擎。
+ * InferenceLoop —— 驱动「LLM ↔ 工具」流式往返的迭代引擎。
  *
- *   while iteration < maxIterations:
- *     [step.started]
- *     stream = provider.chatStreamWithRetry(messages, tools)
- *     for chunk in stream:
- *       textDelta → on_text_delta
- *       thinkingDelta → on_thinking_delta
- *       completedToolCalls → 累积
- *     append assistant message with tool_calls
- *     if no tool calls: break (最终答复)
- *     for each tool call:
- *       [tool.started]
- *       result = tool.execute(...)
- *       [tool.completed | tool.failed]
- *       append tool result message
- *     [step.completed]
+ * 每一轮（受 maxIterations 上限约束）依次：
+ *   1. 发出 step 开始信号
+ *   2. 以流式方式向 provider 取本轮回复，边收边把文本/思考增量与工具调用归集起来
+ *   3. 把这条 assistant 消息（含其发起的工具调用）追加进消息列表
+ *   4. 若本轮没有工具调用，说明已是最终答复，跳出循环
+ *   5. 否则逐个执行工具，并把每个工具的结果回填为一条消息
+ *   6. 发出 step 结束信号
  *
- * 所有可观测点通过 ExecutorHooks 注入（None = 静默跳过）。
+ * 全部可观测节点都经由 InferenceHooks 暴露；未提供的钩子静默跳过。
  */
 
 import { logger } from '../observability/logger.js';
 import type { LLMProvider } from '../providers/base.js';
-import type { ExecutorResult, ToolTiming } from '../schemas/executor.js';
+import type { InferenceResult, ToolTiming } from '../schemas/executor.js';
 import type { MessageList } from '../schemas/messages.js';
 import type { LLMResponse, ToolCallRequest } from '../schemas/providers.js';
 import { isToolResult } from '../schemas/tools.js';
 import { addAssistantMessage, addToolResult } from './prompt/builder.js';
-import type { ToolRegistry } from './tools/registry.js';
+import type { ToolCatalog } from './tools/registry.js';
 
 const DEFAULT_TOOL_RESULT_MAX_CHARS = 16_000;
 
-const ERROR_CONTINUE_HINT = '\n\n[Analyze the error above and try a different approach.]';
+const ERROR_CONTINUE_HINT =
+  '\n\n[Re-read the error above, then adjust your inputs or take a different route.]';
 
-export interface ExecutorHooks {
+export interface InferenceHooks {
   onStepStart?: (iteration: number) => Promise<void> | void;
   onStepEnd?: (iteration: number) => Promise<void> | void;
   onLLMStart?: (model: string, messages: MessageList) => Promise<void> | void;
@@ -61,31 +54,31 @@ export interface ExecutorHooks {
   ) => Promise<void> | void;
 }
 
-export interface ExecutorOptions {
+export interface InferenceLoopOptions {
   provider: LLMProvider;
   model: string;
-  tools: ToolRegistry;
+  tools: ToolCatalog;
   maxIterations?: number;
   toolResultMaxChars?: number;
-  hooks?: ExecutorHooks;
+  hooks?: InferenceHooks;
   hiddenTools?: Set<string>;
   /** 默认 max_tokens（每次 LLM 调用） */
   maxTokens?: number;
   temperature?: number | null;
 }
 
-export class AgentExecutor {
+export class InferenceLoop {
   readonly provider: LLMProvider;
   readonly model: string;
-  readonly tools: ToolRegistry;
+  readonly tools: ToolCatalog;
   readonly maxIterations: number;
   readonly toolResultMaxChars: number;
-  readonly hooks: ExecutorHooks;
+  readonly hooks: InferenceHooks;
   readonly hiddenTools: Set<string>;
   readonly maxTokens: number | undefined;
   readonly temperature: number | null | undefined;
 
-  constructor(opts: ExecutorOptions) {
+  constructor(opts: InferenceLoopOptions) {
     this.provider = opts.provider;
     this.model = opts.model;
     this.tools = opts.tools;
@@ -97,7 +90,7 @@ export class AgentExecutor {
     this.temperature = opts.temperature;
   }
 
-  async run(messages: MessageList): Promise<ExecutorResult> {
+  async run(messages: MessageList): Promise<InferenceResult> {
     let iteration = 0;
     let finalContent: string | null = null;
     let finishReason = 'stop';

@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { AgentProfile, ToolFactory } from '../../core/profile.js';
+import type { AgentBlueprint, ToolFactory } from '../../core/profile.js';
 import { MediaUnderstandingTool } from '../../core/tools/mediaUnderstanding.js';
 import { VideoSearchTool } from '../../core/tools/videoSearch.js';
 import { WebSearchTool } from '../../core/tools/web.js';
@@ -42,7 +42,7 @@ const getWorkflow: ToolFactory = () => new GetWorkflowTool();
 const editWorkflow: ToolFactory = () => new EditWorkflowTool();
 const runWorkflowNode: ToolFactory = () => new RunWorkflowNodeTool();
 
-export const MAIN_PROFILE: AgentProfile = {
+export const MAIN_PROFILE: AgentBlueprint = {
   name: 'main',
   description: 'Primary conversational agent for the Lumen video studio',
   systemPrompt: SYSTEM_PROMPT,

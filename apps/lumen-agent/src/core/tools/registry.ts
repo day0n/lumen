@@ -1,8 +1,8 @@
 /**
- * Tool registry。
+ * 工具注册表。
  *
- * 提供：register / unregister / get / has / get_definitions / execute / iter / size
- * execute 内做 cast → validate → run → 错误兜底。
+ * 维护 name → Tool 的映射，并对外暴露增删查、定义导出与调用入口。
+ * execute 的处理链路为：参数纠正 → 校验 → 执行 → 异常兜底。
  */
 
 import { logger } from '../../observability/logger.js';
@@ -10,7 +10,7 @@ import { type ToolResult, isToolResult } from '../../schemas/tools.js';
 import { type OpenAIFunctionSchema, type Tool, appendErrorHint } from './base.js';
 import { withToolEventEmitter } from './runtime.js';
 
-export class ToolRegistry {
+export class ToolCatalog {
   private tools = new Map<string, Tool>();
 
   register(tool: Tool): void {
@@ -62,23 +62,23 @@ export class ToolRegistry {
   ): Promise<string | ToolResult> {
     const tool = this.tools.get(name);
     if (!tool) {
-      logger.error({ tool_name: name, available_tools: this.toolNames }, 'Tool registry miss');
+      logger.error({ tool_name: name, available_tools: this.toolNames }, 'unknown tool requested');
       return `Error: Tool '${name}' not found. Available: ${this.toolNames.join(', ')}`;
     }
 
     try {
       logger.info(
         { tool_name: name, raw_arg_keys: Object.keys(params ?? {}).sort() },
-        'Tool registry execute',
+        'dispatching tool call',
       );
       const cast = tool.castParams(params ?? {});
       const errors = tool.validateParams(cast);
       if (errors.length > 0) {
         logger.warn(
           { tool_name: name, errors, cast_arg_keys: Object.keys(cast).sort() },
-          'Tool validation failed',
+          'tool parameter validation rejected',
         );
-        return `Error: Invalid parameters for tool '${name}': ${errors.join('; ')}\n\n[Analyze the error above and try a different approach.]`;
+        return `Error: Invalid parameters for tool '${name}': ${errors.join('; ')}\n\n[Re-read the error above, then adjust your inputs or take a different route.]`;
       }
       const runTool = () => tool.execute(cast);
       const result = opts.onToolEvent
@@ -89,13 +89,13 @@ export class ToolRegistry {
           tool_name: name,
           result_type: isToolResult(result) ? 'ToolResult' : typeof result,
         },
-        'Tool registry result',
+        'tool call returned',
       );
       return appendErrorHint(result);
     } catch (err) {
-      logger.error({ err, tool_name: name }, 'Tool raised an exception');
+      logger.error({ err, tool_name: name }, 'tool threw during execution');
       const msg = err instanceof Error ? err.message : String(err);
-      return `Error executing ${name}: ${msg}\n\n[Analyze the error above and try a different approach.]`;
+      return `Error executing ${name}: ${msg}\n\n[Re-read the error above, then adjust your inputs or take a different route.]`;
     }
   }
 

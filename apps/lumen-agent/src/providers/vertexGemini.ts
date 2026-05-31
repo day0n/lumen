@@ -1,14 +1,14 @@
 /**
- * Vertex AI Gemini provider —— 走 Vertex REST API 流式接口。
+ * Vertex AI Gemini provider —— 通过 Vertex REST 流式接口对接 Gemini。
  *
- *   - gemini-3.5-flash / *-preview 路由到 location=global，其余用配置 location
- *   - role 映射：system → system_instruction（顶层）；user 不变；
- *     assistant → "model"；tool → "user" + functionResponse part
- *   - tool calls：响应里的 part.functionCall 收集成 ToolCallRequest
- *   - 流式：用 :streamGenerateContent?alt=sse，按 SSE 解析每个 candidate
+ *   - 部分仅在 global 端点提供的模型路由到 location=global，其余沿用配置的 location
+ *   - 角色映射：system 提到顶层 system_instruction；user 原样；
+ *     assistant → "model"；tool → "user" 下的 functionResponse part
+ *   - 工具调用：从响应 part.functionCall 收集为 ToolCallRequest
+ *   - 流式：调用 :streamGenerateContent?alt=sse，逐个 candidate 解析 SSE
  *
- * 不带：thought_signature / thinking_blocks 完整往返（第二阶段再加，
- * 第一阶段普通对话不需要 thinking）。
+ * 暂不开启 reasoning/signature 的完整往返（留待后续）；当前普通对话路径不需要，
+ * 因此默认把 thinking 预算压到 0。
  */
 
 import { logger } from '../observability/logger.js';
@@ -18,23 +18,29 @@ import { GoogleTokenCache, parseServiceAccount } from '../utils/googleAuth.js';
 
 import { type ChatOptions, LLMProvider, type LLMStreamChunk, type ToolDefinition } from './base.js';
 
-const GLOBAL_ENDPOINT_MODELS = new Set([
+const VERTEX_MODEL_PREFIX = 'vertex_gemini/';
+
+// 这些模型目前只在 global 端点可用；命中其一或带 preview 标记的，都走 global。
+const GLOBAL_ONLY_MODELS: readonly string[] = [
   'gemini-3.5-flash',
   'gemini-3-flash-preview',
   'gemini-3.1-pro-preview',
   'gemini-3.1-flash-lite-preview',
   'gemini-3.1-flash-image-preview',
-]);
+];
 
-function usesGlobalEndpoint(model: string): boolean {
-  if (GLOBAL_ENDPOINT_MODELS.has(model)) return true;
-  return model.toLowerCase().includes('preview');
+function needsGlobalLocation(model: string): boolean {
+  const m = model.toLowerCase();
+  return GLOBAL_ONLY_MODELS.includes(model) || m.includes('preview');
 }
 
-function stripPrefix(model: string): string {
-  if (model.startsWith('vertex_gemini/')) return model.slice('vertex_gemini/'.length);
-  return model;
+function unqualifyModel(model: string): string {
+  return model.startsWith(VERTEX_MODEL_PREFIX) ? model.slice(VERTEX_MODEL_PREFIX.length) : model;
 }
+
+// 内部 thinking-block 标签（仅本 provider 自用，用于把 Gemini 的签名/思考往返存档）。
+const BLOCK_REASONING = 'vertex_reasoning_trace';
+const BLOCK_CALL_SIGNATURE = 'vertex_call_signature';
 
 interface GeminiPart {
   text?: string;
@@ -137,7 +143,7 @@ function messagesToContents(messages: ChatMessage[]): {
         const sigMap = new Map<string, string>();
         if (tb) {
           for (const block of tb) {
-            if (block.type === 'gemini_fc_signature') {
+            if (block.type === BLOCK_CALL_SIGNATURE) {
               const name = String(block.name ?? '');
               const sig = String(block.thought_signature ?? '');
               if (name && sig) sigMap.set(name, sig);
@@ -194,21 +200,23 @@ function toolsToGenai(
   ];
 }
 
-function normalizeUsage(u: GeminiUsageMetadata | undefined): Record<string, number> | undefined {
+function toOpenAIUsage(u: GeminiUsageMetadata | undefined): Record<string, number> | undefined {
   if (!u) return undefined;
-  const promptTotal = u.promptTokenCount ?? 0;
+
   const cached = u.cachedContentTokenCount ?? 0;
-  const toolUse = u.toolUsePromptTokenCount ?? 0;
-  const candidates = u.candidatesTokenCount ?? 0;
-  const thoughts = u.thoughtsTokenCount ?? 0;
-  const total = u.totalTokenCount ?? 0;
-  const out: Record<string, number> = {
-    prompt_tokens: Math.max(0, promptTotal - cached) + toolUse,
-    completion_tokens: candidates + thoughts,
-    total_tokens: total || promptTotal + candidates + thoughts,
+  // Gemini 把 cache 命中算进 promptTokenCount，这里扣掉以贴近 OpenAI 的"未命中输入"语义，
+  // 再把工具调用提示的 token 计入输入侧。
+  const billedInput =
+    Math.max(0, (u.promptTokenCount ?? 0) - cached) + (u.toolUsePromptTokenCount ?? 0);
+  const output = (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0);
+
+  const usage: Record<string, number> = {
+    prompt_tokens: billedInput,
+    completion_tokens: output,
+    total_tokens: u.totalTokenCount ?? (u.promptTokenCount ?? 0) + output,
   };
-  if (cached) out.cache_read_input_tokens = cached;
-  return out;
+  if (cached > 0) usage.cache_read_input_tokens = cached;
+  return usage;
 }
 
 export interface VertexGeminiProviderOpts {
@@ -240,8 +248,8 @@ export class VertexGeminiProvider extends LLMProvider {
   }
 
   override async *chatStream(opts: ChatOptions): AsyncGenerator<LLMStreamChunk, void, unknown> {
-    const model = stripPrefix(opts.model ?? this.defaultModel);
-    const location = usesGlobalEndpoint(model) ? 'global' : this.location;
+    const model = unqualifyModel(opts.model ?? this.defaultModel);
+    const location = needsGlobalLocation(model) ? 'global' : this.location;
     const url =
       `https://aiplatform.googleapis.com/v1/projects/${this.project}/locations/${location}/` +
       `publishers/google/models/${model}:streamGenerateContent?alt=sse`;
@@ -325,7 +333,7 @@ export class VertexGeminiProvider extends LLMProvider {
               continue;
             }
 
-            const usage = normalizeUsage(payload.usageMetadata);
+            const usage = toOpenAIUsage(payload.usageMetadata);
             if (usage) lastUsage = usage;
 
             const candidate = payload.candidates?.[0];
@@ -338,7 +346,7 @@ export class VertexGeminiProvider extends LLMProvider {
                 if (part.text) yield { thinkingDelta: part.text };
                 if (part.thoughtSignature) {
                   accumulatedThinkingBlocks.push({
-                    type: 'gemini_thought',
+                    type: BLOCK_REASONING,
                     thinking: part.text ?? '',
                     thought_signature: part.thoughtSignature,
                   });
@@ -354,7 +362,7 @@ export class VertexGeminiProvider extends LLMProvider {
                 if (part.thoughtSignature) {
                   // Gemini 3.x: thoughtSignature 挂在 functionCall part 上，必须原样回传。
                   accumulatedThinkingBlocks.push({
-                    type: 'gemini_fc_signature',
+                    type: BLOCK_CALL_SIGNATURE,
                     name: part.functionCall.name,
                     thought_signature: part.thoughtSignature,
                   });

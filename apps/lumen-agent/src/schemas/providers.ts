@@ -13,13 +13,13 @@ const argumentsCoerce = z.preprocess(
         const parsed = JSON.parse(v);
         return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
           ? parsed
-          : { _raw: parsed };
+          : { _unparsed: parsed };
       } catch {
-        return { _raw: v };
+        return { _unparsed: v };
       }
     }
-    if (Array.isArray(v)) return { _items: v };
-    return { _raw: v };
+    if (Array.isArray(v)) return { _arrayArgs: v };
+    return { _unparsed: v };
   },
   z.record(z.string(), z.unknown()),
 );

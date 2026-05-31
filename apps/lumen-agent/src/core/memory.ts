@@ -32,29 +32,29 @@ interface MemoryDoc {
   updated_at: Date;
 }
 
-const FACT_EXTRACTION_PROMPT = `You are a Personal Information Organizer. Extract ONLY long-term, reusable facts about the user. A fact qualifies only if it would still be useful when the user returns in a completely different conversation about a completely different topic.
+const FACT_EXTRACTION_PROMPT = `你的职责是从对话中挑出值得长期记住的用户信息，供日后完全不同的对话复用。
 
-## What TO extract
-1. Personal identity: name, age, location
-2. Professional details: job title, company, industry, skills, expertise level
-3. Stable preferences: favorite tools, frameworks, design styles, content formats, aspect ratios
-4. Long-term goals: career goals, business objectives, creative direction
-5. Constraints: dietary restrictions, accessibility needs, timezone, budget range
-6. Working style: communication preferences, collaboration habits
-7. Language preferences: preferred conversation language, requested deliverable / ad / target-market languages
+判断标准只有一条：这条信息在用户下次带着另一个话题回来时，是否仍然有参考价值。能通过就记，不能通过就丢。
 
-## What NOT to extract
-1. One-time task requests ("help me build X", "make a video")
-2. Current conversation instructions or questions
-3. Ephemeral context that only matters for the current session
-4. Anything the assistant said (only extract from user messages)
-5. Generic statements or greetings
+值得记录的方向（不限于此，按语义判断）：
+- 身份信息：称呼/姓名、所在地区、所属年龄段
+- 职业背景：岗位、所在公司或行业、擅长的技能、专业程度
+- 稳定偏好：惯用的工具与框架、审美与风格取向、内容形态、画幅比例
+- 长期目标：职业规划、业务目标、创作方向
+- 固定约束：时区、预算区间、无障碍需求、饮食禁忌等
+- 协作方式：沟通习惯、对回复风格的偏好
+- 语言习惯：偏好的对话语言，以及对交付物/广告/目标市场所要求的语言
 
-## Language rule
-Record each fact in the same language as the user message it came from. Do not translate.
+应当忽略：
+- 一次性的任务诉求（如“帮我做个视频”“搭一个 X”）
+- 仅服务于当前这轮对话的指令或提问
+- 只在本次会话内有意义的临时上下文
+- 助手自己说过的话（只从用户消息里提取）
+- 寒暄与缺乏信息量的泛泛之谈
 
-Return facts in JSON format: {"facts": ["fact1", "fact2"]}
-Only extract from user messages. If no long-term facts found, return {"facts": []}`;
+语言要求：每条信息用它所在用户消息的原语言记录，不要翻译。
+
+输出 JSON：{"items": ["信息1", "信息2"]}。若没有可长期保留的信息，返回 {"items": []}。`;
 
 export class MemoryManager {
   private collection: Collection<MemoryDoc>;
@@ -175,8 +175,8 @@ export class MemoryManager {
 
     const text = resp.choices[0]?.message?.content ?? '{}';
     try {
-      const parsed = JSON.parse(text) as { facts?: string[] };
-      return (parsed.facts ?? []).filter((f) => f.trim().length > 0);
+      const parsed = JSON.parse(text) as { items?: string[] };
+      return (parsed.items ?? []).filter((f) => f.trim().length > 0);
     } catch {
       logger.warn({ raw: text }, 'Failed to parse fact extraction response');
       return [];
@@ -204,5 +204,5 @@ function simpleHash(str: string): string {
 export function formatMemoriesForPrompt(memories: MemoryEntry[]): string {
   if (memories.length === 0) return '';
   const lines = memories.map((m) => `- ${m.content}`).join('\n');
-  return `\n<user_memory>\nHere is what you remember about this user from previous conversations:\n${lines}\n</user_memory>\n`;
+  return `\n<recalled_user_context>\n以下是过往对话中沉淀下来、关于当前用户的长期信息，可作为参考：\n${lines}\n</recalled_user_context>\n`;
 }

@@ -9,7 +9,7 @@ export interface ToolTiming {
   total_ms: number;
 }
 
-export interface ExecutorResult {
+export interface InferenceResult {
   content: string;
   tools_used: string[];
   tool_timings: Record<string, ToolTiming>;

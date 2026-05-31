@@ -1,4 +1,4 @@
-import type { SkillsLoader } from '../skills.js';
+import type { SkillLibrary } from '../skills.js';
 import { type JsonSchema, Tool } from './base.js';
 
 export class LoadSkillTool extends Tool {
@@ -18,7 +18,7 @@ export class LoadSkillTool extends Tool {
     required: ['skill_name'],
   };
 
-  constructor(private readonly skillsLoader: SkillsLoader) {
+  constructor(private readonly skillsLoader: SkillLibrary) {
     super();
   }
 

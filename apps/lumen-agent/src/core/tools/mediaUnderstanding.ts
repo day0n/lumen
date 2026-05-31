@@ -19,7 +19,7 @@ import { GoogleTokenCache, parseServiceAccount } from '../../utils/googleAuth.js
 
 const MODEL = 'gemini-2.5-flash';
 const DEFAULT_PROMPT =
-  'Please analyze this media in detail. Describe what you see/hear, identify key elements, and provide any relevant insights.';
+  'Walk through this media and report what it contains: the main subjects, what happens, notable visual or audio details, and anything else worth flagging.';
 
 const SUPPORTED_PREFIXES = ['video/', 'audio/', 'image/'];
 
@@ -56,11 +56,11 @@ export class MediaUnderstandingTool extends Tool {
   override readonly name = 'media_understanding';
   override readonly timeoutSeconds = 120;
   override readonly description =
-    'Analyze media files (video, image, audio) using Gemini multimodal AI. ' +
-    'Pass a publicly accessible URL to any supported media and an optional prompt describing ' +
-    'what you want to know. Supports: MP4, MOV, WebM (video); MP3, WAV, FLAC, AAC (audio); ' +
-    'PNG, JPG, GIF, WebP (image). Use this when the user wants to understand, describe, or extract ' +
-    'information from a media file.';
+    'Inspect a media file (video, image, or audio) with a Gemini multimodal model and return a ' +
+    'text understanding of it. Give a publicly reachable URL plus an optional question to focus on. ' +
+    'Handled formats — video: MP4 / MOV / WebM; audio: MP3 / WAV / FLAC / AAC; image: PNG / JPG / ' +
+    'GIF / WebP. Reach for this whenever the user needs the contents of a media file described, ' +
+    'summarised, or mined for specific details.';
 
   override readonly parameters: JsonSchema = {
     type: 'object',
@@ -126,12 +126,12 @@ export class MediaUnderstandingTool extends Tool {
       return `Error downloading media: ${msg}`;
     }
     if (fileBytes.length < 100) {
-      return 'Error: Downloaded file is too small — likely not a valid media file.';
+      return 'Error: the downloaded payload is too small to be a real media file.';
     }
 
     const mimeType = guessMime(url, contentType);
     if (!SUPPORTED_PREFIXES.some((p) => mimeType.startsWith(p))) {
-      return `Error: Unsupported media type '${mimeType}'. Supported: video, image, audio.`;
+      return `Error: media type '${mimeType}' is not handled. Accepted kinds: video, image, audio.`;
     }
 
     logger.info(

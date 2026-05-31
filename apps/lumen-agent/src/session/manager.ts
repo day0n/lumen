@@ -1,13 +1,13 @@
 /**
- * Session 管理 —— Mongo（持久层） + Redis（缓存层）。
+ * 会话存储 —— Mongo 作持久层，Redis 作缓存层。
  *
- * 读路径：Redis ctx → Mongo agent_messages → 新建
- * 写路径：insert_many(新增) + upsert(session) + Redis SET
+ * 读取顺序：先查 Redis 上下文缓存，未命中再从 Mongo 的消息集合重建，仍无则新建。
+ * 写入方式：增量插入新消息 + upsert 会话元数据 + 刷新 Redis 缓存。
  *
- * 要点：
- *   - 消息 append-only（提升 LLM 缓存命中率）
- *   - LLM history 排除 display roles（tool_call / tool_event / tool_result）
- *   - find_legal_start：保证返回的窗口里 tool_result 都有匹配的 assistant.tool_calls
+ * 设计取舍：
+ *   - 消息只追加、不改写，以最大化 LLM 端的前缀缓存命中
+ *   - 喂给 LLM 的历史会剔除纯展示用的角色（见 LLM_EXCLUDED_ROLES）
+ *   - 截取历史窗口时，保证每条 tool 结果都能在窗口内找到对应的 assistant 工具调用
  */
 
 import type Redis from 'ioredis';
@@ -134,7 +134,7 @@ export class Session {
     if (firstUserIdx > 0) sliced = sliced.slice(firstUserIdx);
 
     // 对齐 tool_call 边界
-    const start = findLegalStart(sliced);
+    const start = boundaryAfterOrphanTools(sliced);
     if (start > 0) sliced = sliced.slice(start);
 
     return sliced as MessageList;
@@ -193,31 +193,37 @@ function previewOf(content: string | Array<Record<string, unknown>>): string {
   return '';
 }
 
-function findLegalStart(messages: StoredMessage[]): number {
-  const declared = new Set<string>();
-  let start = 0;
-  for (let i = 0; i < messages.length; i += 1) {
-    const m = messages[i] as ChatMessage;
+/**
+ * 找到一个安全的起始下标：使得截取出的窗口里，每条 tool 结果都能对应到
+ * 窗口内更早的 assistant 工具调用。若某条 tool 结果引用了窗口里不存在的调用，
+ * 就把起点推到它之后（它之前的内容连同悬空调用一起丢弃）。
+ */
+function boundaryAfterOrphanTools(messages: StoredMessage[]): number {
+  const knownCallIds = new Set<string>();
+  let cut = 0;
+
+  messages.forEach((raw, idx) => {
+    const m = raw as ChatMessage;
+
     if (m.role === 'assistant') {
       for (const tc of m.tool_calls ?? []) {
-        if (tc.id) declared.add(tc.id);
+        if (tc.id) knownCallIds.add(tc.id);
       }
-    } else if (m.role === 'tool') {
-      const tid = m.tool_call_id;
-      if (tid && !declared.has(tid)) {
-        start = i + 1;
-        declared.clear();
-        for (const prev of messages.slice(start, i + 1)) {
-          if ((prev as ChatMessage).role === 'assistant') {
-            for (const tc of (prev as { tool_calls?: Array<{ id: string }> }).tool_calls ?? []) {
-              if (tc.id) declared.add(tc.id);
-            }
-          }
-        }
+      return;
+    }
+
+    if (m.role === 'tool') {
+      const callId = m.tool_call_id;
+      if (callId && !knownCallIds.has(callId)) {
+        // 这条 tool 结果是孤儿：它声称回应的调用不在当前窗口里。
+        // 把切点移到它之后，并清空已积累的调用 id（它们都被丢到切点之前了）。
+        cut = idx + 1;
+        knownCallIds.clear();
       }
     }
-  }
-  return start;
+  });
+
+  return cut;
 }
 
 // ── SessionManager ────────────────────────────────────────────────
@@ -358,7 +364,7 @@ export class SessionManager {
             mongo: mongoNextSeq,
             msg_count: session.messages.length,
           },
-          'Session persisted count ahead of Mongo; aligning',
+          'Redis 记录的已落库数超过 Mongo 实际值，回退对齐到 Mongo',
         );
         session.persistedCount = mongoNextSeq;
       }

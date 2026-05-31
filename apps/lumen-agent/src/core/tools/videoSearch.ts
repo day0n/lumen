@@ -1,9 +1,8 @@
 /**
- * video_search —— Foreplay 路径。
+ * video_search —— 通过 Foreplay 广告库检索参考短视频。
  *
- * 简化：第一阶段只接 Foreplay（直接 HTTP），不接 TikTok/Instagram（需要 Apify）。
- * 不做下载到 COS（lumen 还没接 TOS），直接返回 Foreplay 自带的 video URL。
- * 候选筛选用 OpenAI gpt-4o-mini（与原版一致）。
+ * 当前实现只对接 Foreplay 的 discovery API（直连 HTTP），返回其自带的视频地址，
+ * 不经过对象存储中转。命中过多时用一个轻量 LLM 做相关性排序裁剪。
  */
 
 import OpenAI from 'openai';
@@ -12,30 +11,30 @@ import { type JsonSchema, Tool } from '../../core/tools/base.js';
 import { logger } from '../../observability/logger.js';
 import type { ToolResult } from '../../schemas/tools.js';
 
-interface VideoCandidate {
-  platform: string;
-  url: string;
-  video_file_url?: string;
-  description: string;
-  author: string;
-  plays: number | null;
-  likes: number | null;
-  duration_sec: number | null;
-  cover_url: string;
-  is_ad: boolean;
-  running_days: number | null;
-  ctr: number | null;
-  format: string;
+interface AdRef {
+  source: string;
+  pageUrl: string;
+  mediaUrl?: string;
+  caption: string;
+  advertiser: string;
+  viewCount: number | null;
+  likeCount: number | null;
+  lengthSec: number | null;
+  thumbUrl: string;
+  sponsored: boolean;
+  liveDays: number | null;
+  clickRate: number | null;
+  layout: string;
 }
 
-function fmtCount(n: number | null): string {
+function humanCount(n: number | null): string {
   if (n == null) return '?';
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
 }
 
-function showRunningDays(d: number | null): boolean {
+function isLongRunning(d: number | null): boolean {
   return d != null && d >= 10;
 }
 
@@ -44,7 +43,7 @@ async function searchForeplay(
   apiKey: string,
   baseUrl: string,
   limit: number,
-): Promise<VideoCandidate[]> {
+): Promise<AdRef[]> {
   if (!apiKey) {
     logger.warn('FOREPLAY_API_KEY 未配置，跳过 Foreplay');
     return [];
@@ -67,26 +66,26 @@ async function searchForeplay(
     const json = (await res.json()) as { data?: Array<Record<string, unknown>> };
     const items = json.data ?? [];
 
-    const out: VideoCandidate[] = [];
+    const out: AdRef[] = [];
     for (const item of items.slice(0, limit)) {
       const platforms = (item.publisher_platform as unknown[]) ?? [];
       const platformStr = Array.isArray(platforms) ? platforms.join(', ') : String(platforms);
-      const desc = (item.description ?? item.cta_title ?? item.name ?? '') as string;
+      const caption = (item.description ?? item.cta_title ?? item.name ?? '') as string;
       const running = (item.running_duration ?? {}) as { days?: number };
       out.push({
-        platform: `Foreplay (${platformStr || 'unknown'})`,
-        url: (item.link_url as string) || (item.video as string) || '',
-        video_file_url: (item.video as string) || '',
-        description: desc.slice(0, 200),
-        author: (item.name as string) ?? '',
-        plays: null,
-        likes: null,
-        duration_sec: item.video_duration ? Number(item.video_duration) : null,
-        cover_url: ((item.thumbnail as string) || (item.avatar as string) || '') as string,
-        is_ad: true,
-        running_days: typeof running?.days === 'number' ? running.days : null,
-        ctr: null,
-        format: (item.display_format as string) ?? '',
+        source: `Foreplay (${platformStr || 'unknown'})`,
+        pageUrl: (item.link_url as string) || (item.video as string) || '',
+        mediaUrl: (item.video as string) || '',
+        caption: caption.slice(0, 200),
+        advertiser: (item.name as string) ?? '',
+        viewCount: null,
+        likeCount: null,
+        lengthSec: item.video_duration ? Number(item.video_duration) : null,
+        thumbUrl: ((item.thumbnail as string) || (item.avatar as string) || '') as string,
+        sponsored: true,
+        liveDays: typeof running?.days === 'number' ? running.days : null,
+        clickRate: null,
+        layout: (item.display_format as string) ?? '',
       });
     }
     return out;
@@ -96,18 +95,18 @@ async function searchForeplay(
   }
 }
 
-function dedupeKey(c: VideoCandidate): string {
-  if (c.video_file_url) return `vf:${c.video_file_url.toLowerCase()}`;
-  if (c.cover_url) return `cv:${c.cover_url.toLowerCase()}`;
-  if (c.url) return `u:${c.url.toLowerCase()}`;
-  return [c.platform, c.author, c.description, c.duration_sec ?? ''].join('|').toLowerCase();
+function refIdentity(c: AdRef): string {
+  if (c.mediaUrl) return `m:${c.mediaUrl.toLowerCase()}`;
+  if (c.thumbUrl) return `t:${c.thumbUrl.toLowerCase()}`;
+  if (c.pageUrl) return `p:${c.pageUrl.toLowerCase()}`;
+  return [c.source, c.advertiser, c.caption, c.lengthSec ?? ''].join('|').toLowerCase();
 }
 
-function dedupe(cands: VideoCandidate[]): VideoCandidate[] {
+function dropDuplicates(refs: AdRef[]): AdRef[] {
   const seen = new Set<string>();
-  const out: VideoCandidate[] = [];
-  for (const c of cands) {
-    const k = dedupeKey(c);
+  const out: AdRef[] = [];
+  for (const c of refs) {
+    const k = refIdentity(c);
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(c);
@@ -115,38 +114,61 @@ function dedupe(cands: VideoCandidate[]): VideoCandidate[] {
   return out;
 }
 
-function buildSummary(cands: VideoCandidate[]): string {
-  return cands
-    .map((c, i) => {
-      const parts: string[] = [`#${i + 1} [${c.platform}]`];
-      if (c.author) parts.push(`@${c.author}`);
-      if (c.plays != null) parts.push(`${fmtCount(c.plays)} plays`);
-      if (c.likes != null) parts.push(`${fmtCount(c.likes)} likes`);
-      if (showRunningDays(c.running_days)) parts.push(`running ${c.running_days}d`);
-      if (c.ctr != null) parts.push(`CTR ${c.ctr}`);
-      const desc = (c.description ?? '').slice(0, 100);
-      if (desc) parts.push(`"${desc}"`);
-      return parts.join(' | ');
-    })
-    .join('\n');
+function renderRefLine(c: AdRef, label: string): string {
+  const parts: string[] = [label];
+  if (c.advertiser) parts.push(`@${c.advertiser}`);
+  if (c.viewCount != null) parts.push(`${humanCount(c.viewCount)} plays`);
+  if (c.likeCount != null) parts.push(`${humanCount(c.likeCount)} likes`);
+  if (isLongRunning(c.liveDays)) parts.push(`running ${c.liveDays}d`);
+  if (c.clickRate != null) parts.push(`CTR ${c.clickRate}`);
+  return parts.join(' | ');
 }
 
-async function filterWithLLM(
+function rankByEngagement(refs: AdRef[]): number[] {
+  const scored = refs.map((c, i) => {
+    let s = (c.viewCount ?? 0) + (c.likeCount ?? 0) * 10;
+    if (c.liveDays) s += c.liveDays * 1000;
+    return [s, i] as const;
+  });
+  scored.sort((a, b) => b[0] - a[0]);
+  return scored.map(([, i]) => i);
+}
+
+async function rankWithLLM(
   query: string,
-  cands: VideoCandidate[],
+  refs: AdRef[],
   openai: OpenAI,
-  maxResults: number,
+  want: number,
 ): Promise<{ indices: number[]; costUsd: number }> {
-  if (cands.length <= maxResults) {
-    return { indices: cands.map((_, i) => i), costUsd: 0 };
+  if (refs.length <= want) {
+    return { indices: refs.map((_, i) => i), costUsd: 0 };
   }
-  const summary = buildSummary(cands);
-  const prompt = `User is searching for video references related to: "${query}"\n\nBelow are ${cands.length} candidate videos from TikTok, Instagram, and Foreplay (ad database).\nPick the ${maxResults} most relevant ones for the user's creative needs. Prefer videos that are: highly relevant to the query, have high engagement, and include Foreplay ads with long running days (proven effective ads).\n\nCandidates:\n${summary}\n\nReturn ONLY a JSON array of the selected candidate numbers (1-indexed), ordered by relevance. Example: [3, 1, 7, 5, 2, 8, 4, 6, 9, 10]`;
+  const catalog = refs
+    .map((c, i) => {
+      const head = renderRefLine(c, `#${i + 1} [${c.source}]`);
+      const snippet = (c.caption ?? '').slice(0, 100);
+      return snippet ? `${head} | "${snippet}"` : head;
+    })
+    .join('\n');
+
+  const instruction = [
+    `Reference query: "${query}"`,
+    '',
+    `Below are ${refs.length} ad-creative candidates pulled from the Foreplay library.`,
+    `Select the ${want} that best match the query for creative reference. Favour candidates that are`,
+    'on-topic, show strong engagement, and have run for many days (a sign of proven performance).',
+    '',
+    'Candidates:',
+    catalog,
+    '',
+    'Respond with ONLY a JSON array of the chosen 1-based indices ordered best-first,',
+    'e.g. [3, 1, 7, 5, 2].',
+  ].join('\n');
 
   try {
     const resp = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: instruction }],
       temperature: 0,
       max_tokens: 200,
     });
@@ -161,28 +183,21 @@ async function filterWithLLM(
       .replace(/^```(?:json)?/, '')
       .replace(/```$/, '')
       .trim();
-    const indices = JSON.parse(cleaned) as number[];
-    if (Array.isArray(indices)) {
+    const picked = JSON.parse(cleaned) as number[];
+    if (Array.isArray(picked)) {
       return {
-        indices: indices
+        indices: picked
           .map((x) => Number(x) - 1)
-          .filter((i) => i >= 0 && i < cands.length)
-          .slice(0, maxResults),
+          .filter((i) => i >= 0 && i < refs.length)
+          .slice(0, want),
         costUsd,
       };
     }
   } catch (err) {
-    logger.warn({ err }, 'LLM filtering failed; falling back to engagement score');
+    logger.warn({ err }, 'LLM ranking failed; falling back to engagement score');
   }
 
-  // 兜底：按 plays + likes*10 + running_days*1000 排序
-  const scored = cands.map((c, i) => {
-    let s = (c.plays ?? 0) + (c.likes ?? 0) * 10;
-    if (c.running_days) s += c.running_days * 1000;
-    return [s, i] as const;
-  });
-  scored.sort((a, b) => b[0] - a[0]);
-  return { indices: scored.slice(0, maxResults).map(([, i]) => i), costUsd: 0 };
+  return { indices: rankByEngagement(refs).slice(0, want), costUsd: 0 };
 }
 
 export class VideoSearchTool extends Tool {
@@ -244,33 +259,33 @@ export class VideoSearchTool extends Tool {
       searchLimit,
     );
 
-    const candidates = dedupe(foreplay);
-    if (candidates.length === 0) return `No videos found for: ${query}`;
+    const refs = dropDuplicates(foreplay);
+    if (refs.length === 0) return `No videos found for: ${query}`;
 
     const openai = this.getOpenAI();
-    let selected: VideoCandidate[];
+    let selected: AdRef[];
     let costUsd = 0;
     if (openai) {
-      const { indices, costUsd: c } = await filterWithLLM(query, candidates, openai, count);
+      const { indices, costUsd: c } = await rankWithLLM(query, refs, openai, count);
       costUsd = c;
-      selected = indices.map((i) => candidates[i]!).slice(0, count);
+      selected = indices.map((i) => refs[i]!).slice(0, count);
     } else {
-      selected = candidates.slice(0, count);
+      selected = refs.slice(0, count);
     }
     if (selected.length === 0) return `No videos found for: ${query}`;
 
     const lines: string[] = [`Found ${selected.length} videos for "${query}":`, ''];
     selected.forEach((v, i) => {
-      const parts: string[] = [`[${v.platform}]`];
-      if (v.author) parts.push(`@${v.author}`);
-      if (v.plays != null) parts.push(`${fmtCount(v.plays)} plays`);
-      if (v.likes != null) parts.push(`${fmtCount(v.likes)} likes`);
-      if (v.duration_sec) parts.push(`${v.duration_sec}s`);
-      if (showRunningDays(v.running_days)) parts.push(`running ${v.running_days}d`);
+      const parts: string[] = [`[${v.source}]`];
+      if (v.advertiser) parts.push(`@${v.advertiser}`);
+      if (v.viewCount != null) parts.push(`${humanCount(v.viewCount)} plays`);
+      if (v.likeCount != null) parts.push(`${humanCount(v.likeCount)} likes`);
+      if (v.lengthSec) parts.push(`${v.lengthSec}s`);
+      if (isLongRunning(v.liveDays)) parts.push(`running ${v.liveDays}d`);
       lines.push(`${i + 1}. ${parts.join(' | ')}`);
-      if (v.description) lines.push(`   "${v.description}"`);
-      if (v.video_file_url) lines.push(`   Video: ${v.video_file_url}`);
-      if (v.url) lines.push(`   Source: ${v.url}`);
+      if (v.caption) lines.push(`   "${v.caption}"`);
+      if (v.mediaUrl) lines.push(`   Video: ${v.mediaUrl}`);
+      if (v.pageUrl) lines.push(`   Source: ${v.pageUrl}`);
       lines.push('');
     });
 

@@ -21,7 +21,7 @@ import { z } from 'zod';
 import * as Sentry from '@sentry/node';
 
 import type { AgentEvent } from '../core/events.js';
-import type { AgentLoop } from '../core/loop.js';
+import type { ChatRunner } from '../core/loop.js';
 import { logger } from '../observability/logger.js';
 import type { SessionManager } from '../session/manager.js';
 
@@ -44,7 +44,7 @@ const CreateRunSchema = z.object({
 const SSE_HEARTBEAT_MS = 15_000;
 
 export interface ServerDeps {
-  agentLoop: AgentLoop;
+  agentLoop: ChatRunner;
   sessionManager: SessionManager;
   corsOrigins: string[];
   clerkIssuer: string;
@@ -142,7 +142,7 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
       )
       .catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
-        logger.error({ err, run_id: runId }, 'AgentLoop crashed outside event loop');
+        logger.error({ err, run_id: runId }, 'ChatRunner crashed outside event loop');
         runStore.publish(runId, {
           event: 'agent.failed',
           data: { error: message, code: 'internal_error' },

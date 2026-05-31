@@ -16,6 +16,7 @@
     "@lumen/shared": "workspace:*",
     "@sentry/node": "^10.55.0",
     "dotenv": "^16.4.5",
+    "gray-matter": "^4.0.3",
     "hono": "^4.6.10",
     "https-proxy-agent": "^9.0.0",
     "ioredis": "^5.4.1",

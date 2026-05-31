@@ -15,15 +15,15 @@ import { OpenAIProvider, VolcArkProvider } from './volcArk.js';
 
 export type ProviderName = 'anthropic' | 'volcark' | 'openai' | 'gemini';
 
-export class ProviderRouter {
+export class ModelRouter {
   private readonly cache = new Map<ProviderName, LLMProvider>();
 
   pick(model: string): { provider: LLMProvider; resolvedModel: string } {
-    const name = ProviderRouter.classify(model);
+    const name = ModelRouter.classify(model);
     const provider = this.getProvider(name);
     return {
       provider,
-      resolvedModel: ProviderRouter.stripPrefix(model) || provider.getDefaultModel(),
+      resolvedModel: ModelRouter.stripPrefix(model) || provider.getDefaultModel(),
     };
   }
 

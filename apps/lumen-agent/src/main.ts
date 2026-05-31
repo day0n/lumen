@@ -4,8 +4,8 @@
  * 顺序：
  *   1. load env / config
  *   2. 连 Mongo + Redis
- *   3. 构造 SkillsLoader / AgentContext / ProfileRegistry / ProviderRouter
- *   4. AgentLoop / SessionManager
+ *   3. 构造 SkillLibrary / AgentDeps / BlueprintRegistry / ModelRouter
+ *   4. ChatRunner / SessionManager
  *   5. Hono server.listen
  */
 
@@ -17,15 +17,15 @@ import { serve } from '@hono/node-server';
 
 import { buildApp } from './api/server.js';
 import { getConfig } from './config/index.js';
-import { AgentLoop } from './core/loop.js';
+import { ChatRunner } from './core/loop.js';
 import { MemoryManager } from './core/memory.js';
-import { type AgentContext, ProfileRegistry } from './core/profile.js';
-import { BUILTIN_SKILLS_DIR, SkillsLoader } from './core/skills.js';
+import { type AgentDeps, BlueprintRegistry } from './core/profile.js';
+import { BUILTIN_SKILLS_DIR, SkillLibrary } from './core/skills.js';
 import { closeMongo, getMongo } from './database/mongo.js';
 import { closeRedis, getRedis } from './database/redis.js';
 import { logger } from './observability/logger.js';
 import { applyOutboundProxy } from './observability/proxy.js';
-import { ProviderRouter } from './providers/router.js';
+import { ModelRouter } from './providers/router.js';
 import { SessionManager } from './session/manager.js';
 
 import { MAIN_PROFILE } from './agents/main/profile.js';
@@ -52,16 +52,16 @@ async function main(): Promise<void> {
 
   const memory = cfg.OPENAI_API_KEY ? new MemoryManager(db, cfg.OPENAI_API_KEY) : null;
 
-  const skillsLoader = new SkillsLoader(BUILTIN_SKILLS_DIR);
+  const skillsLoader = new SkillLibrary(BUILTIN_SKILLS_DIR);
   logger.info(
     { skills_dir: BUILTIN_SKILLS_DIR, skills: skillsLoader.listSkills() },
     'Skills loaded',
   );
 
-  const profileRegistry = new ProfileRegistry();
+  const profileRegistry = new BlueprintRegistry();
   profileRegistry.register(MAIN_PROFILE);
 
-  const context: AgentContext = {
+  const context: AgentDeps = {
     workspaceDir: resolve(process.cwd(), 'workspace'),
     webProxy: cfg.HTTP_PROXY || null,
     restrictToWorkspace: false,
@@ -75,9 +75,9 @@ async function main(): Promise<void> {
     },
   };
 
-  const providerRouter = new ProviderRouter();
+  const providerRouter = new ModelRouter();
 
-  const agentLoop = new AgentLoop({
+  const agentLoop = new ChatRunner({
     context,
     skillsLoader,
     profileRegistry,
