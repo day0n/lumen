@@ -34,6 +34,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { nanoid } from 'nanoid';
 import { usePathname, useRouter } from 'next/navigation';
 import {
+  type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
   type RefObject,
@@ -60,6 +61,26 @@ interface ChatPanelProps {
   defaultOpen?: boolean;
   onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
   onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
+}
+
+interface ChatUploadAttachment {
+  id: string;
+  key?: string;
+  url: string;
+  name: string;
+  contentType: string;
+  size: number;
+}
+
+interface AgentChatUploadResponse {
+  ok?: boolean;
+  data?: {
+    attachment?: Omit<ChatUploadAttachment, 'id'>;
+  };
+  error?: {
+    message?: string;
+  };
+  message?: string;
 }
 
 export function ChatPanel({
@@ -92,8 +113,12 @@ export function ChatPanel({
   const { isLoaded: authReady, isSignedIn, requireLogin } = useLoginRedirect();
   const [open, setOpen] = useState(defaultOpen);
   const [draft, setDraft] = useState('');
+  const [attachments, setAttachments] = useState<ChatUploadAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const autoSentRef = useRef(false);
   const initialPromptRef = useRef(initialPrompt);
   initialPromptRef.current = initialPrompt;
@@ -142,6 +167,8 @@ export function ChatPanel({
     setActiveSessionId(draftSessionId);
     setSessions([]);
     setSessionsOpen(false);
+    setAttachments([]);
+    setUploadError(null);
 
     if (!authReady || !isSignedIn || !projectId) return;
     const controller = new AbortController();
@@ -220,13 +247,57 @@ export function ChatPanel({
     el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
   }, [draft]);
 
+  const handleUploadImages = useCallback(
+    async (files: FileList | File[]) => {
+      const nextFiles = Array.from(files).filter((file) => file.type.startsWith('image/'));
+      if (nextFiles.length === 0) {
+        setUploadError('请选择图片文件');
+        return;
+      }
+      if (!requireLogin()) return;
+
+      setUploading(true);
+      setUploadError(null);
+      try {
+        const uploaded = await Promise.all(
+          nextFiles.map((file) => uploadAgentChatImage(file, projectId)),
+        );
+        setAttachments((prev) => [...prev, ...uploaded].slice(-8));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setUploadError(message);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [projectId, requireLogin],
+  );
+
+  const handleFileChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const files = event.currentTarget.files;
+      if (files?.length) {
+        void handleUploadImages(files);
+      }
+      event.currentTarget.value = '';
+    },
+    [handleUploadImages],
+  );
+
+  const removeAttachment = useCallback((attachmentId: string) => {
+    setAttachments((prev) => prev.filter((item) => item.id !== attachmentId));
+  }, []);
+
   const submit = () => {
     const text = draft.trim();
-    if (!text || busy) return;
+    if ((!text && attachments.length === 0) || busy || uploading) return;
     if (!requireLogin()) return;
+    const outgoingMessage = buildMessageWithAttachments(text, attachments);
     interactionStartedRef.current = true;
     setDraft('');
-    void send(text).finally(() => {
+    setAttachments([]);
+    setUploadError(null);
+    void send(outgoingMessage).finally(() => {
       void loadSessions();
     });
   };
@@ -235,6 +306,8 @@ export function ChatPanel({
     if (busy) return;
     interactionStartedRef.current = false;
     setSessionsOpen(false);
+    setAttachments([]);
+    setUploadError(null);
     setActiveSessionId(createDraftSessionId());
   };
 
@@ -245,6 +318,8 @@ export function ChatPanel({
     }
     interactionStartedRef.current = false;
     setSessionsOpen(false);
+    setAttachments([]);
+    setUploadError(null);
     setActiveSessionId(nextSessionId);
   };
 
@@ -378,11 +453,17 @@ export function ChatPanel({
         </div>
 
         <Composer
+          attachments={attachments}
           busy={busy}
           draft={draft}
+          fileInputRef={fileInputRef}
           textareaRef={textareaRef}
+          uploadError={uploadError}
+          uploading={uploading}
           onDraftChange={setDraft}
+          onFileChange={handleFileChange}
           onKeyDown={handleKeyDown}
+          onRemoveAttachment={removeAttachment}
           onSubmit={handleSubmit}
           onStop={stop}
         />
@@ -519,6 +600,70 @@ function formatSessionTime(value: string | undefined): string {
   );
 }
 
+function buildMessageWithAttachments(text: string, attachments: ChatUploadAttachment[]): string {
+  if (attachments.length === 0) return text;
+
+  const intro = text.trim() || '请查看我上传的图片。';
+  const lines = attachments.map((item, index) => {
+    const label = item.name.trim() || `image-${index + 1}`;
+    return `${index + 1}. ${label}: ${item.url}`;
+  });
+  return `${intro}\n\n上传图片：\n${lines.join('\n')}`;
+}
+
+async function uploadAgentChatImage(
+  file: File,
+  workflowId: string | undefined,
+): Promise<ChatUploadAttachment> {
+  const form = new FormData();
+  form.set('file', file);
+  if (workflowId) form.set('workflowId', workflowId);
+
+  const response = await fetch('/api/agent-chat/uploads', {
+    method: 'POST',
+    body: form,
+  });
+  const rawText = await response.text().catch(() => '');
+  const payload = parseUploadResponse(rawText);
+  if (!response.ok) {
+    throw new Error(readUploadError(payload) ?? (rawText || `HTTP ${response.status}`));
+  }
+
+  const attachment = payload?.data?.attachment;
+  if (!attachment?.url) {
+    throw new Error('上传响应缺少图片地址');
+  }
+
+  return {
+    id: nanoid(),
+    key: attachment.key,
+    url: attachment.url,
+    name: attachment.name || file.name || 'image',
+    contentType: attachment.contentType || file.type || 'image/*',
+    size: attachment.size || file.size,
+  };
+}
+
+function parseUploadResponse(rawText: string): AgentChatUploadResponse | null {
+  if (!rawText.trim()) return null;
+  try {
+    return JSON.parse(rawText) as AgentChatUploadResponse;
+  } catch {
+    return null;
+  }
+}
+
+function readUploadError(payload: AgentChatUploadResponse | null): string | null {
+  if (!payload) return null;
+  return payload.error?.message ?? payload.message ?? null;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
 function LumenOrb({ active }: { active: boolean }) {
   return (
     <span className="relative flex h-10 w-10 items-center justify-center">
@@ -587,6 +732,8 @@ function MessageItem({ message }: { message: ChatMessage }) {
 }
 
 function UserMessage({ message }: { message: ChatMessage }) {
+  const richContent = parseRichMessageContent(message.content);
+
   return (
     <motion.li
       layout
@@ -596,7 +743,8 @@ function UserMessage({ message }: { message: ChatMessage }) {
       className="flex justify-end"
     >
       <div className="max-w-[72%] rounded-[16px] bg-[#323335] px-3.5 py-2.5 text-[14px] font-medium leading-6 text-white shadow-[0_12px_32px_-24px_rgba(0,0,0,0.85)]">
-        <span className="whitespace-pre-wrap break-words">{message.content}</span>
+        <RichMessageText parts={richContent.parts} />
+        <MediaPreviewList media={richContent.media} />
       </div>
     </motion.li>
   );
@@ -848,54 +996,145 @@ function StreamingCaret() {
 }
 
 function Composer({
+  attachments,
   busy,
   draft,
+  fileInputRef,
   textareaRef,
+  uploadError,
+  uploading,
   onDraftChange,
+  onFileChange,
   onKeyDown,
+  onRemoveAttachment,
   onSubmit,
   onStop,
 }: {
+  attachments: ChatUploadAttachment[];
   busy: boolean;
   draft: string;
+  fileInputRef: RefObject<HTMLInputElement | null>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
+  uploadError: string | null;
+  uploading: boolean;
   onDraftChange: (value: string) => void;
+  onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onRemoveAttachment: (attachmentId: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onStop: () => void;
 }) {
+  const canSend = Boolean(draft.trim()) || attachments.length > 0;
+
   return (
     <form onSubmit={onSubmit} className="relative z-10 shrink-0 px-4 pb-4 pt-2">
-      <div className="flex items-end gap-3 rounded-[22px] border border-white/[0.16] bg-[#222325]/95 px-4 py-3 shadow-[0_18px_70px_-48px_rgba(0,0,0,0.85)] transition-shadow focus-within:border-white/[0.28]">
-        <textarea
-          ref={textareaRef}
-          value={draft}
-          onChange={(event) => onDraftChange(event.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Use '@' to mention nodes and '/' to use skills."
-          rows={1}
-          className="max-h-[96px] min-h-[28px] flex-1 resize-none bg-transparent py-1 text-[15px] leading-[24px] text-white outline-none placeholder:text-white/30"
-        />
-        <button
-          type="button"
-          aria-label="添加"
-          className="mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.07] hover:text-white"
-        >
-          <IconPlus size={22} stroke={2.1} />
-        </button>
-        <SendOrStopButton busy={busy} canSend={Boolean(draft.trim())} onStop={onStop} />
+      <div className="rounded-[22px] border border-white/[0.16] bg-[#222325]/95 px-4 py-3 shadow-[0_18px_70px_-48px_rgba(0,0,0,0.85)] transition-shadow focus-within:border-white/[0.28]">
+        {attachments.length > 0 ? (
+          <AttachmentStrip attachments={attachments} onRemoveAttachment={onRemoveAttachment} />
+        ) : null}
+
+        {uploadError ? (
+          <div className="mb-2 rounded-lg border border-[#ff7b8a]/18 bg-[#ff7b8a]/8 px-2.5 py-1.5 text-[12px] leading-5 text-[#ffb6bf]">
+            {uploadError}
+          </div>
+        ) : null}
+
+        <div className="flex items-end gap-3">
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Use '@' to mention nodes and '/' to use skills."
+            rows={1}
+            className="max-h-[96px] min-h-[28px] flex-1 resize-none bg-transparent py-1 text-[15px] leading-[24px] text-white outline-none placeholder:text-white/30"
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={onFileChange}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy || uploading}
+            aria-label={uploading ? '上传中' : '上传图片'}
+            title={uploading ? '上传中' : '上传图片'}
+            className={cn(
+              'mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
+              busy || uploading
+                ? 'cursor-not-allowed text-white/28'
+                : 'text-white/70 hover:bg-white/[0.07] hover:text-white',
+            )}
+          >
+            {uploading ? (
+              <IconLoader2 size={18} className="animate-spin" stroke={2.2} />
+            ) : (
+              <IconPlus size={22} stroke={2.1} />
+            )}
+          </button>
+          <SendOrStopButton busy={busy} canSend={canSend} disabled={uploading} onStop={onStop} />
+        </div>
       </div>
     </form>
+  );
+}
+
+function AttachmentStrip({
+  attachments,
+  onRemoveAttachment,
+}: {
+  attachments: ChatUploadAttachment[];
+  onRemoveAttachment: (attachmentId: string) => void;
+}) {
+  return (
+    <div className="mb-3 flex flex-wrap gap-2">
+      {attachments.map((item) => (
+        <div
+          key={item.id}
+          className="group relative flex h-14 min-w-0 max-w-[210px] items-center gap-2 rounded-[12px] border border-white/[0.12] bg-white/[0.045] p-1.5 pr-7"
+        >
+          <img
+            src={item.url}
+            alt={item.name}
+            className="h-11 w-11 shrink-0 rounded-lg object-cover"
+            loading="lazy"
+          />
+          <span className="min-w-0">
+            <span className="block truncate text-[12px] font-semibold leading-4 text-white/78">
+              {item.name}
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-4 text-white/34">
+              {formatBytes(item.size)}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => onRemoveAttachment(item.id)}
+            aria-label="移除图片"
+            title="移除图片"
+            className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/48 text-white/62 transition-colors hover:bg-black/70 hover:text-white"
+          >
+            <IconX size={13} stroke={2.6} />
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 
 function SendOrStopButton({
   busy,
   canSend,
+  disabled = false,
   onStop,
 }: {
   busy: boolean;
   canSend: boolean;
+  disabled?: boolean;
   onStop: () => void;
 }) {
   if (busy) {
@@ -915,12 +1154,12 @@ function SendOrStopButton({
   return (
     <button
       type="submit"
-      disabled={!canSend}
+      disabled={!canSend || disabled}
       aria-label="发送"
       title="发送"
       className={cn(
         'flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all',
-        canSend
+        canSend && !disabled
           ? 'bg-white text-[#111315] shadow-[0_12px_30px_-18px_rgba(255,255,255,0.82)] hover:brightness-95 active:scale-[0.96]'
           : 'bg-white/[0.07] text-white/28 ring-1 ring-white/[0.06]',
       )}

@@ -1,0 +1,90 @@
+import { requireStudioUser } from '@/server/auth';
+import { failJson, okJson, routeError, withApiRouteSpan } from '@/server/http';
+import { uploadBuffer } from '@/server/objectStorage';
+
+export const runtime = 'nodejs';
+
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/avif': 'avif',
+};
+
+export const POST = withApiRouteSpan('POST /api/agent-chat/uploads', async (request: Request) => {
+  try {
+    const user = await requireStudioUser();
+    const form = await request.formData();
+    const file = form.get('file');
+
+    if (!(file instanceof File)) {
+      return failJson('请选择要上传的图片', 400);
+    }
+
+    const contentType = normalizeContentType(file.type);
+    if (!contentType || !contentType.startsWith('image/')) {
+      return failJson('只支持上传图片文件', 400);
+    }
+    if (file.size <= 0) {
+      return failJson('图片文件为空', 400);
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      return failJson('图片不能超过 12MB', 400);
+    }
+
+    const extension = resolveImageExtension(contentType, file.name);
+    if (!extension) {
+      return failJson('暂不支持该图片格式', 400);
+    }
+
+    const workflowId = toPathSegment(form.get('workflowId'));
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const result = await uploadBuffer({
+      body: bytes,
+      contentType,
+      extension,
+      prefix: ['agent-chat', user.id, workflowId].filter(Boolean).join('/'),
+    });
+
+    return okJson({
+      attachment: {
+        key: result.key,
+        url: result.url,
+        name: file.name || `image.${extension}`,
+        contentType,
+        size: result.size,
+      },
+    });
+  } catch (error) {
+    return routeError(error);
+  }
+});
+
+function normalizeContentType(value: string): string {
+  return value.split(';')[0]?.trim().toLowerCase() ?? '';
+}
+
+function resolveImageExtension(contentType: string, fileName: string): string | null {
+  const fromType = IMAGE_EXTENSIONS[contentType];
+  if (fromType) return fromType;
+
+  const match = /\.([a-z0-9]+)$/i.exec(fileName.trim());
+  const extension = match?.[1]?.toLowerCase();
+  if (!extension) return null;
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'].includes(extension)) {
+    return extension === 'jpeg' ? 'jpg' : extension;
+  }
+  return null;
+}
+
+function toPathSegment(value: FormDataEntryValue | null): string | null {
+  if (typeof value !== 'string') return null;
+  const cleaned = value
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .replace(/-+/g, '-');
+  return cleaned.length > 0 ? cleaned.slice(0, 120) : null;
+}
