@@ -11,7 +11,16 @@
  * DSN 留空时优雅 no-op。
  */
 
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import * as Sentry from '@sentry/nextjs';
+import { config as dotenvConfig } from 'dotenv';
+
+for (const file of ['.env', '.env.local']) {
+  const p = resolve(process.cwd(), file);
+  if (existsSync(p)) dotenvConfig({ path: p, override: true });
+}
 
 if (!Sentry.getClient()) {
   Sentry.init({
