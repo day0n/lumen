@@ -55,6 +55,12 @@ body {
   overflow-x: hidden;
 }
 
+.lumen-serif-display {
+  font-family: "Songti SC", "Noto Serif SC", "Source Han Serif SC", STSong, SimSun, Georgia, serif;
+  font-synthesis-weight: none;
+  letter-spacing: 0;
+}
+
 /* film grain overlay — gives the entire page that subtle "real photography" texture */
 body::before {
   content: "";
