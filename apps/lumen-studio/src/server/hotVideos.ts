@@ -12,6 +12,7 @@ import {
 import { z } from 'zod';
 
 import { getHotVideoRepository, getStudioCache } from './db';
+import { traceStudioStep } from './telemetry';
 import { TikTokScrapeError, isTikTokUrl, scrapeTikTokVideo } from './tiktokScraper';
 
 const LIST_CACHE_TTL_SECONDS = 60;
@@ -29,24 +30,54 @@ export async function listHotVideos(input: ListHotVideosInput): Promise<ListHotV
   const cache = getStudioCache();
   const cacheKey = `hot-videos:list:${hashInput(parsed)}`;
 
-  const cached = await cache.get(cacheKey, HotVideoListResultSchema);
+  const cached = await traceStudioStep(
+    'studio.hot_videos.list.cache_get',
+    'cache.get',
+    () => cache.get(cacheKey, HotVideoListResultSchema),
+    {
+      'lumen.hot_videos.limit': parsed.limit,
+      'lumen.hot_videos.skip': parsed.skip,
+      'lumen.hot_videos.has_query': Boolean(parsed.query),
+      'lumen.hot_videos.owner_scope': parsed.ownerScope ?? 'all',
+    },
+  );
   if (cached) return cached;
 
-  const repository = await getHotVideoRepository();
-  const result = await repository.list(parsed);
-  await cache.set(cacheKey, result, LIST_CACHE_TTL_SECONDS);
+  const repository = await traceStudioStep(
+    'studio.hot_videos.repository',
+    'db.connect',
+    getHotVideoRepository,
+  );
+  const result = await traceStudioStep('studio.hot_videos.list.db', 'db.query', () =>
+    repository.list(parsed),
+  );
+  await traceStudioStep('studio.hot_videos.list.cache_set', 'cache.set', () =>
+    cache.set(cacheKey, result, LIST_CACHE_TTL_SECONDS),
+  );
   return result;
 }
 
 export async function getHotVideo(id: string): Promise<HotVideoRecord | null> {
   const cache = getStudioCache();
   const cacheKey = `hot-videos:detail:${id}`;
-  const cached = await cache.get(cacheKey, HotVideoRecordSchema);
+  const cached = await traceStudioStep('studio.hot_videos.detail.cache_get', 'cache.get', () =>
+    cache.get(cacheKey, HotVideoRecordSchema),
+  );
   if (cached) return cached;
 
-  const repository = await getHotVideoRepository();
-  const video = await repository.getById(id);
-  if (video) await cache.set(cacheKey, video, DETAIL_CACHE_TTL_SECONDS);
+  const repository = await traceStudioStep(
+    'studio.hot_videos.repository',
+    'db.connect',
+    getHotVideoRepository,
+  );
+  const video = await traceStudioStep('studio.hot_videos.detail.db', 'db.query', () =>
+    repository.getById(id),
+  );
+  if (video) {
+    await traceStudioStep('studio.hot_videos.detail.cache_set', 'cache.set', () =>
+      cache.set(cacheKey, video, DETAIL_CACHE_TTL_SECONDS),
+    );
+  }
   return video;
 }
 
@@ -62,21 +93,29 @@ export async function ingestHotVideoFromUrl(
     throw new TikTokScrapeError('暂时只支持 TikTok 视频链接');
   }
 
-  const repository = await getHotVideoRepository();
-  const scraped = await scrapeTikTokVideo(url);
+  const repository = await traceStudioStep(
+    'studio.hot_videos.repository',
+    'db.connect',
+    getHotVideoRepository,
+  );
+  const scraped = await traceStudioStep('studio.hot_videos.scrape', 'http.client', () =>
+    scrapeTikTokVideo(url),
+  );
 
-  if (scraped.input.externalId) {
-    const existing = await repository.findByExternalId(
-      scraped.input.sourcePlatform,
-      scraped.input.externalId,
+  const externalId = scraped.input.externalId;
+  if (externalId) {
+    const existing = await traceStudioStep('studio.hot_videos.find_existing.db', 'db.query', () =>
+      repository.findByExternalId(scraped.input.sourcePlatform, externalId),
     );
     if (existing) return existing;
   }
 
-  const created = await repository.create({
-    ...scraped.input,
-    ownerUserId: options.ownerUserId,
-  });
+  const created = await traceStudioStep('studio.hot_videos.create.db', 'db.write', () =>
+    repository.create({
+      ...scraped.input,
+      ownerUserId: options.ownerUserId,
+    }),
+  );
   await invalidateListCache();
   return created;
 }

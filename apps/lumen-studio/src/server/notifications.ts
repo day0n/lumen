@@ -4,6 +4,7 @@ import type { CreateOfficialNotificationInput, OfficialNotificationRecord } from
 
 import { requireStudioUser } from './auth';
 import { getNotificationRepository } from './db';
+import { traceStudioStep } from './telemetry';
 
 const DEFAULT_OFFICIAL_NOTIFICATIONS: CreateOfficialNotificationInput[] = [
   {
@@ -37,11 +38,19 @@ export interface OfficialNotificationsResponse {
 }
 
 export async function listOfficialNotifications(): Promise<OfficialNotificationsResponse> {
-  const user = await requireStudioUser();
-  const repository = await getNotificationRepository();
-  await ensureDefaultNotifications(repository);
+  const user = await traceStudioStep('studio.auth.require_user', 'auth', requireStudioUser);
+  const repository = await traceStudioStep(
+    'studio.notifications.repository',
+    'db.connect',
+    getNotificationRepository,
+  );
+  await traceStudioStep('studio.notifications.ensure_defaults', 'db.write', () =>
+    ensureDefaultNotifications(repository),
+  );
 
-  const notifications = await repository.listOfficialForUser(user.id);
+  const notifications = await traceStudioStep('studio.notifications.list.db', 'db.query', () =>
+    repository.listOfficialForUser(user.id),
+  );
   return {
     notifications,
     unreadCount: notifications.filter((notification) => !notification.isRead).length,
@@ -49,10 +58,18 @@ export async function listOfficialNotifications(): Promise<OfficialNotifications
 }
 
 export async function markOfficialNotificationRead(notificationId: string): Promise<boolean> {
-  const user = await requireStudioUser();
-  const repository = await getNotificationRepository();
-  await ensureDefaultNotifications(repository);
-  return repository.markOfficialRead(user.id, notificationId);
+  const user = await traceStudioStep('studio.auth.require_user', 'auth', requireStudioUser);
+  const repository = await traceStudioStep(
+    'studio.notifications.repository',
+    'db.connect',
+    getNotificationRepository,
+  );
+  await traceStudioStep('studio.notifications.ensure_defaults', 'db.write', () =>
+    ensureDefaultNotifications(repository),
+  );
+  return traceStudioStep('studio.notifications.mark_read.db', 'db.write', () =>
+    repository.markOfficialRead(user.id, notificationId),
+  );
 }
 
 function ensureDefaultNotifications(
