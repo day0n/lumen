@@ -2,56 +2,63 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-type SceneKey = 'creator' | 'signals' | 'workflow' | 'frames' | 'memory';
+type SceneKey = 'creator' | 'platform' | 'generate' | 'finish';
 
 interface StoryScene {
   key: SceneKey;
   kicker: string;
-  text: string;
   side: 'left' | 'right';
+  text: string;
 }
 
 interface Particle {
-  shade: number;
-  drift: number;
   phase: number;
   seed: number;
+  shade: number;
   size: number;
 }
 
 interface Point {
+  motion: number;
+  sparkle: number;
+  weight: number;
   x: number;
   y: number;
   z: number;
 }
 
+interface MaskSample {
+  darkness: number;
+  x: number;
+  y: number;
+}
+
 type ShapeSpec =
   | {
-      kind: 'ellipse';
-      angle?: number;
       cx: number;
       cy: number;
       density?: number;
       depth: number;
+      kind: 'ellipse';
       rx: number;
       ry: number;
       seed: number;
       weight: number;
     }
   | {
-      kind: 'rect';
       angle?: number;
       cx: number;
       cy: number;
       depth: number;
       height: number;
+      kind: 'rect';
       seed: number;
       weight: number;
       width: number;
     }
   | {
-      kind: 'capsule';
       depth: number;
+      kind: 'capsule';
       seed: number;
       thickness: number;
       weight: number;
@@ -61,59 +68,42 @@ type ShapeSpec =
       y2: number;
     }
   | {
-      kind: 'arc';
-      cx: number;
-      cy: number;
-      depth: number;
-      end: number;
-      rx: number;
-      ry: number;
-      seed: number;
-      start: number;
-      thickness: number;
-      weight: number;
-    }
-  | {
-      kind: 'dust';
       cx: number;
       cy: number;
       depth: number;
       height: number;
+      kind: 'dust';
       seed: number;
       weight: number;
       width: number;
     };
+
+const CREATOR_MASK_SRC = '/particle-masks/creator-typing-mask.jpg';
 
 const STORY_SCENES: StoryScene[] = [
   {
     key: 'creator',
     kicker: '在 Lumen 平台创作',
     side: 'right',
-    text: '创作者坐在工作台前，把商品、素材和灵感整理成可以运行的画面。',
+    text: '一个人坐在电脑前，把商品素材整理成可以生成的视频。',
   },
   {
-    key: 'signals',
-    kicker: '理解商品',
+    key: 'platform',
+    kicker: '交给平台',
     side: 'left',
-    text: '商品、卖点和爆款结构，先变成可编辑的创作信号。',
+    text: '脚本、镜头、素材和节奏，被放进同一个创作工作台。',
   },
   {
-    key: 'workflow',
-    kicker: '连接流程',
+    key: 'generate',
+    kicker: '一键生成',
     side: 'right',
-    text: '脚本、镜头、素材和画布，被串成一条可继续调整的工作流。',
+    text: '图文和视频画面开始成形，流程继续留给你编辑。',
   },
   {
-    key: 'frames',
-    kicker: '生成画面',
+    key: 'finish',
+    kicker: '轻松创作',
     side: 'left',
-    text: '图文和视频画面从节点里生成，创作节奏留在同一个工作台里。',
-  },
-  {
-    key: 'memory',
-    kicker: '复用经验',
-    side: 'right',
-    text: '每一次成片，都沉淀为下一次可以复用的判断。',
+    text: '重复的制作被平台接住，人只需要判断和调整。',
   },
 ];
 
@@ -137,14 +127,36 @@ export function HomeParticleStory() {
     let dpr = 1;
     let raf = 0;
     let lastStateUpdate = 0;
-    let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let particles: Particle[] = [];
     let targets: Point[][] = [];
-    let typingTargets: Point[] = [];
+    let maskSamples: MaskSample[] = [];
+    let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let disposed = false;
 
     const reduceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const setReducedMotion = () => {
+    const image = new Image();
+
+    const updateReducedMotion = () => {
       reducedMotion = reduceQuery.matches;
+    };
+
+    const rebuild = () => {
+      const count = particleTarget(width);
+      particles = Array.from({ length: count }, (_, index) => ({
+        phase: seeded(index + 19) * Math.PI * 2,
+        seed: seeded(index + 29),
+        shade: seeded(index + 37),
+        size: width < 640 ? 0.58 + seeded(index + 41) * 0.64 : 0.64 + seeded(index + 41) * 0.92,
+      }));
+
+      targets = [
+        maskSamples.length
+          ? buildMaskTarget(count, maskSamples, 1000)
+          : buildShapeTarget(count, creatorFallbackShapes, 1000),
+        buildShapeTarget(count, platformShapes, 2000),
+        buildShapeTarget(count, generateShapes, 3000),
+        buildShapeTarget(count, finishShapes, 4000),
+      ];
     };
 
     const resize = () => {
@@ -155,17 +167,7 @@ export function HomeParticleStory() {
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      const count = particleTarget(width);
-      particles = Array.from({ length: count }, (_, index) => ({
-        drift: seeded(index + 17),
-        phase: seeded(index + 23) * Math.PI * 2,
-        seed: seeded(index + 29),
-        shade: seeded(index + 31),
-        size: width < 640 ? 0.62 + seeded(index + 37) * 0.68 : 0.72 + seeded(index + 37) * 1.02,
-      }));
-      targets = buildTargets(count, 0);
-      typingTargets = buildCreatorMaskTarget(count, true, 1600);
+      rebuild();
     };
 
     const updateProgress = () => {
@@ -189,24 +191,24 @@ export function HomeParticleStory() {
       const scene = Math.min(STORY_SCENES.length - 1, Math.floor(scaled));
       const nextScene = Math.min(STORY_SCENES.length - 1, scene + 1);
       const local = scaled - scene;
-      const morph = smoothstep(0.68, 1, local);
-      const typing = reducedMotion ? 0.25 : (Math.sin(time * 0.0062) + 1) * 0.5;
+      const morph = smoothstep(0.62, 1, local);
       const now = performance.now();
 
-      if (now - lastStateUpdate > 60) {
+      if (now - lastStateUpdate > 70) {
         lastStateUpdate = now;
         setPhase({ local, scene });
       }
 
       context.clearRect(0, 0, width, height);
 
-      const scale = width < 640 ? Math.min(width, height) * 0.82 : Math.min(width, height) * 0.94;
+      const scale = width < 700 ? Math.min(width, height) * 1.08 : Math.min(width, height) * 1.12;
+      const sceneShift = scene === 0 ? -0.08 : 0;
       const offsetX =
-        width * (width < 640 ? 0.48 : 0.45) + pointerRef.current.x * (width < 640 ? 4 : 12);
+        width * (width < 700 ? 0.5 : 0.43 + sceneShift * (1 - morph)) +
+        pointerRef.current.x * (width < 700 ? 4 : 10);
       const offsetY =
-        height * (width < 640 ? 0.6 : 0.56) + pointerRef.current.y * (width < 640 ? 3 : 9);
-      const pulse = reducedMotion ? 0 : time * 0.00028;
-      const from = targets[scene] ?? targets[0]!;
+        height * (width < 700 ? 0.56 : 0.54) + pointerRef.current.y * (width < 700 ? 3 : 8);
+      const from = targets[scene] ?? targets[0] ?? [];
       const to = targets[nextScene] ?? from;
 
       context.save();
@@ -215,41 +217,72 @@ export function HomeParticleStory() {
       for (let index = 0; index < particles.length; index += 1) {
         const particle = particles[index];
         const a = from[index];
-        const b = to[index];
+        const b = to[index] ?? a;
         if (!particle || !a || !b) continue;
 
-        const firstSceneTarget =
-          scene === 0 && typingTargets[index] ? lerpPoint(a, typingTargets[index]!, typing) : a;
-        const target = lerpPoint(firstSceneTarget, b, morph);
-        const drift = reducedMotion
-          ? { x: 0, y: 0 }
-          : particleDrift(particle, pulse, progress, scene);
-        const x = (target.x + drift.x) * scale;
-        const y = (target.y + drift.y) * scale;
-        const size = particle.size * (0.48 + target.z * 0.94);
+        let x = a.x + (b.x - a.x) * morph;
+        let y = a.y + (b.y - a.y) * morph;
+        const z = a.z + (b.z - a.z) * morph;
+        const weight = a.weight + (b.weight - a.weight) * morph;
 
-        context.fillStyle = particleColor(particle, target.z, scene);
-        context.fillRect(x, y, size, size);
+        if (!reducedMotion) {
+          const slowDrift = Math.sin(time * 0.00034 + particle.phase) * 0.004;
+          const sideDrift = Math.cos(time * 0.00027 + particle.phase * 1.37) * 0.003;
+          x += sideDrift * (0.4 + z);
+          y += slowDrift * (0.35 + z);
+
+          if (scene === 0 && a.motion > 0.02) {
+            const tap = Math.sin(time * 0.013 + particle.phase * 2.2);
+            const rebound = Math.max(0, tap);
+            x += a.motion * tap * 0.021;
+            y -= a.motion * rebound * 0.018;
+          }
+        }
+
+        const sparkle =
+          !reducedMotion && scene === 0 && a.sparkle > 0.02
+            ? smoothstep(0.72, 1, Math.sin(time * 0.007 + particle.phase) * 0.5 + 0.5) * a.sparkle
+            : 0;
+        const dotSize = particle.size * (0.54 + z * 0.88 + sparkle * 0.52);
+        const alpha = clamp(0.16 + weight * 0.66 + z * 0.18 + sparkle * 0.2, 0.08, 0.9);
+        const shade = Math.round(10 + particle.shade * 42 + sparkle * 18);
+
+        context.fillStyle = `rgba(${shade}, ${shade}, ${shade}, ${alpha})`;
+        context.fillRect(x * scale, y * scale, dotSize, dotSize);
       }
 
       context.restore();
       raf = window.requestAnimationFrame(draw);
     };
 
+    image.onload = () => {
+      if (disposed) return;
+      maskSamples = buildMaskSamples(image);
+      resize();
+    };
+    image.onerror = () => {
+      if (disposed) return;
+      resize();
+    };
+    image.src = CREATOR_MASK_SRC;
+
     resize();
     updateProgress();
     window.addEventListener('resize', resize);
     window.addEventListener('scroll', updateProgress, { passive: true });
     window.addEventListener('mousemove', updatePointer, { passive: true });
-    reduceQuery.addEventListener('change', setReducedMotion);
+    reduceQuery.addEventListener('change', updateReducedMotion);
     raf = window.requestAnimationFrame(draw);
 
     return () => {
+      disposed = true;
+      image.onload = null;
+      image.onerror = null;
       window.cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
       window.removeEventListener('scroll', updateProgress);
       window.removeEventListener('mousemove', updatePointer);
-      reduceQuery.removeEventListener('change', setReducedMotion);
+      reduceQuery.removeEventListener('change', updateReducedMotion);
     };
   }, []);
 
@@ -259,17 +292,17 @@ export function HomeParticleStory() {
     <section
       ref={sectionRef}
       aria-label="Lumen 平台创作粒子演示"
-      className="relative left-1/2 mt-20 ml-[-50vw] h-[620svh] w-screen bg-[#f5f2ed] text-[#111315]"
+      className="relative left-1/2 mt-20 ml-[-50vw] h-[620svh] w-screen bg-[#f7f4ef] text-[#111315]"
     >
       <div className="sticky top-20 isolate h-[calc(100svh-5rem)] overflow-hidden">
-        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[#f5f2ed]" />
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[#f7f4ef]" />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-28 bg-[linear-gradient(180deg,#f5f2ed_0%,rgba(245,242,237,0)_100%)]"
+          className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-28 bg-[linear-gradient(180deg,#f7f4ef_0%,rgba(247,244,239,0)_100%)]"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-28 bg-[linear-gradient(180deg,rgba(245,242,237,0)_0%,#f5f2ed_100%)]"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-28 bg-[linear-gradient(180deg,rgba(247,244,239,0)_0%,#f7f4ef_100%)]"
         />
 
         <canvas
@@ -312,8 +345,9 @@ export function HomeParticleStory() {
   );
 }
 
-function RevealText({ text, reveal }: { text: string; reveal: number }) {
+function RevealText({ reveal, text }: { reveal: number; text: string }) {
   const chars = useMemo(() => Array.from(text), [text]);
+
   return (
     <>
       {chars.map((char, index) => {
@@ -330,646 +364,361 @@ function RevealText({ text, reveal }: { text: string; reveal: number }) {
 }
 
 function particleTarget(width: number) {
-  if (width < 640) return 18000;
-  if (width < 1024) return 32000;
-  return 56000;
+  if (width < 640) return 14000;
+  if (width < 1024) return 24000;
+  return 42000;
 }
 
-function buildTargets(count: number, seedOffset: number): Point[][] {
-  return [
-    buildCreatorMaskTarget(count, false, seedOffset + 1000),
-    buildSceneTarget(count, signalShapes, seedOffset + 2000),
-    buildSceneTarget(count, workflowShapes, seedOffset + 3000),
-    buildSceneTarget(count, frameShapes, seedOffset + 4000),
-    buildSceneTarget(count, memoryShapes, seedOffset + 5000),
-  ];
-}
-
-function buildSceneTarget(count: number, shapes: ShapeSpec[], seedBase: number): Point[] {
-  return Array.from({ length: count }, (_, index) => pickShapePoint(index, shapes, seedBase));
-}
-
-function buildCreatorMaskTarget(count: number, typing: boolean, seedBase: number): Point[] {
-  const mask = createCreatorMask(typing);
-  return Array.from({ length: count }, (_, index) => sampleMaskPoint(index, mask, seedBase));
-}
-
-function createCreatorMask(typing: boolean) {
-  const mask = document.createElement('canvas');
-  const width = 1040;
+function buildMaskSamples(image: HTMLImageElement): MaskSample[] {
+  const canvas = document.createElement('canvas');
+  const width = 1280;
   const height = 720;
-  mask.width = width;
-  mask.height = height;
+  canvas.width = width;
+  canvas.height = height;
 
-  const context = mask.getContext('2d');
-  if (!context) {
-    return { data: new Uint8ClampedArray(width * height * 4), height, width };
-  }
+  const context = canvas.getContext('2d');
+  if (!context) return [];
 
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = 'black';
-  context.strokeStyle = 'black';
-  context.lineCap = 'round';
-  context.lineJoin = 'round';
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
 
-  drawCreatorSilhouette(context, typing);
+  const imageAspect = image.naturalWidth / Math.max(1, image.naturalHeight);
+  const canvasAspect = width / height;
+  const drawHeight = imageAspect > canvasAspect ? height : width / imageAspect;
+  const drawWidth = imageAspect > canvasAspect ? height * imageAspect : width;
+  const drawX = (width - drawWidth) / 2;
+  const drawY = (height - drawHeight) / 2;
+  context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
 
-  return {
-    data: context.getImageData(0, 0, width, height).data,
-    height,
-    width,
-  };
-}
+  const data = context.getImageData(0, 0, width, height).data;
+  const raw: Array<{ darkness: number; px: number; py: number }> = [];
+  let minX = width;
+  let minY = height;
+  let maxX = 0;
+  let maxY = 0;
 
-function drawCreatorSilhouette(context: CanvasRenderingContext2D, typing: boolean) {
-  const handLift = typing ? -22 : 14;
-  const wristLift = typing ? -18 : 8;
-  const headLift = typing ? -5 : 2;
+  for (let py = 0; py < height; py += 2) {
+    for (let px = 0; px < width; px += 2) {
+      const offset = (py * width + px) * 4;
+      const alpha = (data[offset + 3] ?? 255) / 255;
+      const luminance =
+        ((data[offset] ?? 255) + (data[offset + 1] ?? 255) + (data[offset + 2] ?? 255)) / 3;
+      const darkness = clamp((255 - luminance) / 255, 0, 1) * alpha;
 
-  context.save();
-  context.translate(-8, -2);
-
-  context.beginPath();
-  context.ellipse(312, 196 + headLift, 75, 96, -0.25, 0, Math.PI * 2);
-  context.fill();
-
-  context.beginPath();
-  context.ellipse(365, 244 + headLift, 42, 58, -0.2, 0, Math.PI * 2);
-  context.fill();
-
-  context.beginPath();
-  context.moveTo(244, 268);
-  context.bezierCurveTo(276, 198, 408, 204, 506, 282);
-  context.bezierCurveTo(604, 360, 548, 446, 414, 432);
-  context.bezierCurveTo(306, 422, 216, 350, 244, 268);
-  context.fill();
-
-  context.beginPath();
-  context.ellipse(382, 445, 168, 78, 0.08, 0, Math.PI * 2);
-  context.fill();
-
-  context.beginPath();
-  context.ellipse(250, 390, 78, 148, -0.28, 0, Math.PI * 2);
-  context.fill();
-
-  context.lineWidth = 66;
-  context.beginPath();
-  context.moveTo(440, 342);
-  context.bezierCurveTo(488, 398 + wristLift * 0.3, 520, 462 + wristLift, 618, 486 + handLift);
-  context.stroke();
-
-  context.lineWidth = 50;
-  context.beginPath();
-  context.moveTo(326, 348);
-  context.bezierCurveTo(
-    394,
-    438 + wristLift * 0.2,
-    472,
-    496 + wristLift,
-    574,
-    522 - handLift * 0.5,
-  );
-  context.stroke();
-
-  context.beginPath();
-  context.ellipse(642, 490 + handLift, 50, 22, 0.12, 0, Math.PI * 2);
-  context.fill();
-
-  context.beginPath();
-  context.ellipse(592, 524 - handLift * 0.42, 48, 20, 0.18, 0, Math.PI * 2);
-  context.fill();
-
-  context.save();
-  context.translate(610, 324);
-  context.rotate(-0.07);
-  context.lineWidth = 24;
-  context.strokeRect(-82, -58, 164, 116);
-  context.fillRect(-16, 62, 32, 74);
-  context.restore();
-
-  context.save();
-  context.translate(608, 491);
-  context.rotate(0.04);
-  context.fillRect(-145, -18, 290, 36);
-  context.restore();
-
-  context.lineWidth = 38;
-  context.beginPath();
-  context.moveTo(128, 548);
-  context.lineTo(760, 548);
-  context.stroke();
-
-  context.restore();
-}
-
-function sampleMaskPoint(
-  index: number,
-  mask: { data: Uint8ClampedArray; height: number; width: number },
-  seedBase: number,
-): Point {
-  for (let attempt = 0; attempt < 90; attempt += 1) {
-    const xSeed = seeded(index * 7 + seedBase + attempt * 19);
-    const ySeed = seeded(index * 11 + seedBase + attempt * 23);
-    const px = Math.floor(xSeed * mask.width);
-    const py = Math.floor(ySeed * mask.height);
-    const alpha = mask.data[(py * mask.width + px) * 4 + 3] ?? 0;
-
-    if (alpha > 14) {
-      const jitterX = (seeded(index + attempt * 31 + seedBase) - 0.5) * 0.004;
-      const jitterY = (seeded(index + attempt * 37 + seedBase) - 0.5) * 0.004;
-      return {
-        x: (px / mask.width - 0.5) * 1.68 + jitterX,
-        y: (py / mask.height - 0.52) * 1.24 + jitterY,
-        z: 0.42 + (alpha / 255) * 0.42 + seeded(index + seedBase + 5) * 0.14,
-      };
+      if (darkness > 0.09) {
+        raw.push({ darkness, px, py });
+        if (darkness > 0.16) {
+          minX = Math.min(minX, px);
+          minY = Math.min(minY, py);
+          maxX = Math.max(maxX, px);
+          maxY = Math.max(maxY, py);
+        }
+      }
     }
   }
 
-  return sampleDustPoint(index, {
-    kind: 'dust',
-    cx: -0.1,
-    cy: 0.48,
-    width: 1.7,
-    height: 0.12,
-    depth: 0.22,
-    seed: seedBase,
-    weight: 1,
+  if (!raw.length || minX >= maxX || minY >= maxY) return [];
+
+  const midX = (minX + maxX) / 2;
+  const midY = (minY + maxY) / 2;
+  const span = Math.max(maxX - minX, (maxY - minY) * 1.58);
+
+  return raw.map((sample) => ({
+    darkness: sample.darkness,
+    x: ((sample.px - midX) / span) * 1.95,
+    y: ((sample.py - midY) / span) * 1.58 + 0.035,
+  }));
+}
+
+function buildMaskTarget(count: number, samples: MaskSample[], seedBase: number): Point[] {
+  return Array.from({ length: count }, (_, index) => {
+    const sample = pickMaskSample(index, samples, seedBase);
+    const handMotion =
+      smoothstep(0.16, 0.46, sample.x) *
+      (1 - smoothstep(0.52, 0.76, sample.x)) *
+      smoothstep(0.04, 0.22, sample.y) *
+      (1 - smoothstep(0.32, 0.52, sample.y));
+    const laptopSparkle =
+      smoothstep(0.2, 0.62, sample.x) *
+      (1 - smoothstep(0.7, 0.9, sample.x)) *
+      smoothstep(-0.22, 0.02, sample.y) *
+      (1 - smoothstep(0.14, 0.28, sample.y));
+
+    return {
+      motion: handMotion,
+      sparkle: laptopSparkle * 0.55,
+      weight: 0.24 + sample.darkness * 0.76,
+      x: sample.x + (seeded(index + seedBase + 31) - 0.5) * 0.004,
+      y: sample.y + (seeded(index + seedBase + 37) - 0.5) * 0.004,
+      z: 0.34 + sample.darkness * 0.58 + seeded(index + seedBase + 43) * 0.12,
+    };
   });
 }
 
-const signalShapes: ShapeSpec[] = [
-  {
-    kind: 'ellipse',
-    cx: -0.28,
-    cy: -0.1,
-    rx: 0.55,
-    ry: 0.34,
-    angle: 0.12,
-    density: 0.52,
-    depth: 0.72,
-    seed: 101,
-    weight: 32,
-  },
-  {
-    kind: 'ellipse',
-    cx: 0.2,
-    cy: 0.04,
-    rx: 0.42,
-    ry: 0.22,
-    angle: -0.26,
-    density: 0.64,
-    depth: 0.86,
-    seed: 103,
-    weight: 20,
-  },
-  {
-    kind: 'dust',
-    cx: -0.08,
-    cy: 0.42,
-    width: 1.8,
-    height: 0.16,
-    depth: 0.3,
-    seed: 107,
-    weight: 13,
-  },
-  {
-    kind: 'arc',
-    cx: 0.1,
-    cy: -0.02,
-    rx: 0.58,
-    ry: 0.34,
-    start: -0.25,
-    end: Math.PI * 1.35,
-    thickness: 0.05,
-    depth: 0.78,
-    seed: 109,
-    weight: 10,
-  },
-  {
-    kind: 'dust',
-    cx: 0.72,
-    cy: -0.1,
-    width: 0.24,
-    height: 1.08,
-    depth: 0.18,
-    seed: 113,
-    weight: 4,
-  },
-];
+function pickMaskSample(index: number, samples: MaskSample[], seedBase: number): MaskSample {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const sample =
+      samples[Math.floor(seeded(index * 13 + seedBase + attempt * 17) * samples.length)];
+    if (!sample) continue;
+    const roll = seeded(index * 23 + seedBase + attempt * 29);
+    if (sample.darkness > roll * 0.86) return sample;
+  }
 
-const workflowShapes: ShapeSpec[] = [
-  {
-    kind: 'ellipse',
-    cx: -0.52,
-    cy: -0.12,
-    rx: 0.12,
-    ry: 0.12,
-    density: 0.48,
-    depth: 0.88,
-    seed: 201,
-    weight: 8,
-  },
-  {
-    kind: 'ellipse',
-    cx: -0.18,
-    cy: 0.06,
-    rx: 0.12,
-    ry: 0.12,
-    density: 0.48,
-    depth: 0.9,
-    seed: 203,
-    weight: 8,
-  },
-  {
-    kind: 'ellipse',
-    cx: 0.18,
-    cy: -0.08,
-    rx: 0.12,
-    ry: 0.12,
-    density: 0.48,
-    depth: 0.9,
-    seed: 207,
-    weight: 8,
-  },
-  {
-    kind: 'ellipse',
-    cx: 0.52,
-    cy: 0.08,
-    rx: 0.12,
-    ry: 0.12,
-    density: 0.48,
-    depth: 0.86,
-    seed: 211,
-    weight: 8,
-  },
-  {
-    kind: 'capsule',
-    x1: -0.42,
-    y1: -0.08,
-    x2: -0.28,
-    y2: 0.02,
-    thickness: 0.035,
-    depth: 0.74,
-    seed: 223,
-    weight: 4,
-  },
-  {
-    kind: 'capsule',
-    x1: -0.07,
-    y1: 0.02,
-    x2: 0.07,
-    y2: -0.04,
-    thickness: 0.035,
-    depth: 0.74,
-    seed: 227,
-    weight: 4,
-  },
-  {
-    kind: 'capsule',
-    x1: 0.29,
-    y1: -0.04,
-    x2: 0.42,
-    y2: 0.04,
-    thickness: 0.035,
-    depth: 0.74,
-    seed: 229,
-    weight: 4,
-  },
-  {
-    kind: 'ellipse',
-    cx: 0.0,
-    cy: 0.22,
-    rx: 0.58,
-    ry: 0.18,
-    angle: -0.04,
-    density: 0.62,
-    depth: 0.5,
-    seed: 233,
-    weight: 20,
-  },
-  {
-    kind: 'dust',
-    cx: 0.0,
-    cy: 0.49,
-    width: 1.92,
-    height: 0.12,
-    depth: 0.28,
-    seed: 239,
-    weight: 12,
-  },
-];
+  return (
+    samples[Math.floor(seeded(index + seedBase) * samples.length)] ?? { darkness: 0.3, x: 0, y: 0 }
+  );
+}
 
-const frameShapes: ShapeSpec[] = [
+function buildShapeTarget(count: number, shapes: ShapeSpec[], seedBase: number): Point[] {
+  const totalWeight = shapes.reduce((sum, shape) => sum + shape.weight, 0);
+  return Array.from({ length: count }, (_, index) => {
+    const roll = seeded(index * 5 + seedBase) * totalWeight;
+    let cursor = 0;
+    let shape = shapes[0]!;
+
+    for (const item of shapes) {
+      cursor += item.weight;
+      if (roll <= cursor) {
+        shape = item;
+        break;
+      }
+    }
+
+    return sampleShapePoint(index, shape, seedBase + shape.seed);
+  });
+}
+
+function sampleShapePoint(index: number, shape: ShapeSpec, seedBase: number): Point {
+  if (shape.kind === 'dust') {
+    return {
+      motion: 0,
+      sparkle: 0.2,
+      weight: 0.16 + seeded(index + seedBase + 1) * 0.26,
+      x: shape.cx + (seeded(index + seedBase + 3) - 0.5) * shape.width,
+      y: shape.cy + (seeded(index + seedBase + 5) - 0.5) * shape.height,
+      z: shape.depth + seeded(index + seedBase + 7) * 0.18,
+    };
+  }
+
+  if (shape.kind === 'rect') {
+    const x = (seeded(index + seedBase + 11) - 0.5) * shape.width;
+    const y = (seeded(index + seedBase + 13) - 0.5) * shape.height;
+    const angle = shape.angle ?? 0;
+    const rotatedX = x * Math.cos(angle) - y * Math.sin(angle);
+    const rotatedY = x * Math.sin(angle) + y * Math.cos(angle);
+    return {
+      motion: 0,
+      sparkle: 0.16,
+      weight: 0.34 + seeded(index + seedBase + 17) * 0.44,
+      x: shape.cx + rotatedX,
+      y: shape.cy + rotatedY,
+      z: shape.depth + seeded(index + seedBase + 19) * 0.12,
+    };
+  }
+
+  if (shape.kind === 'capsule') {
+    const t = seeded(index + seedBase + 23);
+    const angle = Math.atan2(shape.y2 - shape.y1, shape.x2 - shape.x1) + Math.PI / 2;
+    const spread = (seeded(index + seedBase + 29) - 0.5) * shape.thickness;
+    return {
+      motion: 0,
+      sparkle: 0.08,
+      weight: 0.34 + seeded(index + seedBase + 31) * 0.36,
+      x: shape.x1 + (shape.x2 - shape.x1) * t + Math.cos(angle) * spread,
+      y: shape.y1 + (shape.y2 - shape.y1) * t + Math.sin(angle) * spread,
+      z: shape.depth + seeded(index + seedBase + 37) * 0.12,
+    };
+  }
+
+  const radius = Math.sqrt(seeded(index + seedBase + 41));
+  const theta = seeded(index + seedBase + 43) * Math.PI * 2;
+  const density = shape.density ?? 1;
+  const edge = density < 1 ? radius ** (1 + (1 - density) * 3) : radius;
+
+  return {
+    motion: 0,
+    sparkle: 0.1,
+    weight: 0.26 + seeded(index + seedBase + 47) * 0.52,
+    x: shape.cx + Math.cos(theta) * shape.rx * edge,
+    y: shape.cy + Math.sin(theta) * shape.ry * edge,
+    z: shape.depth + seeded(index + seedBase + 53) * 0.14,
+  };
+}
+
+const creatorFallbackShapes: ShapeSpec[] = [
   {
-    kind: 'rect',
-    cx: -0.33,
-    cy: -0.08,
-    width: 0.45,
-    height: 0.32,
-    angle: -0.08,
-    depth: 0.78,
-    seed: 301,
+    kind: 'ellipse',
+    cx: -0.35,
+    cy: -0.22,
+    rx: 0.18,
+    ry: 0.24,
+    density: 0.6,
+    depth: 0.8,
+    seed: 11,
     weight: 16,
-  },
-  {
-    kind: 'rect',
-    cx: 0.24,
-    cy: 0.02,
-    width: 0.48,
-    height: 0.34,
-    angle: 0.06,
-    depth: 0.82,
-    seed: 307,
-    weight: 18,
-  },
-  {
-    kind: 'capsule',
-    x1: -0.58,
-    y1: 0.28,
-    x2: 0.56,
-    y2: 0.33,
-    thickness: 0.06,
-    depth: 0.62,
-    seed: 311,
-    weight: 10,
-  },
-  {
-    kind: 'ellipse',
-    cx: -0.01,
-    cy: 0.31,
-    rx: 0.16,
-    ry: 0.08,
-    density: 0.46,
-    depth: 0.96,
-    seed: 313,
-    weight: 7,
-  },
-  {
-    kind: 'capsule',
-    x1: -0.07,
-    y1: 0.31,
-    x2: 0.06,
-    y2: 0.31,
-    thickness: 0.018,
-    depth: 1,
-    seed: 317,
-    weight: 2,
-  },
-  {
-    kind: 'capsule',
-    x1: 0.0,
-    y1: 0.24,
-    x2: 0.0,
-    y2: 0.38,
-    thickness: 0.018,
-    depth: 1,
-    seed: 331,
-    weight: 2,
-  },
-  {
-    kind: 'dust',
-    cx: 0.08,
-    cy: -0.34,
-    width: 1.58,
-    height: 0.18,
-    depth: 0.28,
-    seed: 337,
-    weight: 8,
-  },
-  { kind: 'dust', cx: 0.0, cy: 0.52, width: 1.84, height: 0.12, depth: 0.24, seed: 347, weight: 9 },
-];
-
-const memoryShapes: ShapeSpec[] = [
-  {
-    kind: 'arc',
-    cx: -0.02,
-    cy: -0.02,
-    rx: 0.52,
-    ry: 0.38,
-    start: -0.2,
-    end: Math.PI * 1.72,
-    thickness: 0.1,
-    depth: 0.72,
-    seed: 401,
-    weight: 22,
   },
   {
     kind: 'ellipse',
     cx: -0.3,
-    cy: -0.12,
-    rx: 0.1,
-    ry: 0.1,
-    density: 0.48,
-    depth: 0.9,
-    seed: 409,
-    weight: 7,
+    cy: 0.08,
+    rx: 0.28,
+    ry: 0.36,
+    density: 0.72,
+    depth: 0.78,
+    seed: 13,
+    weight: 28,
   },
   {
-    kind: 'ellipse',
-    cx: 0.04,
-    cy: 0.07,
-    rx: 0.12,
-    ry: 0.12,
-    density: 0.48,
-    depth: 0.94,
-    seed: 419,
-    weight: 9,
+    kind: 'capsule',
+    x1: -0.16,
+    y1: 0.08,
+    x2: 0.36,
+    y2: 0.18,
+    thickness: 0.09,
+    depth: 0.86,
+    seed: 17,
+    weight: 14,
   },
   {
-    kind: 'ellipse',
+    kind: 'rect',
     cx: 0.4,
-    cy: -0.14,
-    rx: 0.09,
-    ry: 0.09,
-    density: 0.48,
-    depth: 0.84,
-    seed: 421,
-    weight: 6,
+    cy: 0.0,
+    width: 0.18,
+    height: 0.38,
+    angle: -0.12,
+    depth: 0.78,
+    seed: 19,
+    weight: 10,
   },
   {
-    kind: 'capsule',
-    x1: -0.2,
-    y1: -0.08,
-    x2: -0.05,
-    y2: 0.02,
-    thickness: 0.035,
+    kind: 'rect',
+    cx: 0.36,
+    cy: 0.22,
+    width: 0.72,
+    height: 0.08,
+    depth: 0.64,
+    seed: 23,
+    weight: 12,
+  },
+  { kind: 'dust', cx: 0.06, cy: 0.33, width: 1.28, height: 0.08, depth: 0.34, seed: 29, weight: 8 },
+];
+
+const platformShapes: ShapeSpec[] = [
+  { kind: 'rect', cx: 0, cy: -0.03, width: 1.1, height: 0.62, depth: 0.78, seed: 101, weight: 40 },
+  {
+    kind: 'rect',
+    cx: -0.28,
+    cy: -0.02,
+    width: 0.28,
+    height: 0.42,
+    depth: 0.92,
+    seed: 103,
+    weight: 16,
+  },
+  {
+    kind: 'rect',
+    cx: 0.16,
+    cy: -0.08,
+    width: 0.46,
+    height: 0.28,
+    depth: 0.9,
+    seed: 107,
+    weight: 18,
+  },
+  { kind: 'rect', cx: 0.2, cy: 0.23, width: 0.62, height: 0.08, depth: 0.72, seed: 109, weight: 8 },
+  { kind: 'dust', cx: 0, cy: 0.36, width: 1.34, height: 0.1, depth: 0.3, seed: 113, weight: 8 },
+];
+
+const generateShapes: ShapeSpec[] = [
+  {
+    kind: 'rect',
+    cx: -0.36,
+    cy: -0.1,
+    width: 0.44,
+    height: 0.58,
+    depth: 0.86,
+    seed: 201,
+    weight: 20,
+  },
+  {
+    kind: 'rect',
+    cx: 0.11,
+    cy: -0.08,
+    width: 0.44,
+    height: 0.58,
+    depth: 0.88,
+    seed: 203,
+    weight: 20,
+  },
+  {
+    kind: 'rect',
+    cx: 0.58,
+    cy: -0.1,
+    width: 0.28,
+    height: 0.42,
     depth: 0.72,
-    seed: 431,
-    weight: 3,
-  },
-  {
-    kind: 'capsule',
-    x1: 0.14,
-    y1: 0.03,
-    x2: 0.32,
-    y2: -0.08,
-    thickness: 0.035,
-    depth: 0.72,
-    seed: 433,
-    weight: 3,
-  },
-  {
-    kind: 'dust',
-    cx: 0.0,
-    cy: 0.46,
-    width: 1.78,
-    height: 0.16,
-    depth: 0.26,
-    seed: 439,
+    seed: 207,
     weight: 12,
   },
   {
-    kind: 'dust',
-    cx: -0.72,
-    cy: -0.08,
-    width: 0.24,
-    height: 1.14,
-    depth: 0.16,
-    seed: 443,
-    weight: 4,
+    kind: 'ellipse',
+    cx: 0.52,
+    cy: 0.24,
+    rx: 0.18,
+    ry: 0.1,
+    density: 0.6,
+    depth: 0.92,
+    seed: 211,
+    weight: 10,
   },
   {
     kind: 'dust',
-    cx: 0.74,
-    cy: -0.06,
-    width: 0.24,
-    height: 1.14,
-    depth: 0.16,
-    seed: 449,
-    weight: 4,
+    cx: 0.05,
+    cy: 0.42,
+    width: 1.6,
+    height: 0.16,
+    depth: 0.22,
+    seed: 223,
+    weight: 16,
   },
 ];
 
-function pickShapePoint(index: number, specs: ShapeSpec[], seedBase: number): Point {
-  const total = specs.reduce((sum, spec) => sum + spec.weight, 0);
-  let cursor = seeded(index + seedBase) * total;
-
-  for (const spec of specs) {
-    cursor -= spec.weight;
-    if (cursor <= 0) return sampleShapePoint(spec, index + seedBase);
-  }
-
-  return sampleShapePoint(specs[specs.length - 1]!, index + seedBase);
-}
-
-function sampleShapePoint(spec: ShapeSpec, index: number): Point {
-  if (spec.kind === 'ellipse') {
-    const angle = seeded(index * 3 + spec.seed) * Math.PI * 2;
-    const radius = seeded(index * 3 + spec.seed + 1) ** (spec.density ?? 0.52);
-    const x = Math.cos(angle) * spec.rx * radius;
-    const y = Math.sin(angle) * spec.ry * radius;
-    const rotated = rotatePoint(x, y, spec.angle ?? 0);
-    return {
-      x: spec.cx + rotated.x,
-      y: spec.cy + rotated.y,
-      z: spec.depth * (0.46 + (1 - radius) * 0.38 + seeded(index + spec.seed + 7) * 0.18),
-    };
-  }
-
-  if (spec.kind === 'rect') {
-    const localX = (seeded(index * 2 + spec.seed) - 0.5) * spec.width;
-    const localY = (seeded(index * 2 + spec.seed + 1) - 0.5) * spec.height;
-    const rotated = rotatePoint(localX, localY, spec.angle ?? 0);
-    const edge =
-      1 -
-      Math.max(
-        Math.abs(localX) / Math.max(spec.width * 0.5, 0.001),
-        Math.abs(localY) / Math.max(spec.height * 0.5, 0.001),
-      );
-
-    return {
-      x: spec.cx + rotated.x,
-      y: spec.cy + rotated.y,
-      z: spec.depth * (0.42 + edge * 0.34 + seeded(index + spec.seed + 5) * 0.18),
-    };
-  }
-
-  if (spec.kind === 'capsule') {
-    return sampleCapsulePoint(index, spec);
-  }
-
-  if (spec.kind === 'arc') {
-    const t = seeded(index * 2 + spec.seed);
-    const angle = lerp(spec.start, spec.end, t);
-    const offset = (seeded(index * 2 + spec.seed + 1) - 0.5) * spec.thickness;
-    return {
-      x: spec.cx + Math.cos(angle) * (spec.rx + offset),
-      y: spec.cy + Math.sin(angle) * (spec.ry + offset),
-      z: spec.depth * (0.48 + seeded(index + spec.seed + 7) * 0.34),
-    };
-  }
-
-  return sampleDustPoint(index, spec);
-}
-
-function sampleCapsulePoint(index: number, spec: Extract<ShapeSpec, { kind: 'capsule' }>): Point {
-  const t = seeded(index * 2 + spec.seed);
-  const dx = spec.x2 - spec.x1;
-  const dy = spec.y2 - spec.y1;
-  const length = Math.max(0.001, Math.hypot(dx, dy));
-  const offset = (seeded(index * 2 + spec.seed + 1) - 0.5) * spec.thickness;
-  const taper = 0.74 + Math.sin(t * Math.PI) * 0.36;
-
-  return {
-    x: lerp(spec.x1, spec.x2, t) + (-dy / length) * offset * taper,
-    y: lerp(spec.y1, spec.y2, t) + (dx / length) * offset * taper,
-    z: spec.depth * (0.42 + Math.sin(t * Math.PI) * 0.34 + seeded(index + spec.seed + 5) * 0.18),
-  };
-}
-
-function sampleDustPoint(index: number, spec: Extract<ShapeSpec, { kind: 'dust' }>): Point {
-  const x = spec.cx + (seeded(index * 2 + spec.seed) - 0.5) * spec.width;
-  const y =
-    spec.cy +
-    (seeded(index * 2 + spec.seed + 1) - 0.5) * spec.height +
-    Math.sin(x * 5.4 + seeded(index + spec.seed + 7) * 4) * spec.height * 0.18;
-  const fade = 1 - Math.abs(x - spec.cx) / Math.max(spec.width * 0.5, 0.001);
-
-  return {
-    x,
-    y,
-    z: spec.depth * (0.34 + fade * 0.42 + seeded(index + spec.seed + 3) * 0.2),
-  };
-}
-
-function particleColor(particle: Particle, depth: number, scene: number) {
-  const ink = scene === 0 ? 28 : 38;
-  const tone = Math.round(ink + particle.shade * 34 + depth * 18);
-  const alpha = clamp(0.16 + depth * 0.72 + particle.seed * 0.14, 0.16, scene === 0 ? 0.88 : 0.76);
-  return `rgba(${tone},${tone},${tone},${alpha})`;
-}
-
-function particleDrift(
-  particle: Particle,
-  pulse: number,
-  progress: number,
-  scene: number,
-): { x: number; y: number } {
-  const tempo = pulse * (1.3 + particle.seed * 1.6);
-  const strength = scene === 0 ? 0.0018 + particle.drift * 0.004 : 0.003 + particle.drift * 0.01;
-
-  return {
-    x: Math.sin(tempo + particle.phase + progress * 6) * strength,
-    y: Math.cos(tempo * 0.9 + particle.phase * 0.7) * strength * 0.72,
-  };
-}
-
-function lerpPoint(a: Point, b: Point, t: number): Point {
-  return {
-    x: lerp(a.x, b.x, t),
-    y: lerp(a.y, b.y, t),
-    z: lerp(a.z, b.z, t),
-  };
-}
-
-function rotatePoint(x: number, y: number, angle: number) {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return {
-    x: x * cos - y * sin,
-    y: x * sin + y * cos,
-  };
-}
+const finishShapes: ShapeSpec[] = [
+  {
+    kind: 'ellipse',
+    cx: -0.24,
+    cy: -0.06,
+    rx: 0.34,
+    ry: 0.42,
+    density: 0.52,
+    depth: 0.82,
+    seed: 301,
+    weight: 26,
+  },
+  {
+    kind: 'ellipse',
+    cx: 0.24,
+    cy: -0.06,
+    rx: 0.34,
+    ry: 0.42,
+    density: 0.52,
+    depth: 0.84,
+    seed: 303,
+    weight: 26,
+  },
+  {
+    kind: 'capsule',
+    x1: -0.34,
+    y1: 0.34,
+    x2: 0.34,
+    y2: 0.34,
+    thickness: 0.08,
+    depth: 0.66,
+    seed: 307,
+    weight: 10,
+  },
+  { kind: 'dust', cx: 0, cy: 0.0, width: 1.4, height: 0.9, depth: 0.2, seed: 311, weight: 14 },
+];
 
 function seeded(value: number) {
   const x = Math.sin(value * 12.9898) * 43758.5453;
@@ -977,15 +726,10 @@ function seeded(value: number) {
 }
 
 function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function lerp(a: number, b: number, t: number) {
-  return a + (b - a) * t;
+  return Math.max(min, Math.min(max, value));
 }
 
 function smoothstep(edge0: number, edge1: number, value: number) {
-  if (edge0 === edge1) return value < edge0 ? 0 : 1;
   const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
 }
