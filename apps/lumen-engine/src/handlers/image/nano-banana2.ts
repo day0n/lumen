@@ -4,9 +4,16 @@ import { logger } from '../../utils/logger.js';
 import type { NodeOutput } from '../base.js';
 
 interface ImagePart {
+  text?: string;
   inlineData?: {
     data?: string;
     mimeType?: string;
+  };
+  fileData?: {
+    fileUri?: string;
+    gcsUri?: string;
+    mimeType?: string;
+    uri?: string;
   };
 }
 
@@ -35,9 +42,26 @@ export async function execute(
     throw new Error('no image generated from nano-banana2');
   }
 
-  const imagePart = (candidate.content.parts as ImagePart[]).find((p) => p.inlineData?.data);
+  const parts = candidate.content.parts as ImagePart[];
+  const imagePart = parts.find((p) => p.inlineData?.data);
   if (!imagePart?.inlineData) {
-    throw new Error('no inline image data in response');
+    const filePart = parts.find(
+      (p) => p.fileData?.fileUri || p.fileData?.gcsUri || p.fileData?.uri,
+    );
+    const fileUri =
+      filePart?.fileData?.fileUri ?? filePart?.fileData?.gcsUri ?? filePart?.fileData?.uri;
+    if (fileUri) {
+      const mediaUrl = normalizeGeneratedMediaUri(fileUri);
+      logger.info({ mediaUrl }, 'nano-banana2 image generated as file uri');
+      return { type: 'image', value: mediaUrl };
+    }
+
+    const text = parts
+      .map((part) => part.text?.trim())
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 500);
+    throw new Error(text ? `no image data in response: ${text}` : 'no image data in response');
   }
 
   const base64 = imagePart.inlineData.data ?? '';
@@ -50,6 +74,12 @@ export async function execute(
   logger.info({ mimeType, bytes: base64.length }, 'nano-banana2 image generated');
 
   return { type: 'image', value: dataUrl };
+}
+
+function normalizeGeneratedMediaUri(value: string): string {
+  return value.startsWith('gs://')
+    ? value.replace('gs://', 'https://storage.googleapis.com/')
+    : value;
 }
 
 function readStringSetting(settings: Record<string, unknown>, key: string): string | null {

@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
+import { getStudioMongo } from '../database/mongo.js';
 import { logger } from '../observability/logger.js';
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
@@ -13,8 +15,42 @@ function getJwks(issuer: string) {
 }
 
 export interface AuthUser {
+  clerkUserId: string;
   userId: string;
   sessionId?: string;
+}
+
+interface StudioUserDocument {
+  _id: string;
+  clerk_user_id: string;
+  created_at: Date;
+  updated_at: Date;
+  last_seen_at?: Date;
+}
+
+async function resolveStudioUserId(clerkUserId: string): Promise<string> {
+  const db = await getStudioMongo();
+  const now = new Date();
+  const document = await db.collection<StudioUserDocument>('studio_users').findOneAndUpdate(
+    { clerk_user_id: clerkUserId },
+    {
+      $set: {
+        updated_at: now,
+        last_seen_at: now,
+      },
+      $setOnInsert: {
+        _id: randomUUID(),
+        clerk_user_id: clerkUserId,
+        created_at: now,
+      },
+    },
+    { upsert: true, returnDocument: 'after' },
+  );
+
+  if (!document) {
+    throw new Error(`failed to resolve Studio user for Clerk user ${clerkUserId}`);
+  }
+  return document._id;
 }
 
 export function clerkAuth(opts: { issuer: string; skipPaths?: string[] }) {
@@ -39,12 +75,15 @@ export function clerkAuth(opts: { issuer: string; skipPaths?: string[] }) {
         issuer: opts.issuer,
       });
 
-      const userId = payload.sub;
-      if (!userId) {
+      const clerkUserId = payload.sub;
+      if (!clerkUserId) {
         return c.json({ error: 'unauthorized', message: 'Token missing sub claim' }, 401);
       }
 
+      const userId = await resolveStudioUserId(clerkUserId);
+
       c.set('authUser', {
+        clerkUserId,
         userId,
         sessionId: payload.sid as string | undefined,
       } satisfies AuthUser);

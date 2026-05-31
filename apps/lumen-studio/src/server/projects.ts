@@ -3,6 +3,8 @@ import 'server-only';
 import {
   type ProjectCanvas,
   type ProjectHistoryRecord,
+  type ProjectHistorySummaryRecord,
+  type ProjectListRecord,
   type ProjectRecord,
   ProjectRecordSchema,
   type UpdateProjectInput,
@@ -27,7 +29,7 @@ export interface CreateStudioProjectOptions {
 
 export async function listStudioProjects(
   options: ListStudioProjectsOptions = {},
-): Promise<ProjectRecord[]> {
+): Promise<ProjectListRecord[]> {
   const user = await requireStudioUser();
   const repository = await getProjectRepository();
 
@@ -101,17 +103,29 @@ export async function updateStudioProject(
   return project;
 }
 
-export async function listStudioProjectHistory(projectId: string): Promise<ProjectHistoryRecord[]> {
+export async function listStudioProjectHistory(
+  projectId: string,
+): Promise<ProjectHistorySummaryRecord[]> {
   const user = await requireStudioUser();
-  const project = await getStudioProject(projectId);
-  if (!project) return [];
+  const projectRepository = await getProjectRepository();
+  const exists = await projectRepository.exists(user.id, projectId);
+  if (!exists) return [];
 
   const repository = await getProjectHistoryRepository();
-  return repository.listLatest({
+  return repository.listLatestSummaries({
     ownerId: user.id,
     projectId,
     limit: 3,
   });
+}
+
+export async function getStudioProjectHistoryRecord(
+  projectId: string,
+  historyId: string,
+): Promise<ProjectHistoryRecord | null> {
+  const user = await requireStudioUser();
+  const repository = await getProjectHistoryRepository();
+  return repository.get(user.id, projectId, historyId);
 }
 
 export async function createProjectShare(projectId: string): Promise<{

@@ -218,6 +218,18 @@ export class SessionManager {
     userId = '',
     workflowId: string | null = null,
   ): Promise<Session> {
+    const existing = await this.getExisting(sessionId);
+    if (existing) return existing;
+
+    const fresh = new Session({ sessionId, userId, workflowId });
+    logger.info(
+      { session_id: sessionId, user_id: userId, workflow_id: workflowId },
+      'Session created',
+    );
+    return fresh;
+  }
+
+  async getExisting(sessionId: string): Promise<Session | null> {
     const fromRedis = await this.loadFromRedis(sessionId);
     if (fromRedis) {
       logger.info(
@@ -230,6 +242,7 @@ export class SessionManager {
       );
       return fromRedis;
     }
+
     const fromMongo = await this.loadFromMongo(sessionId);
     if (fromMongo) {
       await this.writeRedis(fromMongo);
@@ -243,12 +256,8 @@ export class SessionManager {
       );
       return fromMongo;
     }
-    const fresh = new Session({ sessionId, userId, workflowId });
-    logger.info(
-      { session_id: sessionId, user_id: userId, workflow_id: workflowId },
-      'Session created',
-    );
-    return fresh;
+
+    return null;
   }
 
   async save(session: Session): Promise<void> {

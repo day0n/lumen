@@ -11,6 +11,8 @@ import {
   ProjectCanvasSchema,
   type ProjectDocument,
   ProjectDocumentSchema,
+  type ProjectListRecord,
+  ProjectListRecordSchema,
   type ProjectRecord,
   ProjectRecordSchema,
   type UpdateProjectInput,
@@ -49,7 +51,7 @@ export class ProjectRepository {
     return toProjectRecord(document);
   }
 
-  async list(input: ListProjectsInput): Promise<ProjectRecord[]> {
+  async list(input: ListProjectsInput): Promise<ProjectListRecord[]> {
     const parsed = ListProjectsInputSchema.parse(input);
     const filter: Filter<ProjectDocument> = {
       owner_id: parsed.ownerId,
@@ -61,12 +63,12 @@ export class ProjectRepository {
     }
 
     const documents = await this.collection()
-      .find(filter)
+      .find(filter, { projection: { canvas: 0 } })
       .sort({ updated_at: -1 })
       .limit(parsed.limit)
       .toArray();
 
-    return documents.map(toProjectRecord);
+    return documents.map(toProjectListRecord);
   }
 
   async get(ownerId: string, projectId: string): Promise<ProjectRecord | null> {
@@ -77,6 +79,19 @@ export class ProjectRepository {
     });
 
     return document ? toProjectRecord(document) : null;
+  }
+
+  async exists(ownerId: string, projectId: string): Promise<boolean> {
+    const document = await this.collection().findOne(
+      {
+        _id: projectId,
+        owner_id: ownerId,
+        deleted_at: { $exists: false },
+      },
+      { projection: { _id: 1 } },
+    );
+
+    return Boolean(document);
   }
 
   async getByShareId(shareId: string): Promise<ProjectRecord | null> {
@@ -199,6 +214,20 @@ function toProjectRecord(document: ProjectDocument): ProjectRecord {
     status: parsed.status,
     thumbnail: parsed.thumbnail,
     canvas: parsed.canvas,
+    createdAt: parsed.created_at.toISOString(),
+    updatedAt: parsed.updated_at.toISOString(),
+  });
+}
+
+function toProjectListRecord(document: Omit<ProjectDocument, 'canvas'>): ProjectListRecord {
+  const parsed = ProjectDocumentSchema.omit({ canvas: true }).parse(document);
+  return ProjectListRecordSchema.parse({
+    id: parsed._id,
+    ownerId: parsed.owner_id,
+    title: parsed.title,
+    description: parsed.description,
+    status: parsed.status,
+    thumbnail: parsed.thumbnail,
     createdAt: parsed.created_at.toISOString(),
     updatedAt: parsed.updated_at.toISOString(),
   });

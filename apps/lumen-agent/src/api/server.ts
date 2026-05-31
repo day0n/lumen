@@ -23,6 +23,7 @@ import * as Sentry from '@sentry/node';
 import type { AgentEvent } from '../core/events.js';
 import type { AgentLoop } from '../core/loop.js';
 import { logger } from '../observability/logger.js';
+import type { SessionManager } from '../session/manager.js';
 
 import type { AuthUser } from './auth.js';
 import { clerkAuth } from './auth.js';
@@ -40,8 +41,11 @@ const CreateRunSchema = z.object({
   client_request_id: z.string().optional(),
 });
 
+const SSE_HEARTBEAT_MS = 15_000;
+
 export interface ServerDeps {
   agentLoop: AgentLoop;
+  sessionManager: SessionManager;
   corsOrigins: string[];
   clerkIssuer: string;
 }
@@ -55,6 +59,30 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
 
   app.get('/healthz', (c) => c.json({ ok: true, service: 'lumen-agent', ts: Date.now() }));
 
+  app.get('/v1/agent/sessions/:sessionId/messages', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    const authUser = c.get('authUser') as AuthUser;
+    const limitParam = Number.parseInt(c.req.query('limit') ?? '200', 10);
+    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 500) : 200;
+    const session = await deps.sessionManager.getExisting(sessionId);
+
+    if (
+      !session ||
+      (session.userId !== authUser.userId && session.userId !== authUser.clerkUserId)
+    ) {
+      return c.json({ error: 'session_not_found' }, 404);
+    }
+
+    c.header('cache-control', 'no-store');
+    return c.json({
+      session_id: session.sessionId,
+      workflow_id: session.workflowId,
+      revision: session.revision,
+      updated_at: session.updatedAt.toISOString(),
+      messages: session.messages.slice(-limit),
+    });
+  });
+
   // ── 1. 创建 run ──────────────────────────────────────────────────
   app.post('/v1/agent/runs', async (c) => {
     const json = await c.req.json().catch(() => ({}));
@@ -66,7 +94,7 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
     const runId = nanoid(16);
     const authUser = c.get('authUser') as AuthUser;
 
-    runStore.create(runId);
+    runStore.create(runId, authUser.userId);
 
     // 在 HTTP 请求 trace 还活跃时抓取上下文，传给后台 run 续接（fire-and-forget
     // 在响应返回后才真正执行，那时请求 span 已结束）。
@@ -113,13 +141,33 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
   // ── 2. 订阅 run 事件流 ───────────────────────────────────────────
   app.get('/v1/agent/runs/:runId/events', async (c) => {
     const runId = c.req.param('runId');
-    if (!runStore.has(runId)) {
+    const authUser = c.get('authUser') as AuthUser;
+    if (!runStore.has(runId, authUser.userId)) {
       return c.json({ error: 'run_not_found' }, 404);
     }
 
     const lastEventId = c.req.header('Last-Event-ID') ?? c.req.query('last_event_id') ?? null;
+    c.header('cache-control', 'no-cache, no-transform');
+    c.header('x-accel-buffering', 'no');
 
     return streamSSE(c, async (stream) => {
+      let heartbeatTimer: NodeJS.Timeout | null = null;
+      let resolveClose: (() => void) | null = null;
+      const closed = new Promise<void>((resolve) => {
+        resolveClose = resolve;
+      });
+
+      const closeStream = async () => {
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+        if (resolveClose) {
+          resolveClose();
+          resolveClose = null;
+        }
+      };
+
       const subscription = runStore.subscribe(runId, lastEventId, async (entry) => {
         if (entry.event.event === '__terminal__') {
           await closeStream();
@@ -133,25 +181,30 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
         });
       });
 
+      heartbeatTimer = setInterval(() => {
+        if (stream.aborted || stream.closed) {
+          void closeStream();
+          return;
+        }
+        void stream
+          .writeSSE({
+            event: 'agent.heartbeat',
+            data: JSON.stringify({ run_id: runId, ts: Date.now() }),
+          })
+          .catch((err) => {
+            logger.warn({ err, run_id: runId }, 'agent SSE heartbeat failed');
+            void closeStream();
+          });
+      }, SSE_HEARTBEAT_MS);
+
       if (!subscription) {
         await stream.writeSSE({
           event: 'agent.failed',
           data: JSON.stringify({ error: 'run_not_found', code: 'run_not_found' }),
         });
+        await closeStream();
         return;
       }
-
-      let resolveClose: (() => void) | null = null;
-      const closed = new Promise<void>((resolve) => {
-        resolveClose = resolve;
-      });
-
-      const closeStream = async () => {
-        if (resolveClose) {
-          resolveClose();
-          resolveClose = null;
-        }
-      };
 
       stream.onAbort(() => {
         subscription.unsubscribe();
@@ -172,6 +225,7 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
       }
 
       if (subscription.terminal) {
+        await closeStream();
         return;
       }
 
@@ -184,7 +238,8 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
   // ── 3. 取消 run ──────────────────────────────────────────────────
   app.post('/v1/agent/runs/:runId/cancel', (c) => {
     const runId = c.req.param('runId');
-    const ok = runStore.cancel(runId);
+    const authUser = c.get('authUser') as AuthUser;
+    const ok = runStore.cancel(runId, authUser.userId);
     if (!ok) return c.json({ error: 'run_not_found' }, 404);
     runStore.publish(runId, { event: 'agent.stopped', data: { run_id: runId } });
     runStore.publish(runId, { event: 'run.cancelled', data: { run_id: runId } });

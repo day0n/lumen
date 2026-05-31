@@ -1,4 +1,4 @@
-import { okJson, routeError } from '@/server/http';
+import { okJson, routeError, withApiRouteSpan } from '@/server/http';
 import { listStudioProjectHistory } from '@/server/projects';
 
 export const runtime = 'nodejs';
@@ -9,17 +9,20 @@ interface ProjectHistoryRouteContext {
   }>;
 }
 
-export async function GET(_request: Request, context: ProjectHistoryRouteContext) {
-  try {
-    const { projectId } = await context.params;
-    const history = await listStudioProjectHistory(projectId);
+export const GET = withApiRouteSpan(
+  'GET /api/projects/:projectId/history',
+  async (_request: Request, context: ProjectHistoryRouteContext) => {
+    try {
+      const { projectId } = await context.params;
+      const history = await listStudioProjectHistory(projectId);
 
-    if (history.length === 0) {
+      if (history.length === 0) {
+        return okJson({ history });
+      }
+
       return okJson({ history });
+    } catch (error) {
+      return routeError(error);
     }
-
-    return okJson({ history });
-  } catch (error) {
-    return routeError(error);
-  }
-}
+  },
+);

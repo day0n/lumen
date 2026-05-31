@@ -29,6 +29,7 @@ export type EventListener = (entry: StoredEvent) => void;
 
 interface RunRecord {
   runId: string;
+  ownerId: string;
   events: StoredEvent[];
   terminal: boolean;
   cancelled: boolean;
@@ -40,10 +41,11 @@ interface RunRecord {
 export class RunStore {
   private readonly runs = new Map<string, RunRecord>();
 
-  create(runId: string): void {
+  create(runId: string, ownerId: string): void {
     if (this.runs.has(runId)) return;
     this.runs.set(runId, {
       runId,
+      ownerId,
       events: [],
       terminal: false,
       cancelled: false,
@@ -52,17 +54,20 @@ export class RunStore {
     });
   }
 
-  has(runId: string): boolean {
-    return this.runs.has(runId);
+  has(runId: string, ownerId?: string): boolean {
+    const record = this.runs.get(runId);
+    if (!record) return false;
+    return !ownerId || record.ownerId === ownerId;
   }
 
   isCancelled(runId: string): boolean {
     return this.runs.get(runId)?.cancelled ?? false;
   }
 
-  cancel(runId: string): boolean {
+  cancel(runId: string, ownerId?: string): boolean {
     const record = this.runs.get(runId);
     if (!record) return false;
+    if (ownerId && record.ownerId !== ownerId) return false;
     record.cancelled = true;
     return true;
   }

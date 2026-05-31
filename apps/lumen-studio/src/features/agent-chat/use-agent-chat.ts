@@ -121,6 +121,30 @@ interface ApiError {
 
 type CreateRunPayload = WrappedCreateRunResponse | DirectCreateRunResponse | ApiError;
 
+interface HistoryResponse {
+  session_id: string;
+  workflow_id?: string | null;
+  revision?: number;
+  updated_at?: string;
+  messages?: StoredHistoryMessage[];
+}
+
+interface StoredHistoryMessage {
+  role?: string;
+  content?: unknown;
+  turn?: number;
+  created_at?: string;
+  tool_call_id?: string;
+  tool_name?: string;
+  tool_call?: Record<string, unknown>;
+  event?: string;
+  event_data?: Record<string, unknown>;
+  status?: string;
+  error?: string | null;
+  duration_ms?: number;
+  output_size_bytes?: number;
+}
+
 export function useAgentChat({
   sessionId,
   profile = 'main',
@@ -141,6 +165,39 @@ export function useAgentChat({
   useEffect(() => {
     return () => abortRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    activeRunIdRef.current = null;
+    activeAssistantIdRef.current = null;
+    setMessages([]);
+    setStatus('idle');
+    setErrorText(null);
+
+    if (!sessionId) return;
+
+    const controller = new AbortController();
+    void getToken()
+      .catch(() => null)
+      .then((token) =>
+        fetchSessionHistory({
+          sessionId,
+          signal: controller.signal,
+          token,
+        }),
+      )
+      .then((historyMessages) => {
+        if (controller.signal.aborted || historyMessages.length === 0) return;
+        setMessages((prev) => (prev.length === 0 ? historyMessages : prev));
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        console.error('failed to load agent session history', err);
+      });
+
+    return () => controller.abort();
+  }, [getToken, sessionId]);
 
   const updateMessage = useCallback(
     (id: string, patch: Partial<ChatMessage> | ((prev: ChatMessage) => Partial<ChatMessage>)) => {
@@ -518,6 +575,175 @@ async function createRun(params: {
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
+async function fetchSessionHistory(params: {
+  sessionId: string;
+  signal: AbortSignal;
+  token: string | null;
+}): Promise<ChatMessage[]> {
+  const headers: Record<string, string> = { accept: 'application/json' };
+  if (params.token) headers.authorization = `Bearer ${params.token}`;
+
+  const response = await fetch(
+    `${AGENT_URL}/v1/agent/sessions/${encodeURIComponent(params.sessionId)}/messages?limit=240`,
+    {
+      method: 'GET',
+      headers,
+      signal: params.signal,
+    },
+  );
+
+  if (response.status === 404) return [];
+  const rawText = await response.text().catch(() => '');
+  const payload = parseJsonPayload(rawText) as HistoryResponse | ApiError | null;
+  if (!response.ok) {
+    throw new Error(readApiError(payload) ?? (rawText || `HTTP ${response.status}`));
+  }
+
+  const messages =
+    payload && 'messages' in payload && Array.isArray(payload.messages) ? payload.messages : [];
+  return projectHistoryMessages(messages);
+}
+
+function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  const assistantByTurn = new Map<string, ChatMessage>();
+
+  const ensureAssistant = (turnKey: string, createdAt: number) => {
+    const existing = assistantByTurn.get(turnKey);
+    if (existing) return existing;
+
+    const message: ChatMessage = {
+      id: `history-assistant-${turnKey}-${messages.length}`,
+      role: 'assistant',
+      content: '',
+      createdAt,
+      status: 'done',
+      thinking: '',
+      events: [],
+    };
+    assistantByTurn.set(turnKey, message);
+    messages.push(message);
+    return message;
+  };
+
+  stored.forEach((item, index) => {
+    const role = readString(item.role);
+    const createdAt = parseHistoryTimestamp(item.created_at);
+    const turnKey =
+      typeof item.turn === 'number' && Number.isFinite(item.turn)
+        ? String(item.turn)
+        : `t-${index}`;
+
+    if (role === 'user') {
+      messages.push({
+        id: `history-user-${turnKey}-${index}`,
+        role: 'user',
+        content: historyContentToText(item.content),
+        createdAt,
+        status: 'done',
+      });
+      return;
+    }
+
+    if (role === 'assistant') {
+      const content = historyContentToText(item.content);
+      if (!content && !assistantByTurn.has(turnKey)) return;
+      const assistant = ensureAssistant(turnKey, createdAt);
+      assistant.content = content || assistant.content;
+      assistant.status = 'done';
+      return;
+    }
+
+    if (role === 'tool_call') {
+      const assistant = ensureAssistant(turnKey, createdAt);
+      const toolName = item.tool_name ?? 'tool';
+      const toolCallId = item.tool_call_id ?? `history-${index}`;
+      const args = asRecord(item.tool_call);
+      assistant.events = upsertTimeline(assistant.events, {
+        id: `tool.${toolCallId}`,
+        kind: 'tool',
+        status: 'running',
+        title: `调用 ${formatToolName(toolName)}`,
+        detail: summarizeArguments(args),
+        toolName,
+        payload: args,
+        createdAt,
+      });
+      return;
+    }
+
+    if (role === 'tool_result') {
+      const assistant = ensureAssistant(turnKey, createdAt);
+      const toolName = item.tool_name ?? 'tool';
+      const toolCallId = item.tool_call_id ?? `history-${index}`;
+      const status = item.status === 'error' ? 'error' : 'success';
+      assistant.events = upsertTimeline(assistant.events, {
+        id: `tool.${toolCallId}`,
+        kind: 'tool',
+        status,
+        title:
+          status === 'error'
+            ? `${formatToolName(toolName)} 执行失败`
+            : `${formatToolName(toolName)} 已完成`,
+        detail:
+          item.error ??
+          formatToolResultDetail(readNumber(item.duration_ms), readNumber(item.output_size_bytes)),
+        durationMs: readNumber(item.duration_ms) ?? undefined,
+        toolName,
+        createdAt,
+      });
+      return;
+    }
+
+    if (role === 'tool_event') {
+      const assistant = ensureAssistant(turnKey, createdAt);
+      const toolName = item.tool_name ?? 'tool';
+      const eventName = item.event ?? 'event';
+      const data = asRecord(item.event_data);
+      assistant.events = appendTimeline(assistant.events, {
+        id: workflowTimelineId(item.tool_call_id ?? `history-${index}`, eventName, data),
+        kind: 'tool_event',
+        status: workflowTimelineStatus(eventName, data),
+        title: formatWorkflowEventTitle(eventName, data),
+        detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName),
+        toolName,
+        eventName,
+        payload: data,
+        createdAt,
+      });
+    }
+  });
+
+  return messages.filter(
+    (message) => message.role === 'user' || message.content || message.events?.length,
+  );
+}
+
+function parseHistoryTimestamp(value: unknown): number {
+  if (typeof value !== 'string') return Date.now();
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : Date.now();
+}
+
+function historyContentToText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => {
+        const record = asRecord(part);
+        return readString(record.text) ?? readString(record.content) ?? '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (value === null || value === undefined) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function handleEvent(
   env: SseEnvelope,
   assistantId: string,
@@ -623,11 +849,12 @@ function handleEvent(
     case 'tool.event': {
       const toolName = readString(env.data.tool_name) ?? 'tool';
       const eventName = readString(env.data.event) ?? 'event';
+      const toolCallId = readString(env.data.tool_call_id) ?? nanoid(8);
       const data = asRecord(env.data.data);
       notifyWorkflowHandler(eventName, data, handlers);
       updateMessage(assistantId, (prev) => ({
-        events: appendTimeline(prev.events, {
-          id: `tool.event.${nanoid(8)}`,
+        events: upsertTimeline(prev.events, {
+          id: workflowTimelineId(toolCallId, eventName, data),
           kind: 'tool_event',
           status: workflowTimelineStatus(eventName, data),
           title: formatWorkflowEventTitle(eventName, data),
@@ -791,7 +1018,9 @@ function readRunId(payload: CreateRunPayload | null): string | null {
   return null;
 }
 
-function readApiError(payload: CreateRunPayload | null): string | null {
+function readApiError(
+  payload: ApiError | CreateRunPayload | HistoryResponse | null,
+): string | null {
   if (!payload) return null;
   if ('message' in payload && typeof payload.message === 'string') return payload.message;
   if (!('error' in payload)) return null;
@@ -824,6 +1053,7 @@ function workflowTimelineStatus(
   eventName: string,
   data: Record<string, unknown>,
 ): ChatTimelineStatus {
+  if (eventName === 'workflow_update' || eventName === 'workflow_completed') return 'success';
   if (eventName !== 'workflow_node_status') return 'info';
   const status = readString(data.status);
   if (status === 'queued') return 'queued';
@@ -838,10 +1068,12 @@ function formatWorkflowEventTitle(eventName: string, data: Record<string, unknow
   if (eventName === 'workflow_completed') return '工作流运行完成';
   if (eventName === 'workflow_node_status') {
     const status = readString(data.status);
-    if (status === 'queued') return '节点已排队';
-    if (status === 'running') return '节点运行中';
-    if (status === 'success') return '节点已完成';
-    if (status === 'error') return '节点运行失败';
+    const nodeTitle = readString(data.node_title);
+    const prefix = nodeTitle ? `节点 ${nodeTitle}` : '节点';
+    if (status === 'queued') return `${prefix} 已排队`;
+    if (status === 'running') return `${prefix} 运行中`;
+    if (status === 'success') return `${prefix} 已完成`;
+    if (status === 'error') return `${prefix} 运行失败`;
     return '节点状态更新';
   }
   return formatEventName(eventName);
@@ -864,16 +1096,35 @@ function summarizeWorkflowEventDetail(
   }
   if (eventName === 'workflow_node_status') {
     const nodeId = readString(data.node_id);
+    const nodeKind = readString(data.node_kind);
     const progress = readNumber(data.progress);
     const error = readString(data.error);
     if (error) return compactText(error, 90);
     const parts = [
+      nodeKind,
       nodeId ? `node ${nodeId}` : null,
       progress !== null ? `${Math.round(progress * 100)}%` : null,
     ].filter(Boolean);
     return parts.length > 0 ? parts.join(' · ') : undefined;
   }
   return summarizeArguments(data);
+}
+
+function workflowTimelineId(
+  toolCallId: string,
+  eventName: string,
+  data: Record<string, unknown>,
+): string {
+  if (eventName === 'workflow_node_status') {
+    const nodeId = readString(data.node_id) ?? 'node';
+    return `tool.event.${toolCallId}.${eventName}.${nodeId}`;
+  }
+  if (eventName === 'workflow_update') {
+    const reason = readString(data.reason) ?? 'update';
+    const nodeId = readString(data.node_id) ?? 'canvas';
+    return `tool.event.${toolCallId}.${eventName}.${reason}.${nodeId}`;
+  }
+  return `tool.event.${toolCallId}.${eventName}`;
 }
 
 function upsertTimeline(
@@ -941,6 +1192,14 @@ function compactText(text: string, maxLength: number): string {
 }
 
 function formatToolName(name: string): string {
+  const labels: Record<string, string> = {
+    load_skill: '加载技能',
+    get_workflow: '读取画布',
+    edit_workflow: '编辑画布',
+    run_workflow_node: '运行节点',
+    web_search: '联网搜索',
+  };
+  if (labels[name]) return labels[name];
   return name
     .split(/[_\-.]/g)
     .filter(Boolean)

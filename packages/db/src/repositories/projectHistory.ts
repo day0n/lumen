@@ -9,12 +9,15 @@ import {
   ProjectHistoryDocumentSchema,
   type ProjectHistoryRecord,
   ProjectHistoryRecordSchema,
+  type ProjectHistorySummaryRecord,
+  ProjectHistorySummaryRecordSchema,
   type RecordProjectHistoryInput,
   RecordProjectHistoryInputSchema,
 } from '../schema/projectHistory';
 
 const COLLECTION = 'studio_project_history';
 const MAX_HISTORY_PER_PROJECT = 3;
+const MIN_UPDATED_HISTORY_INTERVAL_MS = 30_000;
 
 export class ProjectHistoryRepository {
   constructor(private readonly db: Db) {}
@@ -27,6 +30,45 @@ export class ProjectHistoryRepository {
   async recordSnapshot(input: RecordProjectHistoryInput): Promise<ProjectHistoryRecord> {
     const parsed = RecordProjectHistoryInputSchema.parse(input);
     const now = new Date();
+    const collection = this.collection();
+
+    if (parsed.action === 'updated') {
+      const latest = await collection.findOne(
+        {
+          owner_id: parsed.ownerId,
+          project_id: parsed.projectId,
+          action: 'updated',
+        },
+        { sort: { created_at: -1 } },
+      );
+
+      if (latest && now.getTime() - latest.created_at.getTime() < MIN_UPDATED_HISTORY_INTERVAL_MS) {
+        const document = ProjectHistoryDocumentSchema.parse({
+          ...latest,
+          title: parsed.title,
+          canvas: parsed.canvas,
+          node_count: parsed.canvas.nodes.length,
+          edge_count: parsed.canvas.edges.length,
+          created_at: now,
+        });
+
+        await collection.updateOne(
+          { _id: latest._id },
+          {
+            $set: {
+              title: document.title,
+              canvas: document.canvas,
+              node_count: document.node_count,
+              edge_count: document.edge_count,
+              created_at: document.created_at,
+            },
+          },
+        );
+
+        return toProjectHistoryRecord(document);
+      }
+    }
+
     const document = ProjectHistoryDocumentSchema.parse({
       _id: randomUUID(),
       owner_id: parsed.ownerId,
@@ -39,7 +81,7 @@ export class ProjectHistoryRepository {
       created_at: now,
     });
 
-    await this.collection().insertOne(document);
+    await collection.insertOne(document);
     await this.prune(parsed.ownerId, parsed.projectId);
     return toProjectHistoryRecord(document);
   }
@@ -56,6 +98,39 @@ export class ProjectHistoryRepository {
       .toArray();
 
     return documents.map(toProjectHistoryRecord);
+  }
+
+  async listLatestSummaries(
+    input: ListProjectHistoryInput,
+  ): Promise<ProjectHistorySummaryRecord[]> {
+    const parsed = ListProjectHistoryInputSchema.parse(input);
+    const documents = await this.collection()
+      .find(
+        {
+          owner_id: parsed.ownerId,
+          project_id: parsed.projectId,
+        },
+        { projection: { canvas: 0 } },
+      )
+      .sort({ created_at: -1 })
+      .limit(parsed.limit)
+      .toArray();
+
+    return documents.map(toProjectHistorySummaryRecord);
+  }
+
+  async get(
+    ownerId: string,
+    projectId: string,
+    historyId: string,
+  ): Promise<ProjectHistoryRecord | null> {
+    const document = await this.collection().findOne({
+      _id: historyId,
+      owner_id: ownerId,
+      project_id: projectId,
+    });
+
+    return document ? toProjectHistoryRecord(document) : null;
   }
 
   private async prune(ownerId: string, projectId: string) {
@@ -92,6 +167,22 @@ function toProjectHistoryRecord(document: ProjectHistoryDocument): ProjectHistor
     title: parsed.title,
     action: parsed.action,
     canvas: parsed.canvas,
+    nodeCount: parsed.node_count,
+    edgeCount: parsed.edge_count,
+    createdAt: parsed.created_at.toISOString(),
+  });
+}
+
+function toProjectHistorySummaryRecord(
+  document: Omit<ProjectHistoryDocument, 'canvas'>,
+): ProjectHistorySummaryRecord {
+  const parsed = ProjectHistoryDocumentSchema.omit({ canvas: true }).parse(document);
+  return ProjectHistorySummaryRecordSchema.parse({
+    id: parsed._id,
+    ownerId: parsed.owner_id,
+    projectId: parsed.project_id,
+    title: parsed.title,
+    action: parsed.action,
     nodeCount: parsed.node_count,
     edgeCount: parsed.edge_count,
     createdAt: parsed.created_at.toISOString(),

@@ -34,6 +34,11 @@ export const ProjectHistoryRecordSchema = z
   .strict();
 export type ProjectHistoryRecord = z.infer<typeof ProjectHistoryRecordSchema>;
 
+export const ProjectHistorySummaryRecordSchema = ProjectHistoryRecordSchema.omit({
+  canvas: true,
+}).strict();
+export type ProjectHistorySummaryRecord = z.infer<typeof ProjectHistorySummaryRecordSchema>;
+
 export const RecordProjectHistoryInputSchema = z
   .object({
     ownerId: z.string().min(1),

@@ -1,10 +1,10 @@
-import { okJson, routeError } from '@/server/http';
+import { okJson, routeError, withApiRouteSpan } from '@/server/http';
 import { listStudioMaterialAssets } from '@/server/materials';
 import { MaterialAssetKindSchema } from '@lumen/db';
 
 export const runtime = 'nodejs';
 
-export async function GET(request: Request) {
+export const GET = withApiRouteSpan('GET /api/material-assets', async (request: Request) => {
   try {
     const url = new URL(request.url);
     const workflowId = url.searchParams.get('workflowId') ?? undefined;
@@ -18,4 +18,4 @@ export async function GET(request: Request) {
   } catch (error) {
     return routeError(error);
   }
-}
+});

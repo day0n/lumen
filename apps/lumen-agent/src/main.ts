@@ -90,6 +90,7 @@ async function main(): Promise<void> {
 
   const app = buildApp({
     agentLoop,
+    sessionManager,
     corsOrigins: cfg.CORS_ORIGINS.split(',').map((s) => s.trim()),
     clerkIssuer: cfg.CLERK_ISSUER,
   });

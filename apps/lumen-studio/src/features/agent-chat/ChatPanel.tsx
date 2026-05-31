@@ -11,15 +11,23 @@ import { LumenMark } from '@/components/ui/LumenMark';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import {
+  IconActivity,
+  IconAlertCircle,
   IconArrowUp,
+  IconBrain,
+  IconCheck,
   IconChevronDown,
+  IconCircleDot,
   IconCopy,
+  IconGitBranch,
   IconLoader2,
   IconMinus,
   IconPlayerStopFilled,
   IconPlus,
   IconThumbDown,
   IconThumbUp,
+  IconTool,
+  IconX,
 } from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname, useRouter } from 'next/navigation';
@@ -328,6 +336,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
   const isStreaming = message.status === 'streaming';
   const isFailed = message.status === 'failed';
   const liveLabel = getLiveLabel(message);
+  const richContent = parseRichMessageContent(message.content);
 
   return (
     <motion.li
@@ -339,9 +348,10 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
     >
       <div className="min-w-0 flex-1">
         {message.content ? (
-          <div className="max-w-[92%] whitespace-pre-wrap break-words text-[17px] font-semibold leading-[1.55] text-white/92">
-            <span className="whitespace-pre-wrap break-words">{message.content}</span>
+          <div className="max-w-[92%] text-[17px] font-semibold leading-[1.55] text-white/92">
+            <RichMessageText parts={richContent.parts} />
             {isStreaming ? <StreamingCaret /> : null}
+            <MediaPreviewList media={richContent.media} />
           </div>
         ) : null}
 
@@ -368,31 +378,163 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
   );
 }
 
-function Timeline({ items }: { items?: ChatTimelineItem[] }) {
-  const visible = (items ?? [])
-    .filter((item) => item.kind !== 'connection' && item.kind !== 'thinking')
-    .slice(-6);
+interface RichTextPart {
+  type: 'text' | 'link';
+  text: string;
+  href?: string;
+}
 
-  if (visible.length === 0) return null;
+interface MediaAttachment {
+  type: 'image' | 'video' | 'audio';
+  url: string;
+  label: string;
+}
+
+function RichMessageText({ parts }: { parts: RichTextPart[] }) {
+  return (
+    <span className="whitespace-pre-wrap break-words">
+      {parts.map((part, index) => {
+        if (part.type === 'link' && part.href) {
+          return (
+            <a
+              key={`${part.href}-${index}`}
+              href={part.href}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all text-[#8ee7ff] underline decoration-[#8ee7ff]/35 underline-offset-4 transition-colors hover:text-white"
+            >
+              {part.text}
+            </a>
+          );
+        }
+        return <span key={`${part.text}-${index}`}>{part.text}</span>;
+      })}
+    </span>
+  );
+}
+
+function MediaPreviewList({ media }: { media: MediaAttachment[] }) {
+  if (media.length === 0) return null;
 
   return (
-    <div className="mt-4 max-w-[92%] space-y-1.5">
-      {visible.map((item) => (
+    <div className="mt-3 space-y-3">
+      {media.map((item) => (
         <div
-          key={item.id}
-          className="flex min-w-0 items-center gap-2 text-[12px] leading-5 text-white/38"
+          key={`${item.type}-${item.url}`}
+          className="overflow-hidden rounded-lg border border-white/[0.12] bg-black/35"
         >
-          <span
-            className={cn('h-1.5 w-1.5 shrink-0 rounded-full', timelineStatusClass(item.status))}
-          />
-          <span className="min-w-0 truncate text-white/52">{item.title}</span>
-          {item.detail ? (
-            <span className="min-w-0 truncate text-white/30">{item.detail}</span>
+          {item.type === 'image' ? (
+            <a href={item.url} target="_blank" rel="noreferrer" className="block">
+              <img
+                src={item.url}
+                alt={item.label}
+                loading="lazy"
+                className="max-h-[280px] w-full object-contain"
+              />
+            </a>
           ) : null}
+
+          {item.type === 'video' ? (
+            /* biome-ignore lint/a11y/useMediaCaption: Agent-generated video assets do not include caption tracks yet. */
+            <video
+              src={item.url}
+              controls
+              playsInline
+              preload="metadata"
+              className="max-h-[300px] w-full bg-black"
+            >
+              Your browser does not support the video tag.
+            </video>
+          ) : null}
+
+          {item.type === 'audio' ? (
+            <div className="px-3 py-3">
+              {/* biome-ignore lint/a11y/useMediaCaption: Agent-generated audio assets do not include caption tracks yet. */}
+              <audio src={item.url} controls preload="metadata" className="w-full" />
+            </div>
+          ) : null}
+
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noreferrer"
+            className="block truncate border-t border-white/[0.08] px-3 py-2 text-[12px] font-medium leading-5 text-white/54 transition-colors hover:text-white/82"
+          >
+            {item.label}
+          </a>
         </div>
       ))}
     </div>
   );
+}
+
+function Timeline({ items }: { items?: ChatTimelineItem[] }) {
+  const visible = (items ?? []).filter((item) => item.kind !== 'connection').slice(-12);
+
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="mt-4 max-w-[94%] space-y-2 border-l border-white/[0.1] pl-3">
+      {visible.map((item) => (
+        <div
+          key={item.id}
+          className="group flex min-w-0 items-start gap-2.5 text-[12px] leading-5 text-white/42"
+        >
+          <TimelineIcon item={item} />
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate font-medium text-white/68">{item.title}</span>
+              <span
+                className={cn(
+                  'shrink-0 rounded-full border px-1.5 py-0 text-[10px] leading-[16px]',
+                  timelineBadgeClass(item.status),
+                )}
+              >
+                {timelineStatusLabel(item)}
+              </span>
+            </div>
+            {item.detail ? (
+              <div className="mt-0.5 min-w-0 truncate text-white/32">{item.detail}</div>
+            ) : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TimelineIcon({ item }: { item: ChatTimelineItem }) {
+  const className = cn(
+    'mt-[3px] flex h-4 w-4 shrink-0 items-center justify-center',
+    item.status === 'running'
+      ? 'text-[#79e4ff]'
+      : item.status === 'success'
+        ? 'text-[#7ee787]'
+        : item.status === 'error'
+          ? 'text-[#ff7b8a]'
+          : 'text-white/34',
+  );
+
+  if (item.status === 'running') {
+    return <IconLoader2 size={15} className={cn(className, 'animate-spin')} stroke={2.4} />;
+  }
+  if (item.status === 'success') return <IconCheck size={15} className={className} stroke={2.6} />;
+  if (item.status === 'error') return <IconX size={15} className={className} stroke={2.6} />;
+
+  switch (item.kind) {
+    case 'thinking':
+      return <IconBrain size={15} className={className} stroke={2.2} />;
+    case 'tool':
+      return <IconTool size={15} className={className} stroke={2.2} />;
+    case 'tool_event':
+      return <IconActivity size={15} className={className} stroke={2.2} />;
+    case 'step':
+      return <IconGitBranch size={15} className={className} stroke={2.2} />;
+    case 'error':
+      return <IconAlertCircle size={15} className={className} stroke={2.2} />;
+    default:
+      return <IconCircleDot size={15} className={className} stroke={2.2} />;
+  }
 }
 
 function MessageActions() {
@@ -518,6 +660,105 @@ function SendOrStopButton({
   );
 }
 
+function parseRichMessageContent(content: string): {
+  parts: RichTextPart[];
+  media: MediaAttachment[];
+} {
+  const parts: RichTextPart[] = [];
+  const media = new Map<string, MediaAttachment>();
+  const markdownLinkPattern = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  let cursor = 0;
+
+  for (const match of content.matchAll(markdownLinkPattern)) {
+    const matchStart = match.index ?? 0;
+    appendTextWithBareLinks(content.slice(cursor, matchStart), parts, media);
+
+    const label = match[1]?.trim() || 'media';
+    const url = normalizeMessageUrl(match[2] ?? '');
+    if (url) {
+      parts.push({ type: 'link', text: label, href: url });
+      addMediaAttachment(media, url, label);
+    }
+    cursor = matchStart + match[0].length;
+  }
+
+  appendTextWithBareLinks(content.slice(cursor), parts, media);
+
+  return { parts, media: [...media.values()] };
+}
+
+function appendTextWithBareLinks(
+  text: string,
+  parts: RichTextPart[],
+  media: Map<string, MediaAttachment>,
+) {
+  if (!text) return;
+  const bareUrlPattern = /https?:\/\/[^\s<>"'`]+/g;
+  let cursor = 0;
+
+  for (const match of text.matchAll(bareUrlPattern)) {
+    const matchStart = match.index ?? 0;
+    if (matchStart > cursor) {
+      parts.push({ type: 'text', text: text.slice(cursor, matchStart) });
+    }
+
+    const url = normalizeMessageUrl(match[0]);
+    if (url) {
+      const label = shortenUrl(url);
+      parts.push({ type: 'link', text: label, href: url });
+      addMediaAttachment(media, url, label);
+    } else {
+      parts.push({ type: 'text', text: match[0] });
+    }
+    cursor = matchStart + match[0].length;
+  }
+
+  if (cursor < text.length) {
+    parts.push({ type: 'text', text: text.slice(cursor) });
+  }
+}
+
+function addMediaAttachment(media: Map<string, MediaAttachment>, url: string, label: string) {
+  if (media.has(url)) return;
+  const type = detectMediaType(url);
+  if (!type) return;
+  media.set(url, { type, url, label });
+}
+
+function detectMediaType(url: string): MediaAttachment['type'] | null {
+  let pathname = url;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    /* keep the original value */
+  }
+  const normalized = pathname.toLowerCase();
+  if (/\.(png|jpe?g|webp|gif|avif)$/.test(normalized)) return 'image';
+  if (/\.(mp4|webm|mov|m4v)$/.test(normalized)) return 'video';
+  if (/\.(mp3|wav|m4a|aac|ogg)$/.test(normalized)) return 'audio';
+  return null;
+}
+
+function normalizeMessageUrl(raw: string): string | null {
+  const trimmed = raw.trim().replace(/[),.;!?]+$/g, '');
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return null;
+  try {
+    return new URL(trimmed).toString();
+  } catch {
+    return null;
+  }
+}
+
+function shortenUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const fileName = parsed.pathname.split('/').filter(Boolean).at(-1);
+    return fileName ? `${parsed.hostname}/${fileName}` : parsed.hostname;
+  } catch {
+    return url.length > 72 ? `${url.slice(0, 69)}...` : url;
+  }
+}
+
 function getLiveLabel(message: ChatMessage): string {
   const current = message.events?.findLast?.((event) => event.status === 'running');
   if (!current) return 'Thinking...';
@@ -526,18 +767,41 @@ function getLiveLabel(message: ChatMessage): string {
   return current.title;
 }
 
-function timelineStatusClass(status: ChatTimelineItem['status']) {
+function timelineStatusLabel(item: ChatTimelineItem) {
+  if (item.kind === 'tool') {
+    if (item.status === 'running') return '调用中';
+    if (item.status === 'success') return '执行成功';
+    if (item.status === 'error') return '执行失败';
+  }
+  if (item.kind === 'thinking') {
+    return item.status === 'running' ? '思考中' : '已记录';
+  }
+  switch (item.status) {
+    case 'queued':
+      return '排队中';
+    case 'running':
+      return '进行中';
+    case 'success':
+      return '成功';
+    case 'error':
+      return '失败';
+    default:
+      return '事件';
+  }
+}
+
+function timelineBadgeClass(status: ChatTimelineItem['status']) {
   switch (status) {
     case 'queued':
-      return 'bg-white/34';
+      return 'border-white/12 bg-white/[0.04] text-white/42';
     case 'running':
-      return 'bg-[#79e4ff] shadow-[0_0_12px_rgba(121,228,255,0.55)]';
+      return 'border-[#79e4ff]/22 bg-[#79e4ff]/10 text-[#9defff]';
     case 'success':
-      return 'bg-[#7ee787]';
+      return 'border-[#7ee787]/22 bg-[#7ee787]/10 text-[#a7f3b4]';
     case 'error':
-      return 'bg-[#ff7b8a]';
+      return 'border-[#ff7b8a]/25 bg-[#ff7b8a]/10 text-[#ffadb7]';
     default:
-      return 'bg-white/24';
+      return 'border-white/10 bg-white/[0.03] text-white/34';
   }
 }
 
