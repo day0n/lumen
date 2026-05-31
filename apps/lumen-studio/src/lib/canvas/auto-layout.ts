@@ -138,8 +138,7 @@ export function arrangeCanvasNodes<TNode extends AutoLayoutNode>(
   const rowGap = 84;
   const layerHeights = sortedLayers.map((layer) =>
     layer.reduce(
-      (total, node, index) =>
-        total + getAutoLayoutNodeSize(node).height + (index > 0 ? rowGap : 0),
+      (total, node, index) => total + getAutoLayoutNodeSize(node).height + (index > 0 ? rowGap : 0),
       0,
     ),
   );
