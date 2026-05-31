@@ -6,11 +6,22 @@ export type NodeType = z.infer<typeof NodeTypeSchema>;
 export const NodeStatusSchema = z.enum(['idle', 'queued', 'running', 'success', 'error']);
 export type NodeStatus = z.infer<typeof NodeStatusSchema>;
 
+export const VideoClipInputSchema = z.object({
+  url: z.string().trim().min(1),
+  start: z.number().nonnegative().optional(),
+  duration: z.number().positive().optional(),
+  volume: z.number().min(0).max(1).optional(),
+  title: z.string().trim().max(120).optional(),
+});
+export type VideoClipInput = z.infer<typeof VideoClipInputSchema>;
+
 export const NodeInputSchema = z.object({
   prompt: z.string().default(''),
   image: z.string().nullable().default(null),
   lastFrameImage: z.string().nullable().default(null),
   video: z.string().nullable().default(null),
+  videos: z.array(z.string().trim().min(1)).default([]),
+  clips: z.array(VideoClipInputSchema).default([]),
 });
 export type NodeInput = z.infer<typeof NodeInputSchema>;
 

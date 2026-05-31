@@ -12,11 +12,30 @@ function getSettingString(settings: Record<string, unknown>, key: string) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function hasSettingStringArray(settings: Record<string, unknown>, key: string) {
+  const value = settings[key];
+  return Array.isArray(value) && value.some((item) => typeof item === 'string' && item.trim());
+}
+
+function hasSettingClips(settings: Record<string, unknown>) {
+  const value = settings.inputClips ?? settings.clips;
+  return (
+    Array.isArray(value) &&
+    value.some((item) => {
+      if (!item || typeof item !== 'object') return false;
+      const url = (item as Record<string, unknown>).url;
+      return typeof url === 'string' && url.trim().length > 0;
+    })
+  );
+}
+
 function hasOwnInput(node: CanvasNodeShape): boolean {
   if (node.data.prompt.trim().length > 0) return true;
   if (getSettingString(node.data.settings, 'inputImage')) return true;
   if (getSettingString(node.data.settings, 'inputLastFrameImage')) return true;
   if (getSettingString(node.data.settings, 'inputVideo')) return true;
+  if (hasSettingStringArray(node.data.settings, 'inputVideos')) return true;
+  if (hasSettingClips(node.data.settings)) return true;
   return false;
 }
 

@@ -484,6 +484,8 @@ function compactNodeInput(input: NodeInput): NodeInput {
     image: compactMediaRef(input.image),
     lastFrameImage: compactMediaRef(input.lastFrameImage),
     video: compactMediaRef(input.video),
+    videos: input.videos.map((value) => compactMediaRef(value) ?? '').filter(Boolean),
+    clips: input.clips.map((clip) => ({ ...clip, url: compactMediaRef(clip.url) ?? clip.url })),
   };
 }
 

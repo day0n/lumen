@@ -5,6 +5,7 @@ import type { ExecuteFn, NodeOutput } from '../base.js';
 const registry: Record<string, () => Promise<{ execute: ExecuteFn }>> = {
   'seedance-1.5-pro': () => import('./seedance.js'),
   'veo-3.1': () => import('./veo31.js'),
+  'lumen-video-edit': () => import('./edit.js'),
 };
 
 export async function executeVideo(input: ResolvedInput, model: ModelConfig): Promise<NodeOutput> {

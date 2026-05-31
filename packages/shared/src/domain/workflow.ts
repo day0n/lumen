@@ -20,6 +20,7 @@ export const WorkflowModelCatalog = {
   video: [
     { id: 'veo-3.1', label: 'Veo 3.1' },
     { id: 'seedance-1.5-pro', label: 'Seedance 1.5 Pro' },
+    { id: 'lumen-video-edit', label: 'Lumen Auto Edit' },
   ],
   audio: [
     { id: 'fish-tts', label: 'Fish TTS' },
@@ -187,6 +188,8 @@ export function canvasNodeToWorkflowNode(node: LumenCanvasNode) {
       image: getSettingString(settings, 'inputImage') || null,
       lastFrameImage: getSettingString(settings, 'inputLastFrameImage') || null,
       video: getSettingString(settings, 'inputVideo') || null,
+      videos: getSettingStringArray(settings, 'inputVideos'),
+      clips: getSettingVideoClips(settings),
     },
     model: { id: resolveCanvasNodeModelId(node), settings },
   });
@@ -272,7 +275,7 @@ export function computeSingleNodeInput(canvas: LumenCanvas, nodeId: string) {
           resolved.lastFrameImage = output;
         break;
       case 'video':
-        if (!resolved.video) resolved.video = output;
+        addResolvedVideo(resolved, output);
         break;
       case 'audio':
         break;
@@ -280,6 +283,14 @@ export function computeSingleNodeInput(canvas: LumenCanvas, nodeId: string) {
   }
 
   return { input: resolved, missingInputs: missing };
+}
+
+function addResolvedVideo(input: z.infer<typeof NodeInputSchema>, url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return;
+  if (!input.video) input.video = trimmed;
+  if (!input.videos.includes(trimmed)) input.videos.push(trimmed);
+  if (!input.clips.some((clip) => clip.url === trimmed)) input.clips.push({ url: trimmed });
 }
 
 function truncateTextContext(value: string, limit: number): string {
@@ -290,6 +301,41 @@ function truncateTextContext(value: string, limit: number): string {
 function getSettingString(settings: Record<string, unknown>, key: string): string {
   const value = settings[key];
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function getSettingStringArray(settings: Record<string, unknown>, key: string): string[] {
+  const value = settings[key];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => item.trim());
+}
+
+function getSettingVideoClips(settings: Record<string, unknown>) {
+  const value = settings.inputClips ?? settings.clips;
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const url = typeof record.url === 'string' ? record.url.trim() : '';
+      if (!url) return null;
+      return {
+        url,
+        start: getFiniteNumber(record.start),
+        duration: getFiniteNumber(record.duration),
+        volume: getFiniteNumber(record.volume),
+        title: typeof record.title === 'string' ? record.title.trim() : undefined,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+}
+
+function getFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function countAdded(before: Set<string>, after: Set<string>): number {

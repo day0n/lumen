@@ -301,6 +301,7 @@ const defaultModels: Record<NodeKind, ModelOption[]> = {
   video: [
     { id: 'veo-3.1', label: 'Veo 3.1', badges: ['高质量视频', '4K', '60 ~ 120s'] },
     { id: 'seedance-1.5-pro', label: 'Seedance 1.5', badges: ['快速成片', '动态强', '30 ~ 90s'] },
+    { id: 'lumen-video-edit', label: '自动剪辑', badges: ['本地合成', '多视频', '30 ~ 120s'] },
   ],
   audio: [
     { id: 'fish-tts', label: 'Fish TTS', badges: ['自然音色', '多语种', '5 ~ 10s'] },
@@ -319,6 +320,7 @@ const aspectRatioOptions = ['1:1', '4:5', '16:9', '9:16'] as const;
 
 const videoDurationOptions = [4, 6, 8] as const;
 const videoResolutionOptions = ['720p', '1080p', '4k'] as const;
+const editVideoResolutionOptions = ['720p', '1080p'] as const;
 // 1080p / 4k 仅支持 8s（Veo 约束）
 const resolutionRequiresEightSeconds = (resolution: string) =>
   resolution === '1080p' || resolution === '4k';
@@ -388,6 +390,39 @@ function resolveModelId(data: LumenNodeData) {
 function getSettingString(settings: Record<string, unknown>, key: string) {
   const value = settings[key];
   return typeof value === 'string' ? value : '';
+}
+
+function getSettingStringArray(settings: Record<string, unknown>, key: string) {
+  const value = settings[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function getSettingVideoClips(settings: Record<string, unknown>) {
+  const value = settings.inputClips ?? settings.clips;
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const url = typeof record.url === 'string' ? record.url.trim() : '';
+      if (!url) return null;
+      return {
+        url,
+        start: getOptionalNumber(record.start),
+        duration: getOptionalNumber(record.duration),
+        volume: getOptionalNumber(record.volume),
+        title: typeof record.title === 'string' ? record.title.trim() : undefined,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+}
+
+function getOptionalNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function getAspectRatio(settings: Record<string, unknown>) {
@@ -487,6 +522,8 @@ function toWorkflowNodes(nodes: LumenNode[]) {
         image: inputImage || null,
         lastFrameImage: inputLastFrameImage || null,
         video: inputVideo || null,
+        videos: getSettingStringArray(node.data.settings, 'inputVideos'),
+        clips: getSettingVideoClips(node.data.settings),
       },
       model: { id: resolveModelId(node.data), settings: node.data.settings },
     };
@@ -2672,8 +2709,14 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const aspectRatio = getAspectRatio(data.settings);
   const acceptsImageInput = data.kind === 'image' || data.kind === 'video';
   const isVideo = data.kind === 'video';
+  const isVideoEdit = isVideo && modelId === 'lumen-video-edit';
   const videoDuration = getVideoDuration(data.settings);
   const videoResolution = getVideoResolution(data.settings);
+  const editVideoResolution = editVideoResolutionOptions.includes(
+    videoResolution as (typeof editVideoResolutionOptions)[number],
+  )
+    ? (videoResolution as (typeof editVideoResolutionOptions)[number])
+    : '720p';
 
   // 读取上游图片节点的输出；上游图片只有成对时才展示为首/尾帧。
   const incomingConnections = useNodeConnections({ handleType: 'target' });
@@ -2692,6 +2735,16 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
     }
     return result;
   }, [isVideo, upstreamNodesData]);
+  const upstreamVideos = useMemo(() => {
+    if (!isVideoEdit) return [] as string[];
+    const result: string[] = [];
+    for (const upstream of upstreamNodesData ?? []) {
+      if (upstream?.data.kind !== 'video') continue;
+      const output = upstream.data.output?.trim();
+      if (output) result.push(output);
+    }
+    return result;
+  }, [isVideoEdit, upstreamNodesData]);
 
   const { first: resolvedFirstFrame, last: resolvedLastFrame } = resolveFrames(
     inputImage,
@@ -2880,76 +2933,101 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
           <div className="bg-[#242527]/95 p-2.5">
             {acceptsImageInput ? (
               isVideo ? (
-                <div className="mb-2 space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <FrameImageSlot
-                      image={resolvedFirstFrame}
-                      label="首帧"
-                      fromUpstream={firstFromUpstream}
-                      draggable
-                      dropActive={frameDragActive}
-                      onClear={inputImage ? () => updateSettings({ inputImage: '' }) : undefined}
-                      onUpload={(event) => handleAssetUpload(event, 'inputImage')}
-                      onDragStart={() => handleFrameDragStart('first')}
-                      onDragEnd={handleFrameDragEnd}
-                      onDrop={() => handleFrameDrop('first')}
+                isVideoEdit ? (
+                  <div className="mb-2 space-y-2">
+                    <div className="flex items-center justify-between rounded-[10px] bg-[#2d2e30]/86 px-3 py-2 ring-1 ring-white/[0.07]">
+                      <span className="text-[10px] font-black text-white/40">片段</span>
+                      <span className="rounded-full bg-white/[0.08] px-2 py-1 text-[11px] font-black text-white/72">
+                        {upstreamVideos.length}
+                      </span>
+                    </div>
+                    <ParamPills
+                      label="比例"
+                      options={aspectRatioOptions}
+                      value={aspectRatio as (typeof aspectRatioOptions)[number]}
+                      onSelect={(ratio) => updateSettings({ aspectRatio: ratio })}
                     />
-                    <button
-                      type="button"
-                      aria-label="交换首尾帧"
-                      title="交换首尾帧"
-                      disabled={!resolvedFirstFrame || !resolvedLastFrame}
-                      className="nodrag flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/64 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.16] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                      onClick={handleSwapFrames}
-                    >
-                      <IconArrowsExchange2 size={15} stroke={2.3} />
-                    </button>
-                    <FrameImageSlot
-                      image={resolvedLastFrame}
-                      label="尾帧"
-                      fromUpstream={lastFromUpstream}
-                      draggable
-                      dropActive={frameDragActive}
-                      onClear={
-                        inputLastFrameImage
-                          ? () => updateSettings({ inputLastFrameImage: '' })
-                          : undefined
-                      }
-                      onUpload={(event) => handleAssetUpload(event, 'inputLastFrameImage')}
-                      onDragStart={() => handleFrameDragStart('last')}
-                      onDragEnd={handleFrameDragEnd}
-                      onDrop={() => handleFrameDrop('last')}
+                    <ParamPills
+                      label="清晰度"
+                      options={editVideoResolutionOptions}
+                      value={editVideoResolution}
+                      onSelect={(resolution) => updateSettings({ resolution })}
                     />
-                    {inputImage || inputLastFrameImage ? (
+                  </div>
+                ) : (
+                  <div className="mb-2 space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <FrameImageSlot
+                        image={resolvedFirstFrame}
+                        label="首帧"
+                        fromUpstream={firstFromUpstream}
+                        draggable
+                        dropActive={frameDragActive}
+                        onClear={inputImage ? () => updateSettings({ inputImage: '' }) : undefined}
+                        onUpload={(event) => handleAssetUpload(event, 'inputImage')}
+                        onDragStart={() => handleFrameDragStart('first')}
+                        onDragEnd={handleFrameDragEnd}
+                        onDrop={() => handleFrameDrop('first')}
+                      />
                       <button
                         type="button"
-                        className="nodrag ml-auto h-7 self-start rounded-[9px] px-2 text-[11px] font-black text-white/34 transition-colors hover:bg-white/[0.08] hover:text-white/76"
-                        onClick={() => updateSettings({ inputImage: '', inputLastFrameImage: '' })}
+                        aria-label="交换首尾帧"
+                        title="交换首尾帧"
+                        disabled={!resolvedFirstFrame || !resolvedLastFrame}
+                        className="nodrag flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/64 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.16] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                        onClick={handleSwapFrames}
                       >
-                        清除
+                        <IconArrowsExchange2 size={15} stroke={2.3} />
                       </button>
-                    ) : null}
+                      <FrameImageSlot
+                        image={resolvedLastFrame}
+                        label="尾帧"
+                        fromUpstream={lastFromUpstream}
+                        draggable
+                        dropActive={frameDragActive}
+                        onClear={
+                          inputLastFrameImage
+                            ? () => updateSettings({ inputLastFrameImage: '' })
+                            : undefined
+                        }
+                        onUpload={(event) => handleAssetUpload(event, 'inputLastFrameImage')}
+                        onDragStart={() => handleFrameDragStart('last')}
+                        onDragEnd={handleFrameDragEnd}
+                        onDrop={() => handleFrameDrop('last')}
+                      />
+                      {inputImage || inputLastFrameImage ? (
+                        <button
+                          type="button"
+                          className="nodrag ml-auto h-7 self-start rounded-[9px] px-2 text-[11px] font-black text-white/34 transition-colors hover:bg-white/[0.08] hover:text-white/76"
+                          onClick={() =>
+                            updateSettings({ inputImage: '', inputLastFrameImage: '' })
+                          }
+                        >
+                          清除
+                        </button>
+                      ) : null}
+                    </div>
+                    <ParamPills
+                      label="比例"
+                      options={aspectRatioOptions}
+                      value={aspectRatio as (typeof aspectRatioOptions)[number]}
+                      onSelect={(ratio) => updateSettings({ aspectRatio: ratio })}
+                    />
+                    <ParamPills
+                      label="时长"
+                      options={videoDurationOptions}
+                      value={videoDuration}
+                      onSelect={handleSelectDuration}
+                      format={(seconds) => `${seconds}s`}
+                    />
+                    <ParamPills
+                      label="清晰度"
+                      options={videoResolutionOptions}
+                      value={videoResolution}
+                      onSelect={handleSelectResolution}
+                    />
                   </div>
-                  <ParamPills
-                    label="比例"
-                    options={aspectRatioOptions}
-                    value={aspectRatio as (typeof aspectRatioOptions)[number]}
-                    onSelect={(ratio) => updateSettings({ aspectRatio: ratio })}
-                  />
-                  <ParamPills
-                    label="时长"
-                    options={videoDurationOptions}
-                    value={videoDuration}
-                    onSelect={handleSelectDuration}
-                    format={(seconds) => `${seconds}s`}
-                  />
-                  <ParamPills
-                    label="清晰度"
-                    options={videoResolutionOptions}
-                    value={videoResolution}
-                    onSelect={handleSelectResolution}
-                  />
-                </div>
+                )
               ) : (
                 <div className="mb-2 grid grid-cols-[auto_1fr] gap-2">
                   <FrameImageSlot

@@ -23,6 +23,17 @@ cd "$APP_DIR"
 echo "==> Pulling latest code..."
 git pull origin main
 
+echo "==> Ensuring FFmpeg runtime..."
+if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+  if [ "$(id -u)" -eq 0 ] && command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg
+  else
+    echo "FFmpeg/ffprobe missing; install them before running lumen-video-edit."
+    exit 1
+  fi
+fi
+
 echo "==> Installing dependencies..."
 pnpm install --frozen-lockfile
 

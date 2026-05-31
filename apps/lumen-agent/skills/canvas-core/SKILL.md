@@ -51,6 +51,10 @@ Avoid placeholder / non-production models such as `doubao-seed-2.0-pro`,
 `doubao-seedream-3.0`, `seedance-1.5-pro`, and `doubao-tts` unless the user
 explicitly asks for them.
 
+For final automatic video editing, use the internal `video` model id
+`lumen-video-edit`. This is Lumen's own engine-side editor, not an external
+generation model.
+
 ## Editing Rules
 
 - Use `write_canvas` for structural changes and pass the complete canvas JSON.
@@ -74,6 +78,8 @@ Typical layers:
 4. Visual nodes: one or more image nodes for key frames or scenes.
 5. Motion nodes: one video node per important scene or final video output.
 6. Audio nodes: voiceover, sound style, or music notes when needed.
+7. Final edit node: for multi-clip output, add one rightmost `video` node with
+   `modelId: "lumen-video-edit"` and connect every source video clip to it.
 
 Rules:
 

@@ -1,5 +1,6 @@
 import {
   type NodeType,
+  type VideoClipInput,
   type WorkflowNode,
   mergeTextOutputIntoNodePrompt,
 } from '@lumen/shared/domain';
@@ -11,6 +12,8 @@ export interface ResolvedInput {
   image: string | null;
   lastFrameImage: string | null;
   video: string | null;
+  videos: string[];
+  clips: VideoClipInput[];
 }
 
 function uniqueOutputs(outputs: string[]) {
@@ -45,6 +48,8 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
     image: node.input.image,
     lastFrameImage: node.input.lastFrameImage,
     video: node.input.video,
+    videos: [...node.input.videos],
+    clips: [...node.input.clips],
   };
   const upstreamImages: string[] = [];
 
@@ -75,7 +80,7 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
         }
         break;
       case 'video':
-        if (!resolved.video) resolved.video = upstreamOutput;
+        addResolvedVideo(resolved, upstreamOutput);
         break;
       case 'audio':
         break;
@@ -87,4 +92,12 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
   }
 
   return resolved;
+}
+
+function addResolvedVideo(input: ResolvedInput, url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return;
+  if (!input.video) input.video = trimmed;
+  if (!input.videos.includes(trimmed)) input.videos.push(trimmed);
+  if (!input.clips.some((clip) => clip.url === trimmed)) input.clips.push({ url: trimmed });
 }

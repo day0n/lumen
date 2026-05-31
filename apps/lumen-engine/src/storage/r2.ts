@@ -1,6 +1,11 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { NodeType } from '@lumen/shared/domain';
 import * as Sentry from '@sentry/node';
+import { createReadStream } from 'node:fs';
+import { rm, stat, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { customAlphabet } from 'nanoid';
 
 import { config } from '../config.js';
@@ -100,6 +105,20 @@ export async function persistNodeOutput(args: {
   if (isHttpUrl(args.output.value)) {
     const upload = await uploadFromUrl({
       sourceUrl: args.output.value,
+      outputType: args.output.type,
+      prefix,
+      settings,
+    });
+    return {
+      type: args.output.type,
+      value: upload.url,
+      asset: upload,
+    };
+  }
+
+  if (isFileUrl(args.output.value)) {
+    const upload = await uploadFromLocalFile({
+      fileUrl: args.output.value,
       outputType: args.output.type,
       prefix,
       settings,
@@ -248,6 +267,125 @@ async function uploadFromUrl(args: {
   });
 }
 
+async function uploadFromLocalFile(args: {
+  fileUrl: string;
+  outputType: NodeType;
+  prefix: string;
+  settings: R2Settings;
+}): Promise<WorkflowOutputAsset> {
+  const localPath = safeTempFilePath(args.fileUrl);
+  const info = await stat(localPath);
+  if (!info.isFile()) throw new Error('Local media output is not a file');
+
+  const maxBytes = maxBytesFor(args.outputType);
+  if (info.size > maxBytes) {
+    throw new Error(
+      `Generated ${args.outputType} is too large (${(info.size / 1024 / 1024).toFixed(1)}MB > ${(
+        maxBytes / 1024 / 1024
+      ).toFixed(0)}MB)`,
+    );
+  }
+
+  const contentType = contentTypeForLocalFile(localPath, args.outputType);
+  const asset = await uploadFileStream({
+    localPath,
+    size: info.size,
+    contentType,
+    extension: extensionFor(contentType, args.outputType, localPath),
+    prefix: args.prefix,
+    settings: args.settings,
+  });
+
+  await cleanupTempFile(localPath);
+  return asset;
+}
+
+async function uploadFileStream(args: {
+  localPath: string;
+  size: number;
+  contentType: string;
+  extension: string;
+  prefix: string;
+  settings: R2Settings;
+}): Promise<WorkflowOutputAsset> {
+  const key = `${args.prefix.replace(/^\/+|\/+$/g, '')}/${nano()}.${args.extension.replace(
+    /^\./,
+    '',
+  )}`;
+
+  await Sentry.startSpan(
+    {
+      name: 'r2.upload',
+      op: 'http.client',
+      attributes: {
+        'r2.key': key,
+        content_type: args.contentType,
+        bytes: args.size,
+      },
+    },
+    () =>
+      getClient(args.settings).send(
+        new PutObjectCommand({
+          Bucket: args.settings.bucket,
+          Key: key,
+          Body: createReadStream(args.localPath),
+          ContentType: args.contentType,
+          CacheControl: 'public, max-age=31536000, immutable',
+        }),
+      ),
+  );
+
+  const base = args.settings.publicBaseUrl.replace(/\/+$/, '');
+  const asset: WorkflowOutputAsset = {
+    storage: 'r2',
+    key,
+    url: `${base}/${key}`,
+    content_type: args.contentType,
+    size: args.size,
+    uploaded_at: new Date(),
+  };
+
+  logger.info(
+    {
+      key: asset.key,
+      content_type: asset.content_type,
+      bytes: asset.size,
+      local_path: args.localPath,
+    },
+    'local workflow media output uploaded to R2',
+  );
+
+  return asset;
+}
+
+function safeTempFilePath(value: string): string {
+  let localPath: string;
+  try {
+    localPath = resolve(fileURLToPath(value));
+  } catch {
+    throw new Error('Invalid local media output file URL');
+  }
+
+  const tempRoot = resolve(tmpdir());
+  if (localPath !== tempRoot && !localPath.startsWith(`${tempRoot}/`)) {
+    throw new Error('Local media output must be under the system temp directory');
+  }
+  return localPath;
+}
+
+async function cleanupTempFile(localPath: string): Promise<void> {
+  try {
+    const parent = dirname(localPath);
+    if (parent.startsWith(resolve(tmpdir())) && parent.includes('lumen-video-edit-')) {
+      await rm(parent, { recursive: true, force: true });
+      return;
+    }
+    await unlink(localPath);
+  } catch (err) {
+    logger.warn({ err, localPath }, 'failed to clean local media output');
+  }
+}
+
 function parseDataUrl(value: string): { body: Buffer; contentType: string } {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(value);
   if (!match) throw new Error('Invalid data URL media output');
@@ -276,6 +414,39 @@ function isHttpUrl(value: string): boolean {
     return url.protocol === 'http:' || url.protocol === 'https:';
   } catch {
     return false;
+  }
+}
+
+function isFileUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'file:';
+  } catch {
+    return false;
+  }
+}
+
+function contentTypeForLocalFile(value: string, outputType: NodeType): string {
+  const extension = value.split('.').pop()?.toLowerCase();
+  switch (extension) {
+    case 'mp4':
+      return 'video/mp4';
+    case 'webm':
+      return 'video/webm';
+    case 'mov':
+      return 'video/quicktime';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'wav':
+      return 'audio/wav';
+    case 'png':
+      return 'image/png';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'webp':
+      return 'image/webp';
+    default:
+      return fallbackContentType(outputType);
   }
 }
 
