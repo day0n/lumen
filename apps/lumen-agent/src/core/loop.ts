@@ -258,7 +258,7 @@ export class ChatRunner {
       },
       onToolStart: (name, id, args) => {
         appendDisplayMessage(session, {
-          role: 'tool_call',
+          role: 'act_call',
           content: null,
           turn: session.turnCount,
           tool_call_id: id,
@@ -280,7 +280,7 @@ export class ChatRunner {
       },
       onToolEnd: (name, id, bytes, error, _args, status, durationMs) => {
         appendDisplayMessage(session, {
-          role: 'tool_result',
+          role: 'act_result',
           content: null,
           turn: session.turnCount,
           tool_call_id: id,
@@ -315,7 +315,7 @@ export class ChatRunner {
       },
       onToolEvent: (name, ev, id) => {
         appendDisplayMessage(session, {
-          role: 'tool_event',
+          role: 'act_event',
           content: null,
           turn: session.turnCount,
           tool_call_id: id,

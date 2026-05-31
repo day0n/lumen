@@ -57,7 +57,7 @@ export interface AssistantDisplayMessage {
 }
 
 export interface ToolCallDisplayMessage {
-  role: 'tool_call';
+  role: 'act_call';
   content: string | null;
   turn?: number;
   tool_call_id: string;
@@ -67,7 +67,7 @@ export interface ToolCallDisplayMessage {
 }
 
 export interface ToolEventDisplayMessage {
-  role: 'tool_event';
+  role: 'act_event';
   content: string | null;
   turn?: number;
   tool_call_id: string;
@@ -78,7 +78,7 @@ export interface ToolEventDisplayMessage {
 }
 
 export interface ToolResultDisplayMessage {
-  role: 'tool_result';
+  role: 'act_result';
   content: string | null;
   turn?: number;
   tool_call_id: string;

@@ -20,7 +20,7 @@ const REDIS_META_PREFIX = 'lumen:agent:session:meta:';
 const REDIS_CTX_PREFIX = 'lumen:agent:session:ctx:';
 const REDIS_TTL_SEC = 60 * 60 * 24;
 
-const LLM_EXCLUDED_ROLES = new Set(['tool_call', 'tool_event', 'tool_result', 'workflow_event']);
+const LLM_EXCLUDED_ROLES = new Set(['act_call', 'act_event', 'act_result', 'flow_event']);
 
 interface SessionDoc {
   _id: string;
@@ -236,8 +236,8 @@ export class SessionManager {
     db: Db,
     private readonly redis: Redis | null,
   ) {
-    this.sessions = db.collection<SessionDoc>('agent_sessions');
-    this.messages = db.collection<MessageDoc>('agent_messages');
+    this.sessions = db.collection<SessionDoc>('chat_sessions');
+    this.messages = db.collection<MessageDoc>('chat_messages');
   }
 
   async getOrCreate(

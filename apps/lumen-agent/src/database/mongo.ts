@@ -49,16 +49,16 @@ export async function getWorkflowMongo(): Promise<Db> {
 }
 
 async function ensureIndexes(d: Db): Promise<void> {
-  const sessions = d.collection('agent_sessions');
+  const sessions = d.collection('chat_sessions');
   await sessions.createIndex({ user_id: 1, updated_at: -1 });
   await sessions.createIndex({ user_id: 1, workflow_id: 1, updated_at: -1 });
   await sessions.createIndex({ updated_at: -1 });
 
-  const messages = d.collection('agent_messages');
+  const messages = d.collection('chat_messages');
   await messages.createIndex({ session_id: 1, seq: 1 }, { unique: true });
   await messages.createIndex({ session_id: 1, role: 1 });
 
-  const memories = d.collection('memories');
+  const memories = d.collection('recall_store');
   await memories.createIndex({ user_id: 1, hash: 1 }, { unique: true });
   await memories.createIndex({ user_id: 1, updated_at: -1 });
 }

@@ -944,7 +944,7 @@ function TimelineIcon({ item }: { item: ChatTimelineItem }) {
       return <IconBrain size={15} className={className} stroke={2.2} />;
     case 'tool':
       return <IconTool size={15} className={className} stroke={2.2} />;
-    case 'tool_event':
+    case 'act_event':
       return <IconActivity size={15} className={className} stroke={2.2} />;
     case 'step':
       return <IconGitBranch size={15} className={className} stroke={2.2} />;

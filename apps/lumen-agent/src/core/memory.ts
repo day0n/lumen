@@ -61,7 +61,7 @@ export class MemoryManager {
   private openai: OpenAI;
 
   constructor(db: Db, openaiApiKey: string) {
-    this.collection = db.collection<MemoryDoc>('memories');
+    this.collection = db.collection<MemoryDoc>('recall_store');
     this.openai = new OpenAI({ apiKey: openaiApiKey });
   }
 

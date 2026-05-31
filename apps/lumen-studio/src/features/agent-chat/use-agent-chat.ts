@@ -24,7 +24,7 @@ export type ChatTimelineKind =
   | 'step'
   | 'thinking'
   | 'tool'
-  | 'tool_event'
+  | 'act_event'
   | 'message'
   | 'error';
 
@@ -704,7 +704,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
       return;
     }
 
-    if (role === 'tool_call') {
+    if (role === 'act_call') {
       const assistant = ensureAssistant(turnKey, createdAt);
       const toolName = item.tool_name ?? 'tool';
       const toolCallId = item.tool_call_id ?? `history-${index}`;
@@ -722,7 +722,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
       return;
     }
 
-    if (role === 'tool_result') {
+    if (role === 'act_result') {
       const assistant = ensureAssistant(turnKey, createdAt);
       const toolName = item.tool_name ?? 'tool';
       const toolCallId = item.tool_call_id ?? `history-${index}`;
@@ -745,14 +745,14 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
       return;
     }
 
-    if (role === 'tool_event') {
+    if (role === 'act_event') {
       const assistant = ensureAssistant(turnKey, createdAt);
       const toolName = item.tool_name ?? 'tool';
       const eventName = item.event ?? 'event';
       const data = asRecord(item.event_data);
       assistant.events = appendTimeline(assistant.events, {
         id: workflowTimelineId(item.tool_call_id ?? `history-${index}`, eventName, data),
-        kind: 'tool_event',
+        kind: 'act_event',
         status: workflowTimelineStatus(eventName, data),
         title: formatWorkflowEventTitle(eventName, data),
         detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName),
@@ -905,7 +905,7 @@ function handleEvent(
       updateMessage(assistantId, (prev) => ({
         events: upsertTimeline(prev.events, {
           id: workflowTimelineId(toolCallId, eventName, data),
-          kind: 'tool_event',
+          kind: 'act_event',
           status: workflowTimelineStatus(eventName, data),
           title: formatWorkflowEventTitle(eventName, data),
           detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName),
