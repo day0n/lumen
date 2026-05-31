@@ -22,7 +22,7 @@ export function LandingPage() {
     <div className="min-h-screen bg-[#0c0d0f] text-[#f4f6f8]">
       <LandingNav />
       <main>
-        <ParticleStory onOpenWorkspace={handleOpenWorkspace} />
+        <ParticleStory />
 
         <section className="relative z-20 bg-[#111315] px-6 py-16 text-white md:px-16 lg:px-[120px]">
           <div className="grid gap-12 lg:grid-cols-[1fr_360px] lg:items-end">
