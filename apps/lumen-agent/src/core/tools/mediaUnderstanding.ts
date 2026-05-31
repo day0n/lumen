@@ -1,5 +1,5 @@
 /**
- * media_understanding —— 调 Vertex Gemini 多模态分析视频/图像/音频。
+ * inspect_media —— 调 Vertex Gemini 多模态分析视频/图像/音频。
  *
  *   - 把 GOOGLE_OC_JSON 解 base64 拿 service account
  *   - 第一阶段简化：只接受公网 URL（用 inline_data fileUri 直接传给 Vertex）；
@@ -53,7 +53,7 @@ function guessMime(url: string, contentType?: string | null): string {
 }
 
 export class MediaUnderstandingTool extends Tool {
-  override readonly name = 'media_understanding';
+  override readonly name = 'inspect_media';
   override readonly timeoutSeconds = 120;
   override readonly description =
     'Inspect a media file (video, image, or audio) with a Gemini multimodal model and return a ' +

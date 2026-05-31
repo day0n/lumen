@@ -1,7 +1,7 @@
 ---
-name: workflow-core
+name: canvas-core
 description: Build, edit, and run Lumen Studio workflows on the canvas.
-trigger: workflow, canvas, video generation, edit_workflow, run_workflow_node
+trigger: workflow, canvas, video generation, write_canvas, run_canvas_node
 ---
 
 # Lumen Workflow Core
@@ -53,7 +53,7 @@ explicitly asks for them.
 
 ## Editing Rules
 
-- Use `edit_workflow` for structural changes and pass the complete canvas JSON.
+- Use `write_canvas` for structural changes and pass the complete canvas JSON.
 - Preserve nodes and edges that the user did not ask to delete.
 - Keep ids stable when modifying existing nodes.
 - Use readable ids with kind prefixes, for example `text-script-...`, `image-storyboard-...`, `video-final-...`.
@@ -87,19 +87,19 @@ Rules:
 
 ## Single-Node Running
 
-Use `run_workflow_node` to execute exactly one node.
+Use `run_canvas_node` to execute exactly one node.
 
 Important:
 
-- `load_skill` is only preparation. It never satisfies a run request.
-- For every run request, call `get_workflow` after loading this skill and inspect the current canvas.
+- `use_skill` is only preparation. It never satisfies a run request.
+- For every run request, call `read_canvas` after loading this skill and inspect the current canvas.
 - Run upstream nodes first. A node can only run if all direct upstream nodes already have `data.output`.
 - After a node succeeds, its output is saved back to the canvas by the tool.
 - If a node fails, summarize the failure and decide whether to edit the node or ask the user.
-- Do not call `run_workflow_node` for a downstream video node until its image/text inputs are ready.
+- Do not call `run_canvas_node` for a downstream video node until its image/text inputs are ready.
 - For a complex workflow, run nodes in topological order. After each successful run, treat the saved canvas output as the source of truth before choosing the next node.
 - If a node fails, stop the run plan, explain the failed node, and either edit that node or ask the user for the missing input.
-- Do not claim a node has run unless `run_workflow_node` returned success for that node in the current request.
+- Do not claim a node has run unless `run_canvas_node` returned success for that node in the current request.
 - If the user says "run until node X", run all missing upstream dependencies for X first, one node per tool call, then run X.
 
 Typical order for a product video:
@@ -113,10 +113,10 @@ Typical order for a product video:
 
 Before editing an existing project:
 
-1. Call `get_workflow`.
+1. Call `read_canvas`.
 2. Build the full updated canvas JSON.
-3. Call `edit_workflow`.
-4. If the user asked to generate assets, call `run_workflow_node` one node at a time.
+3. Call `write_canvas`.
+4. If the user asked to generate assets, call `run_canvas_node` one node at a time.
 
 When the user asks for "一句话产出视频", create a small but runnable canvas and run nodes in order.
 

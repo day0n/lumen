@@ -55,6 +55,6 @@ export const MAIN_PROFILE: AgentBlueprint = {
     runWorkflowNode,
   ],
   inlineSkills: [],
-  loadableSkills: ['workflow-core'],
+  loadableSkills: ['canvas-core'],
   maxIterations: 40,
 };

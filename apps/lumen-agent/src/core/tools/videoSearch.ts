@@ -1,5 +1,5 @@
 /**
- * video_search —— 通过 Foreplay 广告库检索参考短视频。
+ * search_ad_videos —— 通过 Foreplay 广告库检索参考短视频。
  *
  * 当前实现只对接 Foreplay 的 discovery API（直连 HTTP），返回其自带的视频地址，
  * 不经过对象存储中转。命中过多时用一个轻量 LLM 做相关性排序裁剪。
@@ -201,7 +201,7 @@ async function rankWithLLM(
 }
 
 export class VideoSearchTool extends Tool {
-  override readonly name = 'video_search';
+  override readonly name = 'search_ad_videos';
   override readonly timeoutSeconds = 60;
   override readonly description =
     'Search for trending and popular videos across TikTok, Instagram, and ad databases (Foreplay). ' +

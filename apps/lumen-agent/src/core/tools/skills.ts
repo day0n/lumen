@@ -2,7 +2,7 @@ import type { SkillLibrary } from '../skills.js';
 import { type JsonSchema, Tool } from './base.js';
 
 export class LoadSkillTool extends Tool {
-  override readonly name = 'load_skill';
+  override readonly name = 'use_skill';
   override readonly timeoutSeconds = 10;
   override readonly description =
     'Load an internal skill guide into the conversation when a task needs specialized workflow rules.';
@@ -12,7 +12,7 @@ export class LoadSkillTool extends Tool {
     properties: {
       skill_name: {
         type: 'string',
-        description: 'Name of the skill to load, for example workflow-core.',
+        description: 'Name of the skill to load, for example canvas-core.',
       },
     },
     required: ['skill_name'],

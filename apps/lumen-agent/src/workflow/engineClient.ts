@@ -102,7 +102,7 @@ export class WorkflowEngineClient {
       });
       await emitToolEvent('workflow_update', {
         project_id: input.project.id,
-        reason: 'run_workflow_node_error',
+        reason: 'run_canvas_node_error',
         node_id: target.id,
         node_title: target.data.title,
         node_kind: target.data.kind,
@@ -128,7 +128,7 @@ export class WorkflowEngineClient {
 
     await emitToolEvent('workflow_update', {
       project_id: input.project.id,
-      reason: 'run_workflow_node',
+      reason: 'run_canvas_node',
       node_id: target.id,
       node_title: target.data.title,
       node_kind: target.data.kind,

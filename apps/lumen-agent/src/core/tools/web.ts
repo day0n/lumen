@@ -1,5 +1,5 @@
 /**
- * web_search —— brave + duckduckgo 路径。
+ * search_web —— brave + duckduckgo 路径。
  *
  * 简化：第一阶段只支持 brave（有 key）→ duckduckgo（兜底）。其它 provider 后续再加。
  *
@@ -56,7 +56,7 @@ function formatResults(query: string, items: SearchItem[], n: number): string {
 }
 
 export class WebSearchTool extends Tool {
-  override readonly name = 'web_search';
+  override readonly name = 'search_web';
   override readonly timeoutSeconds = 30;
   override readonly description = 'Search the web. Returns titles, URLs, and snippets.';
   override readonly parameters: JsonSchema = {
@@ -126,7 +126,7 @@ export class WebSearchTool extends Tool {
       // DuckDuckGo 现在对脚本访问普遍返回 202 anti-bot challenge，HTML 里没有 result__a。
       // 与其静默返回 0 条让模型胡编，不如直接告诉模型搜索后端不可用。
       if (res.status === 202) {
-        return 'Error: web_search backend unavailable (DuckDuckGo returned 202 anti-bot challenge). Configure BRAVE_API_KEY for real search results. Do not fabricate results.';
+        return 'Error: search_web backend unavailable (DuckDuckGo returned 202 anti-bot challenge). Configure BRAVE_API_KEY for real search results. Do not fabricate results.';
       }
       if (!res.ok) return `Error: DuckDuckGo returned ${res.status}`;
       const html = await res.text();
@@ -141,7 +141,7 @@ export class WebSearchTool extends Tool {
         m = re.exec(html);
       }
       if (items.length === 0) {
-        return `Error: web_search returned no parseable results for "${query}". The DuckDuckGo fallback may be rate-limited. Configure BRAVE_API_KEY for reliable search. Do not fabricate results.`;
+        return `Error: search_web returned no parseable results for "${query}". The DuckDuckGo fallback may be rate-limited. Configure BRAVE_API_KEY for reliable search. Do not fabricate results.`;
       }
       return formatResults(query, items, n);
     } catch (err) {

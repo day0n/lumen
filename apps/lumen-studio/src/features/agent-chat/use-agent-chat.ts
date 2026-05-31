@@ -1243,11 +1243,11 @@ function compactText(text: string, maxLength: number): string {
 
 function formatToolName(name: string): string {
   const labels: Record<string, string> = {
-    load_skill: '加载技能',
-    get_workflow: '读取画布',
-    edit_workflow: '编辑画布',
-    run_workflow_node: '运行节点',
-    web_search: '联网搜索',
+    use_skill: '加载技能',
+    read_canvas: '读取画布',
+    write_canvas: '编辑画布',
+    run_canvas_node: '运行节点',
+    search_web: '联网搜索',
   };
   if (labels[name]) return labels[name];
   return name

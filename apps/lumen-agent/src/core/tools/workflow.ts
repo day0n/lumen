@@ -129,7 +129,7 @@ function enforceRunnableModels(canvas: LumenCanvas): {
 }
 
 export class GetWorkflowTool extends Tool {
-  override readonly name = 'get_workflow';
+  override readonly name = 'read_canvas';
   override readonly timeoutSeconds = 20;
   override readonly description =
     'Read the current Lumen Studio workflow canvas JSON for the active project.';
@@ -158,7 +158,7 @@ export class GetWorkflowTool extends Tool {
 }
 
 export class EditWorkflowTool extends Tool {
-  override readonly name = 'edit_workflow';
+  override readonly name = 'write_canvas';
   override readonly timeoutSeconds = 45;
   override readonly description =
     'Replace the active project workflow with a complete validated canvas JSON, then notify Studio to refresh the canvas.';
@@ -216,7 +216,7 @@ export class EditWorkflowTool extends Tool {
     if (!update) throw new Error(`project not found or not accessible: ${projectId}`);
 
     await emitToolEvent('workflow_update', {
-      ...workflowEventSummary(update.project, 'edit_workflow'),
+      ...workflowEventSummary(update.project, 'write_canvas'),
       intent: parsed.intent ?? null,
       summary: update.summary,
       model_overrides: overrides,
@@ -235,7 +235,7 @@ export class EditWorkflowTool extends Tool {
 }
 
 export class RunWorkflowNodeTool extends Tool {
-  override readonly name = 'run_workflow_node';
+  override readonly name = 'run_canvas_node';
   override readonly timeoutSeconds = 10 * 60 + 30;
   override readonly description =
     'Run exactly one workflow node through the Lumen engine and save its output back to the canvas.';
