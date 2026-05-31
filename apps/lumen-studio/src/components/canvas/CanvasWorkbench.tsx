@@ -3261,6 +3261,14 @@ function LumenConnectionLine({
   );
 }
 
+function ControlTooltip({ label }: { label: string }) {
+  return (
+    <span className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded-xl bg-[#303235]/96 px-3 py-1.5 text-[12px] font-bold text-white shadow-[0_14px_34px_rgba(0,0,0,0.36)] ring-1 ring-white/[0.08] group-hover:block">
+      {label}
+    </span>
+  );
+}
+
 function BottomControls({
   canArrange,
   onArrange,
@@ -3287,17 +3295,19 @@ function BottomControls({
         type="button"
         aria-label="适配全部节点"
         onClick={() => reactFlow.fitView({ padding: 0.28, duration: 260 })}
-        className="flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
+        className="group relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconLayoutGrid size={17} stroke={2.1} />
+        <ControlTooltip label="适配全部节点" />
       </button>
       <button
         type="button"
         aria-label="全选"
         onClick={onSelectAll}
-        className="flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
+        className="group relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconSelectAll size={17} stroke={2.1} />
+        <ControlTooltip label="全选画布元素" />
       </button>
       <button
         type="button"
@@ -3305,42 +3315,47 @@ function BottomControls({
         title="整理画布"
         onClick={onArrange}
         disabled={!canArrange}
-        className="flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+        className="group relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
       >
         <IconHierarchy2 size={17} stroke={2.1} />
+        <ControlTooltip label="自动整理布局" />
       </button>
       <button
         type="button"
         aria-label="网格"
-        className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.08] text-white"
+        className="group relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.08] text-white"
       >
         <IconGridDots size={17} stroke={2.1} />
+        <ControlTooltip label="网格对齐（已开启）" />
       </button>
       <button
         type="button"
         aria-label="居中画布"
         onClick={() => reactFlow.setCenter(0, 0, { zoom: 1, duration: 260 })}
-        className="flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
+        className="group relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconFocusCentered size={17} stroke={2.1} />
+        <ControlTooltip label="回到画布中心" />
       </button>
       <div className="h-5 w-px bg-white/[0.1]" />
       <button
         type="button"
         aria-label="缩小"
         onClick={() => reactFlow.zoomOut({ duration: 180 })}
-        className="flex h-8 w-8 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
+        className="group relative flex h-8 w-8 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconZoomOut size={16} stroke={2.1} />
+        <ControlTooltip label="缩小" />
       </button>
       <span className="min-w-12 text-center text-[13px] font-semibold text-white/70">{zoom}%</span>
       <button
         type="button"
         aria-label="放大"
         onClick={() => reactFlow.zoomIn({ duration: 180 })}
-        className="flex h-8 w-8 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
+        className="group relative flex h-8 w-8 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconZoomIn size={16} stroke={2.1} />
+        <ControlTooltip label="放大" />
       </button>
       {selectedElementCount > 0 ? (
         <>
@@ -3349,9 +3364,10 @@ function BottomControls({
             type="button"
             aria-label="删除选中元素"
             onClick={onDeleteSelected}
-            className="flex h-8 w-8 items-center justify-center rounded-xl text-[#ff8b9b] transition-colors hover:bg-[#ff5d73]/16 hover:text-[#ffb3bf]"
+            className="group relative flex h-8 w-8 items-center justify-center rounded-xl text-[#ff8b9b] transition-colors hover:bg-[#ff5d73]/16 hover:text-[#ffb3bf]"
           >
             <IconTrash size={16} stroke={2.1} />
+            <ControlTooltip label="删除选中元素" />
           </button>
         </>
       ) : null}
