@@ -15,6 +15,7 @@ import {
   IconFolder,
   IconFolderFilled,
   IconGridDots,
+  IconHierarchy2,
   IconLayoutGrid,
   IconLoader2,
   IconMusic,
@@ -80,12 +81,12 @@ import { ChatPanel } from '@/features/agent-chat/ChatPanel';
 import { useWorkflowWs } from '@/features/workflow/use-workflow-ws';
 import type { NodeState } from '@/features/workflow/use-workflow-ws';
 import { useLoginRedirect } from '@/lib/auth-redirect';
+import { arrangeCanvasNodes } from '@/lib/canvas/auto-layout';
 import { checkCycle } from '@/lib/canvas/cycle-detection';
 import { canRunSelectedNodes, canRunSingleNode } from '@/lib/canvas/node-run-check';
+import type { NodeKind } from '@/lib/canvas/types';
 
 import { ImeTextarea } from './ImeTextarea';
-
-type NodeKind = 'text' | 'image' | 'video' | 'audio';
 
 type NodeTemplate = {
   kind: NodeKind;
@@ -525,6 +526,111 @@ function getNodeBounds(nodes: LumenNode[], padding = 24) {
     width: maxX - minX + padding * 2,
     height: maxY - minY + padding * 2,
   };
+}
+
+function snapToGrid(value: number, gridSize = 24) {
+  return Math.round(value / gridSize) * gridSize;
+}
+
+function arrangeCanvasNodes(nodes: LumenNode[], edges: LumenEdge[]) {
+  if (nodes.length <= 1) return nodes;
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const validEdges = edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+  const indegree = new Map<string, number>();
+  const outgoing = new Map<string, string[]>();
+  const rank = new Map<string, number>();
+
+  for (const node of nodes) {
+    indegree.set(node.id, 0);
+    outgoing.set(node.id, []);
+    rank.set(node.id, 0);
+  }
+
+  for (const edge of validEdges) {
+    indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1);
+    outgoing.get(edge.source)?.push(edge.target);
+  }
+
+  const positionOrder = [...nodes].sort((a, b) => {
+    if (a.position.x !== b.position.x) return a.position.x - b.position.x;
+    return a.position.y - b.position.y;
+  });
+  const queue = positionOrder.filter((node) => (indegree.get(node.id) ?? 0) === 0);
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const node = queue.shift();
+    if (!node || visited.has(node.id)) continue;
+    visited.add(node.id);
+
+    for (const targetId of outgoing.get(node.id) ?? []) {
+      rank.set(targetId, Math.max(rank.get(targetId) ?? 0, (rank.get(node.id) ?? 0) + 1));
+      indegree.set(targetId, (indegree.get(targetId) ?? 0) - 1);
+      if ((indegree.get(targetId) ?? 0) === 0) {
+        const targetNode = nodes.find((item) => item.id === targetId);
+        if (targetNode) queue.push(targetNode);
+      }
+    }
+
+    queue.sort((a, b) => {
+      if (a.position.x !== b.position.x) return a.position.x - b.position.x;
+      return a.position.y - b.position.y;
+    });
+  }
+
+  const unresolvedNodes = positionOrder.filter((node) => !visited.has(node.id));
+  const fallbackRank = Math.max(0, ...Array.from(rank.values())) + (visited.size > 0 ? 1 : 0);
+  unresolvedNodes.forEach((node, index) => {
+    rank.set(node.id, fallbackRank + index);
+  });
+
+  const layers = new Map<number, LumenNode[]>();
+  for (const node of nodes) {
+    const nodeRank = rank.get(node.id) ?? 0;
+    const layer = layers.get(nodeRank) ?? [];
+    layer.push(node);
+    layers.set(nodeRank, layer);
+  }
+
+  const sortedLayers = Array.from(layers.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([, layer]) => layer.sort((a, b) => a.position.y - b.position.y));
+
+  const bounds = getNodeBounds(nodes, 0);
+  const startX = snapToGrid(bounds?.x ?? 0);
+  const startY = snapToGrid(bounds?.y ?? 0);
+  const columnGap = 190;
+  const rowGap = 84;
+  const layerHeights = sortedLayers.map((layer) =>
+    layer.reduce(
+      (total, node, index) => total + getNodeSize(node).height + (index > 0 ? rowGap : 0),
+      0,
+    ),
+  );
+  const maxLayerHeight = Math.max(...layerHeights, 0);
+  const positions = new Map<string, XYPosition>();
+  let x = startX;
+
+  sortedLayers.forEach((layer, layerIndex) => {
+    const layerWidth = Math.max(...layer.map((node) => getNodeSize(node).width), 0);
+    let y = startY + Math.max(0, (maxLayerHeight - (layerHeights[layerIndex] ?? 0)) / 2);
+
+    for (const node of layer) {
+      positions.set(node.id, {
+        x: snapToGrid(x),
+        y: snapToGrid(y),
+      });
+      y += getNodeSize(node).height + rowGap;
+    }
+
+    x += layerWidth + columnGap;
+  });
+
+  return nodes.map((node) => ({
+    ...node,
+    position: positions.get(node.id) ?? node.position,
+  }));
 }
 
 function getGroupedNodeIds(nodes: LumenNode[], groupId: string) {
@@ -1130,6 +1236,13 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     );
   }, [reactFlow, setEdges, setNodes]);
 
+  const arrangeCanvas = useCallback(() => {
+    setNodes((currentNodes) => arrangeCanvasNodes(currentNodes, reactFlow.getEdges()));
+    window.requestAnimationFrame(() => {
+      reactFlow.fitView({ padding: 0.28, duration: 320, maxZoom: 1 });
+    });
+  }, [reactFlow, setNodes]);
+
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (isEditableTarget(event.target)) {
@@ -1338,6 +1451,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           />
         ) : null}
         <BottomControls
+          canArrange={nodes.length > 1}
+          onArrange={arrangeCanvas}
           onDeleteSelected={deleteSelectedElements}
           onSelectAll={selectAllElements}
           selectedElementCount={selectedElementCount}
@@ -3197,10 +3312,14 @@ function LumenConnectionLine({
 }
 
 function BottomControls({
+  canArrange,
+  onArrange,
   onDeleteSelected,
   onSelectAll,
   selectedElementCount,
 }: {
+  canArrange: boolean;
+  onArrange: () => void;
   onDeleteSelected: () => void;
   onSelectAll: () => void;
   selectedElementCount: number;
@@ -3229,6 +3348,16 @@ function BottomControls({
         className="flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconSelectAll size={17} stroke={2.1} />
+      </button>
+      <button
+        type="button"
+        aria-label="整理画布"
+        title="整理画布"
+        onClick={onArrange}
+        disabled={!canArrange}
+        className="flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+      >
+        <IconHierarchy2 size={17} stroke={2.1} />
       </button>
       <button
         type="button"
