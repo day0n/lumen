@@ -133,6 +133,18 @@ export async function getProjectHistoryRepository(): Promise<ProjectHistoryRepos
   return projectHistoryRepositoryPromise;
 }
 
+export async function warmStudioRepositories(): Promise<void> {
+  await Promise.all([
+    getUserRepository(),
+    getProjectRepository(),
+    getProjectHistoryRepository(),
+    getHomeFeaturedRepository(),
+    getHotVideoRepository(),
+    getNotificationRepository(),
+    getMaterialAssetRepository(),
+  ]);
+}
+
 export function getStudioCache(): JsonCache {
   if (cache) return cache;
 

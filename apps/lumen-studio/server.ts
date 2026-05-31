@@ -8,6 +8,7 @@ import { parse } from 'node:url';
 import next from 'next';
 import { WebSocketServer } from 'ws';
 
+import { warmStudioRepositories } from './src/server/db';
 import { logger } from './src/server/logger';
 import {
   handleFlowConnection,
@@ -23,6 +24,12 @@ async function main() {
   const app = next({ dev, hostname, port });
   const handle = app.getRequestHandler();
   await app.prepare();
+  const warmupStartedAt = Date.now();
+  await warmStudioRepositories();
+  logger.info(
+    { durationMs: Date.now() - warmupStartedAt },
+    'studio repositories warmed before listen',
+  );
   const upgradeHandler = app.getUpgradeHandler();
 
   const server = createServer((req, res) => {
