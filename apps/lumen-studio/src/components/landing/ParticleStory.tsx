@@ -76,6 +76,7 @@ export function ParticleStory() {
   const sectionRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const progressRef = useRef(0);
+  const displayedProgressRef = useRef(0);
   const mouseRef = useRef({ x: 0, y: 0 });
   const [phase, setPhase] = useState({ intro: 1, local: 0, scene: 0, story: 0 });
 
@@ -96,6 +97,8 @@ export function ParticleStory() {
     let maskFrames: MaskSample[][][] = [];
     let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let lastStateUpdate = 0;
+    let lastDrawTime = 0;
+    let progressInitialized = false;
     let disposed = false;
 
     const reduceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -130,7 +133,12 @@ export function ParticleStory() {
     const updateProgress = () => {
       const rect = section.getBoundingClientRect();
       const total = Math.max(1, rect.height - window.innerHeight);
-      progressRef.current = clamp(-rect.top / total, 0, 1);
+      const nextProgress = clamp(-rect.top / total, 0, 1);
+      progressRef.current = nextProgress;
+      if (!progressInitialized) {
+        displayedProgressRef.current = nextProgress;
+        progressInitialized = true;
+      }
     };
 
     const updateMouse = (event: globalThis.MouseEvent) => {
@@ -143,18 +151,28 @@ export function ParticleStory() {
     const draw = (time: number) => {
       updateProgress();
 
-      const progress = progressRef.current;
-      const intro = 1 - smoothstep(0.045, 0.18, progress);
-      const story = smoothstep(0.24, 0.32, progress);
-      const particleReveal = smoothstep(0.022, 0.085, progress);
-      const particleSpread = smoothstep(0.022, 0.105, progress);
-      const sceneProgress = clamp((progress - 0.22) / 0.74, 0, 1);
+      const delta = lastDrawTime > 0 ? Math.min(64, time - lastDrawTime) : 16;
+      lastDrawTime = time;
+      const targetProgress = progressRef.current;
+      const renderedProgress = displayedProgressRef.current;
+      const progressEase = reducedMotion ? 1 : 1 - 0.001 ** (delta / 460);
+      displayedProgressRef.current =
+        Math.abs(targetProgress - renderedProgress) < 0.0003
+          ? targetProgress
+          : lerp(renderedProgress, targetProgress, progressEase);
+
+      const progress = displayedProgressRef.current;
+      const intro = 1 - smoothstep(0.08, 0.22, progress);
+      const story = smoothstep(0.26, 0.36, progress);
+      const particleReveal = smoothstep(0.12, 0.26, progress);
+      const particleSpread = smoothstep(0.14, 0.34, progress);
+      const sceneProgress = clamp((progress - 0.26) / 0.7, 0, 1);
       const scaled = sceneProgress * (STORY_SCENES.length - 1);
       const scene = Math.min(STORY_SCENES.length - 1, Math.floor(scaled));
       const nextScene = Math.min(STORY_SCENES.length - 1, scene + 1);
       const local = scaled - scene;
-      const sceneMorph = smoothstep(0.72, 1, local);
-      const spriteProgress = reducedMotion ? 0 : (time * 0.00072 + local * 0.38) % 1;
+      const sceneMorph = smoothstep(0.42, 1, local);
+      const spriteProgress = reducedMotion ? 0 : smoothstep(0.08, 0.92, local);
       const spriteScaled = spriteProgress * (SPRITE_FRAME_COUNT - 1);
       const frameA = Math.floor(spriteScaled);
       const frameB = Math.min(SPRITE_FRAME_COUNT - 1, frameA + 1);
@@ -172,7 +190,6 @@ export function ParticleStory() {
       const offsetX = width * 0.5 + mouseRef.current.x * (width < 640 ? 5 : 18);
       const offsetY =
         height * (width < 640 ? 0.56 : 0.53) + mouseRef.current.y * (width < 640 ? 4 : 12);
-      const pulse = reducedMotion ? 0 : time * 0.00034;
       const currentFrames = targets[scene] ?? targets[0] ?? [];
       const nextFrames = targets[nextScene] ?? currentFrames;
 
@@ -188,7 +205,7 @@ export function ParticleStory() {
           const c = nextFrames[0]?.[index] ?? a;
           if (!particle || !a || !b || !c) continue;
 
-          const swirl = reducedMotion ? { x: 0, y: 0 } : particleDrift(particle, pulse, progress);
+          const swirl = reducedMotion ? { x: 0, y: 0 } : particleDrift(particle, progress, local);
           const frameX = lerp(a.x, b.x, frameMorph);
           const frameY = lerp(a.y, b.y, frameMorph);
           const frameZ = lerp(a.z, b.z, frameMorph);
@@ -253,7 +270,7 @@ export function ParticleStory() {
       <div className="sticky top-0 isolate h-svh overflow-hidden">
         <canvas
           ref={canvasRef}
-          className="pointer-events-none absolute inset-0 z-[12] h-full w-full"
+          className="pointer-events-none absolute inset-0 z-[8] h-full w-full"
           aria-hidden
         />
         <IntroStripes opacity={phase.intro} />
@@ -564,16 +581,16 @@ function buildFallbackTarget(count: number, scene: number, frame: number): Point
 
 function particleDrift(
   particle: Particle,
-  pulse: number,
   progress: number,
+  local: number,
 ): { x: number; y: number } {
-  const tempo = pulse * (1.6 + particle.seed * 1.8);
-  const ribbon = Math.sin(tempo + particle.phase + progress * 9);
-  const counter = Math.cos(tempo * 0.86 + particle.phase * 0.7);
-  const strength = 0.004 + particle.lane * 0.014;
+  const path = progress * 13 + local * 2.4 + particle.phase;
+  const ribbon = Math.sin(path * (1.15 + particle.seed * 0.42));
+  const counter = Math.cos(path * 0.78 + particle.phase * 0.7);
+  const strength = 0.002 + particle.lane * 0.007;
 
   return {
-    x: ribbon * strength + Math.sin(tempo * 0.4 + particle.phase) * 0.004,
+    x: ribbon * strength + Math.sin(progress * 23 + particle.phase) * strength * 0.34,
     y: counter * strength * 0.72,
   };
 }
