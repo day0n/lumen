@@ -1395,7 +1395,6 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         />
         <ChatPanel
           projectId={currentProjectId ?? undefined}
-          sessionId={currentProjectId ?? undefined}
           initialPrompt={currentProjectId ? initialPrompt : null}
           defaultOpen={shouldOpenAgentChat}
           onWorkflowUpdate={handleAgentWorkflowUpdate}

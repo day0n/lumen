@@ -129,6 +129,24 @@ interface HistoryResponse {
   messages?: StoredHistoryMessage[];
 }
 
+export interface AgentSessionSummary {
+  session_id: string;
+  workflow_id?: string | null;
+  summary?: string | null;
+  message_count?: number;
+  turn_count?: number;
+  status?: string;
+  revision?: number;
+  last_message_preview?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface SessionsResponse {
+  sessions?: AgentSessionSummary[];
+  has_more?: boolean;
+}
+
 interface StoredHistoryMessage {
   role?: string;
   content?: unknown;
@@ -507,6 +525,38 @@ export function useAgentChat({
   );
 
   return { messages, status, errorText, send, stop, sessionId: sid };
+}
+
+export async function fetchAgentSessions(params: {
+  workflowId?: string;
+  limit?: number;
+  after?: string;
+  signal?: AbortSignal;
+  token: string | null;
+}): Promise<AgentSessionSummary[]> {
+  const headers: Record<string, string> = { accept: 'application/json' };
+  if (params.token) headers.authorization = `Bearer ${params.token}`;
+
+  const query = new URLSearchParams();
+  if (params.workflowId) query.set('workflow_id', params.workflowId);
+  query.set('limit', String(params.limit ?? 20));
+  if (params.after) query.set('after', params.after);
+
+  const response = await fetch(`${AGENT_URL}/v1/agent/sessions?${query.toString()}`, {
+    method: 'GET',
+    headers,
+    signal: params.signal,
+  });
+
+  const rawText = await response.text().catch(() => '');
+  const payload = parseJsonPayload(rawText) as SessionsResponse | ApiError | null;
+  if (!response.ok) {
+    throw new Error(readApiError(payload) ?? (rawText || `HTTP ${response.status}`));
+  }
+
+  return payload && 'sessions' in payload && Array.isArray(payload.sessions)
+    ? payload.sessions
+    : [];
 }
 
 async function createRun(params: {
@@ -1019,7 +1069,7 @@ function readRunId(payload: CreateRunPayload | null): string | null {
 }
 
 function readApiError(
-  payload: ApiError | CreateRunPayload | HistoryResponse | null,
+  payload: ApiError | CreateRunPayload | HistoryResponse | SessionsResponse | null,
 ): string | null {
   if (!payload) return null;
   if ('message' in payload && typeof payload.message === 'string') return payload.message;

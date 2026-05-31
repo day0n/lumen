@@ -40,6 +40,27 @@ interface SessionDoc {
   metadata: Record<string, unknown>;
 }
 
+export interface SessionSummary {
+  session_id: string;
+  user_id: string;
+  workflow_id?: string | null;
+  channel: string;
+  summary: string | null;
+  message_count: number;
+  turn_count: number;
+  status: string;
+  revision: number;
+  last_seq: number;
+  last_message_preview: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionListResult {
+  sessions: SessionSummary[];
+  has_more: boolean;
+}
+
 interface MessageDoc {
   session_id: string;
   seq: number;
@@ -258,6 +279,63 @@ export class SessionManager {
     }
 
     return null;
+  }
+
+  async listSessions(opts: {
+    userIds: string[];
+    workflowId?: string | null;
+    limit?: number;
+    afterSessionId?: string | null;
+  }): Promise<SessionListResult> {
+    const userIds = [...new Set(opts.userIds.map((id) => id.trim()).filter(Boolean))];
+    if (userIds.length === 0) return { sessions: [], has_more: false };
+
+    const limit = Math.min(Math.max(opts.limit ?? 20, 1), 50);
+    const query: Record<string, unknown> = {
+      user_id: userIds.length === 1 ? userIds[0] : { $in: userIds },
+    };
+    if (opts.workflowId) {
+      query.workflow_id = opts.workflowId;
+    }
+
+    if (opts.afterSessionId) {
+      const cursorDoc = await this.sessions.findOne(
+        {
+          _id: opts.afterSessionId,
+          user_id: userIds.length === 1 ? userIds[0] : { $in: userIds },
+        },
+        { projection: { updated_at: 1 } },
+      );
+      if (cursorDoc?.updated_at) {
+        query.updated_at = { $lt: cursorDoc.updated_at };
+      }
+    }
+
+    const docs = await this.sessions
+      .find(query)
+      .sort({ updated_at: -1 })
+      .limit(limit + 1)
+      .toArray();
+
+    const hasMore = docs.length > limit;
+    return {
+      sessions: docs.slice(0, limit).map((doc) => ({
+        session_id: doc.session_id || doc._id,
+        user_id: doc.user_id ?? '',
+        workflow_id: doc.workflow_id ?? null,
+        channel: doc.channel ?? 'api',
+        summary: doc.summary ?? null,
+        message_count: doc.message_count ?? 0,
+        turn_count: doc.turn_count ?? 0,
+        status: doc.status ?? 'idle',
+        revision: doc.revision ?? 0,
+        last_seq: doc.last_seq ?? 0,
+        last_message_preview: doc.last_message_preview ?? null,
+        created_at: dateToIso(doc.created_at),
+        updated_at: dateToIso(doc.updated_at),
+      })),
+      has_more: hasMore,
+    };
   }
 
   async save(session: Session): Promise<void> {
@@ -485,4 +563,10 @@ export class SessionManager {
     session.metadata = meta.metadata ?? {};
     return session;
   }
+}
+
+function dateToIso(value: Date | string | undefined): string {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') return value;
+  return new Date(0).toISOString();
 }

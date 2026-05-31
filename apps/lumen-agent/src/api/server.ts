@@ -59,6 +59,24 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
 
   app.get('/healthz', (c) => c.json({ ok: true, service: 'lumen-agent', ts: Date.now() }));
 
+  app.get('/v1/agent/sessions', async (c) => {
+    const authUser = c.get('authUser') as AuthUser;
+    const limitParam = Number.parseInt(c.req.query('limit') ?? '20', 10);
+    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 50) : 20;
+    const workflowId = c.req.query('workflow_id')?.trim() || null;
+    const afterSessionId = c.req.query('after')?.trim() || null;
+
+    c.header('cache-control', 'no-store');
+    return c.json(
+      await deps.sessionManager.listSessions({
+        userIds: [authUser.userId, authUser.clerkUserId],
+        workflowId,
+        limit,
+        afterSessionId,
+      }),
+    );
+  });
+
   app.get('/v1/agent/sessions/:sessionId/messages', async (c) => {
     const sessionId = c.req.param('sessionId');
     const authUser = c.get('authUser') as AuthUser;

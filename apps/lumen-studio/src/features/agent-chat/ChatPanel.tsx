@@ -10,6 +10,7 @@
 import { LumenMark } from '@/components/ui/LumenMark';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
+import { useAuth } from '@clerk/nextjs';
 import {
   IconActivity,
   IconAlertCircle,
@@ -30,11 +31,13 @@ import {
   IconX,
 } from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { nanoid } from 'nanoid';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   type FormEvent,
   type KeyboardEvent,
   type RefObject,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -43,8 +46,10 @@ import {
 
 import {
   type AgentChatStatus,
+  type AgentSessionSummary,
   type ChatMessage,
   type ChatTimelineItem,
+  fetchAgentSessions,
   useAgentChat,
 } from '@/features/agent-chat/use-agent-chat';
 
@@ -65,12 +70,21 @@ export function ChatPanel({
   onWorkflowUpdate,
   onWorkflowNodeStatus,
 }: ChatPanelProps) {
+  const { getToken } = useAuth();
+  const [activeSessionId, setActiveSessionId] = useState(() => sessionId ?? createDraftSessionId());
+  const [sessions, setSessions] = useState<AgentSessionSummary[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const interactionStartedRef = useRef(false);
+  const activeSessionIdRef = useRef(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
+
   const agentContext = useMemo(
     () => (projectId ? { project_id: projectId, workflow_id: projectId } : undefined),
     [projectId],
   );
   const { messages, status, errorText, send, stop } = useAgentChat({
-    sessionId,
+    sessionId: activeSessionId,
     context: agentContext,
     onWorkflowUpdate,
     onWorkflowNodeStatus,
@@ -81,8 +95,84 @@ export function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autoSentRef = useRef(false);
+  const initialPromptRef = useRef(initialPrompt);
+  initialPromptRef.current = initialPrompt;
   const router = useRouter();
   const pathname = usePathname();
+  const busy = isBusy(status);
+
+  const loadSessions = useCallback(
+    async (opts: { autoSelectLatest?: boolean } = {}) => {
+      if (!projectId || !authReady || !isSignedIn) {
+        setSessions([]);
+        return;
+      }
+
+      const controller = new AbortController();
+      setSessionsLoading(true);
+      try {
+        const token = await getToken().catch(() => null);
+        const nextSessions = await fetchAgentSessions({
+          workflowId: projectId,
+          token,
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setSessions(nextSessions);
+        if (opts.autoSelectLatest && !interactionStartedRef.current && nextSessions.length > 0) {
+          setActiveSessionId(nextSessions[0]!.session_id);
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          console.error('failed to load agent sessions', err);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setSessionsLoading(false);
+        }
+      }
+    },
+    [authReady, getToken, isSignedIn, projectId],
+  );
+
+  useEffect(() => {
+    interactionStartedRef.current = false;
+    autoSentRef.current = false;
+    const draftSessionId = sessionId ?? createDraftSessionId();
+    setActiveSessionId(draftSessionId);
+    setSessions([]);
+    setSessionsOpen(false);
+
+    if (!authReady || !isSignedIn || !projectId) return;
+    const controller = new AbortController();
+    setSessionsLoading(true);
+    void getToken()
+      .catch(() => null)
+      .then((token) =>
+        fetchAgentSessions({
+          workflowId: projectId,
+          token,
+          signal: controller.signal,
+        }),
+      )
+      .then((nextSessions) => {
+        if (controller.signal.aborted) return;
+        setSessions(nextSessions);
+        const shouldUseLatest = !initialPromptRef.current?.trim() && !interactionStartedRef.current;
+        if (shouldUseLatest && nextSessions.length > 0) {
+          setActiveSessionId(nextSessions[0]!.session_id);
+        }
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        console.error('failed to load agent sessions', err);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSessionsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [authReady, getToken, isSignedIn, projectId, sessionId]);
 
   useEffect(() => {
     if (autoSentRef.current || !authReady) return;
@@ -93,10 +183,13 @@ export function ChatPanel({
     const trimmed = initialPrompt?.trim();
     if (!trimmed) return;
     autoSentRef.current = true;
+    interactionStartedRef.current = true;
     setOpen(true);
-    void send(trimmed);
+    void send(trimmed).finally(() => {
+      void loadSessions();
+    });
     router.replace(pathname, { scroll: false });
-  }, [initialPrompt, send, router, pathname, authReady, isSignedIn, requireLogin]);
+  }, [initialPrompt, send, router, pathname, authReady, isSignedIn, requireLogin, loadSessions]);
 
   const streamKey = useMemo(
     () =>
@@ -127,15 +220,36 @@ export function ChatPanel({
     el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
   }, [draft]);
 
-  const busy = isBusy(status);
-
   const submit = () => {
     const text = draft.trim();
     if (!text || busy) return;
     if (!requireLogin()) return;
+    interactionStartedRef.current = true;
     setDraft('');
-    void send(text);
+    void send(text).finally(() => {
+      void loadSessions();
+    });
   };
+
+  const startNewSession = () => {
+    if (busy) return;
+    interactionStartedRef.current = false;
+    setSessionsOpen(false);
+    setActiveSessionId(createDraftSessionId());
+  };
+
+  const selectSession = (nextSessionId: string) => {
+    if (busy || nextSessionId === activeSessionIdRef.current) {
+      setSessionsOpen(false);
+      return;
+    }
+    interactionStartedRef.current = false;
+    setSessionsOpen(false);
+    setActiveSessionId(nextSessionId);
+  };
+
+  const currentSession = sessions.find((item) => item.session_id === activeSessionId);
+  const title = currentSession ? formatSessionTitle(currentSession) : 'New chat';
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -180,15 +294,43 @@ export function ChatPanel({
         <header className="relative z-10 flex h-[62px] shrink-0 items-center justify-between px-5">
           <div className="flex min-w-0 items-center gap-2.5">
             <StatusRing busy={busy} compact />
-            <div className="flex min-w-0 items-center gap-1.5">
-              <div className="min-w-0 truncate text-[18px] font-semibold tracking-normal text-white">
-                Hello
-              </div>
-              <IconChevronDown size={16} className="text-white/42" stroke={2.2} />
-            </div>
+            <button
+              type="button"
+              onClick={() => setSessionsOpen((value) => !value)}
+              aria-label="对话历史"
+              title="对话历史"
+              className="flex min-w-0 items-center gap-1.5 rounded-lg px-1 py-1 transition-colors hover:bg-white/[0.06]"
+            >
+              <span className="min-w-0 max-w-[260px] truncate text-[18px] font-semibold tracking-normal text-white">
+                {title}
+              </span>
+              <IconChevronDown
+                size={16}
+                className={cn(
+                  'shrink-0 text-white/42 transition-transform',
+                  sessionsOpen ? 'rotate-180' : 'rotate-0',
+                )}
+                stroke={2.2}
+              />
+            </button>
           </div>
 
           <div className="flex items-center text-white/68">
+            <button
+              type="button"
+              onClick={startNewSession}
+              disabled={busy}
+              aria-label="新建对话"
+              title="新建对话"
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
+                busy
+                  ? 'cursor-not-allowed text-white/24'
+                  : 'text-white/68 hover:bg-white/[0.07] hover:text-white',
+              )}
+            >
+              <IconPlus size={20} stroke={2.2} />
+            </button>
             <button
               type="button"
               onClick={() => setOpen(false)}
@@ -200,6 +342,19 @@ export function ChatPanel({
             </button>
           </div>
         </header>
+
+        <AnimatePresence>
+          {sessionsOpen ? (
+            <SessionMenu
+              activeSessionId={activeSessionId}
+              busy={busy}
+              loading={sessionsLoading}
+              sessions={sessions}
+              onNewSession={startNewSession}
+              onSelectSession={selectSession}
+            />
+          ) : null}
+        </AnimatePresence>
 
         <div
           ref={scrollRef}
@@ -246,6 +401,121 @@ export function ChatPanel({
         <LumenOrb active={busy} />
       </motion.button>
     </div>
+  );
+}
+
+function SessionMenu({
+  activeSessionId,
+  busy,
+  loading,
+  sessions,
+  onNewSession,
+  onSelectSession,
+}: {
+  activeSessionId: string;
+  busy: boolean;
+  loading: boolean;
+  sessions: AgentSessionSummary[];
+  onNewSession: () => void;
+  onSelectSession: (sessionId: string) => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -6, scale: 0.985 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -6, scale: 0.985 }}
+      transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
+      className="absolute left-4 right-4 top-[56px] z-30 overflow-hidden rounded-[18px] border border-white/[0.14] bg-[#191a1c]/98 shadow-[0_24px_72px_-36px_rgba(0,0,0,0.92)] backdrop-blur-2xl"
+    >
+      <div className="border-b border-white/[0.08] p-2">
+        <button
+          type="button"
+          onClick={onNewSession}
+          disabled={busy}
+          className={cn(
+            'flex h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-[13px] font-semibold transition-colors',
+            busy
+              ? 'cursor-not-allowed text-white/28'
+              : 'text-white/86 hover:bg-white/[0.07] hover:text-white',
+          )}
+        >
+          <IconPlus size={17} stroke={2.4} />
+          <span className="min-w-0 truncate">New chat</span>
+        </button>
+      </div>
+
+      <div className="max-h-[236px] overflow-y-auto p-2 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]">
+        {loading ? (
+          <div className="flex h-14 items-center gap-2 px-3 text-[12px] font-medium text-white/40">
+            <IconLoader2 size={14} className="animate-spin" stroke={2.4} />
+            <span>Loading...</span>
+          </div>
+        ) : null}
+
+        {!loading && sessions.length === 0 ? (
+          <div className="px-3 py-4 text-[12px] font-medium text-white/34">No history yet</div>
+        ) : null}
+
+        {sessions.map((session) => {
+          const active = session.session_id === activeSessionId;
+          return (
+            <button
+              key={session.session_id}
+              type="button"
+              onClick={() => onSelectSession(session.session_id)}
+              disabled={busy}
+              className={cn(
+                'flex w-full min-w-0 items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition-colors',
+                active
+                  ? 'bg-white/[0.09] text-white'
+                  : 'text-white/70 hover:bg-white/[0.055] hover:text-white',
+                busy && !active ? 'cursor-not-allowed opacity-50' : '',
+              )}
+            >
+              <span
+                className={cn(
+                  'h-2 w-2 shrink-0 rounded-full',
+                  active ? 'bg-[#79e4ff]' : 'bg-white/22',
+                )}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-semibold leading-5">
+                  {formatSessionTitle(session)}
+                </span>
+                <span className="mt-0.5 block truncate text-[11px] leading-4 text-white/34">
+                  {formatSessionTime(session.updated_at)}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
+function createDraftSessionId(): string {
+  return `studio-${nanoid(12)}`;
+}
+
+function formatSessionTitle(session: AgentSessionSummary): string {
+  const summary = session.summary?.trim();
+  if (summary) return summary;
+  const preview = session.last_message_preview?.trim();
+  if (preview) return preview.length > 42 ? `${preview.slice(0, 39)}...` : preview;
+  return 'Untitled chat';
+}
+
+function formatSessionTime(value: string | undefined): string {
+  if (!value) return '';
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return '';
+  const diffMs = Date.now() - timestamp;
+  if (diffMs < 60_000) return 'Just now';
+  if (diffMs < 3_600_000) return `${Math.max(1, Math.floor(diffMs / 60_000))}m ago`;
+  if (diffMs < 86_400_000) return `${Math.max(1, Math.floor(diffMs / 3_600_000))}h ago`;
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(
+    new Date(timestamp),
   );
 }
 
