@@ -10,16 +10,19 @@ import type { MouseEvent } from 'react';
 export function LandingPage() {
   const { isLoaded, requireLogin } = useLoginRedirect();
 
-  const handleCreate = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!isLoaded) return;
-    if (!requireLogin('/canvas/new?agent=chat')) event.preventDefault();
+  const handleOpenWorkspace = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!isLoaded) {
+      event.preventDefault();
+      return;
+    }
+    if (!requireLogin('/canvas/projects')) event.preventDefault();
   };
 
   return (
     <div className="min-h-screen bg-[#0c0d0f] text-[#f4f6f8]">
       <LandingNav />
       <main>
-        <ParticleStory onCreateClick={handleCreate} />
+        <ParticleStory onOpenWorkspace={handleOpenWorkspace} />
 
         <section className="relative z-20 bg-[#111315] px-6 py-16 text-white md:px-16 lg:px-[120px]">
           <div className="grid gap-12 lg:grid-cols-[1fr_360px] lg:items-end">
@@ -39,8 +42,8 @@ export function LandingPage() {
                 但最终讲的是你自己的商品。
               </p>
               <Link
-                href="/canvas/new?agent=chat"
-                onClick={handleCreate}
+                href="/canvas/projects"
+                onClick={handleOpenWorkspace}
                 className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#79e4ff] px-5 text-[14px] font-bold tracking-normal text-[#071316]"
               >
                 进入工作室
