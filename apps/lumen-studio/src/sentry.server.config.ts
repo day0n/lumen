@@ -15,7 +15,7 @@ import * as Sentry from '@sentry/nextjs';
 
 if (!Sentry.getClient()) {
   Sentry.init({
-    dsn: process.env.SENTRY_DSN || undefined,
+    dsn: process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN || undefined,
     environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV,
     enableLogs: true,
     tracesSampleRate: process.env.SENTRY_TRACES_SAMPLE_RATE

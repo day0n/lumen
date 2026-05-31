@@ -5,6 +5,7 @@ import {
   type ProjectHistoryRecord,
   type ProjectHistorySummaryRecord,
   type ProjectListRecord,
+  ProjectListRecordSchema,
   type ProjectRecord,
   ProjectRecordSchema,
   type UpdateProjectInput,
@@ -12,8 +13,11 @@ import {
 
 import { requireStudioUser } from './auth';
 import { getProjectHistoryRepository, getProjectRepository, getStudioCache } from './db';
+import { traceStudioStep } from './telemetry';
 
 const PROJECT_CACHE_TTL_SECONDS = 30;
+const PROJECT_LIST_CACHE_TTL_SECONDS = 30;
+const CACHED_PROJECT_LIST_LIMITS = new Set([3, 50]);
 
 export interface ListStudioProjectsOptions {
   query?: string;
@@ -30,14 +34,46 @@ export interface CreateStudioProjectOptions {
 export async function listStudioProjects(
   options: ListStudioProjectsOptions = {},
 ): Promise<ProjectListRecord[]> {
-  const user = await requireStudioUser();
-  const repository = await getProjectRepository();
+  const user = await traceStudioStep('studio.auth.require_user', 'auth', () => requireStudioUser());
+  const limit = options.limit ?? 50;
+  const query = normalizeProjectListQuery(options.query);
+  const cache = getStudioCache();
+  const cacheKey = projectListCacheKey(user.id, { query, limit });
+  const canUseCache = shouldUseProjectListCache({ query, limit });
+  const cached = canUseCache
+    ? await traceStudioStep(
+        'studio.projects.list.cache_get',
+        'cache.get',
+        () => cache.get(cacheKey, ProjectListRecordSchema.array()),
+        { limit },
+      )
+    : null;
 
-  return repository.list({
-    ownerId: user.id,
-    query: options.query,
-    limit: options.limit ?? 50,
-  });
+  if (cached) return cached;
+
+  const repository = await getProjectRepository();
+  const projects = await traceStudioStep(
+    'studio.projects.list.db',
+    'db.query',
+    () =>
+      repository.list({
+        ownerId: user.id,
+        query,
+        limit,
+      }),
+    { limit, has_query: Boolean(query) },
+  );
+
+  if (canUseCache) {
+    await traceStudioStep(
+      'studio.projects.list.cache_set',
+      'cache.set',
+      () => cache.set(cacheKey, projects, PROJECT_LIST_CACHE_TTL_SECONDS),
+      { limit, result_count: projects.length },
+    );
+  }
+
+  return projects;
 }
 
 export async function createStudioProject(
@@ -56,6 +92,7 @@ export async function createStudioProject(
   });
 
   await cache.set(projectCacheKey(user.id, project.id), project, PROJECT_CACHE_TTL_SECONDS);
+  await clearProjectListCache(user.id);
   await recordProjectHistory({
     action: 'created',
     ownerId: user.id,
@@ -92,6 +129,8 @@ export async function updateStudioProject(
   if (project) await cache.set(cacheKey, project, PROJECT_CACHE_TTL_SECONDS);
   else await cache.delete(cacheKey);
 
+  if (project) await clearProjectListCache(user.id);
+
   if (project && input.canvas !== undefined) {
     await recordProjectHistory({
       action: 'updated',
@@ -106,17 +145,19 @@ export async function updateStudioProject(
 export async function listStudioProjectHistory(
   projectId: string,
 ): Promise<ProjectHistorySummaryRecord[]> {
-  const user = await requireStudioUser();
-  const projectRepository = await getProjectRepository();
-  const exists = await projectRepository.exists(user.id, projectId);
-  if (!exists) return [];
-
+  const user = await traceStudioStep('studio.auth.require_user', 'auth', () => requireStudioUser());
   const repository = await getProjectHistoryRepository();
-  return repository.listLatestSummaries({
-    ownerId: user.id,
-    projectId,
-    limit: 3,
-  });
+  return traceStudioStep(
+    'studio.projects.history.list.db',
+    'db.query',
+    () =>
+      repository.listLatestSummaries({
+        ownerId: user.id,
+        projectId,
+        limit: 3,
+      }),
+    { project_id: projectId, limit: 3 },
+  );
 }
 
 export async function getStudioProjectHistoryRecord(
@@ -177,6 +218,7 @@ export async function cloneSharedProject(shareId: string): Promise<ProjectRecord
     project,
     PROJECT_CACHE_TTL_SECONDS,
   );
+  await clearProjectListCache(user.id);
   await recordProjectHistory({
     action: 'created',
     ownerId: user.id,
@@ -191,7 +233,9 @@ export async function deleteStudioProject(projectId: string): Promise<boolean> {
   const deleted = await repository.delete(user.id, projectId);
 
   if (deleted) {
-    await getStudioCache().delete(projectCacheKey(user.id, projectId));
+    const cache = getStudioCache();
+    await cache.delete(projectCacheKey(user.id, projectId));
+    await clearProjectListCache(user.id);
   }
 
   return deleted;
@@ -199,6 +243,45 @@ export async function deleteStudioProject(projectId: string): Promise<boolean> {
 
 function projectCacheKey(ownerId: string, projectId: string) {
   return `project:${ownerId}:${projectId}`;
+}
+
+function projectListCacheKey(
+  ownerId: string,
+  options: {
+    query?: string;
+    limit: number;
+  },
+) {
+  return `${projectListCachePrefix(ownerId)}limit:${options.limit}:q:${encodeURIComponent(
+    options.query ?? '',
+  )}`;
+}
+
+function projectListCachePrefix(ownerId: string) {
+  return `projects:${ownerId}:list:`;
+}
+
+async function clearProjectListCache(ownerId: string) {
+  await Promise.all(
+    [...CACHED_PROJECT_LIST_LIMITS].map((limit) =>
+      getStudioCache().delete(projectListCacheKey(ownerId, { limit })),
+    ),
+  );
+}
+
+function normalizeProjectListQuery(query?: string) {
+  const normalized = query?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function shouldUseProjectListCache({
+  query,
+  limit,
+}: {
+  query?: string;
+  limit: number;
+}) {
+  return !query && CACHED_PROJECT_LIST_LIMITS.has(limit);
 }
 
 async function recordProjectHistory({

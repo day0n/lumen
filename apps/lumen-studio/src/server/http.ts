@@ -57,6 +57,9 @@ export function withApiRouteSpan<Args extends unknown[]>(
           recordApiRouteTelemetry(route, durationMs, response.status);
           span.setAttribute('http.response.status_code', response.status);
           span.setAttribute('lumen.duration_ms', durationMs);
+          if (response.status >= 500) {
+            span.setStatus({ code: 2, message: `HTTP ${response.status}` });
+          }
           return response;
         } catch (error) {
           const durationMs = Math.round(performance.now() - startedAt);

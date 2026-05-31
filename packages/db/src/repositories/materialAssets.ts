@@ -48,6 +48,7 @@ export class MaterialAssetRepository {
     const collection = this.collection();
     await collection.createIndex({ owner_id: 1, category: 1, kind: 1, updated_at: -1 });
     await collection.createIndex({ owner_id: 1, workflow_id: 1, kind: 1, updated_at: -1 });
+    await collection.createIndex({ owner_id: 1, workflow_id: 1, updated_at: -1 });
     await collection.createIndex({ workflow_id: 1, run_id: 1, node_id: 1 });
 
     const workflowResults = this.workflowResultCollection();
@@ -58,6 +59,20 @@ export class MaterialAssetRepository {
       completed_at: -1,
     });
     await workflowResults.createIndex({
+      workflow_id: 1,
+      status: 1,
+      output_type: 1,
+      completed_at: -1,
+    });
+    await workflowResults.createIndex({
+      user_id: 1,
+      project_id: 1,
+      status: 1,
+      output_type: 1,
+      completed_at: -1,
+    });
+    await workflowResults.createIndex({
+      user_id: 1,
       workflow_id: 1,
       status: 1,
       output_type: 1,
