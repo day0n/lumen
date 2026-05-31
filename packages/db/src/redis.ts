@@ -55,30 +55,47 @@ export class JsonCache {
   ): Promise<z.infer<TSchema> | null> {
     if (!this.redis) return null;
 
-    const raw = await this.redis.get(key);
-    if (!raw) return null;
+    let raw: string | null;
+    try {
+      raw = await this.redis.get(key);
+      if (!raw) return null;
+    } catch {
+      return null;
+    }
 
-    const parsedJson: unknown = JSON.parse(raw);
-    return schema.parse(parsedJson);
+    try {
+      const parsedJson: unknown = JSON.parse(raw);
+      return schema.parse(parsedJson);
+    } catch {
+      return null;
+    }
   }
 
   async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
     if (!this.redis) return;
-    await this.redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+    try {
+      await this.redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+    } catch {}
   }
 
   async delete(key: string): Promise<void> {
     if (!this.redis) return;
-    await this.redis.del(key);
+    try {
+      await this.redis.del(key);
+    } catch {}
   }
 
   async deletePattern(pattern: string, keyPrefix?: string): Promise<number> {
     if (!this.redis) return 0;
     const fullPattern = keyPrefix ? `${keyPrefix}${pattern}` : pattern;
-    const keys = await this.redis.keys(fullPattern);
-    if (keys.length === 0) return 0;
-    // ioredis with keyPrefix re-prefixes on .del, strip prefix back to bare keys.
-    const bare = keyPrefix ? keys.map((k) => k.replace(keyPrefix, '')) : keys;
-    return this.redis.del(...bare);
+    try {
+      const keys = await this.redis.keys(fullPattern);
+      if (keys.length === 0) return 0;
+      // ioredis with keyPrefix re-prefixes on .del, strip prefix back to bare keys.
+      const bare = keyPrefix ? keys.map((k) => k.replace(keyPrefix, '')) : keys;
+      return this.redis.del(...bare);
+    } catch {
+      return 0;
+    }
   }
 }
