@@ -6,8 +6,8 @@
 
 import Redis from 'ioredis';
 
-import { getConfig } from '../config/index.js';
-import { logger } from '../observability/logger.js';
+import { getConfig } from '../../../bootstrap/config.js';
+import { logger } from '../../../platform/logger.js';
 
 let client: Redis | null = null;
 let initialized = false;

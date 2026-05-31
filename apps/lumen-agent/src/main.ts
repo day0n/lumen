@@ -10,23 +10,23 @@
  */
 
 // ⚠ 必须第一行：Sentry.init 要早于任何 SDK / HTTP 库被 import 才能自动埋点。
-import './instrument.js';
+import './bootstrap/instrument.js';
 
 import { resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 
-import { buildApp } from './api/server.js';
-import { getConfig } from './config/index.js';
-import { ChatRunner } from './core/loop.js';
-import { MemoryManager } from './core/memory.js';
-import { type AgentDeps, BlueprintRegistry } from './core/profile.js';
-import { BUILTIN_SKILLS_DIR, SkillLibrary } from './core/skills.js';
-import { closeMongo, getMongo } from './database/mongo.js';
-import { closeRedis, getRedis } from './database/redis.js';
-import { logger } from './observability/logger.js';
-import { applyOutboundProxy } from './observability/proxy.js';
-import { ModelRouter } from './providers/router.js';
-import { SessionManager } from './session/manager.js';
+import { buildApp } from './adapters/inbound/http/server.js';
+import { ModelRouter } from './adapters/outbound/llm/router.js';
+import { MemoryManager } from './adapters/outbound/memory.js';
+import { closeMongo, getMongo } from './adapters/outbound/persistence/mongo.js';
+import { closeRedis, getRedis } from './adapters/outbound/persistence/redis.js';
+import { SessionManager } from './adapters/outbound/persistence/session.js';
+import { ChatRunner } from './application/chatRunner.js';
+import { BUILTIN_SKILLS_DIR, SkillLibrary } from './application/skills.js';
+import { getConfig } from './bootstrap/config.js';
+import { type AgentDeps, BlueprintRegistry } from './domain/profile.js';
+import { logger } from './platform/logger.js';
+import { applyOutboundProxy } from './platform/proxy.js';
 
 import { MAIN_PROFILE } from './agents/main/profile.js';
 

@@ -20,15 +20,15 @@ import { z } from 'zod';
 
 import * as Sentry from '@sentry/node';
 
-import type { AgentEvent } from '../core/events.js';
-import type { ChatRunner } from '../core/loop.js';
-import { logger } from '../observability/logger.js';
-import type { SessionManager } from '../session/manager.js';
+import type { ChatRunner } from '../../../application/chatRunner.js';
+import type { AgentEvent } from '../../../domain/events.js';
+import { logger } from '../../../platform/logger.js';
+import type { SessionManager } from '../../outbound/persistence/session.js';
 
 import type { AuthUser } from './auth.js';
 import { clerkAuth } from './auth.js';
 import { cors } from './cors.js';
-import { RunStore } from './run-store.js';
+import { RunStore } from './runStore.js';
 
 type Env = { Variables: { authUser: AuthUser } };
 

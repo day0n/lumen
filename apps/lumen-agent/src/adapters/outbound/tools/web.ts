@@ -6,8 +6,8 @@
  * 注：DuckDuckGo HTML 端点最近不稳定，做兜底用，没 BRAVE_API_KEY 时尽量提示用户。
  */
 
-import { type JsonSchema, Tool } from '../../core/tools/base.js';
-import { logger } from '../../observability/logger.js';
+import { logger } from '../../../platform/logger.js';
+import { type JsonSchema, Tool } from './base.js';
 
 // 完整的现代 Chrome UA：截断（缺 Chrome/ 版本段）的 UA 更容易触发反爬挑战。
 const BROWSER_UA =

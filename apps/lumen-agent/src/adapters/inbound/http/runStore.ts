@@ -15,8 +15,8 @@
  * 一阶段所有 run 都在单进程内存里，多副本部署需要换 Redis。
  */
 
-import type { AgentEvent } from '../core/events.js';
-import { isTerminal } from '../core/events.js';
+import type { AgentEvent } from '../../../domain/events.js';
+import { isTerminal } from '../../../domain/events.js';
 
 const RUN_TTL_AFTER_TERMINAL_MS = 60 * 60 * 1000; // 1h
 

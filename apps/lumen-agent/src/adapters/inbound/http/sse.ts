@@ -7,7 +7,7 @@
 
 import type { SSEStreamingApi } from 'hono/streaming';
 
-import type { AgentEvent } from '../core/events.js';
+import type { AgentEvent } from '../../../domain/events.js';
 
 export async function writeEvent(stream: SSEStreamingApi, event: AgentEvent): Promise<void> {
   await stream.writeSSE({

@@ -6,11 +6,14 @@ import {
   validateWorkflowCanvas,
 } from '@lumen/shared/domain';
 
-import { getStudioMongo } from '../../database/mongo.js';
-import { getRedis } from '../../database/redis.js';
-import { WorkflowEngineClient } from '../../workflow/engineClient.js';
-import { ProjectWorkflowStore, type WorkflowProject } from '../../workflow/projectStore.js';
-import { getAgentRequestContext, resolveActiveProjectId } from '../requestContext.js';
+import {
+  getAgentRequestContext,
+  resolveActiveProjectId,
+} from '../../../application/requestContext.js';
+import { WorkflowEngineClient } from '../canvas/engineClient.js';
+import { ProjectWorkflowStore, type WorkflowProject } from '../canvas/projectStore.js';
+import { getStudioMongo } from '../persistence/mongo.js';
+import { getRedis } from '../persistence/redis.js';
 import { type JsonSchema, Tool } from './base.js';
 import { emitToolEvent } from './runtime.js';
 

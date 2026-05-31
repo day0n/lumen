@@ -5,8 +5,8 @@
  *   - 其他    → VolcArkProvider（默认）
  */
 
-import { getConfig } from '../config/index.js';
-import { logger } from '../observability/logger.js';
+import { getConfig } from '../../../bootstrap/config.js';
+import { logger } from '../../../platform/logger.js';
 
 import { AnthropicProvider } from './anthropic.js';
 import type { LLMProvider } from './base.js';

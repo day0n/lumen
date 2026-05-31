@@ -8,7 +8,7 @@
  * 不做：context compaction / microcompact / token 计数（第二阶段再加）。
  */
 
-import { toToolCallDict } from '../../providers/anthropic.js';
+import { toToolCallDict } from '../../adapters/outbound/llm/anthropic.js';
 import type {
   AssistantMessage,
   ChatMessage,
@@ -16,8 +16,8 @@ import type {
   SystemMessage,
   ToolMessage,
   UserMessage,
-} from '../../schemas/messages.js';
-import type { LLMResponse } from '../../schemas/providers.js';
+} from '../../domain/contracts/messages.js';
+import type { LLMResponse } from '../../domain/contracts/providers.js';
 
 export interface BuildMessagesInput {
   systemPrompt: string;

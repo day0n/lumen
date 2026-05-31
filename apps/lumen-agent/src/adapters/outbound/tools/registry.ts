@@ -5,8 +5,8 @@
  * execute 的处理链路为：参数纠正 → 校验 → 执行 → 异常兜底。
  */
 
-import { logger } from '../../observability/logger.js';
-import { type ToolResult, isToolResult } from '../../schemas/tools.js';
+import { type ToolResult, isToolResult } from '../../../domain/contracts/tools.js';
+import { logger } from '../../../platform/logger.js';
 import { type OpenAIFunctionSchema, type Tool, appendErrorHint } from './base.js';
 import { withToolEventEmitter } from './runtime.js';
 

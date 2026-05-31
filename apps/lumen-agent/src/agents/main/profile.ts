@@ -6,15 +6,15 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { AgentBlueprint, ToolFactory } from '../../core/profile.js';
-import { MediaUnderstandingTool } from '../../core/tools/mediaUnderstanding.js';
-import { VideoSearchTool } from '../../core/tools/videoSearch.js';
-import { WebSearchTool } from '../../core/tools/web.js';
+import { MediaUnderstandingTool } from '../../adapters/outbound/tools/mediaUnderstanding.js';
+import { VideoSearchTool } from '../../adapters/outbound/tools/videoSearch.js';
+import { WebSearchTool } from '../../adapters/outbound/tools/web.js';
 import {
   EditWorkflowTool,
   GetWorkflowTool,
   RunWorkflowNodeTool,
-} from '../../core/tools/workflow.js';
+} from '../../adapters/outbound/tools/workflow.js';
+import type { AgentBlueprint, ToolFactory } from '../../domain/profile.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT = readFileSync(join(__dirname, 'prompt.md'), 'utf-8');

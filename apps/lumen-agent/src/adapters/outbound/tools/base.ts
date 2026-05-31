@@ -7,9 +7,9 @@
  *   - toSchema：导出成 OpenAI function-calling 所需的格式
  */
 
-import { logger } from '../../observability/logger.js';
-import type { ToolResult } from '../../schemas/tools.js';
-import { isToolResult } from '../../schemas/tools.js';
+import type { ToolResult } from '../../../domain/contracts/tools.js';
+import { isToolResult } from '../../../domain/contracts/tools.js';
+import { logger } from '../../../platform/logger.js';
 
 const TYPE_MAP: Record<string, (v: unknown) => boolean> = {
   string: (v) => typeof v === 'string',

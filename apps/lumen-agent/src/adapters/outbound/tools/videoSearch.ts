@@ -7,9 +7,9 @@
 
 import OpenAI from 'openai';
 
-import { type JsonSchema, Tool } from '../../core/tools/base.js';
-import { logger } from '../../observability/logger.js';
-import type { ToolResult } from '../../schemas/tools.js';
+import type { ToolResult } from '../../../domain/contracts/tools.js';
+import { logger } from '../../../platform/logger.js';
+import { type JsonSchema, Tool } from './base.js';
 
 interface AdRef {
   source: string;

@@ -9,7 +9,7 @@
 import type { Collection, Db } from 'mongodb';
 import OpenAI from 'openai';
 
-import { logger } from '../observability/logger.js';
+import { logger } from '../../platform/logger.js';
 
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const EMBEDDING_DIMS = 1536;

@@ -12,14 +12,14 @@
  * 全部可观测节点都经由 InferenceHooks 暴露；未提供的钩子静默跳过。
  */
 
-import { logger } from '../observability/logger.js';
-import type { LLMProvider } from '../providers/base.js';
-import type { InferenceResult, ToolTiming } from '../schemas/executor.js';
-import type { MessageList } from '../schemas/messages.js';
-import type { LLMResponse, ToolCallRequest } from '../schemas/providers.js';
-import { isToolResult } from '../schemas/tools.js';
+import type { LLMProvider } from '../adapters/outbound/llm/base.js';
+import type { ToolCatalog } from '../adapters/outbound/tools/registry.js';
+import type { InferenceResult, ToolTiming } from '../domain/contracts/executor.js';
+import type { MessageList } from '../domain/contracts/messages.js';
+import type { LLMResponse, ToolCallRequest } from '../domain/contracts/providers.js';
+import { isToolResult } from '../domain/contracts/tools.js';
+import { logger } from '../platform/logger.js';
 import { addAssistantMessage, addToolResult } from './prompt/builder.js';
-import type { ToolCatalog } from './tools/registry.js';
 
 const DEFAULT_TOOL_RESULT_MAX_CHARS = 16_000;
 

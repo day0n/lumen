@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import matter from 'gray-matter';
 
-import { logger } from '../observability/logger.js';
+import { logger } from '../platform/logger.js';
 
 export interface SkillInfo {
   name: string;

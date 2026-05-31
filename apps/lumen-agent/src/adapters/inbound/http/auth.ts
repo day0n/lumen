@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-import { getStudioMongo } from '../database/mongo.js';
-import { logger } from '../observability/logger.js';
+import { logger } from '../../../platform/logger.js';
+import { getStudioMongo } from '../../outbound/persistence/mongo.js';
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 

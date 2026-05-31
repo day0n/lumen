@@ -12,10 +12,10 @@
 
 import { Buffer } from 'node:buffer';
 
-import { type JsonSchema, Tool } from '../../core/tools/base.js';
-import { logger } from '../../observability/logger.js';
-import type { ToolResult } from '../../schemas/tools.js';
-import { GoogleTokenCache, parseServiceAccount } from '../../utils/googleAuth.js';
+import type { ToolResult } from '../../../domain/contracts/tools.js';
+import { GoogleTokenCache, parseServiceAccount } from '../../../platform/googleAuth.js';
+import { logger } from '../../../platform/logger.js';
+import { type JsonSchema, Tool } from './base.js';
 
 const MODEL = 'gemini-2.5-flash';
 const DEFAULT_PROMPT =

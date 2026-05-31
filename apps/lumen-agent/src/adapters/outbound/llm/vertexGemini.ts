@@ -11,10 +11,10 @@
  * 因此默认把 thinking 预算压到 0。
  */
 
-import { logger } from '../observability/logger.js';
-import type { ChatMessage, MessageList } from '../schemas/messages.js';
-import type { ToolCallRequest } from '../schemas/providers.js';
-import { GoogleTokenCache, parseServiceAccount } from '../utils/googleAuth.js';
+import type { ChatMessage, MessageList } from '../../../domain/contracts/messages.js';
+import type { ToolCallRequest } from '../../../domain/contracts/providers.js';
+import { GoogleTokenCache, parseServiceAccount } from '../../../platform/googleAuth.js';
+import { logger } from '../../../platform/logger.js';
 
 import { type ChatOptions, LLMProvider, type LLMStreamChunk, type ToolDefinition } from './base.js';
 

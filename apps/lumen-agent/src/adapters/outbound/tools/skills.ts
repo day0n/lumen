@@ -1,4 +1,4 @@
-import type { SkillLibrary } from '../skills.js';
+import type { SkillLibrary } from '../../../application/skills.js';
 import { type JsonSchema, Tool } from './base.js';
 
 export class LoadSkillTool extends Tool {

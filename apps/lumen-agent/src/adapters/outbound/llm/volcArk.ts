@@ -9,9 +9,9 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import OpenAI from 'openai';
 
-import { logger } from '../observability/logger.js';
-import type { ChatMessage } from '../schemas/messages.js';
-import type { ToolCallRequest } from '../schemas/providers.js';
+import type { ChatMessage } from '../../../domain/contracts/messages.js';
+import type { ToolCallRequest } from '../../../domain/contracts/providers.js';
+import { logger } from '../../../platform/logger.js';
 
 import { type ChatOptions, LLMProvider, type LLMStreamChunk, type ToolDefinition } from './base.js';
 

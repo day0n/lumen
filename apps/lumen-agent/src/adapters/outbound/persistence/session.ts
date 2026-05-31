@@ -13,8 +13,12 @@
 import type Redis from 'ioredis';
 import type { Collection, Db } from 'mongodb';
 
-import { logger } from '../observability/logger.js';
-import type { ChatMessage, MessageList, StoredMessage } from '../schemas/messages.js';
+import type {
+  ChatMessage,
+  MessageList,
+  StoredMessage,
+} from '../../../domain/contracts/messages.js';
+import { logger } from '../../../platform/logger.js';
 
 const REDIS_META_PREFIX = 'lumen:agent:session:meta:';
 const REDIS_CTX_PREFIX = 'lumen:agent:session:ctx:';

@@ -10,14 +10,14 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { nanoid } from 'nanoid';
 
-import { logger } from '../observability/logger.js';
 import type {
   AssistantMessage,
   ChatMessage,
   ToolCallDict,
   ToolMessage,
-} from '../schemas/messages.js';
-import type { ToolCallRequest } from '../schemas/providers.js';
+} from '../../../domain/contracts/messages.js';
+import type { ToolCallRequest } from '../../../domain/contracts/providers.js';
+import { logger } from '../../../platform/logger.js';
 
 import { type ChatOptions, LLMProvider, type LLMStreamChunk, type ToolDefinition } from './base.js';
 

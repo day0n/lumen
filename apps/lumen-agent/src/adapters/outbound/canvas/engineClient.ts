@@ -11,9 +11,9 @@ import {
 } from '@lumen/shared/domain';
 import type { ClientMessage, ServerEvent } from '@lumen/shared/protocols';
 
-import { getConfig } from '../config/index.js';
-import { emitToolEvent } from '../core/tools/runtime.js';
-import { logger } from '../observability/logger.js';
+import { getConfig } from '../../../bootstrap/config.js';
+import { logger } from '../../../platform/logger.js';
+import { emitToolEvent } from '../tools/runtime.js';
 import type { ProjectWorkflowStore, WorkflowProject } from './projectStore.js';
 
 export interface RunWorkflowNodeResult {

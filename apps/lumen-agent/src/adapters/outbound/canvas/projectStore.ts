@@ -8,8 +8,8 @@ import {
   summarizeWorkflowEdit,
 } from '@lumen/shared/domain';
 
-import { getRedis } from '../database/redis.js';
-import { logger } from '../observability/logger.js';
+import { logger } from '../../../platform/logger.js';
+import { getRedis } from '../persistence/redis.js';
 
 interface ProjectDocument {
   _id: string;

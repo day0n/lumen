@@ -17,12 +17,13 @@ import { nanoid } from 'nanoid';
 import * as Sentry from '@sentry/node';
 import type { Span } from '@sentry/node';
 
-import { logger, withLogContext } from '../observability/logger.js';
-import type { LLMProvider } from '../providers/base.js';
-import type { ModelRouter } from '../providers/router.js';
-import type { MessageList } from '../schemas/messages.js';
-import type { Session, SessionManager } from '../session/manager.js';
+import type { LLMProvider } from '../adapters/outbound/llm/base.js';
+import type { ModelRouter } from '../adapters/outbound/llm/router.js';
+import type { Session, SessionManager } from '../adapters/outbound/persistence/session.js';
+import type { MessageList } from '../domain/contracts/messages.js';
+import { logger, withLogContext } from '../platform/logger.js';
 
+import { type MemoryManager, formatMemoriesForPrompt } from '../adapters/outbound/memory.js';
 import {
   type AgentEvent,
   agentCompleted,
@@ -37,11 +38,15 @@ import {
   toolCompleted,
   toolEvent,
   toolStarted,
-} from './events.js';
-import { type InferenceHooks, InferenceLoop } from './executor.js';
-import { AgentBuilder } from './factory.js';
-import { type MemoryManager, formatMemoriesForPrompt } from './memory.js';
-import type { AgentBlueprint, AgentDeps, BlueprintRegistry, BuiltAgent } from './profile.js';
+} from '../domain/events.js';
+import type {
+  AgentBlueprint,
+  AgentDeps,
+  BlueprintRegistry,
+  BuiltAgent,
+} from '../domain/profile.js';
+import { AgentBuilder } from './agentBuilder.js';
+import { type InferenceHooks, InferenceLoop } from './inferenceLoop.js';
 import { buildMessages } from './prompt/builder.js';
 import { withAgentRequestContext } from './requestContext.js';
 import type { SkillLibrary } from './skills.js';

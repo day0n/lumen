@@ -11,7 +11,6 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import * as Sentry from '@sentry/node';
 
-import { logger } from '../observability/logger.js';
 import type {
   AssistantMessage,
   ChatMessage,
@@ -19,8 +18,9 @@ import type {
   SystemMessage,
   ToolMessage,
   UserMessage,
-} from '../schemas/messages.js';
-import type { LLMResponse, ToolCallRequest } from '../schemas/providers.js';
+} from '../../../domain/contracts/messages.js';
+import type { LLMResponse, ToolCallRequest } from '../../../domain/contracts/providers.js';
+import { logger } from '../../../platform/logger.js';
 
 export interface GenerationSettings {
   temperature: number | null;

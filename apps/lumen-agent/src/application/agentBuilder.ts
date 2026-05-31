@@ -2,12 +2,17 @@
  * AgentBuilder —— 把 AgentBlueprint 物化成可运行的 BuiltAgent。
  */
 
-import { logger } from '../observability/logger.js';
-import type { LLMProvider } from '../providers/base.js';
-import type { AgentBlueprint, AgentDeps, BlueprintRegistry, BuiltAgent } from './profile.js';
+import type { LLMProvider } from '../adapters/outbound/llm/base.js';
+import { ToolCatalog } from '../adapters/outbound/tools/registry.js';
+import { LoadSkillTool } from '../adapters/outbound/tools/skills.js';
+import type {
+  AgentBlueprint,
+  AgentDeps,
+  BlueprintRegistry,
+  BuiltAgent,
+} from '../domain/profile.js';
+import { logger } from '../platform/logger.js';
 import type { SkillLibrary } from './skills.js';
-import { ToolCatalog } from './tools/registry.js';
-import { LoadSkillTool } from './tools/skills.js';
 
 export class AgentBuilder {
   constructor(

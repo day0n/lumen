@@ -5,9 +5,9 @@
  * system prompt / model）。
  */
 
-import type { SkillLibrary } from './skills.js';
-import type { Tool } from './tools/base.js';
-import type { ToolCatalog } from './tools/registry.js';
+import type { Tool } from '../adapters/outbound/tools/base.js';
+import type { ToolCatalog } from '../adapters/outbound/tools/registry.js';
+import type { SkillLibrary } from '../application/skills.js';
 
 /** 工具构造时需要的全局上下文。前期只放最小集，后续按需加。 */
 export interface AgentDeps {

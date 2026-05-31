@@ -15,7 +15,7 @@ import type {
   ToolEventData,
   ToolFailedData,
   ToolStartedData,
-} from '../schemas/events.js';
+} from './contracts/events.js';
 
 export interface AgentEvent {
   event: string;

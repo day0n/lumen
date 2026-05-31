@@ -10,8 +10,8 @@
 
 import { type Db, MongoClient } from 'mongodb';
 
-import { getConfig } from '../config/index.js';
-import { logger } from '../observability/logger.js';
+import { getConfig } from '../../../bootstrap/config.js';
+import { logger } from '../../../platform/logger.js';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
