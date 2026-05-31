@@ -411,6 +411,7 @@ export class WorkflowStore {
 
     const now = new Date();
     const title = titleForAsset(input.outputType, input.input.prompt);
+    const inputPrompt = materialInputPrompt(input.input.prompt);
     await this.materialAssets.updateOne(
       { _id: materialAssetId(ownerId, workflowId, input.runId, input.node.id) },
       {
@@ -429,7 +430,7 @@ export class WorkflowStore {
           r2_key: input.asset.key,
           content_type: input.asset.content_type,
           size: input.asset.size,
-          ...(input.input.prompt.trim() ? { input_prompt: input.input.prompt.trim() } : {}),
+          ...(inputPrompt ? { input_prompt: inputPrompt } : {}),
           updated_at: now,
         },
         $setOnInsert: {
@@ -438,7 +439,7 @@ export class WorkflowStore {
         },
         $unset: {
           ...(input.outputType === 'image' ? {} : { thumbnail_url: '' }),
-          ...(input.input.prompt.trim() ? {} : { input_prompt: '' }),
+          ...(inputPrompt ? {} : { input_prompt: '' }),
         },
       },
       { upsert: true },
@@ -470,6 +471,11 @@ function titleForAsset(type: 'image' | 'video' | 'audio', prompt: string) {
     case 'audio':
       return '音乐结果';
   }
+}
+
+function materialInputPrompt(prompt: string) {
+  const normalized = prompt.trim();
+  return normalized.length > 0 ? normalized.slice(0, 100) : '';
 }
 
 function compactNodeInput(input: NodeInput): NodeInput {

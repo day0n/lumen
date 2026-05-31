@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+const MaterialInputPromptSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  return value.trim().slice(0, 100);
+}, z.string().max(100));
+
 export const MaterialAssetKindSchema = z.enum(['image', 'video', 'audio']);
 export type MaterialAssetKind = z.infer<typeof MaterialAssetKindSchema>;
 
@@ -26,7 +31,7 @@ export const MaterialAssetDocumentSchema = z
     r2_key: z.string().trim().min(1).optional(),
     content_type: z.string().trim().min(1).optional(),
     size: z.number().int().nonnegative().optional(),
-    input_prompt: z.string().trim().max(1000).optional(),
+    input_prompt: MaterialInputPromptSchema.optional(),
     created_at: z.date(),
     updated_at: z.date(),
   })
@@ -50,7 +55,7 @@ export const MaterialAssetRecordSchema = z
     r2Key: z.string().optional(),
     contentType: z.string().optional(),
     size: z.number().int().nonnegative().optional(),
-    inputPrompt: z.string().optional(),
+    inputPrompt: MaterialInputPromptSchema.optional(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
@@ -82,7 +87,7 @@ export const UpsertWorkflowMaterialAssetInputSchema = z
     r2Key: z.string().trim().min(1).optional(),
     contentType: z.string().trim().min(1).optional(),
     size: z.number().int().nonnegative().optional(),
-    inputPrompt: z.string().trim().max(1000).optional(),
+    inputPrompt: MaterialInputPromptSchema.optional(),
   })
   .strict();
 export type UpsertWorkflowMaterialAssetInput = z.infer<

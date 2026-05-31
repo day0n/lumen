@@ -209,7 +209,7 @@ function toWorkflowResultAssetRecord(
   const updatedAt =
     document.completed_at ?? document.updated_at ?? document.created_at ?? new Date();
   const createdAt = document.created_at ?? updatedAt;
-  const inputPrompt = normalizedString(document.input?.prompt);
+  const inputPrompt = truncateMaterialPrompt(document.input?.prompt);
 
   return MaterialAssetRecordSchema.parse({
     id: `workflow-result:${document.run_id}:${document.node_id}`,
@@ -265,4 +265,9 @@ function normalizedString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function truncateMaterialPrompt(value: unknown): string | undefined {
+  const normalized = normalizedString(value);
+  return normalized ? normalized.slice(0, 100) : undefined;
 }
