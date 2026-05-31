@@ -4,7 +4,7 @@ import { IconArrowRight } from '@tabler/icons-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-type SceneKey = 'signal' | 'lens' | 'workflow' | 'frame' | 'memory';
+type SceneKey = 'filming' | 'night' | 'sunbath';
 
 interface StoryScene {
   key: SceneKey;
@@ -13,7 +13,6 @@ interface StoryScene {
 }
 
 interface Particle {
-  accent: number;
   homeX: number;
   homeY: number;
   lane: number;
@@ -23,38 +22,43 @@ interface Particle {
 }
 
 interface Point {
+  darkness: number;
   x: number;
   y: number;
   z: number;
 }
 
+interface MaskSample {
+  darkness: number;
+  x: number;
+  y: number;
+}
+
+const SPRITE_FRAME_COUNT = 4;
+
 const STORY_SCENES: StoryScene[] = [
   {
-    key: 'signal',
+    key: 'filming',
     side: 'right',
-    text: '一个商品，先变成可被理解的信号。',
+    text: '镜头架好，长焦对准，人先把真实动作拍清楚。',
   },
   {
-    key: 'lens',
+    key: 'night',
     side: 'left',
-    text: '卖点、钩子和节奏被看见。',
+    text: '深夜打灯，在笔记本前把素材一点点剪出来。',
   },
   {
-    key: 'workflow',
+    key: 'sunbath',
     side: 'right',
-    text: '脚本、镜头和素材连成工作流。',
-  },
-  {
-    key: 'frame',
-    side: 'left',
-    text: '爆款结构被重写成你的短视频。',
-  },
-  {
-    key: 'memory',
-    side: 'right',
-    text: '每一次成片，都让下一次更快。',
+    text: '重复制作交给流程，人已经躺在阳光下晒太阳。',
   },
 ];
+
+const SPRITE_SHEETS: Record<SceneKey, string> = {
+  filming: '/particle-masks/creator-filming-sheet.png',
+  night: '/particle-masks/creator-night-laptop-sheet.png',
+  sunbath: '/particle-masks/creator-sunbath-sheet.png',
+};
 
 const INTRO_COPY =
   'Lumen 把商品、爆款结构和创作判断变成一条可编辑的视频工作流，让每一次创作都留下下一次可复用的经验。';
@@ -88,13 +92,28 @@ export function ParticleStory() {
     let dpr = 1;
     let raf = 0;
     let particles: Particle[] = [];
-    let targets: Point[][] = [];
+    let targets: Point[][][] = [];
+    let maskFrames: MaskSample[][][] = [];
     let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let lastStateUpdate = 0;
+    let disposed = false;
 
     const reduceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const setReducedMotion = () => {
       reducedMotion = reduceQuery.matches;
+    };
+
+    const rebuild = () => {
+      const count = particleTarget(width);
+      particles = Array.from({ length: count }, (_, index) => ({
+        homeX: seeded(index + 7) * 2 - 1,
+        homeY: seeded(index + 13) * 2 - 1,
+        lane: seeded(index + 211),
+        phase: seeded(index + 19) * Math.PI * 2,
+        seed: seeded(index + 3),
+        size: width < 640 ? 0.6 + seeded(index + 29) * 0.72 : 0.72 + seeded(index + 29) * 1.08,
+      }));
+      targets = buildTargets(count, maskFrames);
     };
 
     const resize = () => {
@@ -105,21 +124,7 @@ export function ParticleStory() {
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      const count = particleTarget(width);
-      particles = Array.from({ length: count }, (_, index) => {
-        const accentSeed = seeded(index + 149);
-        return {
-          accent: accentSeed > 0.965 ? 2 : accentSeed > 0.88 ? 1 : 0,
-          homeX: seeded(index + 7) * 2 - 1,
-          homeY: seeded(index + 13) * 2 - 1,
-          lane: seeded(index + 211),
-          phase: seeded(index + 19) * Math.PI * 2,
-          seed: seeded(index + 3),
-          size: width < 640 ? 0.6 + seeded(index + 29) * 0.72 : 0.72 + seeded(index + 29) * 1.08,
-        };
-      });
-      targets = buildTargets(count);
+      rebuild();
     };
 
     const updateProgress = () => {
@@ -148,7 +153,12 @@ export function ParticleStory() {
       const scene = Math.min(STORY_SCENES.length - 1, Math.floor(scaled));
       const nextScene = Math.min(STORY_SCENES.length - 1, scene + 1);
       const local = scaled - scene;
-      const eased = smoothstep(0, 1, local);
+      const sceneMorph = smoothstep(0.72, 1, local);
+      const spriteProgress = reducedMotion ? 0 : (time * 0.00072 + local * 0.38) % 1;
+      const spriteScaled = spriteProgress * (SPRITE_FRAME_COUNT - 1);
+      const frameA = Math.floor(spriteScaled);
+      const frameB = Math.min(SPRITE_FRAME_COUNT - 1, frameA + 1);
+      const frameMorph = smoothstep(0, 1, spriteScaled - frameA);
       const now = performance.now();
 
       if (now - lastStateUpdate > 55) {
@@ -163,8 +173,8 @@ export function ParticleStory() {
       const offsetY =
         height * (width < 640 ? 0.56 : 0.53) + mouseRef.current.y * (width < 640 ? 4 : 12);
       const pulse = reducedMotion ? 0 : time * 0.00034;
-      const from = targets[scene] ?? targets[0]!;
-      const to = targets[nextScene] ?? from;
+      const currentFrames = targets[scene] ?? targets[0] ?? [];
+      const nextFrames = targets[nextScene] ?? currentFrames;
 
       context.save();
       context.translate(offsetX, offsetY);
@@ -173,22 +183,29 @@ export function ParticleStory() {
       if (particleReveal > 0.002) {
         for (let index = 0; index < particles.length; index += 1) {
           const particle = particles[index];
-          const a = from[index];
-          const b = to[index];
-          if (!particle || !a || !b) continue;
+          const a = currentFrames[frameA]?.[index];
+          const b = currentFrames[frameB]?.[index] ?? a;
+          const c = nextFrames[0]?.[index] ?? a;
+          if (!particle || !a || !b || !c) continue;
 
           const swirl = reducedMotion ? { x: 0, y: 0 } : particleDrift(particle, pulse, progress);
-          const targetX = lerp(a.x, b.x, eased) + swirl.x;
-          const targetY = lerp(a.y, b.y, eased) + swirl.y;
+          const frameX = lerp(a.x, b.x, frameMorph);
+          const frameY = lerp(a.y, b.y, frameMorph);
+          const frameZ = lerp(a.z, b.z, frameMorph);
+          const frameDarkness = lerp(a.darkness, b.darkness, frameMorph);
+          const targetX = lerp(frameX, c.x, sceneMorph) + swirl.x;
+          const targetY = lerp(frameY, c.y, sceneMorph) + swirl.y;
           const birthX = particle.homeX * 0.16 + Math.sin(particle.phase) * 0.025;
           const birthY = particle.homeY * 0.1 + Math.cos(particle.phase) * 0.018;
           const x = lerp(birthX, targetX, particleSpread) * scale;
           const y = lerp(birthY, targetY, particleSpread) * scale;
-          const depth = lerp(a.z, b.z, eased);
+          const depth = lerp(frameZ, c.z, sceneMorph);
+          const darkness = lerp(frameDarkness, c.darkness, sceneMorph);
           const alpha =
-            clamp(0.08 + depth * 0.86 + particle.seed * 0.2, 0.08, 0.94) * particleReveal;
-          const color = particleColor(particle, alpha, depth);
-          const size = particle.size * (0.54 + depth * 0.86);
+            clamp(0.08 + depth * 0.62 + darkness * 0.34 + particle.seed * 0.18, 0.08, 0.94) *
+            particleReveal;
+          const color = particleColor(particle, alpha, depth, darkness);
+          const size = particle.size * (0.52 + depth * 0.78 + darkness * 0.24);
 
           context.fillStyle = color;
           context.fillRect(x, y, size, size);
@@ -199,6 +216,18 @@ export function ParticleStory() {
       raf = window.requestAnimationFrame(draw);
     };
 
+    Promise.all(STORY_SCENES.map((sceneItem) => loadMaskSheet(SPRITE_SHEETS[sceneItem.key])))
+      .then((loadedFrames) => {
+        if (disposed) return;
+        maskFrames = loadedFrames;
+        rebuild();
+      })
+      .catch(() => {
+        if (disposed) return;
+        maskFrames = [];
+        rebuild();
+      });
+
     resize();
     updateProgress();
     window.addEventListener('resize', resize);
@@ -208,6 +237,7 @@ export function ParticleStory() {
     raf = window.requestAnimationFrame(draw);
 
     return () => {
+      disposed = true;
       window.cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
       window.removeEventListener('scroll', updateProgress);
@@ -358,201 +388,178 @@ function particleTarget(width: number) {
   return 48000;
 }
 
-function particleColor(particle: Particle, alpha: number, depth: number) {
-  if (particle.accent === 2) {
-    return `rgba(245,199,106,${clamp(alpha * 0.24, 0, 0.22)})`;
+function particleColor(particle: Particle, alpha: number, depth: number, darkness: number) {
+  if (particle.lane > 0.985) {
+    return `rgba(245,199,106,${clamp(alpha * 0.28, 0, 0.24)})`;
   }
 
-  if (particle.accent === 1) {
-    return `rgba(121,228,255,${clamp(alpha * 0.34, 0, 0.34)})`;
+  if (particle.lane > 0.94) {
+    return `rgba(121,228,255,${clamp(alpha * 0.36, 0, 0.34)})`;
   }
 
-  const tone = Math.round(150 + depth * 82 + particle.seed * 26);
-  const blueLift = Math.round(4 + depth * 10);
-  return `rgba(${tone},${tone + blueLift},${tone + blueLift * 2},${clamp(alpha * 0.72, 0, 0.78)})`;
+  const tone = Math.round(188 + depth * 54 + particle.seed * 18 - darkness * 24);
+  const blueLift = Math.round(5 + depth * 10);
+  return `rgba(${tone},${tone + blueLift},${tone + blueLift * 2},${clamp(alpha * 0.76, 0, 0.82)})`;
 }
 
-function buildTargets(count: number): Point[][] {
-  return Array.from({ length: STORY_SCENES.length }, (_, scene) =>
-    Array.from({ length: count }, (_, index) => pointForScene(scene, index)),
+function loadMaskSheet(src: string): Promise<MaskSample[][]> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(buildMaskSheetSamples(image));
+    image.onerror = () => reject(new Error(`Unable to load particle mask: ${src}`));
+    image.src = src;
+  });
+}
+
+function buildMaskSheetSamples(image: HTMLImageElement): MaskSample[][] {
+  const canvas = document.createElement('canvas');
+  const width = 1280;
+  const height = 720;
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext('2d');
+  if (!context) return [];
+
+  const sourceFrameWidth = image.naturalWidth / SPRITE_FRAME_COUNT;
+
+  return Array.from({ length: SPRITE_FRAME_COUNT }, (_, frame) => {
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
+
+    const frameAspect = sourceFrameWidth / Math.max(1, image.naturalHeight);
+    const canvasAspect = width / height;
+    const drawWidth = frameAspect > canvasAspect ? width : height * frameAspect;
+    const drawHeight = frameAspect > canvasAspect ? width / frameAspect : height;
+    const drawX = (width - drawWidth) / 2;
+    const drawY = (height - drawHeight) / 2;
+
+    context.drawImage(
+      image,
+      sourceFrameWidth * frame,
+      0,
+      sourceFrameWidth,
+      image.naturalHeight,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight,
+    );
+
+    return buildMaskSamples(context, width, height);
+  });
+}
+
+function buildMaskSamples(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): MaskSample[] {
+  const data = context.getImageData(0, 0, width, height).data;
+  const raw: Array<{ darkness: number; px: number; py: number }> = [];
+  let minX = width;
+  let minY = height;
+  let maxX = 0;
+  let maxY = 0;
+
+  for (let py = 0; py < height; py += 2) {
+    for (let px = 0; px < width; px += 2) {
+      const offset = (py * width + px) * 4;
+      const alpha = (data[offset + 3] ?? 255) / 255;
+      const luminance =
+        ((data[offset] ?? 255) + (data[offset + 1] ?? 255) + (data[offset + 2] ?? 255)) / 3;
+      const darkness = clamp((255 - luminance) / 255, 0, 1) * alpha;
+
+      if (darkness > 0.08) {
+        raw.push({ darkness, px, py });
+        if (darkness > 0.14) {
+          minX = Math.min(minX, px);
+          minY = Math.min(minY, py);
+          maxX = Math.max(maxX, px);
+          maxY = Math.max(maxY, py);
+        }
+      }
+    }
+  }
+
+  if (!raw.length || minX >= maxX || minY >= maxY) return [];
+
+  const midX = (minX + maxX) / 2;
+  const midY = (minY + maxY) / 2;
+  const span = Math.max(maxX - minX, (maxY - minY) * 1.18);
+
+  return raw.map((sample) => ({
+    darkness: sample.darkness,
+    x: ((sample.px - midX) / span) * 1.92,
+    y: ((sample.py - midY) / span) * 1.46 + 0.02,
+  }));
+}
+
+function buildTargets(count: number, framesByScene: MaskSample[][][]): Point[][][] {
+  if (
+    framesByScene.length === STORY_SCENES.length &&
+    framesByScene.every((sceneFrames) => sceneFrames.length > 0)
+  ) {
+    return framesByScene.map((sceneFrames, sceneIndex) =>
+      sceneFrames.map((samples, frameIndex) =>
+        buildMaskTarget(count, samples, 1400 + sceneIndex * 1800 + frameIndex * 131),
+      ),
+    );
+  }
+
+  return STORY_SCENES.map((_, sceneIndex) =>
+    Array.from({ length: SPRITE_FRAME_COUNT }, (_, frameIndex) =>
+      buildFallbackTarget(count, sceneIndex, frameIndex),
+    ),
   );
 }
 
-function pointForScene(scene: number, index: number): Point {
-  if (scene === 0) return datacurveHeroPoint(index);
-  if (scene === 1) return datacurveScatterPoint(index);
-  if (scene === 2) return datacurveRibbonPoint(index);
-  if (scene === 3) return datacurveCurtainPoint(index);
-  return datacurveHorizonPoint(index);
-}
+function buildMaskTarget(count: number, samples: MaskSample[], seedBase: number): Point[] {
+  return Array.from({ length: count }, (_, index) => {
+    const sample = pickMaskSample(index, samples, seedBase);
+    const jitter = 0.006;
 
-function datacurveHeroPoint(index: number): Point {
-  const picker = seeded(index + 101);
-
-  if (picker < 0.25) {
-    return dustCurtainPoint(index, -0.82, -0.2, 0.22, 1.5, 0.82);
-  }
-
-  if (picker < 0.46) {
-    return dustCurtainPoint(index, 0.82, -0.12, 0.27, 1.5, 0.76);
-  }
-
-  if (picker < 0.73) {
-    return organicCloudPoint(index, 0.2, 0.02, 0.58, 0.28, 0.9, 0.43);
-  }
-
-  if (picker < 0.9) {
-    return organicCloudPoint(index, -0.38, 0.12, 0.7, 0.26, 0.68, 0.55);
-  }
-
-  return dustSheetPoint(index, -0.02, 0.46, 1.86, 0.24, 0.5);
-}
-
-function datacurveScatterPoint(index: number): Point {
-  const picker = seeded(index + 307);
-
-  if (picker < 0.24) {
-    return dustCurtainPoint(index, -0.9, -0.03, 0.18, 1.72, 0.8);
-  }
-
-  if (picker < 0.43) {
-    return dustCurtainPoint(index, 0.96, -0.02, 0.2, 1.7, 0.62);
-  }
-
-  if (picker < 0.72) {
-    return organicCloudPoint(index, 0.34, 0.08, 0.78, 0.34, 0.88, 0.5);
-  }
-
-  return dustSheetPoint(index, -0.18, 0.42, 2.05, 0.34, 0.58);
-}
-
-function datacurveRibbonPoint(index: number): Point {
-  const picker = seeded(index + 509);
-
-  if (picker < 0.18) {
-    return dustCurtainPoint(index, -0.96, -0.06, 0.16, 1.8, 0.66);
-  }
-
-  if (picker < 0.32) {
-    return dustCurtainPoint(index, 0.98, 0.0, 0.18, 1.78, 0.56);
-  }
-
-  if (picker < 0.78) {
-    const t = seeded(index + 521);
-    const waveX = lerp(-0.74, 0.78, t);
-    const waveY = Math.sin(t * Math.PI * 2.2 - 0.42) * 0.28 + 0.06;
-    const thickness = (seeded(index + 523) - 0.5) * (0.1 + seeded(index + 527) * 0.18);
     return {
-      x: waveX + (seeded(index + 529) - 0.5) * 0.12,
-      y: waveY + thickness,
-      z: 0.52 + seeded(index + 531) * 0.38,
+      darkness: sample.darkness,
+      x: sample.x + (seeded(index + seedBase + 31) - 0.5) * jitter,
+      y: sample.y + (seeded(index + seedBase + 37) - 0.5) * jitter,
+      z: 0.32 + sample.darkness * 0.55 + seeded(index + seedBase + 43) * 0.18,
     };
-  }
-
-  return organicCloudPoint(index, 0.1, -0.12, 0.96, 0.34, 0.6, 0.48);
+  });
 }
 
-function datacurveCurtainPoint(index: number): Point {
-  const picker = seeded(index + 701);
-
-  if (picker < 0.34) {
-    return dustCurtainPoint(index, -0.74, 0.0, 0.3, 1.82, 0.72);
+function pickMaskSample(index: number, samples: MaskSample[], seedBase: number): MaskSample {
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const sample =
+      samples[Math.floor(seeded(index * 13 + seedBase + attempt * 17) * samples.length)];
+    if (!sample) continue;
+    const roll = seeded(index * 23 + seedBase + attempt * 29);
+    if (sample.darkness > roll * 0.9) return sample;
   }
 
-  if (picker < 0.66) {
-    return dustCurtainPoint(index, 0.76, 0.02, 0.32, 1.82, 0.72);
-  }
-
-  if (picker < 0.88) {
-    return organicCloudPoint(index, 0.0, 0.06, 0.88, 0.5, 0.62, 0.46);
-  }
-
-  return dustSheetPoint(index, 0.0, -0.52, 1.9, 0.18, 0.38);
+  return (
+    samples[Math.floor(seeded(index + seedBase) * samples.length)] ?? { darkness: 0.35, x: 0, y: 0 }
+  );
 }
 
-function datacurveHorizonPoint(index: number): Point {
-  const picker = seeded(index + 907);
+function buildFallbackTarget(count: number, scene: number, frame: number): Point[] {
+  const cx = scene === 0 ? -0.2 : scene === 1 ? 0.06 : -0.04;
+  const cy = scene === 2 ? 0.18 : 0.02;
+  const rx = scene === 0 ? 0.66 : scene === 1 ? 0.72 : 0.86;
+  const ry = scene === 2 ? 0.34 : 0.58;
 
-  if (picker < 0.44) {
-    return dustSheetPoint(index, -0.04, 0.22, 2.12, 0.34, 0.56);
-  }
+  return Array.from({ length: count }, (_, index) => {
+    const angle = seeded(index * 3 + scene * 101 + frame * 23) * Math.PI * 2;
+    const radius = Math.sqrt(seeded(index * 3 + scene * 131 + frame * 29));
+    const wobble = Math.sin(angle * 2.3 + frame * 0.72) * 0.08;
 
-  if (picker < 0.76) {
-    const side = seeded(index + 911) < 0.5 ? -1 : 1;
-    return dustCurtainPoint(index, side * 0.88, -0.08, 0.24, 1.74, 0.58);
-  }
-
-  return organicCloudPoint(index, -0.04, -0.22, 1.06, 0.28, 0.5, 0.42);
-}
-
-function dustCurtainPoint(
-  index: number,
-  cx: number,
-  cy: number,
-  width: number,
-  height: number,
-  depth: number,
-): Point {
-  const ySeed = seeded(index * 2 + 11);
-  const xSeed = seeded(index * 2 + 13);
-  const y = cy + (ySeed - 0.5) * height;
-  const edgeSoftness = 1 - Math.abs(ySeed - 0.5) * 0.64;
-  const x =
-    cx + (xSeed - 0.5) * width * edgeSoftness + Math.sin(y * 7.5 + seeded(index + 17) * 6) * 0.035;
-
-  return {
-    x,
-    y: y + (seeded(index + 19) - 0.5) * 0.04,
-    z: depth * (0.38 + edgeSoftness * 0.48 + seeded(index + 23) * 0.16),
-  };
-}
-
-function dustSheetPoint(
-  index: number,
-  cx: number,
-  cy: number,
-  width: number,
-  height: number,
-  depth: number,
-): Point {
-  const x = cx + (seeded(index * 2 + 31) - 0.5) * width;
-  const y =
-    cy +
-    (seeded(index * 2 + 37) - 0.5) * height +
-    Math.sin(x * 5.2 + seeded(index + 41) * 4) * 0.08;
-  const fade = 1 - Math.abs(x - cx) / Math.max(width * 0.5, 0.001);
-
-  return {
-    x,
-    y,
-    z: depth * (0.34 + fade * 0.5 + seeded(index + 43) * 0.18),
-  };
-}
-
-function organicCloudPoint(
-  index: number,
-  cx: number,
-  cy: number,
-  rx: number,
-  ry: number,
-  depth: number,
-  density: number,
-): Point {
-  const angle = seeded(index * 3 + 51) * Math.PI * 2;
-  const radius = seeded(index * 3 + 53) ** density;
-  const lobe =
-    1 +
-    Math.sin(angle * 2.2 + seeded(index + 57) * 5) * 0.16 +
-    Math.cos(angle * 5.4 + seeded(index + 59) * 3) * 0.08;
-  const x = cx + Math.cos(angle) * rx * radius * lobe + (seeded(index + 61) - 0.5) * 0.08;
-  const y = cy + Math.sin(angle) * ry * radius * lobe + (seeded(index + 67) - 0.5) * 0.06;
-  const core = 1 - radius;
-
-  return {
-    x,
-    y,
-    z: depth * (0.35 + core * 0.44 + seeded(index + 71) * 0.24),
-  };
+    return {
+      darkness: 0.38 + seeded(index + frame * 37) * 0.5,
+      x: cx + Math.cos(angle) * rx * radius * (1 + wobble),
+      y: cy + Math.sin(angle) * ry * radius * (1 - wobble * 0.5),
+      z: 0.35 + (1 - radius) * 0.45 + seeded(index + scene * 211) * 0.18,
+    };
+  });
 }
 
 function particleDrift(
