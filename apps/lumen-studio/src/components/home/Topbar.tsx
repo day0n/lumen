@@ -13,7 +13,7 @@ import { usePathname } from 'next/navigation';
 import type { MouseEvent } from 'react';
 
 const navItems = [
-  { label: '主页', href: '/', icon: IconHome },
+  { label: '主页', href: '/home', icon: IconHome },
   { label: '工作室', href: '/canvas/projects', activePrefix: '/canvas', icon: IconFolder },
   { label: '爆款复刻', href: '/hot-videos', icon: IconDeviceTv },
   { label: '数据看板', href: '/dashboard', icon: IconChartBar },
@@ -33,7 +33,7 @@ export function Topbar() {
     <header className="fixed inset-x-0 top-0 z-40">
       <div className="border-b border-white/[0.06] bg-[#111315]/95 backdrop-blur-xl">
         <div className="relative flex h-20 w-full items-center gap-6 px-6">
-          <Link href="/" className="flex items-center gap-3">
+          <Link href="/home" className="flex items-center gap-3">
             <LumenMark size={34} />
             <span className="font-display text-[17px] font-bold tracking-tight text-white">
               Lumen
