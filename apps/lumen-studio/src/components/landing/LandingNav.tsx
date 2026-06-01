@@ -39,13 +39,13 @@ export function LandingNav({ onHomeIntent }: LandingNavProps) {
           scrolled ? 'opacity-100' : 'opacity-0',
         )}
       />
-      <div className="pointer-events-auto relative mx-auto flex h-[62px] max-w-[1280px] items-center justify-between gap-4 px-5 sm:px-8 lg:px-10">
+      <div className="pointer-events-auto relative mx-auto flex h-[62px] max-w-[1280px] items-center justify-between gap-4 px-8 sm:px-12 lg:px-16">
         <Link href={localePath('/')} aria-label={t('landing.homeAria')}>
           <LumenWordmark markSize={24} wordClassName="text-[28px]" />
         </Link>
 
         <div className="flex items-center gap-2">
-          <LanguageToggle />
+          <LanguageToggle compact />
           <Link
             href={localePath('/home')}
             prefetch
