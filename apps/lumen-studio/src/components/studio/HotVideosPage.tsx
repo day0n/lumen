@@ -20,7 +20,9 @@ import {
   IconLink,
   IconLoader2,
   IconLock,
+  IconMaximize,
   IconPhotoPlus,
+  IconPlayerPause,
   IconPlayerPlay,
   IconPlus,
   IconRefresh,
@@ -30,6 +32,8 @@ import {
   IconSparkles,
   IconTrendingUp,
   IconUpload,
+  IconVolume,
+  IconVolumeOff,
   IconX,
 } from '@tabler/icons-react';
 import { motion } from 'motion/react';
@@ -530,7 +534,7 @@ function HotVideoCard({
     >
       <div className="relative aspect-[3/4] w-full overflow-hidden bg-black text-left">
         {video.previewUrl ? (
-          <VideoStill video={video} controls />
+          <CardVideoPlayer video={video} />
         ) : (
           <button
             type="button"
@@ -567,20 +571,17 @@ function HotVideoCard({
             {ownedByMe ? '已下载' : null}
           </span>
         </div>
-        <div
-          className={cn(
-            'pointer-events-none absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.82))] px-3 pt-16',
-            video.previewUrl ? 'pb-14' : 'pb-3',
-          )}
-        >
-          <div className="line-clamp-2 text-[13px] font-bold leading-5 text-white">
-            {video.title}
+        {!video.previewUrl ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.82))] px-3 pb-3 pt-16">
+            <div className="line-clamp-2 text-[13px] font-bold leading-5 text-white">
+              {video.title}
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-white/52">
+              <IconCalendar size={12} stroke={2.1} />
+              {video.publishedAt}
+            </div>
           </div>
-          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-white/52">
-            <IconCalendar size={12} stroke={2.1} />
-            {video.publishedAt}
-          </div>
-        </div>
+        ) : null}
       </div>
 
       <div className="space-y-3 p-3.5">
@@ -977,6 +978,135 @@ function LinkReplicaPreview({ target }: { target: ReferenceItem }) {
   );
 }
 
+function CardVideoPlayer({ video }: { video: HotVideoView }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const progressPercent =
+    duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+
+  const togglePlay = () => {
+    const node = videoRef.current;
+    if (!node) return;
+
+    if (node.paused) {
+      void node.play().catch(() => setPlaying(false));
+    } else {
+      node.pause();
+    }
+  };
+
+  const handleSeek = (event: ChangeEvent<HTMLInputElement>) => {
+    const node = videoRef.current;
+    const next = Number(event.target.value);
+    if (!node || !Number.isFinite(next)) return;
+    node.currentTime = next;
+    setCurrentTime(next);
+  };
+
+  const toggleFullscreen = () => {
+    const node = containerRef.current;
+    if (!node?.requestFullscreen) return;
+    void node.requestFullscreen();
+  };
+
+  return (
+    <div ref={containerRef} className="absolute inset-0" style={{ background: video.paletteCss }}>
+      <video
+        ref={videoRef}
+        src={video.previewUrl}
+        poster={video.thumbnailUrl}
+        muted={muted}
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={(event) => {
+          const nextDuration = event.currentTarget.duration;
+          setDuration(Number.isFinite(nextDuration) ? nextDuration : 0);
+        }}
+        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+        className="absolute inset-0 h-full w-full object-cover"
+      >
+        <track kind="captions" />
+      </video>
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,rgba(0,0,0,0.5),transparent)]" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-[86px] px-3">
+        <div className="line-clamp-2 text-[13px] font-semibold leading-5 text-white/88 [text-shadow:0_1px_8px_rgba(0,0,0,0.72)]">
+          {video.title}
+        </div>
+        <div className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-white/58 [text-shadow:0_1px_8px_rgba(0,0,0,0.72)]">
+          <IconCalendar size={12} stroke={2.1} />
+          {video.publishedAt}
+        </div>
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 z-10 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.78)_32%,rgba(0,0,0,0.94))] px-3 pb-3 pt-8">
+        <div className="grid h-8 grid-cols-[32px_minmax(0,1fr)_32px_32px] items-center gap-2 text-white/84">
+          <button
+            type="button"
+            onClick={togglePlay}
+            aria-label={playing ? '暂停视频' : '播放视频'}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/18 transition-colors hover:bg-white/22"
+          >
+            {playing ? (
+              <IconPlayerPause size={16} fill="currentColor" stroke={1.7} />
+            ) : (
+              <IconPlayerPlay size={16} fill="currentColor" stroke={1.7} />
+            )}
+          </button>
+
+          <div className="min-w-0 text-[12px] font-semibold tabular-nums text-white/76">
+            {formatDuration(currentTime)} / {formatDuration(duration)}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setMuted((value) => !value)}
+            aria-label={muted ? '取消静音' : '静音'}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/82 ring-1 ring-white/14 transition-colors hover:bg-white/18 hover:text-white"
+          >
+            {muted ? (
+              <IconVolumeOff size={16} stroke={2.1} />
+            ) : (
+              <IconVolume size={16} stroke={2.1} />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-label="全屏播放"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/82 ring-1 ring-white/14 transition-colors hover:bg-white/18 hover:text-white"
+          >
+            <IconMaximize size={15} stroke={2.1} />
+          </button>
+        </div>
+
+        <input
+          type="range"
+          min={0}
+          max={duration || 0}
+          step="0.01"
+          value={duration ? Math.min(currentTime, duration) : 0}
+          onChange={handleSeek}
+          aria-label="视频时间进度条"
+          className="mt-2 h-1 w-full cursor-pointer accent-[#79e4ff]"
+          style={{
+            accentColor: video.accent,
+            background: `linear-gradient(90deg, ${video.accent} ${progressPercent}%, rgba(255,255,255,0.24) ${progressPercent}%)`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function VideoStill({
   video,
   autoPlay = false,
@@ -1046,6 +1176,14 @@ function VideoStill({
       <div className="absolute inset-0 opacity-55 mix-blend-overlay [background-image:linear-gradient(120deg,transparent_18%,rgba(255,255,255,0.32)_48%,transparent_68%)]" />
     </div>
   );
+}
+
+function formatDuration(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0:00';
+  const total = Math.floor(value);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function CardStat({
