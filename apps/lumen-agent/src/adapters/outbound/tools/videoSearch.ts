@@ -1,226 +1,202 @@
 /**
- * search_ad_videos —— 通过 Foreplay 广告库检索参考短视频。
+ * search_ad_videos —— 从 Foreplay 广告库拉取真实投放过的短视频，给创作做参考。
  *
- * 当前实现只对接 Foreplay 的 discovery API（直连 HTTP），返回其自带的视频地址，
- * 不经过对象存储中转。命中过多时用一个轻量 LLM 做相关性排序裁剪。
+ * Foreplay 的 discovery 接口已经按相关度排好序，所以这里默认信任它的顺序；
+ * 当返回条数明显多于需要时，再用一个轻量模型按"贴不贴合需求"裁一刀。
  */
 
 import OpenAI from 'openai';
 
-import type { ToolResult } from '../../../domain/contracts/tools.js';
+import { type ToolResult, makeToolResult } from '../../../domain/contracts/tools.js';
 import { logger } from '../../../platform/logger.js';
 import { type JsonSchema, Tool } from './base.js';
 
-interface AdRef {
-  source: string;
-  pageUrl: string;
-  mediaUrl?: string;
-  caption: string;
-  advertiser: string;
-  viewCount: number | null;
-  likeCount: number | null;
-  lengthSec: number | null;
-  thumbUrl: string;
-  sponsored: boolean;
-  liveDays: number | null;
-  clickRate: number | null;
-  layout: string;
+/** Foreplay 一条广告创意（字段贴合其响应结构）。 */
+interface Creative {
+  id: string;
+  platform: string;
+  landingUrl: string;
+  videoUrl: string;
+  thumbnail: string;
+  headline: string;
+  brand: string;
+  durationSec: number | null;
+  activeDays: number | null;
+  format: string;
 }
 
-function humanCount(n: number | null): string {
-  if (n == null) return '?';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
+const FOREPLAY_DEFAULT_HOST = 'https://public.api.foreplay.co';
+
+// 裁剪用的小模型及其计费（USD / 百万 token，OpenAI 公开价）。
+const RANKER_MODEL = 'gpt-4o-mini';
+const RANKER_RATE = { input: 0.15, output: 0.6 };
+
+function asText(v: unknown): string {
+  return typeof v === 'string' ? v : '';
 }
 
-function isLongRunning(d: number | null): boolean {
-  return d != null && d >= 10;
+function toCreative(raw: Record<string, unknown>): Creative {
+  const platforms = raw.publisher_platform;
+  const platformLabel = Array.isArray(platforms) ? platforms.join('/') : asText(platforms);
+  const running = (raw.running_duration ?? {}) as { days?: number };
+  const durationRaw = raw.video_duration;
+  return {
+    id: asText(raw.id) || asText(raw.video) || asText(raw.link_url),
+    platform: platformLabel || 'Foreplay',
+    landingUrl: asText(raw.link_url) || asText(raw.video),
+    videoUrl: asText(raw.video),
+    thumbnail: asText(raw.thumbnail) || asText(raw.avatar),
+    headline: (asText(raw.description) || asText(raw.cta_title) || asText(raw.name)).slice(0, 220),
+    brand: asText(raw.name),
+    durationSec:
+      typeof durationRaw === 'number' ? durationRaw : durationRaw ? Number(durationRaw) : null,
+    activeDays: typeof running.days === 'number' ? running.days : null,
+    format: asText(raw.display_format),
+  };
 }
 
-async function searchForeplay(
+async function queryForeplay(
   query: string,
   apiKey: string,
-  baseUrl: string,
-  limit: number,
-): Promise<AdRef[]> {
+  host: string,
+  take: number,
+): Promise<Creative[]> {
   if (!apiKey) {
-    logger.warn('FOREPLAY_API_KEY 未配置，跳过 Foreplay');
+    logger.warn('缺少 Foreplay 凭证，广告检索已跳过');
     return [];
   }
-  try {
-    const url = new URL(`${baseUrl.replace(/\/$/, '')}/api/discovery/ads`);
-    url.searchParams.set('query', query);
-    url.searchParams.set('limit', String(limit));
-    url.searchParams.set('display_format', 'video');
-    url.searchParams.set('order', 'most_relevant');
 
-    const res = await fetch(url, {
+  const endpoint = new URL('/api/discovery/ads', host.replace(/\/+$/, ''));
+  endpoint.searchParams.set('query', query);
+  endpoint.searchParams.set('limit', String(take));
+  endpoint.searchParams.set('display_format', 'video');
+  endpoint.searchParams.set('order', 'most_relevant');
+
+  try {
+    const res = await fetch(endpoint, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
-      logger.warn({ status: res.status }, 'Foreplay 返回非 200');
+      logger.warn({ status: res.status }, 'Foreplay 检索返回非 2xx');
       return [];
     }
-    const json = (await res.json()) as { data?: Array<Record<string, unknown>> };
-    const items = json.data ?? [];
-
-    const out: AdRef[] = [];
-    for (const item of items.slice(0, limit)) {
-      const platforms = (item.publisher_platform as unknown[]) ?? [];
-      const platformStr = Array.isArray(platforms) ? platforms.join(', ') : String(platforms);
-      const caption = (item.description ?? item.cta_title ?? item.name ?? '') as string;
-      const running = (item.running_duration ?? {}) as { days?: number };
-      out.push({
-        source: `Foreplay (${platformStr || 'unknown'})`,
-        pageUrl: (item.link_url as string) || (item.video as string) || '',
-        mediaUrl: (item.video as string) || '',
-        caption: caption.slice(0, 200),
-        advertiser: (item.name as string) ?? '',
-        viewCount: null,
-        likeCount: null,
-        lengthSec: item.video_duration ? Number(item.video_duration) : null,
-        thumbUrl: ((item.thumbnail as string) || (item.avatar as string) || '') as string,
-        sponsored: true,
-        liveDays: typeof running?.days === 'number' ? running.days : null,
-        clickRate: null,
-        layout: (item.display_format as string) ?? '',
-      });
-    }
-    return out;
+    const payload = (await res.json()) as { data?: Array<Record<string, unknown>> };
+    return (payload.data ?? []).map(toCreative);
   } catch (err) {
-    logger.error({ err }, 'Foreplay search failed');
+    logger.error({ err }, 'Foreplay 请求异常');
     return [];
   }
 }
 
-function refIdentity(c: AdRef): string {
-  if (c.mediaUrl) return `m:${c.mediaUrl.toLowerCase()}`;
-  if (c.thumbUrl) return `t:${c.thumbUrl.toLowerCase()}`;
-  if (c.pageUrl) return `p:${c.pageUrl.toLowerCase()}`;
-  return [c.source, c.advertiser, c.caption, c.lengthSec ?? ''].join('|').toLowerCase();
-}
-
-function dropDuplicates(refs: AdRef[]): AdRef[] {
-  const seen = new Set<string>();
-  const out: AdRef[] = [];
-  for (const c of refs) {
-    const k = refIdentity(c);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(c);
+/** 同一条创意可能重复出现，按其媒体地址收敛，保留首次出现的。 */
+function distinct(items: Creative[]): Creative[] {
+  const byKey = new Map<string, Creative>();
+  for (const item of items) {
+    const key = (item.videoUrl || item.landingUrl || item.thumbnail || item.id).toLowerCase();
+    if (key && !byKey.has(key)) byKey.set(key, item);
   }
-  return out;
+  return [...byKey.values()];
 }
 
-function renderRefLine(c: AdRef, label: string): string {
-  const parts: string[] = [label];
-  if (c.advertiser) parts.push(`@${c.advertiser}`);
-  if (c.viewCount != null) parts.push(`${humanCount(c.viewCount)} plays`);
-  if (c.likeCount != null) parts.push(`${humanCount(c.likeCount)} likes`);
-  if (isLongRunning(c.liveDays)) parts.push(`running ${c.liveDays}d`);
-  if (c.clickRate != null) parts.push(`CTR ${c.clickRate}`);
-  return parts.join(' | ');
-}
-
-function rankByEngagement(refs: AdRef[]): number[] {
-  const scored = refs.map((c, i) => {
-    let s = (c.viewCount ?? 0) + (c.likeCount ?? 0) * 10;
-    if (c.liveDays) s += c.liveDays * 1000;
-    return [s, i] as const;
-  });
-  scored.sort((a, b) => b[0] - a[0]);
-  return scored.map(([, i]) => i);
-}
-
-async function rankWithLLM(
+/** 候选明显多于需求时，让小模型按贴合度挑选并排序。 */
+async function pickBestFit(
   query: string,
-  refs: AdRef[],
+  pool: Creative[],
   openai: OpenAI,
   want: number,
-): Promise<{ indices: number[]; costUsd: number }> {
-  if (refs.length <= want) {
-    return { indices: refs.map((_, i) => i), costUsd: 0 };
-  }
-  const catalog = refs
+): Promise<{ chosen: Creative[]; costUsd: number }> {
+  if (pool.length <= want) return { chosen: pool, costUsd: 0 };
+
+  const menu = pool
     .map((c, i) => {
-      const head = renderRefLine(c, `#${i + 1} [${c.source}]`);
-      const snippet = (c.caption ?? '').slice(0, 100);
-      return snippet ? `${head} | "${snippet}"` : head;
+      const tags = [c.platform];
+      if (c.brand) tags.push(c.brand);
+      if (c.activeDays != null) tags.push(`已投放${c.activeDays}天`);
+      if (c.durationSec) tags.push(`${c.durationSec}s`);
+      const note = c.headline ? ` — ${c.headline.slice(0, 90)}` : '';
+      return `(${i}) ${tags.join(' · ')}${note}`;
     })
     .join('\n');
 
-  const instruction = [
-    `Reference query: "${query}"`,
+  const ask = [
+    `创作者想找与「${query}」相关的参考广告视频。`,
+    `下面是 ${pool.length} 条候选，行首括号里是序号。`,
+    `挑出最贴合的 ${want} 条：优先主题相关、投放时间久（说明跑量稳定）的。`,
     '',
-    `Below are ${refs.length} ad-creative candidates pulled from the Foreplay library.`,
-    `Select the ${want} that best match the query for creative reference. Favour candidates that are`,
-    'on-topic, show strong engagement, and have run for many days (a sign of proven performance).',
+    menu,
     '',
-    'Candidates:',
-    catalog,
-    '',
-    'Respond with ONLY a JSON array of the chosen 1-based indices ordered best-first,',
-    'e.g. [3, 1, 7, 5, 2].',
+    '只返回一个 JSON 数组，元素为选中的序号，按相关度从高到低，例如 [2,0,5]。',
   ].join('\n');
 
   try {
-    const resp = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: instruction }],
+    const completion = await openai.chat.completions.create({
+      model: RANKER_MODEL,
       temperature: 0,
-      max_tokens: 200,
+      max_tokens: 120,
+      messages: [{ role: 'user', content: ask }],
     });
-    const usage = resp.usage;
-    let costUsd = 0;
-    if (usage) {
-      costUsd =
-        (usage.prompt_tokens * 0.15) / 1_000_000 + (usage.completion_tokens * 0.6) / 1_000_000;
-    }
-    const raw = resp.choices[0]?.message.content?.trim() ?? '[]';
-    const cleaned = raw
-      .replace(/^```(?:json)?/, '')
-      .replace(/```$/, '')
+
+    const usage = completion.usage;
+    const costUsd = usage
+      ? (usage.prompt_tokens * RANKER_RATE.input + usage.completion_tokens * RANKER_RATE.output) /
+        1_000_000
+      : 0;
+
+    const text = (completion.choices[0]?.message.content ?? '')
+      .replace(/```[a-z]*|```/g, '')
       .trim();
-    const picked = JSON.parse(cleaned) as number[];
-    if (Array.isArray(picked)) {
-      return {
-        indices: picked
-          .map((x) => Number(x) - 1)
-          .filter((i) => i >= 0 && i < refs.length)
-          .slice(0, want),
-        costUsd,
-      };
+    const positions = JSON.parse(text) as unknown;
+    if (Array.isArray(positions)) {
+      const chosen = positions
+        .map((p) => pool[Number(p)])
+        .filter((c): c is Creative => Boolean(c))
+        .slice(0, want);
+      if (chosen.length > 0) return { chosen, costUsd };
     }
   } catch (err) {
-    logger.warn({ err }, 'LLM ranking failed; falling back to engagement score');
+    logger.warn({ err }, 'LLM 裁剪失败，退回 Foreplay 原始排序');
   }
 
-  return { indices: rankByEngagement(refs).slice(0, want), costUsd: 0 };
+  // 模型不可用或解析失败：Foreplay 本身按 most_relevant 排序，直接取前 N 条。
+  return { chosen: pool.slice(0, want), costUsd: 0 };
+}
+
+function render(query: string, picks: Creative[]): string {
+  const blocks = picks.map((c, i) => {
+    const meta: string[] = [c.platform];
+    if (c.brand) meta.push(c.brand);
+    if (c.durationSec) meta.push(`${c.durationSec}s`);
+    if (c.activeDays != null) meta.push(`投放 ${c.activeDays} 天`);
+    const lines = [`${i + 1}. ${meta.join(' · ')}`];
+    if (c.headline) lines.push(`   文案：${c.headline}`);
+    if (c.videoUrl) lines.push(`   视频：${c.videoUrl}`);
+    else if (c.landingUrl) lines.push(`   落地页：${c.landingUrl}`);
+    return lines.join('\n');
+  });
+  return [`「${query}」找到 ${picks.length} 条参考广告：`, '', ...blocks].join('\n');
 }
 
 export class VideoSearchTool extends Tool {
   override readonly name = 'search_ad_videos';
   override readonly timeoutSeconds = 60;
-  override readonly description =
-    'Search for trending and popular videos across TikTok, Instagram, and ad databases (Foreplay). ' +
-    'Searches all platforms in parallel and uses AI to pick the requested number of relevant results. ' +
-    'Use this when the user wants to find reference videos, ad creatives, or viral content for ' +
-    'a given topic or keyword. ' +
-    'IMPORTANT: The query MUST be in English. If the user request is in another language, translate ' +
-    "the search keywords to English before calling this tool. Use ONLY core keywords; don't add adjectives.";
+  override readonly description = [
+    '检索 TikTok / Instagram / Foreplay 广告库里真实投放过的短视频，用作创意参考。',
+    '适用于用户想看某个品类/主题的爆款广告、竞品投放或参考创意时。',
+    '查询词必须是英文核心关键词：用户若用中文等其他语言描述，先翻译成英文再传入，',
+    '且只留核心名词、不要堆形容词（用 "lipstick" 而非 "trending lipstick ugc ads"）。',
+  ].join('');
 
   override readonly parameters: JsonSchema = {
     type: 'object',
     properties: {
       query: {
         type: 'string',
-        description: 'Search keyword. MUST be in English. Use only core keywords, no adjectives.',
+        description: '英文核心关键词，去掉修饰词。',
       },
       count: {
         type: 'integer',
-        description: 'Number of videos to return. Defaults to 1. Use 2-3 only if more refs needed.',
+        description: '返回条数，默认 1；需要更多参考时才设 2-3。',
         minimum: 1,
         maximum: 10,
         default: 1,
@@ -229,10 +205,10 @@ export class VideoSearchTool extends Tool {
     required: ['query'],
   };
 
-  private openai: OpenAI | null = null;
+  private client: OpenAI | null = null;
 
   constructor(
-    private readonly opts: {
+    private readonly env: {
       foreplayApiKey?: string;
       foreplayBaseUrl?: string;
       openaiApiKey?: string;
@@ -241,61 +217,39 @@ export class VideoSearchTool extends Tool {
     super();
   }
 
-  private getOpenAI(): OpenAI | null {
-    if (!this.opts.openaiApiKey) return null;
-    if (!this.openai) this.openai = new OpenAI({ apiKey: this.opts.openaiApiKey });
-    return this.openai;
+  private ranker(): OpenAI | null {
+    if (!this.env.openaiApiKey) return null;
+    this.client ??= new OpenAI({ apiKey: this.env.openaiApiKey });
+    return this.client;
   }
 
   override async execute(args: Record<string, unknown>): Promise<string | ToolResult> {
-    const query = String(args.query);
-    const count = Math.max(1, Math.min(10, (args.count as number) ?? 1));
-    const searchLimit = Math.max(count * 4, 10);
+    const query = String(args.query ?? '').trim();
+    if (!query) return 'Error: query 不能为空';
+    const count = Math.min(10, Math.max(1, Number(args.count) || 1));
 
-    const foreplay = await searchForeplay(
-      query,
-      this.opts.foreplayApiKey ?? '',
-      this.opts.foreplayBaseUrl ?? 'https://public.api.foreplay.co',
-      searchLimit,
+    // 适度多取，给相关度裁剪留余量；条数少时多给一点冗余。
+    const overFetch = Math.min(24, count <= 2 ? count + 6 : count * 3);
+    const pool = distinct(
+      await queryForeplay(
+        query,
+        this.env.foreplayApiKey ?? '',
+        this.env.foreplayBaseUrl ?? FOREPLAY_DEFAULT_HOST,
+        overFetch,
+      ),
     );
 
-    const refs = dropDuplicates(foreplay);
-    if (refs.length === 0) return `No videos found for: ${query}`;
+    if (pool.length === 0) return `没有匹配到广告视频：${query}`;
 
-    const openai = this.getOpenAI();
-    let selected: AdRef[];
-    let costUsd = 0;
-    if (openai) {
-      const { indices, costUsd: c } = await rankWithLLM(query, refs, openai, count);
-      costUsd = c;
-      selected = indices.map((i) => refs[i]!).slice(0, count);
-    } else {
-      selected = refs.slice(0, count);
-    }
-    if (selected.length === 0) return `No videos found for: ${query}`;
+    const ranker = this.ranker();
+    const { chosen, costUsd } = ranker
+      ? await pickBestFit(query, pool, ranker, count)
+      : { chosen: pool.slice(0, count), costUsd: 0 };
 
-    const lines: string[] = [`Found ${selected.length} videos for "${query}":`, ''];
-    selected.forEach((v, i) => {
-      const parts: string[] = [`[${v.source}]`];
-      if (v.advertiser) parts.push(`@${v.advertiser}`);
-      if (v.viewCount != null) parts.push(`${humanCount(v.viewCount)} plays`);
-      if (v.likeCount != null) parts.push(`${humanCount(v.likeCount)} likes`);
-      if (v.lengthSec) parts.push(`${v.lengthSec}s`);
-      if (isLongRunning(v.liveDays)) parts.push(`running ${v.liveDays}d`);
-      lines.push(`${i + 1}. ${parts.join(' | ')}`);
-      if (v.caption) lines.push(`   "${v.caption}"`);
-      if (v.mediaUrl) lines.push(`   Video: ${v.mediaUrl}`);
-      if (v.pageUrl) lines.push(`   Source: ${v.pageUrl}`);
-      lines.push('');
-    });
+    if (chosen.length === 0) return `没有匹配到广告视频：${query}`;
 
-    return {
-      content: lines.join('\n'),
-      events: [],
-      interrupt: false,
+    return makeToolResult(render(query, chosen), {
       cost_usd: costUsd > 0 ? costUsd : null,
-      hide_tools: [],
-      unhide_tools: [],
-    } satisfies ToolResult;
+    });
   }
 }

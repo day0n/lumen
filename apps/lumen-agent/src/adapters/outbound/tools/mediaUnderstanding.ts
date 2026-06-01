@@ -12,44 +12,58 @@
 
 import { Buffer } from 'node:buffer';
 
-import type { ToolResult } from '../../../domain/contracts/tools.js';
+import { type ToolResult, makeToolResult } from '../../../domain/contracts/tools.js';
 import { GoogleTokenCache, parseServiceAccount } from '../../../platform/googleAuth.js';
 import { logger } from '../../../platform/logger.js';
 import { type JsonSchema, Tool } from './base.js';
 
 const MODEL = 'gemini-2.5-flash';
 const DEFAULT_PROMPT =
-  'Walk through this media and report what it contains: the main subjects, what happens, notable visual or audio details, and anything else worth flagging.';
+  'Describe this media in detail: who/what is in it, what happens over time, key visual and audio cues, and anything noteworthy a creator should know.';
 
-const SUPPORTED_PREFIXES = ['video/', 'audio/', 'image/'];
-
-const EXT_MIME: Record<string, string> = {
-  '.mp4': 'video/mp4',
-  '.mov': 'video/quicktime',
-  '.webm': 'video/webm',
-  '.mkv': 'video/x-matroska',
-  '.mp3': 'audio/mpeg',
-  '.wav': 'audio/wav',
-  '.flac': 'audio/flac',
-  '.ogg': 'audio/ogg',
-  '.aac': 'audio/aac',
-  '.m4a': 'audio/mp4',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
+// 按大类维护扩展名 → MIME，便于一眼看出某后缀归属哪种媒体。
+const MIME_BY_KIND: Record<string, Record<string, string>> = {
+  video: {
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    webm: 'video/webm',
+    mkv: 'video/x-matroska',
+  },
+  audio: {
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    flac: 'audio/flac',
+    ogg: 'audio/ogg',
+    aac: 'audio/aac',
+    m4a: 'audio/mp4',
+  },
+  image: {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+  },
 };
 
-function guessMime(url: string, contentType?: string | null): string {
-  if (contentType) {
-    const ct = contentType.split(';')[0]!.trim().toLowerCase();
-    if (SUPPORTED_PREFIXES.some((p) => ct.startsWith(p))) return ct;
-  }
-  const path = url.split('?')[0]!.split('#')[0]!;
-  const dot = path.lastIndexOf('.');
-  const ext = dot >= 0 ? path.slice(dot).toLowerCase() : '';
-  return EXT_MIME[ext] ?? 'application/octet-stream';
+// 摊平成 扩展名 → MIME 的查表，以及受支持的大类前缀集合。
+const EXT_LOOKUP: Record<string, string> = Object.fromEntries(
+  Object.values(MIME_BY_KIND).flatMap((group) => Object.entries(group)),
+);
+const MEDIA_KINDS = Object.keys(MIME_BY_KIND); // ['video','audio','image']
+
+function isSupportedMime(mime: string): boolean {
+  return MEDIA_KINDS.some((kind) => mime.startsWith(`${kind}/`));
+}
+
+/** 优先信任响应头的 content-type，否则回退到 URL 扩展名推断。 */
+function resolveMime(url: string, contentType?: string | null): string {
+  const header = contentType?.split(';')[0]?.trim().toLowerCase();
+  if (header && isSupportedMime(header)) return header;
+
+  const cleanPath = url.split(/[?#]/)[0] ?? '';
+  const ext = cleanPath.slice(cleanPath.lastIndexOf('.') + 1).toLowerCase();
+  return EXT_LOOKUP[ext] ?? 'application/octet-stream';
 }
 
 export class MediaUnderstandingTool extends Tool {
@@ -129,14 +143,14 @@ export class MediaUnderstandingTool extends Tool {
       return 'Error: the downloaded payload is too small to be a real media file.';
     }
 
-    const mimeType = guessMime(url, contentType);
-    if (!SUPPORTED_PREFIXES.some((p) => mimeType.startsWith(p))) {
+    const mimeType = resolveMime(url, contentType);
+    if (!isSupportedMime(mimeType)) {
       return `Error: media type '${mimeType}' is not handled. Accepted kinds: video, image, audio.`;
     }
 
     logger.info(
       { url: url.slice(0, 80), mime: mimeType, size_kb: Math.round(fileBytes.length / 1024) },
-      '媒体理解开始',
+      'inspect_media: 开始解析媒体',
     );
 
     let token: string;
@@ -207,14 +221,7 @@ export class MediaUnderstandingTool extends Tool {
       // Gemini 2.5 Flash 价格按 google 定价取近似（仅作记录）
       const costUsd = (inTok * 0.075 + outTok * 0.3) / 1_000_000;
 
-      return {
-        content: text,
-        events: [],
-        interrupt: false,
-        cost_usd: costUsd > 0 ? costUsd : null,
-        hide_tools: [],
-        unhide_tools: [],
-      } satisfies ToolResult;
+      return makeToolResult(text, { cost_usd: costUsd > 0 ? costUsd : null });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error({ err }, 'Vertex Gemini 调用异常');

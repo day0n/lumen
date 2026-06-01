@@ -24,7 +24,7 @@ import { addAssistantMessage, addToolResult } from './prompt/builder.js';
 const DEFAULT_TOOL_RESULT_MAX_CHARS = 16_000;
 
 const ERROR_CONTINUE_HINT =
-  '\n\n[Re-read the error above, then adjust your inputs or take a different route.]';
+  '\n\nHint: read the failure above first, then fix the arguments or switch to another route before retrying.';
 
 export interface InferenceHooks {
   onStepStart?: (iteration: number) => Promise<void> | void;

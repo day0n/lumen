@@ -3,7 +3,7 @@
  *
  * InferenceLoop 默认走 chatStreamWithRetry。保留：
  * - GenerationSettings 默认参数
- * - 重试规则（transient / non-retry / context-limit 三类错误）
+ * - 失败归类（classifyFailure → retryable / permanent / context）驱动重试决策
  * - 流式重试三级策略：连接失败 / 首 chunk 是 error / 中途断流
  */
 
@@ -11,14 +11,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import * as Sentry from '@sentry/node';
 
-import type {
-  AssistantMessage,
-  ChatMessage,
-  MessageList,
-  SystemMessage,
-  ToolMessage,
-  UserMessage,
-} from '../../../domain/contracts/messages.js';
+import type { MessageList } from '../../../domain/contracts/messages.js';
 import type { LLMResponse, ToolCallRequest } from '../../../domain/contracts/providers.js';
 import { logger } from '../../../platform/logger.js';
 
@@ -76,49 +69,63 @@ function retryDelayMs(attempt: number): number {
   return RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
 }
 
-// HTTP 状态码语义是通用约定：5xx 与限流通常值得重试，4xx 多为请求本身的问题。
-const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
-const FATAL_STATUS = new Set([400, 401, 403, 404, 422]);
+type FailureKind = 'retryable' | 'permanent' | 'context';
 
-const RETRYABLE_PHRASES = [
+// 上下文超限：各家 API 在 prompt 过长时回传的特征串。
+const CONTEXT_MARKERS = [
+  'context length',
+  'context_length_exceeded',
+  'maximum context',
+  'exceeds the maximum',
+  'prompt is too long',
+  'too many tokens',
+];
+
+// 请求本身有问题（鉴权 / 参数 / 格式），重试不会变好。
+const PERMANENT_MARKERS = ['unauthorized', 'forbidden', 'bad request', 'invalid_request_error'];
+
+// 临时性故障：限流、过载、网络抖动，退避后通常能恢复。
+const TRANSIENT_MARKERS = [
   'rate limit',
   'too many requests',
   'overloaded',
-  'timeout',
+  'service unavailable',
+  'temporarily unavailable',
+  'server error',
   'timed out',
+  'timeout',
   'connection reset',
   'connection error',
   'econnreset',
   'etimedout',
-  'server error',
-  'service unavailable',
-  'temporarily unavailable',
 ];
 
-const CONTEXT_OVERFLOW_PHRASES = [
-  'prompt is too long',
-  'maximum context',
-  'context length',
-  'context_length_exceeded',
-  'too many tokens',
-  'exceeds the maximum',
-];
+function includesAny(haystack: string, needles: string[]): boolean {
+  return needles.some((n) => haystack.includes(n));
+}
 
-const FATAL_PHRASES = [
-  ...CONTEXT_OVERFLOW_PHRASES,
-  'invalid_request_error',
-  'bad request',
-  'unauthorized',
-  'forbidden',
-];
+/** 抓出文本里独立成段的三位数（"12429" 整段长度不为 3，会被过滤掉）。 */
+function httpCodesIn(text: string): number[] {
+  return (text.match(/\d+/g) ?? []).filter((token) => token.length === 3).map(Number);
+}
 
-/** 从错误文本里抠出独立出现的三位数状态码（"12429" 这类不会被误判）。 */
-function extractStatusCodes(text: string): Set<number> {
-  const codes = new Set<number>();
-  for (const m of text.matchAll(/(?<!\d)(\d{3})(?!\d)/g)) {
-    codes.add(Number(m[1]));
-  }
-  return codes;
+/**
+ * 把错误文本归类。优先级：永久性信号（上下文超限 / 4xx / 鉴权参数错误）
+ * 压过临时性信号，避免对注定失败的请求做无谓重试。
+ */
+function classifyFailure(raw: string | null | undefined): FailureKind {
+  const text = (raw ?? '').toLowerCase();
+  const codes = httpCodesIn(text);
+
+  if (includesAny(text, CONTEXT_MARKERS)) return 'context';
+  if (codes.some((c) => c >= 400 && c <= 499 && c !== 408 && c !== 429)) return 'permanent';
+  if (includesAny(text, PERMANENT_MARKERS)) return 'permanent';
+
+  if (codes.some((c) => c === 408 || c === 429 || (c >= 500 && c <= 599))) return 'retryable';
+  if (includesAny(text, TRANSIENT_MARKERS)) return 'retryable';
+
+  // 认不出的错误当永久错误处理，不触发重试风暴。
+  return 'permanent';
 }
 
 export abstract class LLMProvider {
@@ -257,36 +264,6 @@ export abstract class LLMProvider {
   // ── error classification ─────────────────────────────────────────
 
   static isTransient(content: string | null | undefined): boolean {
-    const err = (content ?? '').toLowerCase();
-    if (LLMProvider.isNonRetryable(err)) return false;
-    const codes = extractStatusCodes(err);
-    if ([...codes].some((c) => RETRYABLE_STATUS.has(c))) return true;
-    return RETRYABLE_PHRASES.some((m) => err.includes(m));
+    return classifyFailure(content) === 'retryable';
   }
-
-  static isNonRetryable(content: string | null | undefined): boolean {
-    const err = (content ?? '').toLowerCase();
-    const codes = extractStatusCodes(err);
-    if ([...codes].some((c) => FATAL_STATUS.has(c))) return true;
-    return FATAL_PHRASES.some((m) => err.includes(m));
-  }
-
-  static isContextLimit(content: string | null | undefined): boolean {
-    const err = (content ?? '').toLowerCase();
-    return CONTEXT_OVERFLOW_PHRASES.some((m) => err.includes(m));
-  }
-}
-
-// 类型守卫
-export function isSystem(m: ChatMessage): m is SystemMessage {
-  return m.role === 'system';
-}
-export function isUser(m: ChatMessage): m is UserMessage {
-  return m.role === 'user';
-}
-export function isAssistant(m: ChatMessage): m is AssistantMessage {
-  return m.role === 'assistant';
-}
-export function isToolMsg(m: ChatMessage): m is ToolMessage {
-  return m.role === 'tool';
 }

@@ -7,7 +7,7 @@
 
 import { type ToolResult, isToolResult } from '../../../domain/contracts/tools.js';
 import { logger } from '../../../platform/logger.js';
-import { type OpenAIFunctionSchema, type Tool, appendErrorHint } from './base.js';
+import { type OpenAIFunctionSchema, RETRY_GUIDANCE, type Tool, appendErrorHint } from './base.js';
 import { withToolEventEmitter } from './runtime.js';
 
 export class ToolCatalog {
@@ -78,7 +78,7 @@ export class ToolCatalog {
           { tool_name: name, errors, cast_arg_keys: Object.keys(cast).sort() },
           'tool parameter validation rejected',
         );
-        return `Error: Invalid parameters for tool '${name}': ${errors.join('; ')}\n\n[Re-read the error above, then adjust your inputs or take a different route.]`;
+        return `Error: Invalid parameters for tool '${name}': ${errors.join('; ')}${RETRY_GUIDANCE}`;
       }
       const runTool = () => tool.execute(cast);
       const result = opts.onToolEvent
@@ -95,7 +95,7 @@ export class ToolCatalog {
     } catch (err) {
       logger.error({ err, tool_name: name }, 'tool threw during execution');
       const msg = err instanceof Error ? err.message : String(err);
-      return `Error executing ${name}: ${msg}\n\n[Re-read the error above, then adjust your inputs or take a different route.]`;
+      return `Error executing ${name}: ${msg}${RETRY_GUIDANCE}`;
     }
   }
 

@@ -1,12 +1,8 @@
 /**
  * Skills 加载器。
  *
- * 遍历 ./skills 下的每个子目录，读取其中的 SKILL.md，用 gray-matter 解析
- * YAML frontmatter，并把结果缓存在内存里供后续按需取用。
- *
- * frontmatter 约定（除 name 外均可选）：
- *   name / description / trigger / emoji / homepage / always
- *   requiresBins / requiresEnv / installHint
+ * 扫描 ./skills 下每个子目录里的 SKILL.md，解析其 YAML frontmatter 后缓存到内存。
+ * 约定目录名即技能名；frontmatter 除 name 外字段均可选。
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -27,7 +23,7 @@ export interface SkillInfo {
   requiresBins: string[];
   requiresEnv: string[];
   installHint: string;
-  /** 完整 SKILL.md（{skill_dir} 已替换） */
+  /** 完整 SKILL.md 原文 */
   content: string;
   /** 去掉 frontmatter 的正文 */
   body: string;
@@ -37,186 +33,170 @@ export interface SkillInfo {
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// apps/lumen-agent/src/core/skills.ts → apps/lumen-agent/skills
+// apps/lumen-agent/src/application/skills.ts → apps/lumen-agent/skills
 export const BUILTIN_SKILLS_DIR = resolve(__dirname, '..', '..', 'skills');
 
-const SKILL_DIR_PLACEHOLDER = '{skill_dir}';
-
-/** frontmatter 里的值可能是 YAML 数组，也可能是逗号分隔字符串，统一归一成字符串数组。 */
-function toStringList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map((v) => String(v).trim()).filter(Boolean);
-  }
-  if (typeof value === 'string') {
-    return value
-      .split(',')
-      .map((v) => v.trim())
-      .filter(Boolean);
-  }
-  return [];
+/** frontmatter 字段可能写成 YAML 数组或逗号串，统一收敛为去空字符串数组。 */
+function asList(value: unknown): string[] {
+  const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  return raw.map((v) => String(v).trim()).filter(Boolean);
 }
 
-/** YAML 会把 `always: true` 解析成布尔；同时兼容字符串写法。 */
-function toBool(value: unknown): boolean {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') return value.trim().toLowerCase() === 'true';
-  return false;
+function asBool(value: unknown): boolean {
+  return value === true || (typeof value === 'string' && value.trim().toLowerCase() === 'true');
 }
 
-function meetsRequirements(requiredEnv: string[]): boolean {
-  // 环境变量是硬性前置条件；二进制依赖（bins）在 Node 运行时缺乏可靠探测手段，
-  // 暂按软约束处理，不在此拦截。
-  return requiredEnv.every((env) => Boolean(process.env[env]));
-}
-
-function xmlEscape(s: string): string {
+function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-export class SkillLibrary {
-  private skills = new Map<string, SkillInfo>();
-
-  constructor(public readonly builtinSkillsDir: string = BUILTIN_SKILLS_DIR) {
-    this.loadAll();
+/** 解析单个 SKILL.md，返回 SkillInfo；目录名与声明名不一致或解析失败则返回 null。 */
+function parseSkill(
+  raw: string,
+  dirName: string,
+  dirPath: string,
+  filePath: string,
+): SkillInfo | null {
+  let data: Record<string, unknown>;
+  let body: string;
+  try {
+    const fm = matter(raw);
+    data = fm.data as Record<string, unknown>;
+    body = fm.content;
+  } catch (err) {
+    logger.warn({ err, file: filePath }, 'SKILL.md frontmatter 解析失败');
+    return null;
   }
 
-  private loadAll(): void {
+  const str = (key: string): string => (data[key] == null ? '' : String(data[key]));
+
+  const declared = str('name').trim();
+  if (declared && declared !== dirName) {
+    logger.warn({ dir: dirName, declared }, '技能名与目录名不符，已忽略');
+    return null;
+  }
+  const name = declared || dirName;
+  const description = str('description');
+  if (!description) logger.warn({ skill: name }, '技能缺少 description');
+
+  const requiresEnv = asList(data.requiresEnv);
+  // 环境变量视为硬前置；二进制依赖在 Node 侧难以可靠探测，仅记录不拦截。
+  const available = requiresEnv.every((env) => Boolean(process.env[env]));
+
+  return {
+    name,
+    description,
+    trigger: str('trigger'),
+    emoji: str('emoji'),
+    homepage: str('homepage'),
+    always: asBool(data.always),
+    requiresBins: asList(data.requiresBins),
+    requiresEnv,
+    installHint: str('installHint'),
+    content: raw,
+    body: body.replace(/^\n+/, ''),
+    path: filePath,
+    skillDir: dirPath,
+    available,
+  };
+}
+
+export class SkillLibrary {
+  private skills: Map<string, SkillInfo>;
+
+  /** seed 仅供 filtered() 内部传入，外部调用只需给目录路径。 */
+  constructor(
+    public readonly builtinSkillsDir: string = BUILTIN_SKILLS_DIR,
+    seed?: Map<string, SkillInfo>,
+  ) {
+    this.skills = seed ?? new Map();
+    if (!seed) this.scan();
+  }
+
+  private scan(): void {
     this.skills.clear();
     if (!existsSync(this.builtinSkillsDir)) return;
 
-    for (const entry of readdirSync(this.builtinSkillsDir).sort()) {
-      const entryPath = join(this.builtinSkillsDir, entry);
+    for (const dirName of readdirSync(this.builtinSkillsDir).sort()) {
+      const dirPath = join(this.builtinSkillsDir, dirName);
+      let isDir = false;
       try {
-        if (!statSync(entryPath).isDirectory()) continue;
+        isDir = statSync(dirPath).isDirectory();
       } catch {
         continue;
       }
+      if (!isDir) continue;
 
-      const skillFile = join(entryPath, 'SKILL.md');
-      if (!existsSync(skillFile)) continue;
+      const filePath = join(dirPath, 'SKILL.md');
+      if (!existsSync(filePath)) continue;
 
       let raw: string;
       try {
-        raw = readFileSync(skillFile, 'utf-8');
+        raw = readFileSync(filePath, 'utf-8');
       } catch (err) {
-        logger.warn({ err, file: skillFile }, 'Failed to read SKILL.md');
+        logger.warn({ err, file: filePath }, '读取 SKILL.md 失败');
         continue;
       }
 
-      const parsed = this.toSkillInfo(raw, entry, entryPath, skillFile);
-      if (parsed) this.skills.set(parsed.name, parsed);
+      const info = parseSkill(raw, dirName, dirPath, filePath);
+      if (info) this.skills.set(info.name, info);
     }
 
     logger.debug({ count: this.skills.size, names: [...this.skills.keys()] }, 'Skills loaded');
   }
 
-  private toSkillInfo(
-    raw: string,
-    entry: string,
-    entryPath: string,
-    skillFile: string,
-  ): SkillInfo | null {
-    let data: Record<string, unknown>;
-    let body: string;
-    try {
-      const fm = matter(raw);
-      data = fm.data as Record<string, unknown>;
-      body = fm.content;
-    } catch (err) {
-      logger.warn({ err, file: skillFile }, 'SKILL.md frontmatter 解析失败，跳过');
-      return null;
-    }
-
-    const declaredName = data.name == null ? '' : String(data.name).trim();
-    if (declaredName && declaredName !== entry) {
-      logger.warn(`Skill skipped: dir '${entry}' but name '${declaredName}'; must match`);
-      return null;
-    }
-    const name = declaredName || entry;
-
-    const description = data.description == null ? '' : String(data.description);
-    if (!description) logger.warn(`Skill '${name}' has no description in frontmatter`);
-
-    const requiresBins = toStringList(data.requiresBins);
-    const requiresEnv = toStringList(data.requiresEnv);
-
-    const fillDir = (s: string) => s.split(SKILL_DIR_PLACEHOLDER).join(entryPath);
-
-    return {
-      name,
-      description,
-      trigger: data.trigger == null ? '' : String(data.trigger),
-      emoji: data.emoji == null ? '' : String(data.emoji),
-      homepage: data.homepage == null ? '' : String(data.homepage),
-      always: toBool(data.always),
-      requiresBins,
-      requiresEnv,
-      installHint: data.installHint == null ? '' : String(data.installHint),
-      content: fillDir(raw),
-      body: fillDir(body.replace(/^\n+/, '')),
-      path: skillFile,
-      skillDir: entryPath,
-      available: meetsRequirements(requiresEnv),
-    };
-  }
-
   reload(): void {
-    this.loadAll();
+    this.scan();
   }
 
+  /** 返回只含指定技能的新库（共享已解析的 SkillInfo，不重新扫盘）。 */
   filtered(allowedNames: readonly string[]): SkillLibrary {
-    const clone: SkillLibrary = Object.create(SkillLibrary.prototype);
-    Object.assign(clone, { builtinSkillsDir: this.builtinSkillsDir });
     const allowed = new Set(allowedNames);
     const subset = new Map<string, SkillInfo>();
-    for (const [k, v] of this.skills) {
-      if (allowed.has(k)) subset.set(k, v);
+    for (const [key, info] of this.skills) {
+      if (allowed.has(key)) subset.set(key, info);
     }
-    (clone as unknown as { skills: Map<string, SkillInfo> }).skills = subset;
-    return clone;
+    return new SkillLibrary(this.builtinSkillsDir, subset);
   }
 
-  listSkills(filterUnavailable = true): Array<{ name: string; path: string; source: 'builtin' }> {
-    const out: Array<{ name: string; path: string; source: 'builtin' }> = [];
-    for (const s of this.skills.values()) {
-      if (filterUnavailable && !s.available) continue;
-      out.push({ name: s.name, path: s.path, source: 'builtin' });
-    }
-    return out;
+  listSkills(onlyAvailable = true): Array<{ name: string; path: string; source: 'builtin' }> {
+    return [...this.skills.values()]
+      .filter((s) => !onlyAvailable || s.available)
+      .map((s) => ({ name: s.name, path: s.path, source: 'builtin' as const }));
   }
 
   loadSkill(name: string): string | null {
     return this.skills.get(name)?.content ?? null;
   }
 
-  loadSkillsForContext(skillNames: readonly string[]): string {
-    const parts: string[] = [];
-    for (const name of skillNames) {
-      const s = this.skills.get(name);
-      if (s) parts.push(`### Skill: ${name}\n\n${s.body}`);
-    }
-    return parts.join('\n\n---\n\n');
-  }
-
-  buildSkillsSummary(): string {
-    if (this.skills.size === 0) return '';
-    const lines: string[] = ['<skills>'];
-    for (const s of this.skills.values()) {
-      lines.push(`  <skill available="${s.available}">`);
-      lines.push(`    <name>${xmlEscape(s.name)}</name>`);
-      lines.push(`    <description>${xmlEscape(s.description || s.name)}</description>`);
-      if (s.trigger) lines.push(`    <trigger>${xmlEscape(s.trigger)}</trigger>`);
-      lines.push('  </skill>');
-    }
-    lines.push('</skills>');
-    return lines.join('\n');
+  getSkillInfo(name: string): SkillInfo | null {
+    return this.skills.get(name) ?? null;
   }
 
   getAlwaysSkills(): string[] {
     return [...this.skills.values()].filter((s) => s.always && s.available).map((s) => s.name);
   }
 
-  getSkillInfo(name: string): SkillInfo | null {
-    return this.skills.get(name) ?? null;
+  /** 拼接若干技能正文，供需要时直接注入上下文。 */
+  loadSkillsForContext(skillNames: readonly string[]): string {
+    return skillNames
+      .map((name) => this.skills.get(name))
+      .filter((s): s is SkillInfo => Boolean(s))
+      .map((s) => `## ${s.name}\n${s.body}`)
+      .join('\n\n---\n\n');
+  }
+
+  /** 生成技能清单摘要（XML 片段），让模型知道有哪些可按需加载的技能。 */
+  buildSkillsSummary(): string {
+    if (this.skills.size === 0) return '';
+    const entries = [...this.skills.values()].map((s) => {
+      const fields = [
+        `    <name>${escapeXml(s.name)}</name>`,
+        `    <summary>${escapeXml(s.description || s.name)}</summary>`,
+      ];
+      if (s.trigger) fields.push(`    <when>${escapeXml(s.trigger)}</when>`);
+      return `  <entry ready="${s.available}">\n${fields.join('\n')}\n  </entry>`;
+    });
+    return `<available-skills>\n${entries.join('\n')}\n</available-skills>`;
   }
 }
