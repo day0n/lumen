@@ -4,6 +4,7 @@ import {
   DEFAULT_LOCALE,
   LUMEN_LOCALE_COOKIE,
   type Locale,
+  getLocaleFromPathname,
   isLocale,
   localePath,
 } from '@/i18n/routing';
@@ -38,14 +39,15 @@ export function I18nProvider({
 }) {
   const pathname = usePathname();
   const [locale, setLocaleState] = useState<Locale>(initialLocale ?? DEFAULT_LOCALE);
+  const routeLocale = useMemo(() => getLocaleFromPathname(pathname || '/'), [pathname]);
 
   useEffect(() => {
-    if (initialLocale && initialLocale !== locale) {
-      setLocaleState(initialLocale);
+    if (routeLocale !== locale) {
+      setLocaleState(routeLocale);
     }
-    // The server-provided locale should win only when the route changes.
+    // The route is canonical: unprefixed paths are English and /zh paths are Chinese.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialLocale, pathname]);
+  }, [routeLocale]);
 
   useEffect(() => {
     persistLocale(locale);
