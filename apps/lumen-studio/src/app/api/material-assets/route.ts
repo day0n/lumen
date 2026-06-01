@@ -1,10 +1,12 @@
 import { okJson, routeError, withApiRouteSpan } from '@/server/http';
+import { resolveRequestLocale } from '@/server/locale';
 import { listStudioMaterialAssets } from '@/server/materials';
 import { MaterialAssetKindSchema } from '@lumen/db';
 
 export const runtime = 'nodejs';
 
 export const GET = withApiRouteSpan('GET /api/material-assets', async (request: Request) => {
+  const locale = resolveRequestLocale(request);
   try {
     const url = new URL(request.url);
     const workflowId = url.searchParams.get('workflowId') ?? undefined;
@@ -16,6 +18,6 @@ export const GET = withApiRouteSpan('GET /api/material-assets', async (request: 
 
     return okJson({ assets });
   } catch (error) {
-    return routeError(error);
+    return routeError(error, locale);
   }
 });

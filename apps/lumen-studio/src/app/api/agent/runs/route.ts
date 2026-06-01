@@ -8,16 +8,19 @@
 import { requireStudioUser } from '@/server/auth';
 import { getStudioServerConfig } from '@/server/config';
 import { failJson, okJson, routeError } from '@/server/http';
+import { translate } from '@/i18n/messages';
+import { resolveRequestLocale } from '@/server/locale';
 import type { UserRecord } from '@lumen/db';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
+  const locale = resolveRequestLocale(request);
   let user: UserRecord;
   try {
     user = await requireStudioUser();
   } catch (error) {
-    return routeError(error);
+    return routeError(error, locale);
   }
 
   const config = getStudioServerConfig();
@@ -26,7 +29,7 @@ export async function POST(request: Request) {
   try {
     body = (await request.json()) as Record<string, unknown>;
   } catch {
-    return failJson('请求 JSON 格式不正确', 400);
+    return failJson(translate(locale, 'api.invalidJson'), 400);
   }
 
   const upstreamBody = { ...body, user_id: user.id };
@@ -35,11 +38,14 @@ export async function POST(request: Request) {
   try {
     upstream = await fetch(`${config.LUMEN_AGENT_URL}/v1/agent/runs`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-lumen-locale': locale },
       body: JSON.stringify(upstreamBody),
     });
   } catch (error) {
-    return failJson(`无法连接 agent 服务: ${(error as Error).message}`, 502);
+    return failJson(
+      translate(locale, 'api.agentConnectionFailed', { message: (error as Error).message }),
+      502,
+    );
   }
 
   const text = await upstream.text();
@@ -51,7 +57,11 @@ export async function POST(request: Request) {
   }
 
   if (!upstream.ok) {
-    return failJson(text || `agent 返回 ${upstream.status}`, upstream.status, data);
+    return failJson(
+      text || translate(locale, 'api.agentReturned', { status: upstream.status }),
+      upstream.status,
+      data,
+    );
   }
 
   return okJson(data);

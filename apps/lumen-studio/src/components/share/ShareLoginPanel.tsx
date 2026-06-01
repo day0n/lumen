@@ -1,6 +1,7 @@
 'use client';
 
 import { LumenMark } from '@/components/ui/LumenMark';
+import { useI18n } from '@/i18n/provider';
 import { SignIn, useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -11,6 +12,8 @@ export function ShareLoginPanel({
 }: { projectTitle: string; shareId: string }) {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
+  const { t, localePath } = useI18n();
+  const sharePath = localePath(`/share/${shareId}`);
 
   useEffect(() => {
     if (isLoaded && isSignedIn) router.refresh();
@@ -31,7 +34,7 @@ export function ShareLoginPanel({
           <LumenMark size={42} />
           <div>
             <p className="text-[12px] font-bold uppercase tracking-[0.18em] text-white/38">
-              分享工作流
+              {t('share.label')}
             </p>
             <h1 className="mt-2 max-w-[360px] truncate font-display text-[22px] font-black text-white">
               {projectTitle}
@@ -39,11 +42,7 @@ export function ShareLoginPanel({
           </div>
         </div>
         <div className="rounded-[24px] bg-[#111315]/72 p-2 shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.1] backdrop-blur-2xl">
-          <SignIn
-            fallbackRedirectUrl={`/share/${shareId}`}
-            forceRedirectUrl={`/share/${shareId}`}
-            routing="hash"
-          />
+          <SignIn fallbackRedirectUrl={sharePath} forceRedirectUrl={sharePath} routing="hash" />
         </div>
       </div>
     </main>

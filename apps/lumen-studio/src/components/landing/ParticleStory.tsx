@@ -1,5 +1,6 @@
 'use client';
 
+import { useI18n } from '@/i18n/provider';
 import { IconArrowRight } from '@tabler/icons-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -8,7 +9,6 @@ type SceneKey = 'filming' | 'night' | 'sunbath';
 
 interface StoryScene {
   key: SceneKey;
-  text: string;
   side: 'left' | 'right';
 }
 
@@ -40,17 +40,14 @@ const STORY_SCENES: StoryScene[] = [
   {
     key: 'filming',
     side: 'right',
-    text: '镜头架好，长焦对准，人先把真实动作拍清楚。',
   },
   {
     key: 'night',
     side: 'left',
-    text: '深夜打灯，在笔记本前把素材一点点剪出来。',
   },
   {
     key: 'sunbath',
     side: 'right',
-    text: '重复制作交给流程，人已经躺在阳光下晒太阳。',
   },
 ];
 
@@ -59,9 +56,6 @@ const SPRITE_SHEETS: Record<SceneKey, string> = {
   night: '/particle-masks/creator-night-laptop-sheet.png',
   sunbath: '/particle-masks/creator-sunbath-sheet.png',
 };
-
-const INTRO_COPY =
-  'Lumen 把商品、爆款结构和创作判断变成一条可编辑的视频工作流，让每一次创作都留下下一次可复用的经验。';
 
 const INTRO_STRIPES = Array.from({ length: 58 }, (_, index) => {
   const x = -250 + index * 34;
@@ -77,6 +71,7 @@ interface ParticleStoryProps {
 }
 
 export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
+  const { t, ta, localePath } = useI18n();
   const sectionRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const progressRef = useRef(0);
@@ -281,6 +276,7 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
   }, []);
 
   const activeScene = STORY_SCENES[phase.scene] ?? STORY_SCENES[0]!;
+  const activeSceneText = ta('landing.heroScenes')[phase.scene] ?? '';
 
   return (
     <section id="story" ref={sectionRef} className="relative h-[1500svh] bg-[#0c0d0f]">
@@ -302,23 +298,23 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
         >
           <div className="max-w-[1040px]">
             <h1 className="lumen-serif-display text-[38px] font-black leading-[1.02] tracking-normal text-[#f4f6f8] md:text-[66px] lg:text-[84px]">
-              把商品变成
+              {t('landing.heroTitleA')}
               <br />
-              会卖货的视频
+              {t('landing.heroTitleB')}
             </h1>
             <p className="mx-auto mt-5 max-w-[500px] text-[13px] leading-6 tracking-normal text-white/52 md:text-[14px]">
-              {INTRO_COPY}
+              {t('landing.particleSummary')}
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-2.5">
               <Link
-                href="/home"
+                href={localePath('/home')}
                 prefetch
                 onFocus={() => onHomeIntent?.()}
                 onPointerEnter={() => onHomeIntent?.()}
                 onTouchStart={() => onHomeIntent?.()}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#79e4ff] px-4 text-[13px] font-bold tracking-normal text-[#071316] transition-transform active:scale-[0.98]"
               >
-                开始创作
+                {t('landing.cta')}
                 <IconArrowRight size={16} stroke={2.4} />
               </Link>
             </div>
@@ -338,7 +334,7 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
             }
           >
             <p className="lumen-serif-display text-[20px] font-black leading-[1.18] tracking-normal text-[#f4f6f8] md:text-[28px] lg:text-[34px]">
-              <RevealText text={activeScene.text} reveal={clamp(phase.local * 1.25 + 0.16, 0, 1)} />
+              <RevealText text={activeSceneText} reveal={clamp(phase.local * 1.25 + 0.16, 0, 1)} />
             </p>
           </div>
         </div>

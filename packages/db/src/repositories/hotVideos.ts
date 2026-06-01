@@ -9,11 +9,13 @@ import {
   HotVideoDocumentSchema,
   type HotVideoRecord,
   HotVideoRecordSchema,
+  type HotVideoTranslations,
   type ListHotVideosInput,
   ListHotVideosInputSchema,
 } from '../schema/hotVideos';
 
 const COLLECTION = 'studio_hot_videos';
+type ContentLocale = 'en' | 'zh';
 
 export interface ListHotVideosResult {
   items: HotVideoRecord[];
@@ -42,7 +44,10 @@ export class HotVideoRepository {
     );
   }
 
-  async list(input: ListHotVideosInput): Promise<ListHotVideosResult> {
+  async list(
+    input: ListHotVideosInput,
+    locale: ContentLocale = 'en',
+  ): Promise<ListHotVideosResult> {
     const parsed = ListHotVideosInputSchema.parse(input);
     const filter: Filter<HotVideoDocument> = { status: 'active' };
 
@@ -74,6 +79,14 @@ export class HotVideoRepository {
         { product_name: { $regex: escaped, $options: 'i' } },
         { 'analysis.tags': { $regex: escaped, $options: 'i' } },
         { 'analysis.angle': { $regex: escaped, $options: 'i' } },
+        { 'translations.en.title': { $regex: escaped, $options: 'i' } },
+        { 'translations.en.productName': { $regex: escaped, $options: 'i' } },
+        { 'translations.en.analysis.tags': { $regex: escaped, $options: 'i' } },
+        { 'translations.en.analysis.angle': { $regex: escaped, $options: 'i' } },
+        { 'translations.zh.title': { $regex: escaped, $options: 'i' } },
+        { 'translations.zh.productName': { $regex: escaped, $options: 'i' } },
+        { 'translations.zh.analysis.tags': { $regex: escaped, $options: 'i' } },
+        { 'translations.zh.analysis.angle': { $regex: escaped, $options: 'i' } },
       ];
     }
 
@@ -91,14 +104,14 @@ export class HotVideoRepository {
     ]);
 
     return {
-      items: documents.map(toRecord),
+      items: documents.map((document) => toRecord(document, locale)),
       total,
     };
   }
 
-  async getById(id: string): Promise<HotVideoRecord | null> {
+  async getById(id: string, locale: ContentLocale = 'en'): Promise<HotVideoRecord | null> {
     const document = await this.collection().findOne({ _id: id, status: 'active' });
-    return document ? toRecord(document) : null;
+    return document ? toRecord(document, locale) : null;
   }
 
   async findByExternalId(
@@ -109,7 +122,7 @@ export class HotVideoRepository {
       source_platform: sourcePlatform,
       external_id: externalId,
     });
-    return document ? toRecord(document) : null;
+    return document ? toRecord(document, 'en') : null;
   }
 
   async create(input: CreateHotVideoInput): Promise<HotVideoRecord> {
@@ -140,6 +153,7 @@ export class HotVideoRepository {
         roas: parsed.metrics.roas,
       },
       analysis: parsed.analysis,
+      translations: parsed.translations,
       published_at: parsed.publishedAt,
       ingested_at: now,
       status: parsed.status ?? 'active',
@@ -148,7 +162,7 @@ export class HotVideoRepository {
     });
 
     await this.collection().insertOne(document);
-    return toRecord(document);
+    return toRecord(document, 'en');
   }
 
   async deleteAll(): Promise<void> {
@@ -175,38 +189,51 @@ function sortKeyToField(sort: ListHotVideosInput['sort']): string {
   }
 }
 
-function toRecord(document: HotVideoDocument): HotVideoRecord {
+function toRecord(document: HotVideoDocument, locale: ContentLocale): HotVideoRecord {
   const parsed = HotVideoDocumentSchema.parse(document);
+  const translation = readTranslation(parsed.translations, locale);
+  const analysis = translation.analysis ?? {};
+  const metrics = translation.metrics ?? {};
   return HotVideoRecordSchema.parse({
     id: parsed._id,
     ownerUserId: parsed.owner_user_id,
     sourcePlatform: parsed.source_platform,
     sourceUrl: parsed.source_url,
     externalId: parsed.external_id,
-    title: parsed.title,
-    productName: parsed.product_name,
+    title: translation.title ?? parsed.title,
+    productName: translation.productName ?? parsed.product_name,
     authorHandle: parsed.author_handle,
     thumbnailUrl: parsed.thumbnail_url,
     previewUrl: parsed.preview_url,
-    region: parsed.region,
-    category: parsed.category,
-    videoType: parsed.video_type,
+    region: translation.region ?? parsed.region,
+    category: translation.category ?? parsed.category,
+    videoType: translation.videoType ?? parsed.video_type,
     paletteCss: parsed.palette_css,
     accentColor: parsed.accent_color,
     metrics: {
       sales: parsed.metrics.sales,
       revenueUsd: parsed.metrics.revenue_usd,
-      revenueLabel: parsed.metrics.revenue_label,
+      revenueLabel: metrics.revenueLabel ?? parsed.metrics.revenue_label,
       viewsCount: parsed.metrics.views_count,
-      viewsLabel: parsed.metrics.views_label,
+      viewsLabel: metrics.viewsLabel ?? parsed.metrics.views_label,
       roas: parsed.metrics.roas,
     },
-    analysis: parsed.analysis,
+    analysis: {
+      hook: analysis.hook ?? parsed.analysis.hook,
+      angle: analysis.angle ?? parsed.analysis.angle,
+      score: parsed.analysis.score,
+      tags: analysis.tags ?? parsed.analysis.tags,
+      structure: analysis.structure ?? parsed.analysis.structure,
+    },
     publishedAt: parsed.published_at.toISOString(),
     status: parsed.status,
     createdAt: parsed.created_at.toISOString(),
     updatedAt: parsed.updated_at.toISOString(),
   });
+}
+
+function readTranslation(translations: HotVideoTranslations | undefined, locale: ContentLocale) {
+  return translations?.[locale] ?? translations?.en ?? {};
 }
 
 function escapeRegExp(value: string) {

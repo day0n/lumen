@@ -1,5 +1,6 @@
 'use client';
 
+import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { IconArrowRight, IconSearch, IconSparkles } from '@tabler/icons-react';
 import { motion } from 'motion/react';
@@ -7,27 +8,18 @@ import { useRouter } from 'next/navigation';
 
 interface CanvasPick {
   id: string;
-  name: string;
+  nameEn: string;
+  nameZh: string;
   author: string;
   uses: string;
   gradient: string;
 }
 
-const CATEGORIES = [
-  '全部',
-  '带货开场',
-  '商品细节',
-  '口播脚本',
-  '场景种草',
-  '多语种',
-  '爆款拆解',
-  '素材拼贴',
-];
-
 const CANVAS_PICKS: CanvasPick[] = [
   {
     id: 'p1',
-    name: '清爽防晒面膜种草',
+    nameEn: 'Refreshing sunscreen mask seeding',
+    nameZh: '清爽防晒面膜种草',
     author: 'Lumen Studio',
     uses: '128',
     gradient:
@@ -35,7 +27,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p2',
-    name: '3C 耳机卖点快切',
+    nameEn: 'Fast-cut selling points for 3C earbuds',
+    nameZh: '3C 耳机卖点快切',
     author: 'Noise Lab',
     uses: '86',
     gradient:
@@ -43,7 +36,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p3',
-    name: '食品 ASMR 近景流',
+    nameEn: 'Food ASMR close-up flow',
+    nameZh: '食品 ASMR 近景流',
     author: 'Taste Maker',
     uses: '243',
     gradient:
@@ -51,7 +45,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p4',
-    name: '通勤鞋履质感广告',
+    nameEn: 'Commuter footwear texture ad',
+    nameZh: '通勤鞋履质感广告',
     author: 'QianliGood',
     uses: '169',
     gradient:
@@ -59,7 +54,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p5',
-    name: '护肤前后对比节奏',
+    nameEn: 'Skincare before-and-after rhythm',
+    nameZh: '护肤前后对比节奏',
     author: 'Glow Team',
     uses: '77',
     gradient:
@@ -67,7 +63,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p6',
-    name: '运动水杯户外短片',
+    nameEn: 'Outdoor short for sport bottles',
+    nameZh: '运动水杯户外短片',
     author: 'Trail Cut',
     uses: '54',
     gradient:
@@ -75,7 +72,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p7',
-    name: '家居香氛氛围镜头',
+    nameEn: 'Home fragrance mood shots',
+    nameZh: '家居香氛氛围镜头',
     author: 'Quiet Room',
     uses: '61',
     gradient:
@@ -83,7 +81,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p8',
-    name: '母婴用品温柔讲解',
+    nameEn: 'Gentle explainer for baby products',
+    nameZh: '母婴用品温柔讲解',
     author: 'Soft Sell',
     uses: '42',
     gradient:
@@ -91,7 +90,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p9',
-    name: '跨境英文口播模板',
+    nameEn: 'Cross-border English talking script',
+    nameZh: '跨境英文口播模板',
     author: 'Global Script',
     uses: '101',
     gradient:
@@ -99,7 +99,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p10',
-    name: '爆款评论反打结构',
+    nameEn: 'Reply-to-comments viral structure',
+    nameZh: '爆款评论反打结构',
     author: 'Hook Lab',
     uses: '92',
     gradient:
@@ -107,7 +108,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p11',
-    name: '主图到分镜组图',
+    nameEn: 'Main image to storyboard collage',
+    nameZh: '主图到分镜组图',
     author: 'Frame Kit',
     uses: '58',
     gradient:
@@ -115,7 +117,8 @@ const CANVAS_PICKS: CanvasPick[] = [
   },
   {
     id: 'p12',
-    name: '新品首发倒计时',
+    nameEn: 'New launch countdown',
+    nameZh: '新品首发倒计时',
     author: 'Launch Desk',
     uses: '73',
     gradient:
@@ -125,20 +128,22 @@ const CANVAS_PICKS: CanvasPick[] = [
 
 export function TemplateRail() {
   const router = useRouter();
+  const { locale, t, ta, localePath } = useI18n();
   const { requireLogin } = useLoginRedirect();
+  const categories = ta('home.templateCategories');
 
   const openTemplate = (templateId: string) => {
     const target = `/canvas/new?template=${encodeURIComponent(templateId)}`;
     if (!requireLogin(target)) return;
-    router.push(target);
+    router.push(localePath(target));
   };
 
   return (
     <section className="mx-auto mt-14 max-w-[1260px] px-6 pb-20">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-4 text-[20px] font-bold text-white">推荐画布</h2>
+        <h2 className="mr-4 text-[20px] font-bold text-white">{t('home.templatesTitle')}</h2>
         <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map((category, index) => (
+          {categories.map((category, index) => (
             <button
               key={category}
               type="button"
@@ -155,7 +160,7 @@ export function TemplateRail() {
 
         <div className="ml-auto flex h-10 min-w-[260px] items-center gap-2 rounded-xl bg-[#141619] px-3 ring-1 ring-white/[0.08]">
           <input
-            placeholder="搜索画布、商品类目或卖点"
+            placeholder={t('home.templateSearch')}
             className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/30"
           />
           <IconSearch size={17} className="text-white/40" stroke={2.1} />
@@ -168,6 +173,7 @@ export function TemplateRail() {
             key={pick.id}
             pick={pick}
             index={index}
+            locale={locale}
             onOpen={() => openTemplate(pick.id)}
           />
         ))}
@@ -179,10 +185,12 @@ export function TemplateRail() {
 function CanvasPickCard({
   pick,
   index,
+  locale,
   onOpen,
 }: {
   pick: CanvasPick;
   index: number;
+  locale: 'en' | 'zh';
   onOpen: () => void;
 }) {
   return (
@@ -209,7 +217,7 @@ function CanvasPickCard({
 
       <div className="flex items-center gap-2 px-3.5 py-3">
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-white/85">
-          {pick.name}
+          {locale === 'zh' ? pick.nameZh : pick.nameEn}
         </span>
         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.055] text-white/45 transition-colors group-hover:text-white">
           <IconArrowRight size={14} stroke={2.3} />

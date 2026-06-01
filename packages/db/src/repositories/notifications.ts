@@ -10,10 +10,12 @@ import {
   OfficialNotificationDocumentSchema,
   type OfficialNotificationRecord,
   OfficialNotificationRecordSchema,
+  type OfficialNotificationTranslations,
 } from '../schema/notifications';
 
 const OFFICIAL_COLLECTION = 'studio_official_notifications';
 const READS_COLLECTION = 'studio_notification_reads';
+type ContentLocale = 'en' | 'zh';
 
 export class NotificationRepository {
   constructor(private readonly db: Db) {}
@@ -42,6 +44,7 @@ export class NotificationRepository {
             $set: {
               title: parsed.title,
               body: parsed.body,
+              translations: parsed.translations,
               published_at: parsed.publishedAt ?? now,
               sort_order: parsed.sortOrder ?? index,
               status: parsed.status ?? 'active',
@@ -58,7 +61,11 @@ export class NotificationRepository {
     );
   }
 
-  async listOfficialForUser(userId: string, limit = 20): Promise<OfficialNotificationRecord[]> {
+  async listOfficialForUser(
+    userId: string,
+    limit = 20,
+    locale: ContentLocale = 'en',
+  ): Promise<OfficialNotificationRecord[]> {
     const documents = await this.officialCollection()
       .find({ status: 'active' })
       .sort({ sort_order: 1, published_at: -1, _id: 1 })
@@ -75,7 +82,7 @@ export class NotificationRepository {
             .toArray();
     const readIds = new Set(reads.map((read) => read.notification_id));
 
-    return documents.map((document) => toRecord(document, readIds.has(document._id)));
+    return documents.map((document) => toRecord(document, readIds.has(document._id), locale));
   }
 
   async markOfficialRead(userId: string, notificationId: string): Promise<boolean> {
@@ -117,13 +124,22 @@ export class NotificationRepository {
 function toRecord(
   document: OfficialNotificationDocument,
   isRead: boolean,
+  locale: ContentLocale,
 ): OfficialNotificationRecord {
   const parsed = OfficialNotificationDocumentSchema.parse(document);
+  const translation = readTranslation(parsed.translations, locale);
   return OfficialNotificationRecordSchema.parse({
     id: parsed._id,
-    title: parsed.title,
-    body: parsed.body,
+    title: translation.title ?? parsed.title,
+    body: translation.body ?? parsed.body,
     publishedAt: parsed.published_at.toISOString(),
     isRead,
   });
+}
+
+function readTranslation(
+  translations: OfficialNotificationTranslations | undefined,
+  locale: ContentLocale,
+) {
+  return translations?.[locale] ?? translations?.en ?? {};
 }

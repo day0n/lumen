@@ -1,21 +1,68 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
-const isProtectedRoute = createRouteMatcher(['/agent-chat(.*)', '/canvas(.*)', '/materials(.*)']);
+import {
+  LUMEN_LOCALE_COOKIE,
+  LUMEN_LOCALE_HEADER,
+  getLocaleFromPathname,
+  hasEnglishPrefix,
+  isLocale,
+  localePath,
+  stripLocalePrefix,
+  withoutEnglishPrefix,
+} from '@/i18n/routing';
+
+const PROTECTED_PREFIXES = ['/agent-chat', '/canvas', '/materials'] as const;
 
 export default clerkMiddleware(
   async (auth, request) => {
-    if (isProtectedRoute(request)) {
+    const pathname = request.nextUrl.pathname;
+
+    if (hasEnglishPrefix(pathname)) {
+      const url = request.nextUrl.clone();
+      url.pathname = withoutEnglishPrefix(pathname);
+      return NextResponse.redirect(url, 308);
+    }
+
+    const locale = resolveMiddlewareLocale(request);
+    const normalizedPath = stripLocalePrefix(pathname);
+
+    if (isProtectedPath(normalizedPath)) {
       const { userId } = await auth();
       if (!userId) {
-        const signUpUrl = new URL('/sign-up', request.url);
+        const signUpUrl = new URL(localePath('/sign-up', locale), request.url);
         signUpUrl.searchParams.set(
           'redirect_url',
           `${request.nextUrl.pathname}${request.nextUrl.search}`,
         );
-        return NextResponse.redirect(signUpUrl);
+        const redirectResponse = NextResponse.redirect(signUpUrl);
+        redirectResponse.cookies.set(LUMEN_LOCALE_COOKIE, locale, {
+          path: '/',
+          maxAge: 60 * 60 * 24 * 365,
+          sameSite: 'lax',
+        });
+        return redirectResponse;
       }
     }
+
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set(LUMEN_LOCALE_HEADER, locale);
+    requestHeaders.set('x-pathname', pathname);
+
+    const rewriteTarget =
+      locale === 'zh' && pathname !== normalizedPath
+        ? new URL(`${normalizedPath}${request.nextUrl.search}`, request.url)
+        : null;
+    const response = rewriteTarget
+      ? NextResponse.rewrite(rewriteTarget, { request: { headers: requestHeaders } })
+      : NextResponse.next({ request: { headers: requestHeaders } });
+
+    response.cookies.set(LUMEN_LOCALE_COOKIE, locale, {
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: 'lax',
+    });
+    return response;
   },
   {
     signInUrl: '/sign-in',
@@ -30,3 +77,30 @@ export const config = {
     '/(api|trpc)(.*)',
   ],
 };
+
+function isProtectedPath(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
+function resolveMiddlewareLocale(request: Request) {
+  const { pathname } = new URL(request.url);
+  const pathLocale = getLocaleFromPathname(pathname);
+  if (pathLocale === 'zh') return pathLocale;
+
+  if (pathname.startsWith('/api') || pathname.startsWith('/trpc')) {
+    const headerLocale = request.headers.get(LUMEN_LOCALE_HEADER);
+    if (isLocale(headerLocale)) return headerLocale;
+
+    const cookieLocale = request.headers
+      .get('cookie')
+      ?.split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${LUMEN_LOCALE_COOKIE}=`))
+      ?.split('=')[1];
+    if (isLocale(cookieLocale)) return cookieLocale;
+  }
+
+  return pathLocale;
+}

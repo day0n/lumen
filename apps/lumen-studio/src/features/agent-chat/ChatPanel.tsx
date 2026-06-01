@@ -8,6 +8,7 @@
  */
 
 import { LumenMark } from '@/components/ui/LumenMark';
+import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@clerk/nextjs';
@@ -91,6 +92,7 @@ export function ChatPanel({
   onWorkflowUpdate,
   onWorkflowNodeStatus,
 }: ChatPanelProps) {
+  const { locale, t } = useI18n();
   const { getToken } = useAuth();
   const [activeSessionId, setActiveSessionId] = useState(() => sessionId ?? createDraftSessionId());
   const [sessions, setSessions] = useState<AgentSessionSummary[]>([]);
@@ -107,6 +109,7 @@ export function ChatPanel({
   const { messages, status, errorText, send, stop } = useAgentChat({
     sessionId: activeSessionId,
     context: agentContext,
+    locale,
     onWorkflowUpdate,
     onWorkflowNodeStatus,
   });
@@ -251,7 +254,7 @@ export function ChatPanel({
     async (files: FileList | File[]) => {
       const nextFiles = Array.from(files).filter((file) => file.type.startsWith('image/'));
       if (nextFiles.length === 0) {
-        setUploadError('请选择图片文件');
+        setUploadError(t('chat.chooseImages'));
         return;
       }
       if (!requireLogin()) return;
@@ -260,7 +263,7 @@ export function ChatPanel({
       setUploadError(null);
       try {
         const uploaded = await Promise.all(
-          nextFiles.map((file) => uploadAgentChatImage(file, projectId)),
+          nextFiles.map((file) => uploadAgentChatImage(file, projectId, locale)),
         );
         setAttachments((prev) => [...prev, ...uploaded].slice(-8));
       } catch (err) {
@@ -270,7 +273,7 @@ export function ChatPanel({
         setUploading(false);
       }
     },
-    [projectId, requireLogin],
+    [locale, projectId, requireLogin, t],
   );
 
   const handleFileChange = useCallback(
@@ -292,7 +295,7 @@ export function ChatPanel({
     const text = draft.trim();
     if ((!text && attachments.length === 0) || busy || uploading) return;
     if (!requireLogin()) return;
-    const outgoingMessage = buildMessageWithAttachments(text, attachments);
+    const outgoingMessage = buildMessageWithAttachments(text, attachments, t);
     interactionStartedRef.current = true;
     setDraft('');
     setAttachments([]);
@@ -324,7 +327,7 @@ export function ChatPanel({
   };
 
   const currentSession = sessions.find((item) => item.session_id === activeSessionId);
-  const title = currentSession ? formatSessionTitle(currentSession) : 'New chat';
+  const title = currentSession ? formatSessionTitle(currentSession, t) : t('chat.newChat');
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -344,7 +347,7 @@ export function ChatPanel({
         <motion.button
           type="button"
           onClick={() => setOpen(true)}
-          aria-label="打开 Lumen Agent"
+          aria-label={t('chat.openAgent')}
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
           transition={{ type: 'spring', stiffness: 360, damping: 24 }}
@@ -372,8 +375,8 @@ export function ChatPanel({
             <button
               type="button"
               onClick={() => setSessionsOpen((value) => !value)}
-              aria-label="对话历史"
-              title="对话历史"
+              aria-label={t('chat.history')}
+              title={t('chat.history')}
               className="flex min-w-0 items-center gap-1.5 rounded-lg px-1 py-1 transition-colors hover:bg-white/[0.06]"
             >
               <span className="min-w-0 max-w-[260px] truncate text-[18px] font-semibold tracking-normal text-white">
@@ -395,8 +398,8 @@ export function ChatPanel({
               type="button"
               onClick={startNewSession}
               disabled={busy}
-              aria-label="新建对话"
-              title="新建对话"
+              aria-label={t('chat.newChat')}
+              title={t('chat.newChat')}
               className={cn(
                 'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
                 busy
@@ -409,8 +412,8 @@ export function ChatPanel({
             <button
               type="button"
               onClick={() => setOpen(false)}
-              aria-label="收起"
-              title="收起"
+              aria-label={t('common.collapse')}
+              title={t('common.collapse')}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-white/68 transition-colors hover:bg-white/[0.07] hover:text-white"
             >
               <IconMinus size={23} stroke={2.2} />
@@ -472,8 +475,8 @@ export function ChatPanel({
       <motion.button
         type="button"
         onClick={() => setOpen(false)}
-        aria-label="收起 Lumen Agent"
-        title="收起"
+        aria-label={t('chat.collapseAgent')}
+        title={t('common.collapse')}
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.96 }}
         transition={{ type: 'spring', stiffness: 360, damping: 24 }}
@@ -500,6 +503,7 @@ function SessionMenu({
   onNewSession: () => void;
   onSelectSession: (sessionId: string) => void;
 }) {
+  const { locale, t } = useI18n();
   return (
     <motion.div
       initial={{ opacity: 0, y: -6, scale: 0.985 }}
@@ -521,7 +525,7 @@ function SessionMenu({
           )}
         >
           <IconPlus size={17} stroke={2.4} />
-          <span className="min-w-0 truncate">New chat</span>
+          <span className="min-w-0 truncate">{t('chat.newChat')}</span>
         </button>
       </div>
 
@@ -529,12 +533,14 @@ function SessionMenu({
         {loading ? (
           <div className="flex h-14 items-center gap-2 px-3 text-[12px] font-medium text-white/40">
             <IconLoader2 size={14} className="animate-spin" stroke={2.4} />
-            <span>Loading...</span>
+            <span>{t('common.loading')}...</span>
           </div>
         ) : null}
 
         {!loading && sessions.length === 0 ? (
-          <div className="px-3 py-4 text-[12px] font-medium text-white/34">No history yet</div>
+          <div className="px-3 py-4 text-[12px] font-medium text-white/34">
+            {t('chat.noHistory')}
+          </div>
         ) : null}
 
         {sessions.map((session) => {
@@ -561,10 +567,10 @@ function SessionMenu({
               />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-semibold leading-5">
-                  {formatSessionTitle(session)}
+                  {formatSessionTitle(session, t)}
                 </span>
                 <span className="mt-0.5 block truncate text-[11px] leading-4 text-white/34">
-                  {formatSessionTime(session.updated_at)}
+                  {formatSessionTime(session.updated_at, locale)}
                 </span>
               </span>
             </button>
@@ -579,41 +585,55 @@ function createDraftSessionId(): string {
   return `studio-${nanoid(12)}`;
 }
 
-function formatSessionTitle(session: AgentSessionSummary): string {
+function formatSessionTitle(
+  session: AgentSessionSummary,
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+): string {
   const summary = session.summary?.trim();
   if (summary) return summary;
   const preview = session.last_message_preview?.trim();
   if (preview) return preview.length > 42 ? `${preview.slice(0, 39)}...` : preview;
-  return 'Untitled chat';
+  return t('chat.untitledChat');
 }
 
-function formatSessionTime(value: string | undefined): string {
+function formatSessionTime(value: string | undefined, locale: 'en' | 'zh'): string {
   if (!value) return '';
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return '';
   const diffMs = Date.now() - timestamp;
-  if (diffMs < 60_000) return 'Just now';
-  if (diffMs < 3_600_000) return `${Math.max(1, Math.floor(diffMs / 60_000))}m ago`;
-  if (diffMs < 86_400_000) return `${Math.max(1, Math.floor(diffMs / 3_600_000))}h ago`;
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(
-    new Date(timestamp),
-  );
+  const formatter = new Intl.RelativeTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    numeric: 'auto',
+  });
+  if (diffMs < 60_000) return formatter.format(0, 'second');
+  if (diffMs < 3_600_000)
+    return formatter.format(-Math.max(1, Math.floor(diffMs / 60_000)), 'minute');
+  if (diffMs < 86_400_000)
+    return formatter.format(-Math.max(1, Math.floor(diffMs / 3_600_000)), 'hour');
+  return new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(timestamp));
 }
 
-function buildMessageWithAttachments(text: string, attachments: ChatUploadAttachment[]): string {
+function buildMessageWithAttachments(
+  text: string,
+  attachments: ChatUploadAttachment[],
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+): string {
   if (attachments.length === 0) return text;
 
-  const intro = text.trim() || '请查看我上传的图片。';
+  const intro = text.trim() || t('chat.imageIntro');
   const lines = attachments.map((item, index) => {
     const label = item.name.trim() || `image-${index + 1}`;
     return `${index + 1}. ${label}: ${item.url}`;
   });
-  return `${intro}\n\n上传图片：\n${lines.join('\n')}`;
+  return `${intro}\n\n${t('chat.uploadedImages')}\n${lines.join('\n')}`;
 }
 
 async function uploadAgentChatImage(
   file: File,
   workflowId: string | undefined,
+  locale: 'en' | 'zh',
 ): Promise<ChatUploadAttachment> {
   const form = new FormData();
   form.set('file', file);
@@ -621,6 +641,7 @@ async function uploadAgentChatImage(
 
   const response = await fetch('/api/agent-chat/uploads', {
     method: 'POST',
+    headers: { 'x-lumen-locale': locale },
     body: form,
   });
   const rawText = await response.text().catch(() => '');
@@ -631,7 +652,9 @@ async function uploadAgentChatImage(
 
   const attachment = payload?.data?.attachment;
   if (!attachment?.url) {
-    throw new Error('上传响应缺少图片地址');
+    throw new Error(
+      locale === 'zh' ? '上传响应缺少图片地址' : 'Upload response is missing the image URL',
+    );
   }
 
   return {
@@ -709,6 +732,7 @@ function StatusRing({ busy, compact = false }: { busy: boolean; compact?: boolea
 }
 
 function WelcomeMessage() {
+  const { t } = useI18n();
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -717,7 +741,7 @@ function WelcomeMessage() {
       className="mt-auto pb-3"
     >
       <div className="max-w-[90%] text-[17px] font-semibold leading-[1.5] text-white/92">
-        Hi — what can I help you create on the canvas today?
+        {t('chat.welcome')}
       </div>
     </motion.div>
   );
@@ -751,9 +775,10 @@ function UserMessage({ message }: { message: ChatMessage }) {
 }
 
 function AssistantMessage({ message }: { message: ChatMessage }) {
+  const { t } = useI18n();
   const isStreaming = message.status === 'streaming';
   const isFailed = message.status === 'failed';
-  const liveLabel = getLiveLabel(message);
+  const liveLabel = getLiveLabel(message, t);
   const richContent = parseRichMessageContent(message.content);
 
   return (
@@ -779,13 +804,15 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
 
         {isFailed ? (
           <div className="mt-3 text-[13px] leading-6 text-[#ff9aa6]">
-            {message.error ?? '生成失败'}
+            {message.error ?? t('chat.failed')}
           </div>
         ) : null}
 
         {message.thinking?.trim() && !isStreaming ? (
           <details className="mt-3 max-w-[92%] text-[12px] text-white/38">
-            <summary className="cursor-pointer list-none marker:hidden">思考过程</summary>
+            <summary className="cursor-pointer list-none marker:hidden">
+              {t('chat.thinkingDetails')}
+            </summary>
             <div className="mt-1 whitespace-pre-wrap break-words leading-5">
               {message.thinking.trim()}
             </div>
@@ -832,6 +859,7 @@ function RichMessageText({ parts }: { parts: RichTextPart[] }) {
 }
 
 function MediaPreviewList({ media }: { media: MediaAttachment[] }) {
+  const { t } = useI18n();
   if (media.length === 0) return null;
 
   return (
@@ -861,7 +889,7 @@ function MediaPreviewList({ media }: { media: MediaAttachment[] }) {
               preload="metadata"
               className="max-h-[300px] w-full bg-black"
             >
-              Your browser does not support the video tag.
+              {t('chat.browserVideoUnsupported')}
             </video>
           ) : null}
 
@@ -887,6 +915,7 @@ function MediaPreviewList({ media }: { media: MediaAttachment[] }) {
 }
 
 function Timeline({ items }: { items?: ChatTimelineItem[] }) {
+  const { t } = useI18n();
   const visible = (items ?? []).filter((item) => item.kind !== 'connection').slice(-12);
 
   if (visible.length === 0) return null;
@@ -908,7 +937,7 @@ function Timeline({ items }: { items?: ChatTimelineItem[] }) {
                   timelineBadgeClass(item.status),
                 )}
               >
-                {timelineStatusLabel(item)}
+                {timelineStatusLabel(item, t)}
               </span>
             </div>
             {item.detail ? (
@@ -956,15 +985,28 @@ function TimelineIcon({ item }: { item: ChatTimelineItem }) {
 }
 
 function MessageActions() {
+  const { t } = useI18n();
   return (
     <div className="mt-5 flex items-center gap-4 text-white/46">
-      <button type="button" aria-label="复制" className="transition-colors hover:text-white/78">
+      <button
+        type="button"
+        aria-label={t('chat.actions.copy')}
+        className="transition-colors hover:text-white/78"
+      >
         <IconCopy size={18} stroke={2.1} />
       </button>
-      <button type="button" aria-label="赞" className="transition-colors hover:text-white/78">
+      <button
+        type="button"
+        aria-label={t('chat.actions.like')}
+        className="transition-colors hover:text-white/78"
+      >
         <IconThumbUp size={18} stroke={2.1} />
       </button>
-      <button type="button" aria-label="踩" className="transition-colors hover:text-white/78">
+      <button
+        type="button"
+        aria-label={t('chat.actions.dislike')}
+        className="transition-colors hover:text-white/78"
+      >
         <IconThumbDown size={18} stroke={2.1} />
       </button>
     </div>
@@ -1024,6 +1066,7 @@ function Composer({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onStop: () => void;
 }) {
+  const { t } = useI18n();
   const canSend = Boolean(draft.trim()) || attachments.length > 0;
 
   return (
@@ -1045,7 +1088,7 @@ function Composer({
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Use '@' to mention nodes and '/' to use skills."
+            placeholder={t('chat.placeholder')}
             rows={1}
             className="max-h-[96px] min-h-[28px] flex-1 resize-none bg-transparent py-1 text-[15px] leading-[24px] text-white outline-none placeholder:text-white/30"
           />
@@ -1061,8 +1104,8 @@ function Composer({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={busy || uploading}
-            aria-label={uploading ? '上传中' : '上传图片'}
-            title={uploading ? '上传中' : '上传图片'}
+            aria-label={uploading ? t('chat.uploading') : t('chat.uploadImages')}
+            title={uploading ? t('chat.uploading') : t('chat.uploadImages')}
             className={cn(
               'mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
               busy || uploading
@@ -1090,6 +1133,7 @@ function AttachmentStrip({
   attachments: ChatUploadAttachment[];
   onRemoveAttachment: (attachmentId: string) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="mb-3 flex flex-wrap gap-2">
       {attachments.map((item) => (
@@ -1114,8 +1158,8 @@ function AttachmentStrip({
           <button
             type="button"
             onClick={() => onRemoveAttachment(item.id)}
-            aria-label="移除图片"
-            title="移除图片"
+            aria-label={t('chat.removeImage')}
+            title={t('chat.removeImage')}
             className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/48 text-white/62 transition-colors hover:bg-black/70 hover:text-white"
           >
             <IconX size={13} stroke={2.6} />
@@ -1137,13 +1181,14 @@ function SendOrStopButton({
   disabled?: boolean;
   onStop: () => void;
 }) {
+  const { t } = useI18n();
   if (busy) {
     return (
       <button
         type="button"
         onClick={onStop}
-        aria-label="停止生成"
-        title="停止生成"
+        aria-label={t('chat.stop')}
+        title={t('chat.stop')}
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_12px_30px_-18px_rgba(255,255,255,0.82)] transition-transform active:scale-[0.96]"
       >
         <IconPlayerStopFilled size={14} />
@@ -1155,8 +1200,8 @@ function SendOrStopButton({
     <button
       type="submit"
       disabled={!canSend || disabled}
-      aria-label="发送"
-      title="发送"
+      aria-label={t('chat.send')}
+      title={t('chat.send')}
       className={cn(
         'flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all',
         canSend && !disabled
@@ -1268,34 +1313,42 @@ function shortenUrl(url: string): string {
   }
 }
 
-function getLiveLabel(message: ChatMessage): string {
+function getLiveLabel(
+  message: ChatMessage,
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+): string {
   const current = message.events?.findLast?.((event) => event.status === 'running');
-  if (!current) return 'Thinking...';
+  if (!current) return t('chat.thinking');
   if (current.kind === 'tool') return current.title;
-  if (current.kind === 'step') return 'Thinking...';
+  if (current.kind === 'step') return t('chat.thinking');
   return current.title;
 }
 
-function timelineStatusLabel(item: ChatTimelineItem) {
+function timelineStatusLabel(
+  item: ChatTimelineItem,
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+) {
   if (item.kind === 'tool') {
-    if (item.status === 'running') return '调用中';
-    if (item.status === 'success') return '执行成功';
-    if (item.status === 'error') return '执行失败';
+    if (item.status === 'running') return t('chat.timeline.toolRunning');
+    if (item.status === 'success') return t('chat.timeline.toolSuccess');
+    if (item.status === 'error') return t('chat.timeline.toolError');
   }
   if (item.kind === 'thinking') {
-    return item.status === 'running' ? '思考中' : '已记录';
+    return item.status === 'running'
+      ? t('chat.timeline.thinkingRunning')
+      : t('chat.timeline.thinkingSaved');
   }
   switch (item.status) {
     case 'queued':
-      return '排队中';
+      return t('chat.timeline.statusQueued');
     case 'running':
-      return '进行中';
+      return t('chat.timeline.statusRunning');
     case 'success':
-      return '成功';
+      return t('chat.timeline.statusSuccess');
     case 'error':
-      return '失败';
+      return t('chat.timeline.statusError');
     default:
-      return '事件';
+      return t('chat.timeline.statusEvent');
   }
 }
 

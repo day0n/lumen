@@ -1,5 +1,6 @@
 'use client';
 
+import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import {
   IconArrowUp,
@@ -43,8 +44,6 @@ const HERO_ATTACHMENTS_STORAGE_KEY = 'lumen:hero:attachments';
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024;
 const MAX_IMAGES = 6;
 
-const QUICK_ACTIONS = ['夏日防晒面膜', '磁吸耳机 Pro', '复古牛仔外套'];
-
 const COVER_GRADIENTS = [
   'linear-gradient(135deg,#496cae,#6987c4)',
   'linear-gradient(135deg,#c9d0d8,#5d6877 52%,#3b4654)',
@@ -55,6 +54,7 @@ const COVER_GRADIENTS = [
 
 export function Hero() {
   const router = useRouter();
+  const { locale, t, ta, localePath } = useI18n();
   const { requireLogin } = useLoginRedirect();
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -68,6 +68,12 @@ export function Hero() {
     error: speechError,
     toggle,
   } = useSpeechToText({
+    language: locale === 'zh' ? 'zh-CN' : 'en-US',
+    errors: {
+      micPermission: t('home.micPermission'),
+      noSpeech: t('home.noSpeech'),
+      speechFailed: t('home.speechFailed'),
+    },
     onTranscript: (chunk) => {
       setValue((current) => {
         const trimmed = current.trimEnd();
@@ -85,6 +91,7 @@ export function Hero() {
         const response = await fetch('/api/projects?limit=3', {
           signal: controller.signal,
           credentials: 'include',
+          headers: { 'x-lumen-locale': locale },
         });
         if (response.status === 401) {
           setRecents([]);
@@ -103,7 +110,7 @@ export function Hero() {
 
     void load();
     return () => controller.abort();
-  }, []);
+  }, [locale]);
 
   const attachedImagesRef = useRef<AttachedImage[]>([]);
   attachedImagesRef.current = attachedImages;
@@ -124,7 +131,7 @@ export function Hero() {
 
     const slotsLeft = MAX_IMAGES - attachedImages.length;
     if (slotsLeft <= 0) {
-      setAttachError(`最多上传 ${MAX_IMAGES} 张图片`);
+      setAttachError(t('home.maxImages', { count: MAX_IMAGES }));
       return;
     }
 
@@ -133,11 +140,11 @@ export function Hero() {
 
     for (const file of files.slice(0, slotsLeft)) {
       if (!file.type.startsWith('image/')) {
-        rejectedReason = `${file.name} 不是图片`;
+        rejectedReason = t('home.notImage', { name: file.name });
         continue;
       }
       if (file.size > MAX_IMAGE_SIZE) {
-        rejectedReason = `${file.name} 超过 8MB`;
+        rejectedReason = t('home.imageTooLarge', { name: file.name });
         continue;
       }
       accepted.push({
@@ -188,16 +195,17 @@ export function Hero() {
     }
 
     if (!requireLogin(target)) return;
-    router.push(target);
+    router.push(localePath(target));
   };
 
   const voiceLabel = !speechSupported
-    ? '当前浏览器不支持语音输入'
+    ? t('home.voiceUnsupported')
     : speechError
       ? speechError
       : listening
-        ? '点击结束录音'
-        : '语音输入';
+        ? t('home.voiceStop')
+        : t('home.voiceInput');
+  const quickActions = ta('home.quickActions');
 
   return (
     <section className="relative mx-auto mt-8 max-w-[760px] px-6">
@@ -208,7 +216,7 @@ export function Hero() {
         className="relative"
       >
         <div className="pointer-events-none absolute -right-14 -top-14 hidden rotate-[12deg] rounded-2xl border border-white/14 bg-[#181a1d] px-4 py-2 text-[12px] font-semibold text-white/64 shadow-[0_18px_60px_-42px_rgba(255,255,255,0.42)] md:block">
-          下一条爆款脚本，交给我执行
+          {t('home.heroBadge')}
         </div>
 
         <div className="flex items-center gap-3">
@@ -216,7 +224,7 @@ export function Hero() {
             <IconSparkles size={19} stroke={2.2} />
           </span>
           <h1 className="font-display text-[28px] font-extrabold tracking-tight text-white">
-            今天要做点什么？
+            {t('home.heroTitle')}
           </h1>
         </div>
 
@@ -224,7 +232,7 @@ export function Hero() {
           <textarea
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            placeholder="开始一段灵感对话，或者贴一个商品链接..."
+            placeholder={t('home.heroPlaceholder')}
             className="h-[92px] w-full resize-none bg-transparent px-5 py-4 text-[14px] leading-6 text-white outline-none placeholder:text-white/34"
           />
 
@@ -245,7 +253,7 @@ export function Hero() {
                   <button
                     type="button"
                     onClick={() => removeImage(image.id)}
-                    aria-label={`移除 ${image.name}`}
+                    aria-label={`${t('common.remove')} ${image.name}`}
                     className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/72 text-white opacity-0 ring-1 ring-white/[0.18] transition-opacity group-hover/chip:opacity-100"
                   >
                     <IconX size={11} stroke={2.6} />
@@ -277,8 +285,8 @@ export function Hero() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              aria-label="上传图片"
-              title={`上传图片（最多 ${MAX_IMAGES} 张）`}
+              aria-label={t('home.uploadImage')}
+              title={t('home.uploadImageTitle', { count: MAX_IMAGES })}
               disabled={attachedImages.length >= MAX_IMAGES}
               className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
             >
@@ -315,7 +323,7 @@ export function Hero() {
                 onClick={() => {
                   void goCreate();
                 }}
-                aria-label="发送并生成"
+                aria-label={t('home.sendGenerate')}
                 className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_10px_28px_-16px_rgba(255,255,255,0.7)] transition-transform active:scale-[0.96]"
               >
                 <IconArrowUp size={18} stroke={2.6} />
@@ -325,8 +333,8 @@ export function Hero() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="text-[12px] text-white/35">试试</span>
-          {QUICK_ACTIONS.map((prompt) => (
+          <span className="text-[12px] text-white/35">{t('home.try')}</span>
+          {quickActions.map((prompt) => (
             <button
               key={prompt}
               type="button"
@@ -347,13 +355,13 @@ export function Hero() {
             className="group flex h-[116px] flex-col items-center justify-center gap-2 rounded-xl bg-[#222426] text-white/68 ring-1 ring-white/[0.08] transition-colors hover:bg-[#282b2e] hover:text-white"
           >
             <IconPlus size={20} stroke={2.4} />
-            <span className="text-[12px] font-semibold">新建项目</span>
+            <span className="text-[12px] font-semibold">{t('home.newProject')}</span>
           </button>
 
           {recents.map((project, index) => (
             <Link
               key={project.id}
-              href={`/canvas/${project.id}`}
+              href={localePath(`/canvas/${project.id}`)}
               className="group overflow-hidden rounded-xl bg-[#202121] text-left ring-1 ring-white/[0.08] transition-colors hover:bg-[#262829]"
             >
               <div
@@ -366,7 +374,9 @@ export function Hero() {
                     {project.title}
                   </div>
                   <div className="mt-1 truncate text-[10.5px] text-white/35">
-                    编辑于 {formatRelativeTime(project.updatedAt)}
+                    {t('home.edited', {
+                      time: formatRelativeTime(project.updatedAt, locale, t),
+                    })}
                   </div>
                 </div>
                 <IconArrowUpRight
@@ -408,15 +418,25 @@ interface SpeechRecognitionConstructor {
   new (): SpeechRecognitionLike;
 }
 
-function useSpeechToText(options: { onTranscript: (chunk: string) => void }) {
-  const { onTranscript } = options;
+function useSpeechToText(options: {
+  language: string;
+  errors: {
+    micPermission: string;
+    noSpeech: string;
+    speechFailed: string;
+  };
+  onTranscript: (chunk: string) => void;
+}) {
+  const { errors, language, onTranscript } = options;
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const callbackRef = useRef(onTranscript);
+  const errorsRef = useRef(errors);
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [supported, setSupported] = useState(false);
 
   callbackRef.current = onTranscript;
+  errorsRef.current = errors;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -439,7 +459,7 @@ function useSpeechToText(options: { onTranscript: (chunk: string) => void }) {
     const recognition = new Ctor();
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.lang = 'zh-CN';
+    recognition.lang = language;
 
     recognition.onresult = (event) => {
       const results = Array.from(event.results as ArrayLike<{ 0: { transcript: string } }>);
@@ -452,13 +472,13 @@ function useSpeechToText(options: { onTranscript: (chunk: string) => void }) {
     recognition.onerror = (event) => {
       const code = event.error;
       if (code === 'not-allowed' || code === 'service-not-allowed') {
-        setError('请允许浏览器使用麦克风');
+        setError(errorsRef.current.micPermission);
       } else if (code === 'no-speech') {
-        setError('没听到语音，请再试一次');
+        setError(errorsRef.current.noSpeech);
       } else if (code === 'aborted') {
         setError(null);
       } else {
-        setError('语音识别失败，请稍后再试');
+        setError(errorsRef.current.speechFailed);
       }
       setListening(false);
     };
@@ -479,7 +499,7 @@ function useSpeechToText(options: { onTranscript: (chunk: string) => void }) {
       }
       recognitionRef.current = null;
     };
-  }, []);
+  }, [language]);
 
   const toggle = () => {
     const recognition = recognitionRef.current;
@@ -515,24 +535,35 @@ async function blobUrlToDataUrl(blobUrl: string): Promise<string> {
   });
 }
 
-function formatRelativeTime(iso: string) {
+function formatRelativeTime(
+  iso: string,
+  locale: string,
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+) {
   const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return '最近';
+  if (!Number.isFinite(then)) return t('common.recently');
 
   const diffSeconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (diffSeconds < 60) return '刚刚';
+  if (diffSeconds < 60) return t('common.justNow');
 
   const diffMinutes = Math.floor(diffSeconds / 60);
-  if (diffMinutes < 60) return `${diffMinutes} 分钟前`;
+  if (diffMinutes < 60)
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-diffMinutes, 'minute');
 
   const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours} 小时前`;
+  if (diffHours < 24)
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-diffHours, 'hour');
 
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) return `${diffDays} 天前`;
+  if (diffDays < 30)
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-diffDays, 'day');
 
   const diffMonths = Math.floor(diffDays / 30);
-  if (diffMonths < 12) return `${diffMonths} 个月前`;
+  if (diffMonths < 12)
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-diffMonths, 'month');
 
-  return `${Math.floor(diffMonths / 12)} 年前`;
+  return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(
+    -Math.floor(diffMonths / 12),
+    'year',
+  );
 }

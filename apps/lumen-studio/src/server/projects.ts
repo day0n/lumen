@@ -85,7 +85,7 @@ export async function createStudioProject(
 
   const project = await repository.create({
     ownerId: user.id,
-    title: options.title ?? '未命名画布',
+    title: options.title ?? 'Untitled canvas',
     description: options.description,
     thumbnail: options.thumbnail,
     canvas: options.canvas,

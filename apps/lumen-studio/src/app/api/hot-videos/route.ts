@@ -1,6 +1,8 @@
 import { getClerkUserId } from '@/server/auth';
 import { listHotVideos } from '@/server/hotVideos';
 import { failJson, okJson, routeError, withApiRouteSpan } from '@/server/http';
+import { translate } from '@/i18n/messages';
+import { resolveRequestLocale } from '@/server/locale';
 import {
   HotVideoOwnerScopeSchema,
   HotVideoPublishedRangeSchema,
@@ -11,6 +13,7 @@ import {
 export const runtime = 'nodejs';
 
 export const GET = withApiRouteSpan('GET /api/hot-videos', async (request: Request) => {
+  const locale = resolveRequestLocale(request);
   try {
     const url = new URL(request.url);
     const ownerScope = HotVideoOwnerScopeSchema.optional().parse(
@@ -21,7 +24,7 @@ export const GET = withApiRouteSpan('GET /api/hot-videos', async (request: Reque
     if (ownerScope === 'me') {
       const clerkUserId = await getClerkUserId();
       if (!clerkUserId) {
-        return failJson('请先登录后再查看已下载视频', 401);
+        return failJson(translate(locale, 'hotVideos.loginToViewMine'), 401);
       }
       ownerUserId = clerkUserId;
     }
@@ -42,13 +45,13 @@ export const GET = withApiRouteSpan('GET /api/hot-videos', async (request: Reque
       skip: parseIntParam(url.searchParams.get('skip'), 0),
     };
 
-    const result = await listHotVideos(input);
+    const result = await listHotVideos(input, locale);
     return okJson(result);
   } catch (error) {
     if (error instanceof SyntaxError) {
-      return failJson('请求参数解析失败', 400);
+      return failJson(translate(locale, 'hotVideos.badQuery'), 400);
     }
-    return routeError(error);
+    return routeError(error, locale);
   }
 });
 

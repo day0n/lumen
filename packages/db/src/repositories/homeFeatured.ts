@@ -5,6 +5,7 @@ import type { Db } from 'mongodb';
 import {
   type CreateHomeFeaturedItemInput,
   CreateHomeFeaturedItemInputSchema,
+  type HomeFeaturedTranslations,
   type HomeFeaturedItemDocument,
   HomeFeaturedItemDocumentSchema,
   type HomeFeaturedItemRecord,
@@ -12,6 +13,7 @@ import {
 } from '../schema/homeFeatured';
 
 const COLLECTION = 'studio_home_featured_items';
+type ContentLocale = 'en' | 'zh';
 
 export class HomeFeaturedRepository {
   constructor(private readonly db: Db) {}
@@ -21,13 +23,13 @@ export class HomeFeaturedRepository {
     await collection.createIndex({ status: 1, sort_order: 1 });
   }
 
-  async listActive(limit = 12): Promise<HomeFeaturedItemRecord[]> {
+  async listActive(limit = 12, locale: ContentLocale = 'en'): Promise<HomeFeaturedItemRecord[]> {
     const documents = await this.collection()
       .find({ status: 'active' })
       .sort({ sort_order: 1, _id: 1 })
       .limit(limit)
       .toArray();
-    return documents.map(toRecord);
+    return documents.map((document) => toRecord(document, locale));
   }
 
   async create(input: CreateHomeFeaturedItemInput): Promise<HomeFeaturedItemRecord> {
@@ -41,6 +43,7 @@ export class HomeFeaturedRepository {
       description: parsed.description,
       stats_label: parsed.statsLabel,
       cta_label: parsed.ctaLabel,
+      translations: parsed.translations,
       cta_href: parsed.ctaHref,
       cover_url: parsed.coverUrl,
       background_css: parsed.backgroundCss,
@@ -53,7 +56,7 @@ export class HomeFeaturedRepository {
     });
 
     await this.collection().insertOne(document);
-    return toRecord(document);
+    return toRecord(document, 'en');
   }
 
   async deleteAll(): Promise<void> {
@@ -65,16 +68,20 @@ export class HomeFeaturedRepository {
   }
 }
 
-function toRecord(document: HomeFeaturedItemDocument): HomeFeaturedItemRecord {
+function toRecord(
+  document: HomeFeaturedItemDocument,
+  locale: ContentLocale,
+): HomeFeaturedItemRecord {
   const parsed = HomeFeaturedItemDocumentSchema.parse(document);
+  const translation = readTranslation(parsed.translations, locale);
   return HomeFeaturedItemRecordSchema.parse({
     id: parsed._id,
-    badge: parsed.badge,
-    title: parsed.title,
-    subtitle: parsed.subtitle,
-    description: parsed.description,
-    statsLabel: parsed.stats_label,
-    ctaLabel: parsed.cta_label,
+    badge: translation.badge ?? parsed.badge,
+    title: translation.title ?? parsed.title,
+    subtitle: translation.subtitle ?? parsed.subtitle,
+    description: translation.description ?? parsed.description,
+    statsLabel: translation.statsLabel ?? parsed.stats_label,
+    ctaLabel: translation.ctaLabel ?? parsed.cta_label,
     ctaHref: parsed.cta_href,
     coverUrl: parsed.cover_url,
     backgroundCss: parsed.background_css,
@@ -85,4 +92,11 @@ function toRecord(document: HomeFeaturedItemDocument): HomeFeaturedItemRecord {
     createdAt: parsed.created_at.toISOString(),
     updatedAt: parsed.updated_at.toISOString(),
   });
+}
+
+function readTranslation(
+  translations: HomeFeaturedTranslations | undefined,
+  locale: ContentLocale,
+) {
+  return translations?.[locale] ?? translations?.en ?? {};
 }

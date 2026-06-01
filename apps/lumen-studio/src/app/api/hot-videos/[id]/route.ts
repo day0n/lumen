@@ -1,5 +1,7 @@
 import { getHotVideo } from '@/server/hotVideos';
 import { failJson, okJson, routeError, withApiRouteSpan } from '@/server/http';
+import { translate } from '@/i18n/messages';
+import { resolveRequestLocale } from '@/server/locale';
 
 export const runtime = 'nodejs';
 
@@ -11,18 +13,19 @@ interface HotVideoRouteContext {
 
 export const GET = withApiRouteSpan(
   'GET /api/hot-videos/:id',
-  async (_request: Request, context: HotVideoRouteContext) => {
+  async (request: Request, context: HotVideoRouteContext) => {
+    const locale = resolveRequestLocale(request);
     try {
       const { id } = await context.params;
-      const video = await getHotVideo(id);
+      const video = await getHotVideo(id, locale);
 
       if (!video) {
-        return failJson('爆款视频不存在', 404);
+        return failJson(translate(locale, 'hotVideos.notFound'), 404);
       }
 
       return okJson({ video });
     } catch (error) {
-      return routeError(error);
+      return routeError(error, locale);
     }
   },
 );

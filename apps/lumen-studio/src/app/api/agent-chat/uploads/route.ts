@@ -1,5 +1,7 @@
 import { requireStudioUser } from '@/server/auth';
+import { translate } from '@/i18n/messages';
 import { failJson, okJson, routeError, withApiRouteSpan } from '@/server/http';
+import { resolveRequestLocale } from '@/server/locale';
 import { uploadBuffer } from '@/server/objectStorage';
 
 export const runtime = 'nodejs';
@@ -15,29 +17,30 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
 };
 
 export const POST = withApiRouteSpan('POST /api/agent-chat/uploads', async (request: Request) => {
+  const locale = resolveRequestLocale(request);
   try {
     const user = await requireStudioUser();
     const form = await request.formData();
     const file = form.get('file');
 
     if (!(file instanceof File)) {
-      return failJson('请选择要上传的图片', 400);
+      return failJson(translate(locale, 'api.uploadMissingImage'), 400);
     }
 
     const contentType = normalizeContentType(file.type);
     if (!contentType || !contentType.startsWith('image/')) {
-      return failJson('只支持上传图片文件', 400);
+      return failJson(translate(locale, 'api.uploadImageOnly'), 400);
     }
     if (file.size <= 0) {
-      return failJson('图片文件为空', 400);
+      return failJson(translate(locale, 'api.uploadEmptyImage'), 400);
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      return failJson('图片不能超过 12MB', 400);
+      return failJson(translate(locale, 'api.uploadImageTooLarge'), 400);
     }
 
     const extension = resolveImageExtension(contentType, file.name);
     if (!extension) {
-      return failJson('暂不支持该图片格式', 400);
+      return failJson(translate(locale, 'api.uploadUnsupportedImage'), 400);
     }
 
     const workflowId = toPathSegment(form.get('workflowId'));
@@ -59,7 +62,7 @@ export const POST = withApiRouteSpan('POST /api/agent-chat/uploads', async (requ
       },
     });
   } catch (error) {
-    return routeError(error);
+    return routeError(error, locale);
   }
 });
 

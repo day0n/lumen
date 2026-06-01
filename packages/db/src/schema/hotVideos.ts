@@ -38,6 +38,43 @@ export const HotVideoAnalysisDocumentSchema = z
   })
   .strict();
 
+const HotVideoMetricsTranslationSchema = z
+  .object({
+    revenueLabel: z.string().trim().max(40).optional(),
+    viewsLabel: z.string().trim().max(40).optional(),
+  })
+  .strict();
+
+const HotVideoAnalysisTranslationSchema = z
+  .object({
+    hook: z.string().trim().max(280).optional(),
+    angle: z.string().trim().max(120).optional(),
+    tags: z.array(z.string().trim().max(40)).max(20).optional(),
+    structure: z.array(z.string().trim().max(80)).max(20).optional(),
+  })
+  .strict();
+
+const HotVideoTranslationSchema = z
+  .object({
+    title: z.string().trim().min(1).max(240).optional(),
+    productName: z.string().trim().min(1).max(120).optional(),
+    region: z.string().trim().min(1).max(40).optional(),
+    category: z.string().trim().min(1).max(40).optional(),
+    videoType: z.string().trim().min(1).max(40).optional(),
+    metrics: HotVideoMetricsTranslationSchema.optional(),
+    analysis: HotVideoAnalysisTranslationSchema.optional(),
+  })
+  .strict();
+
+const HotVideoTranslationsSchema = z
+  .object({
+    en: HotVideoTranslationSchema.optional(),
+    zh: HotVideoTranslationSchema.optional(),
+  })
+  .strict();
+
+export type HotVideoTranslations = z.infer<typeof HotVideoTranslationsSchema>;
+
 export const HotVideoDocumentSchema = z
   .object({
     _id: z.string().min(1),
@@ -58,6 +95,7 @@ export const HotVideoDocumentSchema = z
     accent_color: HexColorSchema,
     metrics: HotVideoMetricsDocumentSchema,
     analysis: HotVideoAnalysisDocumentSchema,
+    translations: HotVideoTranslationsSchema.optional(),
     published_at: z.date(),
     ingested_at: z.date().optional(),
     status: HotVideoStatusSchema.default('active'),
@@ -182,6 +220,7 @@ export const CreateHotVideoInputSchema = z
         structure: z.array(z.string().trim().max(80)).max(20),
       })
       .strict(),
+    translations: HotVideoTranslationsSchema.optional(),
     publishedAt: z.date(),
     status: HotVideoStatusSchema.optional(),
   })

@@ -14,6 +14,9 @@ import * as Sentry from '@sentry/nextjs';
 import { nanoid } from 'nanoid';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { translate } from '@/i18n/messages';
+import type { Locale } from '@/i18n/routing';
+
 const AGENT_URL = process.env.NEXT_PUBLIC_AGENT_URL ?? 'http://localhost:3001';
 
 export type ChatRole = 'user' | 'assistant';
@@ -62,6 +65,7 @@ interface UseAgentChatOptions {
   sessionId?: string;
   profile?: string;
   context?: Record<string, unknown>;
+  locale?: Locale;
   onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
   onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
 }
@@ -167,6 +171,7 @@ export function useAgentChat({
   sessionId,
   profile = 'main',
   context,
+  locale = 'en',
   onWorkflowUpdate,
   onWorkflowNodeStatus,
 }: UseAgentChatOptions = {}) {
@@ -174,6 +179,11 @@ export function useAgentChat({
   const [status, setStatus] = useState<AgentChatStatus>('idle');
   const [errorText, setErrorText] = useState<string | null>(null);
   const { getToken } = useAuth();
+  const tt = useCallback(
+    (key: string, params?: Record<string, string | number | boolean | null | undefined>) =>
+      translate(locale, key, params),
+    [locale],
+  );
 
   const sid = useMemo(() => sessionId ?? `studio-${nanoid(12)}`, [sessionId]);
   const abortRef = useRef<AbortController | null>(null);
@@ -247,7 +257,7 @@ export function useAgentChat({
           id: 'run.cancelled.client',
           kind: 'run',
           status: 'info',
-          title: '已停止当前任务',
+          title: tt('chat.timeline.stopped'),
           detail: runId ? `run ${runId.slice(0, 8)}` : undefined,
           createdAt: Date.now(),
         }),
@@ -269,7 +279,7 @@ export function useAgentChat({
           /* noop */
         });
     }
-  }, [getToken, updateMessage]);
+  }, [getToken, tt, updateMessage]);
 
   const send = useCallback(
     async (text: string) => {
@@ -297,7 +307,7 @@ export function useAgentChat({
             id: 'run.create',
             kind: 'run',
             status: 'queued',
-            title: '正在提交任务',
+            title: tt('chat.timeline.submitting'),
             detail: profile,
             createdAt: now,
           },
@@ -322,6 +332,7 @@ export function useAgentChat({
           profile,
           message: trimmed,
           context,
+          locale,
           signal: controller.signal,
           token,
         });
@@ -339,7 +350,7 @@ export function useAgentChat({
             id: 'run.create.failed',
             kind: 'error',
             status: 'error',
-            title: '任务提交失败',
+            title: tt('chat.timeline.submitFailed'),
             detail: message,
             createdAt: Date.now(),
           }),
@@ -356,7 +367,7 @@ export function useAgentChat({
           id: 'run.create',
           kind: 'run',
           status: 'success',
-          title: '任务已进入队列',
+          title: tt('chat.timeline.queued'),
           detail: `run ${runId.slice(0, 8)}`,
           createdAt: Date.now(),
         }),
@@ -381,6 +392,7 @@ export function useAgentChat({
       let terminalReason: 'completed' | 'failed' | 'stopped' | null = null;
 
       const eventsHeaders: Record<string, string> = { accept: 'text/event-stream' };
+      eventsHeaders['x-lumen-locale'] = locale;
       if (token) eventsHeaders.authorization = `Bearer ${token}`;
       const eventsTrace = Sentry.getTraceData();
       if (eventsTrace['sentry-trace']) {
@@ -411,7 +423,7 @@ export function useAgentChat({
                 id: 'events.connected',
                 kind: 'connection',
                 status: 'success',
-                title: '事件流已连接',
+                title: tt('chat.timeline.connected'),
                 createdAt: Date.now(),
               }),
             }));
@@ -434,6 +446,7 @@ export function useAgentChat({
             handleEvent(env, assistantMessage.id, updateMessage, {
               onWorkflowUpdate,
               onWorkflowNodeStatus,
+              locale,
             });
 
             if (env.event === 'run:answer' || env.event === 'run:done') {
@@ -467,8 +480,8 @@ export function useAgentChat({
                 id: 'events.reconnecting',
                 kind: 'connection',
                 status: 'running',
-                title: '事件流重连中',
-                detail: `第 ${reconnectAttempt} 次`,
+                title: tt('chat.timeline.reconnecting'),
+                detail: tt('chat.timeline.attempt', { count: reconnectAttempt }),
                 createdAt: Date.now(),
               }),
             }));
@@ -482,10 +495,10 @@ export function useAgentChat({
           if (err.reason === 'failed') {
             updateMessage(assistantMessage.id, (prev) => ({
               status: 'failed',
-              error: prev.error ?? '生成失败',
+              error: prev.error ?? tt('chat.failed'),
             }));
             setStatus('error');
-            setErrorText('生成失败，请重试');
+            setErrorText(tt('chat.retry'));
           } else {
             updateMessage(assistantMessage.id, { status: 'done' });
             setStatus('idle');
@@ -507,7 +520,7 @@ export function useAgentChat({
             id: 'events.failed',
             kind: 'error',
             status: 'error',
-            title: '事件流中断',
+            title: tt('chat.timeline.interrupted'),
             detail: message,
             createdAt: Date.now(),
           }),
@@ -521,7 +534,17 @@ export function useAgentChat({
           activeAssistantIdRef.current = null;
       }
     },
-    [profile, sid, context, onWorkflowUpdate, onWorkflowNodeStatus, updateMessage, getToken],
+    [
+      profile,
+      sid,
+      context,
+      locale,
+      onWorkflowUpdate,
+      onWorkflowNodeStatus,
+      updateMessage,
+      getToken,
+      tt,
+    ],
   );
 
   return { messages, status, errorText, send, stop, sessionId: sid };
@@ -564,6 +587,7 @@ async function createRun(params: {
   profile: string;
   message: string;
   context?: Record<string, unknown>;
+  locale: Locale;
   signal: AbortSignal;
   token: string | null;
 }): Promise<string> {
@@ -571,6 +595,7 @@ async function createRun(params: {
   let lastError: unknown;
 
   const headers: Record<string, string> = { 'content-type': 'application/json' };
+  headers['x-lumen-locale'] = params.locale;
   if (params.token) headers.authorization = `Bearer ${params.token}`;
   // browserTracingIntegration 应该会自动给 fetch 注入；这里再手动兜底一次，
   // 防止第三方封装把头吞掉，保证 Flow A（对话）一定串到 agent 的 trace。
@@ -713,7 +738,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
         id: `tool.${toolCallId}`,
         kind: 'tool',
         status: 'running',
-        title: `调用 ${formatToolName(toolName)}`,
+        title: translate('en', 'chat.timeline.callTool', { tool: formatToolName(toolName, 'en') }),
         detail: summarizeArguments(args),
         toolName,
         payload: args,
@@ -733,8 +758,8 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
         status,
         title:
           status === 'error'
-            ? `${formatToolName(toolName)} 执行失败`
-            : `${formatToolName(toolName)} 已完成`,
+            ? translate('en', 'chat.timeline.toolFailed', { tool: formatToolName(toolName, 'en') })
+            : translate('en', 'chat.timeline.toolDone', { tool: formatToolName(toolName, 'en') }),
         detail:
           item.error ??
           formatToolResultDetail(readNumber(item.duration_ms), readNumber(item.output_size_bytes)),
@@ -754,7 +779,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
         id: workflowTimelineId(item.tool_call_id ?? `history-${index}`, eventName, data),
         kind: 'act_event',
         status: workflowTimelineStatus(eventName, data),
-        title: formatWorkflowEventTitle(eventName, data),
+        title: formatWorkflowEventTitle(eventName, data, 'en'),
         detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName),
         toolName,
         eventName,
@@ -802,10 +827,14 @@ function handleEvent(
     patch: Partial<ChatMessage> | ((prev: ChatMessage) => Partial<ChatMessage>),
   ) => void,
   handlers: {
+    locale?: Locale;
     onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
     onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
   } = {},
 ) {
+  const locale = handlers.locale ?? 'en';
+  const tt = (key: string, params?: Record<string, string | number | boolean | null | undefined>) =>
+    translate(locale, key, params);
   switch (env.event) {
     case 'run:open': {
       const runId = readString(env.data.run_id);
@@ -815,7 +844,7 @@ function handleEvent(
           id: 'run:open',
           kind: 'run',
           status: 'running',
-          title: 'Agent 已启动',
+          title: tt('chat.timeline.connected'),
           detail: runId ? `run ${runId.slice(0, 8)}` : undefined,
           createdAt: Date.now(),
         }),
@@ -839,7 +868,7 @@ function handleEvent(
           id: 'thinking.live',
           kind: 'thinking',
           status: 'running',
-          title: '正在思考',
+          title: tt('chat.timeline.thinkingRunning'),
           detail: compactText(delta, 90),
           createdAt: Date.now(),
         }),
@@ -855,7 +884,8 @@ function handleEvent(
           id,
           kind: 'step',
           status: 'running',
-          title: iteration ? `第 ${iteration} 轮推理` : '开始推理',
+          title: tt('chat.timeline.thinkingRunning'),
+          detail: iteration ? tt('chat.timeline.attempt', { count: iteration }) : undefined,
           createdAt: Date.now(),
         }),
       }));
@@ -870,7 +900,8 @@ function handleEvent(
           id,
           kind: 'step',
           status: 'success',
-          title: iteration ? `第 ${iteration} 轮完成` : '推理完成',
+          title: tt('chat.timeline.thinkingSaved'),
+          detail: iteration ? tt('chat.timeline.attempt', { count: iteration }) : undefined,
           createdAt: Date.now(),
         }),
       }));
@@ -886,7 +917,7 @@ function handleEvent(
           id: `tool.${toolCallId}`,
           kind: 'tool',
           status: 'running',
-          title: `调用 ${formatToolName(toolName)}`,
+          title: tt('chat.timeline.callTool', { tool: formatToolName(toolName, locale) }),
           detail: summarizeArguments(args),
           toolName,
           payload: args,
@@ -907,8 +938,8 @@ function handleEvent(
           id: workflowTimelineId(toolCallId, eventName, data),
           kind: 'act_event',
           status: workflowTimelineStatus(eventName, data),
-          title: formatWorkflowEventTitle(eventName, data),
-          detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName),
+          title: formatWorkflowEventTitle(eventName, data, locale),
+          detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName, locale),
           toolName,
           eventName,
           payload: data,
@@ -932,8 +963,8 @@ function handleEvent(
           status,
           title:
             status === 'error'
-              ? `${formatToolName(toolName)} 执行失败`
-              : `${formatToolName(toolName)} 已完成`,
+              ? tt('chat.timeline.toolFailed', { tool: formatToolName(toolName, locale) })
+              : tt('chat.timeline.toolDone', { tool: formatToolName(toolName, locale) }),
           detail: error ?? formatToolResultDetail(durationMs, bytes),
           durationMs: durationMs ?? undefined,
           toolName,
@@ -946,13 +977,13 @@ function handleEvent(
     case 'call:error': {
       const toolName = readString(env.data.tool_name) ?? 'tool';
       const toolCallId = readString(env.data.tool_call_id) ?? nanoid(8);
-      const error = readString(env.data.error) ?? '工具执行失败';
+      const error = readString(env.data.error) ?? tt('chat.timeline.toolError');
       updateMessage(assistantId, (prev) => ({
         events: upsertTimeline(prev.events, {
           id: `tool.${toolCallId}`,
           kind: 'tool',
           status: 'error',
-          title: `${formatToolName(toolName)} 执行失败`,
+          title: tt('chat.timeline.toolFailed', { tool: formatToolName(toolName, locale) }),
           detail: error,
           toolName,
           createdAt: Date.now(),
@@ -972,7 +1003,7 @@ function handleEvent(
           id: 'run:answer',
           kind: 'message',
           status: 'success',
-          title: '回复已完成',
+          title: tt('chat.timeline.completed'),
           createdAt: Date.now(),
         }),
       }));
@@ -985,7 +1016,7 @@ function handleEvent(
           id: 'run:done',
           kind: 'run',
           status: 'success',
-          title: '任务已完成',
+          title: tt('chat.timeline.completed'),
           createdAt: Date.now(),
         }),
       }));
@@ -1000,7 +1031,7 @@ function handleEvent(
           id: 'run:cancel',
           kind: 'run',
           status: 'info',
-          title: '任务已停止',
+          title: tt('chat.timeline.taskStopped'),
           createdAt: Date.now(),
         }),
       }));
@@ -1009,7 +1040,7 @@ function handleEvent(
 
     case 'run:error':
     case 'run:abort': {
-      const error = readString(env.data.error) ?? '生成失败';
+      const error = readString(env.data.error) ?? tt('chat.failed');
       updateMessage(assistantId, (prev) => ({
         status: 'failed',
         error,
@@ -1017,7 +1048,10 @@ function handleEvent(
           id: env.event,
           kind: 'error',
           status: 'error',
-          title: env.event === 'run:abort' ? '任务执行失败' : 'Agent 执行失败',
+          title:
+            env.event === 'run:abort'
+              ? tt('chat.timeline.taskFailed')
+              : tt('chat.timeline.agentFailed'),
           detail: error,
           createdAt: Date.now(),
         }),
@@ -1113,18 +1147,24 @@ function workflowTimelineStatus(
   return 'info';
 }
 
-function formatWorkflowEventTitle(eventName: string, data: Record<string, unknown>): string {
-  if (eventName === 'workflow_update') return '画布已更新';
-  if (eventName === 'workflow_completed') return '工作流运行完成';
+function formatWorkflowEventTitle(
+  eventName: string,
+  data: Record<string, unknown>,
+  locale: Locale,
+): string {
+  if (eventName === 'workflow_update') return translate(locale, 'chat.timeline.workflowUpdated');
+  if (eventName === 'workflow_completed') {
+    return translate(locale, 'chat.timeline.workflowCompleted');
+  }
   if (eventName === 'workflow_node_status') {
     const status = readString(data.status);
     const nodeTitle = readString(data.node_title);
-    const prefix = nodeTitle ? `节点 ${nodeTitle}` : '节点';
-    if (status === 'queued') return `${prefix} 已排队`;
-    if (status === 'running') return `${prefix} 运行中`;
-    if (status === 'success') return `${prefix} 已完成`;
-    if (status === 'error') return `${prefix} 运行失败`;
-    return '节点状态更新';
+    const title = nodeTitle ?? 'Node';
+    if (status === 'queued') return translate(locale, 'chat.timeline.nodeQueued', { title });
+    if (status === 'running') return translate(locale, 'chat.timeline.nodeRunning', { title });
+    if (status === 'success') return translate(locale, 'chat.timeline.nodeDone', { title });
+    if (status === 'error') return translate(locale, 'chat.timeline.nodeError', { title });
+    return translate(locale, 'chat.timeline.nodeStatus');
   }
   return formatEventName(eventName);
 }
@@ -1241,15 +1281,9 @@ function compactText(text: string, maxLength: number): string {
   return `${oneLine.slice(0, maxLength - 1)}…`;
 }
 
-function formatToolName(name: string): string {
-  const labels: Record<string, string> = {
-    use_skill: '加载技能',
-    read_canvas: '读取画布',
-    write_canvas: '编辑画布',
-    run_canvas_node: '运行节点',
-    search_web: '联网搜索',
-  };
-  if (labels[name]) return labels[name];
+function formatToolName(name: string, locale: Locale = 'en'): string {
+  const label = translate(locale, `chat.timeline.tools.${name}`);
+  if (label !== `chat.timeline.tools.${name}`) return label;
   return name
     .split(/[_\-.]/g)
     .filter(Boolean)

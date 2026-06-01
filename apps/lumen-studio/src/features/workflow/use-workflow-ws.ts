@@ -1,5 +1,7 @@
 'use client';
 
+import { translate } from '@/i18n/messages';
+import type { Locale } from '@/i18n/routing';
 import type { NodeStatus } from '@lumen/shared/domain';
 import type { ServerEvent } from '@lumen/shared/protocols';
 import * as Sentry from '@sentry/nextjs';
@@ -38,6 +40,7 @@ interface UseWorkflowWsOptions {
   projectId?: string | null;
   workflowId?: string | null;
   userId?: string | null;
+  locale?: Locale;
   onNodeStateChange?: (nodeId: string, state: NodeState) => void;
   onFlowDone?: () => void;
 }
@@ -47,6 +50,7 @@ export function useWorkflowWs({
   projectId,
   workflowId,
   userId,
+  locale = 'en',
   onNodeStateChange,
   onFlowDone,
 }: UseWorkflowWsOptions) {
@@ -148,7 +152,7 @@ export function useWorkflowWs({
       });
 
       if (!url) {
-        const error = '工作流引擎地址不可用';
+        const error = translate(locale, 'canvas.engineMissing');
         setConnectionError(error);
         markRunConnectionFailed(targetNodeIds, error);
         return;
@@ -212,7 +216,9 @@ export function useWorkflowWs({
       };
 
       ws.onerror = () => {
-        const error = opened ? '工作流连接异常' : '工作流引擎连接失败';
+        const error = opened
+          ? translate(locale, 'canvas.connectionError')
+          : translate(locale, 'canvas.engineConnectionFailed');
         setConnectionError(error);
       };
 
@@ -222,12 +228,23 @@ export function useWorkflowWs({
         flowSpan.setStatus({ code: flowDone ? 1 : 2 });
         flowSpan.end();
         if (flowDone) return;
-        const error = opened ? '工作流连接已断开' : '工作流引擎连接失败';
+        const error = opened
+          ? translate(locale, 'canvas.connectionClosed')
+          : translate(locale, 'canvas.engineConnectionFailed');
         setConnectionError(error);
         markRunConnectionFailed(targetNodeIds, error);
       };
     },
-    [handleEvent, markRunConnectionFailed, onNodeStateChange, projectId, url, userId, workflowId],
+    [
+      handleEvent,
+      locale,
+      markRunConnectionFailed,
+      onNodeStateChange,
+      projectId,
+      url,
+      userId,
+      workflowId,
+    ],
   );
 
   return { connectionError, nodeStates, runNodes };

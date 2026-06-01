@@ -37,6 +37,24 @@ const FEATURED: CreateHomeFeaturedItemInput[] = [
     title: 'Agent 模式上线',
     description: '从商品链接到脚本解析、镜头生成和执行计划，Lumen Agent 会把创意拆成可推进的任务。',
     statsLabel: '商品链接 · 脚本解析 · 镜头生成',
+    translations: {
+      en: {
+        badge: 'New',
+        subtitle: 'Give creation its own execution engine',
+        title: 'Agent mode is live',
+        description:
+          'From product links to script analysis, shot generation, and execution plans, Lumen Agent turns ideas into actionable tasks.',
+        statsLabel: 'Product links · Script analysis · Shot generation',
+      },
+      zh: {
+        badge: '新功能',
+        subtitle: '让创作拥有自主执行力',
+        title: 'Agent 模式上线',
+        description:
+          '从商品链接到脚本解析、镜头生成和执行计划，Lumen Agent 会把创意拆成可推进的任务。',
+        statsLabel: '商品链接 · 脚本解析 · 镜头生成',
+      },
+    },
     ctaHref: '/canvas/new?agent=chat',
     coverUrl: '/home-posters/selected/agent-pop.png',
     backgroundCss: 'linear-gradient(135deg, #160d1c 0%, #36204a 48%, #0b0d10 100%)',
@@ -50,6 +68,23 @@ const FEATURED: CreateHomeFeaturedItemInput[] = [
     title: '素材库上线',
     description: '商品图、参考视频、品牌元素和可复用镜头统一管理，创作时可以直接拖入画布。',
     statsLabel: '素材分组 · 标签检索 · 画布引用',
+    translations: {
+      en: {
+        badge: 'New',
+        subtitle: 'A deep asset library for free-form creation',
+        title: 'Asset library is live',
+        description:
+          'Manage product images, reference videos, brand elements, and reusable shots in one place, then drag them directly into the canvas.',
+        statsLabel: 'Asset groups · Tag search · Canvas references',
+      },
+      zh: {
+        badge: '新功能',
+        subtitle: '海量素材，随心创作',
+        title: '素材库上线',
+        description: '商品图、参考视频、品牌元素和可复用镜头统一管理，创作时可以直接拖入画布。',
+        statsLabel: '素材分组 · 标签检索 · 画布引用',
+      },
+    },
     ctaHref: '/canvas/new',
     coverUrl: '/home-posters/selected/material-mythic.png',
     backgroundCss: 'linear-gradient(135deg, #421511 0%, #9f4d34 44%, #0b1b1d 100%)',
@@ -63,6 +98,23 @@ const FEATURED: CreateHomeFeaturedItemInput[] = [
     title: '爆款复刻上线',
     description: '拆解爆款结构、换素材、改风格，再把可执行版本带回你的商品项目。',
     statsLabel: '结构拆解 · 商品改写 · 风格复刻',
+    translations: {
+      en: {
+        badge: 'New',
+        subtitle: 'Break down and remix winning videos',
+        title: 'Viral Remix is live',
+        description:
+          'Analyze winning structures, swap assets, shift the style, and bring an executable version back into your product project.',
+        statsLabel: 'Structure analysis · Product rewrite · Style remix',
+      },
+      zh: {
+        badge: '新功能',
+        subtitle: '一键拆解，复刻爆款',
+        title: '爆款复刻上线',
+        description: '拆解爆款结构、换素材、改风格，再把可执行版本带回你的商品项目。',
+        statsLabel: '结构拆解 · 商品改写 · 风格复刻',
+      },
+    },
     ctaHref: '/hot-videos',
     coverUrl: '/home-posters/selected/hot-remix-collage.png',
     backgroundCss: 'linear-gradient(135deg, #17110f 0%, #352421 42%, #0b0d10 100%)',
@@ -76,6 +128,23 @@ const FEATURED: CreateHomeFeaturedItemInput[] = [
     title: 'Agent Chat 上线',
     description: '和 Lumen 直接讨论商品、视频脚本和执行计划，让 Agent 把想法落到画布。',
     statsLabel: '自然对话 · 智能洞察 · 自动执行',
+    translations: {
+      en: {
+        badge: 'New',
+        subtitle: 'Natural conversation, sharper insight',
+        title: 'Agent Chat is live',
+        description:
+          'Discuss products, scripts, and execution plans with Lumen, then let Agent turn the idea into canvas work.',
+        statsLabel: 'Natural chat · Smart insight · Automated execution',
+      },
+      zh: {
+        badge: '新功能',
+        subtitle: '自然对话，智能洞察',
+        title: 'Agent Chat 上线',
+        description: '和 Lumen 直接讨论商品、视频脚本和执行计划，让 Agent 把想法落到画布。',
+        statsLabel: '自然对话 · 智能洞察 · 自动执行',
+      },
+    },
     ctaHref: '/canvas/new?agent=chat',
     coverUrl: '/home-posters/selected/agent-chat-minimal.png',
     backgroundCss: 'linear-gradient(135deg, #08090b 0%, #141a22 48%, #050607 100%)',
@@ -89,6 +158,23 @@ const FEATURED: CreateHomeFeaturedItemInput[] = [
     title: '素材库上线',
     description: '像逛一座内容档案馆一样挑素材，视频、图片、品牌元素都能作为创作输入。',
     statsLabel: '视频素材 · 图片素材 · 品牌元素',
+    translations: {
+      en: {
+        badge: 'New',
+        subtitle: 'Endless inspiration, endless assets',
+        title: 'Asset library is live',
+        description:
+          'Browse assets like a content archive. Videos, images, and brand elements can all become creative inputs.',
+        statsLabel: 'Video assets · Image assets · Brand elements',
+      },
+      zh: {
+        badge: '新功能',
+        subtitle: '灵感无限，素材无限',
+        title: '素材库上线',
+        description: '像逛一座内容档案馆一样挑素材，视频、图片、品牌元素都能作为创作输入。',
+        statsLabel: '视频素材 · 图片素材 · 品牌元素',
+      },
+    },
     ctaHref: '/canvas/new',
     coverUrl: '/home-posters/selected/material-archive.png',
     backgroundCss: 'linear-gradient(135deg, #101916 0%, #24403a 48%, #0b0d10 100%)',
@@ -102,6 +188,23 @@ const FEATURED: CreateHomeFeaturedItemInput[] = [
     title: 'Agent 模式上线',
     description: '让 Agent 在脚本、策略、执行和成片之间持续推进，减少反复切换工具的成本。',
     statsLabel: '洞察 · 策略 · 执行 · 成片',
+    translations: {
+      en: {
+        badge: 'New',
+        subtitle: 'AI becomes your creative partner',
+        title: 'Agent mode is live',
+        description:
+          'Let Agent keep moving across scripts, strategy, execution, and final output while reducing tool switching.',
+        statsLabel: 'Insight · Strategy · Execution · Final video',
+      },
+      zh: {
+        badge: '新功能',
+        subtitle: 'AI 成为你的创作伙伴',
+        title: 'Agent 模式上线',
+        description: '让 Agent 在脚本、策略、执行和成片之间持续推进，减少反复切换工具的成本。',
+        statsLabel: '洞察 · 策略 · 执行 · 成片',
+      },
+    },
     ctaHref: '/canvas/new?agent=chat',
     coverUrl: '/home-posters/selected/agent-glass.png',
     backgroundCss: 'linear-gradient(135deg, #070a0d 0%, #17252a 52%, #050607 100%)',
@@ -268,8 +371,88 @@ const HOT_VIDEOS: RawHotVideo[] = [
   },
 ];
 
+const HOT_VIDEO_EN_TRANSLATIONS = [
+  {
+    region: 'Vietnam',
+    category: 'Home goods',
+    videoType: 'UGC',
+    productName: 'No-drill wall tissue holder',
+    title: 'Unboxing shots turn wall tissue packs into clear benefits',
+    hook: 'Show the bulk pack and free shipping in the first 2 seconds to reduce friction.',
+    angle: 'Family stocking + wall storage',
+    tags: ['Free shipping', 'Stock-up', 'Storage'],
+    structure: ['Pack-size benefit', 'Use-case demo', 'Price anchor', 'Limited-time action'],
+  },
+  {
+    region: 'Philippines',
+    category: 'Beauty & personal care',
+    videoType: 'Creator talking head',
+    productName: 'Niacinamide brightening serum',
+    title: 'A serum selling thousands daily builds trust with real feedback',
+    hook: 'Use "1,000 units sold daily" as social proof, close to a talking-head opener.',
+    angle: 'Affordable skincare + real feedback',
+    tags: ['Skincare', 'Talking head', 'Feedback'],
+    structure: ['Sales proof', 'Face close-up', 'Texture demo', 'Comment prompt'],
+  },
+  {
+    region: 'Spain',
+    category: 'Food & beverage',
+    videoType: 'Review / seeding',
+    productName: 'Magnesium supplement tablets',
+    title: 'Magnesium supplements hold attention with a symptom checklist',
+    hook: 'Use "4 signals" to create completion motivation with high information density.',
+    angle: 'Health anxiety + checklist education',
+    tags: ['Checklist', 'Health', 'Education'],
+    structure: ['Symptom question', 'Cause explanation', 'Product bridge', 'Audience reminder'],
+  },
+  {
+    region: 'Thailand',
+    category: 'Beauty & personal care',
+    videoType: 'UGC',
+    productName: 'Soft-focus cushion foundation',
+    title: 'Cushion foundation uses close captions to punch through benefits',
+    hook: 'Open on packaging and face results, keeping captions to the core promise.',
+    angle: 'Instant makeup-effect comparison',
+    tags: ['Makeup effect', 'Captions', 'Close-up'],
+    structure: ['Product reveal', 'Before and after', 'Wear-proof proof', 'Purchase reminder'],
+  },
+  {
+    region: 'United States',
+    category: "Women's fashion & lingerie",
+    videoType: 'Creator talking head',
+    productName: 'Summer off-shoulder top',
+    title: 'Off-shoulder tops win clicks with outfit transitions',
+    hook: 'Use "this is that kind of top" to trigger identification before try-on footage.',
+    angle: 'Summer streetwear + slimming fit',
+    tags: ['Outfit', 'Transition', 'Slimming'],
+    structure: ['Emotional opener', 'Try-on display', 'Detail explanation', 'Scene association'],
+  },
+  {
+    region: 'Philippines',
+    category: 'Computers & office',
+    videoType: 'Review / seeding',
+    productName: 'Self-adhesive transparent book cover',
+    title: 'Book cover film expands conversion with low-price bundles',
+    hook: 'Show price and quantity together, then immediately demonstrate size fit.',
+    angle: 'Back-to-school + low-price bundle',
+    tags: ['Low price', 'Students', 'Bundle'],
+    structure: ['Price anchor', 'Size display', 'Film process', 'Bulk purchase'],
+  },
+] satisfies Array<{
+  region: string;
+  category: string;
+  videoType: string;
+  productName: string;
+  title: string;
+  hook: string;
+  angle: string;
+  tags: string[];
+  structure: string[];
+}>;
+
 function toCreateHotVideoInput(raw: RawHotVideo, index: number): CreateHotVideoInput {
   const publishedAt = new Date(Date.now() - raw.daysAgo * 24 * 60 * 60 * 1000);
+  const en = HOT_VIDEO_EN_TRANSLATIONS[index];
   return {
     sourcePlatform: 'manual',
     externalId: `seed-${index + 1}`,
@@ -295,6 +478,46 @@ function toCreateHotVideoInput(raw: RawHotVideo, index: number): CreateHotVideoI
       tags: raw.tags,
       structure: raw.structure,
     },
+    translations: en
+      ? {
+          en: {
+            title: en.title,
+            productName: en.productName,
+            region: en.region,
+            category: en.category,
+            videoType: en.videoType,
+            metrics: {
+              viewsLabel: new Intl.NumberFormat('en-US', {
+                notation: 'compact',
+                maximumFractionDigits: 1,
+              }).format(raw.viewsCount),
+            },
+            analysis: {
+              hook: en.hook,
+              angle: en.angle,
+              tags: en.tags,
+              structure: en.structure,
+            },
+          },
+          zh: {
+            title: raw.title,
+            productName: raw.product,
+            region: raw.region,
+            category: raw.category,
+            videoType: raw.videoType,
+            metrics: {
+              revenueLabel: raw.revenueLabel,
+              viewsLabel: raw.viewsLabel,
+            },
+            analysis: {
+              hook: raw.hook,
+              angle: raw.angle,
+              tags: raw.tags,
+              structure: raw.structure,
+            },
+          },
+        }
+      : undefined,
     publishedAt,
   };
 }

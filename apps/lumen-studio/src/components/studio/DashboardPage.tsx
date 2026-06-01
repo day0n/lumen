@@ -2,6 +2,8 @@
 
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
+import { useI18n } from '@/i18n/provider';
+import type { Locale } from '@/i18n/routing';
 import { cn } from '@/lib/cn';
 import type {
   TiktokAbTest,
@@ -18,6 +20,7 @@ import type {
   TiktokRecommendation,
   TiktokTraceEvent,
 } from '@/lib/tiktok-dashboard-mock';
+import { getTiktokFactorLabel } from '@/lib/tiktok-dashboard-mock';
 import {
   IconAdjustments,
   IconArrowDownRight,
@@ -50,6 +53,7 @@ import { useEffect, useMemo, useState } from 'react';
 type DashboardStatus = 'idle' | 'loading' | 'ready' | 'error';
 type CampaignSortKey = 'revenue' | 'roas' | 'cvr' | 'spend' | 'creativeScore';
 type SortDirection = 'asc' | 'desc';
+type TFunction = ReturnType<typeof useI18n>['t'];
 
 type DashboardApiResponse =
   | { ok: true; data: TiktokDashboardPayload }
@@ -65,6 +69,11 @@ interface SortState {
   direction: SortDirection;
 }
 
+interface ActivityMessage {
+  key: string;
+  params?: Record<string, string | number>;
+}
+
 const RANGE_OPTIONS: { label: string; value: TiktokDashboardRange }[] = [
   { label: '7D', value: '7d' },
   { label: '14D', value: '14d' },
@@ -72,38 +81,39 @@ const RANGE_OPTIONS: { label: string; value: TiktokDashboardRange }[] = [
   { label: '90D', value: '90d' },
 ];
 
-const REGION_OPTIONS: { label: string; value: TiktokDashboardRegion }[] = [
-  { label: '全球', value: 'global' },
-  { label: '美国', value: 'us' },
-  { label: '东南亚', value: 'sea' },
-  { label: '英国', value: 'uk' },
-  { label: '德国', value: 'de' },
+const REGION_OPTIONS: { labelKey: string; value: TiktokDashboardRegion }[] = [
+  { labelKey: 'global', value: 'global' },
+  { labelKey: 'us', value: 'us' },
+  { labelKey: 'sea', value: 'sea' },
+  { labelKey: 'uk', value: 'uk' },
+  { labelKey: 'de', value: 'de' },
 ];
 
-const CHANNEL_OPTIONS: { label: string; value: TiktokDashboardChannel }[] = [
-  { label: '全部渠道', value: 'all' },
-  { label: 'Spark Ads', value: 'spark_ads' },
-  { label: '达人白名单', value: 'creator_whitelist' },
-  { label: '重定向', value: 'retargeting' },
-  { label: 'Live Boost', value: 'live_boost' },
+const CHANNEL_OPTIONS: { labelKey: string; label?: string; value: TiktokDashboardChannel }[] = [
+  { labelKey: 'allChannels', value: 'all' },
+  { labelKey: 'spark_ads', label: 'Spark Ads', value: 'spark_ads' },
+  { labelKey: 'creator', value: 'creator_whitelist' },
+  { labelKey: 'retargeting', value: 'retargeting' },
+  { labelKey: 'live_boost', label: 'Live Boost', value: 'live_boost' },
 ];
 
-const OBJECTIVE_OPTIONS: { label: string; value: TiktokDashboardObjective }[] = [
-  { label: '成交增长', value: 'sales' },
-  { label: 'ROAS 优先', value: 'roas' },
-  { label: '冷启动', value: 'cold_start' },
-  { label: '创意测试', value: 'creative_test' },
+const OBJECTIVE_OPTIONS: { labelKey: string; value: TiktokDashboardObjective }[] = [
+  { labelKey: 'sales', value: 'sales' },
+  { labelKey: 'roas', value: 'roas' },
+  { labelKey: 'cold', value: 'cold_start' },
+  { labelKey: 'creative', value: 'creative_test' },
 ];
 
-const SORT_LABELS: Record<CampaignSortKey, string> = {
-  revenue: '收入',
+const SORT_LABEL_KEYS: Record<CampaignSortKey, string> = {
+  revenue: 'revenue',
   roas: 'ROAS',
   cvr: 'CVR',
-  spend: '花费',
-  creativeScore: '创意分',
+  spend: 'spend',
+  creativeScore: 'creativeScore',
 };
 
 export function DashboardPage() {
+  const { locale, t } = useI18n();
   const [range, setRange] = useState<TiktokDashboardRange>('30d');
   const [region, setRegion] = useState<TiktokDashboardRegion>('global');
   const [channel, setChannel] = useState<TiktokDashboardChannel>('all');
@@ -117,8 +127,34 @@ export function DashboardPage() {
   const [sort, setSort] = useState<SortState>({ key: 'revenue', direction: 'desc' });
   const [campaignEdits, setCampaignEdits] = useState<Record<string, CampaignEdit>>({});
   const [showForecast, setShowForecast] = useState(true);
-  const [activityMessage, setActivityMessage] = useState('自动归因窗口已连接：7d click / 1d view');
+  const [activityMessage, setActivityMessage] = useState<ActivityMessage>({
+    key: 'dashboard.activity',
+  });
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const regionOptions = useMemo(
+    () =>
+      REGION_OPTIONS.map((option) => ({
+        label: t(`dashboard.controls.${option.labelKey}`),
+        value: option.value,
+      })),
+    [t],
+  );
+  const channelOptions = useMemo(
+    () =>
+      CHANNEL_OPTIONS.map((option) => ({
+        label: option.label ?? t(`dashboard.controls.${option.labelKey}`),
+        value: option.value,
+      })),
+    [t],
+  );
+  const objectiveOptions = useMemo(
+    () =>
+      OBJECTIVE_OPTIONS.map((option) => ({
+        label: t(`dashboard.controls.${option.labelKey}`),
+        value: option.value,
+      })),
+    [t],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -137,24 +173,27 @@ export function DashboardPage() {
         params.set('nonce', String(refreshNonce));
         const response = await fetch(`/api/tiktok-dashboard?${params.toString()}`, {
           signal: controller.signal,
+          headers: {
+            'x-lumen-locale': locale,
+          },
         });
         const payload = (await response.json()) as DashboardApiResponse;
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.ok ? '数据加载失败' : payload.error.message);
+          throw new Error(payload.ok ? t('dashboard.dataFailed') : payload.error.message);
         }
         setData(payload.data);
         setSelectedCampaignId((current) => current ?? payload.data.campaigns[0]?.id ?? null);
         setStatus('ready');
       } catch (loadError) {
         if (controller.signal.aborted) return;
-        setError(loadError instanceof Error ? loadError.message : '数据加载失败');
+        setError(loadError instanceof Error ? loadError.message : t('dashboard.dataFailed'));
         setStatus('error');
       }
     }
 
     void loadDashboard();
     return () => controller.abort();
-  }, [range, region, channel, objective, refreshNonce]);
+  }, [range, region, channel, objective, refreshNonce, locale, t]);
 
   const campaigns = useMemo(() => {
     if (!data) return [];
@@ -221,8 +260,8 @@ export function DashboardPage() {
     }));
     setActivityMessage(
       campaign.status === 'paused'
-        ? `${campaign.name} 已模拟恢复投放`
-        : `${campaign.name} 已模拟暂停投放`,
+        ? { key: 'dashboard.restored', params: { name: campaign.name } }
+        : { key: 'dashboard.paused', params: { name: campaign.name } },
     );
   };
 
@@ -234,7 +273,7 @@ export function DashboardPage() {
         budgetDelta: (current[campaign.id]?.budgetDelta ?? 0) + 120,
       },
     }));
-    setActivityMessage(`${campaign.name} 已追加 $120 日预算，等待下一轮 mock 归因刷新`);
+    setActivityMessage({ key: 'dashboard.boosted', params: { name: campaign.name } });
   };
 
   const handleOptimizeBudget = () => {
@@ -256,9 +295,10 @@ export function DashboardPage() {
       },
     }));
     setSelectedCampaignId(winner.id);
-    setActivityMessage(
-      `预算已从 ${laggard.product} 转移到 ${winner.product}，预计 ROAS 抬升 0.3-0.5`,
-    );
+    setActivityMessage({
+      key: 'dashboard.optimized',
+      params: { from: laggard.product, to: winner.product },
+    });
   };
 
   const handleExport = () => {
@@ -284,7 +324,7 @@ export function DashboardPage() {
     anchor.download = `lumen-tiktok-dashboard-${range}.json`;
     anchor.click();
     URL.revokeObjectURL(href);
-    setActivityMessage('已导出 mock 投放诊断 JSON');
+    setActivityMessage({ key: 'dashboard.exported' });
   };
 
   const handleCopyTracking = async () => {
@@ -292,9 +332,9 @@ export function DashboardPage() {
     const url = `https://lumenstudio.tech/tiktok/track?campaign=${selectedCampaign.id}&factor=${selectedCampaign.factors[0]}`;
     try {
       await navigator.clipboard.writeText(url);
-      setActivityMessage('追踪链接已复制到剪贴板');
+      setActivityMessage({ key: 'dashboard.copied' });
     } catch {
-      setActivityMessage(url);
+      setActivityMessage({ key: url });
     }
   };
 
@@ -311,7 +351,7 @@ export function DashboardPage() {
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-[12px] font-semibold text-white/72 ring-1 ring-white/[0.08]">
                 <IconChartDots3 size={15} stroke={2.2} />
-                Mock Attribution
+                {t('dashboard.attribution')}
               </span>
               <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#10252b] px-3 text-[12px] font-semibold text-[#79e4ff] ring-1 ring-[#79e4ff]/20">
                 <IconCheck size={15} stroke={2.4} />
@@ -319,10 +359,10 @@ export function DashboardPage() {
               </span>
             </div>
             <h1 className="text-[24px] font-bold tracking-tight text-white sm:text-[30px]">
-              TikTok 投放追踪数据看板
+              {t('dashboard.title')}
             </h1>
             <p className="mt-2 max-w-[720px] text-[13px] leading-6 text-white/45">
-              用 mock 数据把生成因子、素材表现、A/B 创意、预算调整和成交转化串成一张增长驾驶舱。
+              {t('dashboard.subtitle')}
             </p>
           </div>
 
@@ -331,21 +371,21 @@ export function DashboardPage() {
               options={RANGE_OPTIONS}
               value={range}
               onChange={setRange}
-              ariaLabel="投放时间范围"
+              ariaLabel={t('dashboard.range')}
             />
             <SelectControl
               icon={IconWorld}
               value={region}
-              options={REGION_OPTIONS}
+              options={regionOptions}
               onChange={(value) => setRegion(value as TiktokDashboardRegion)}
-              ariaLabel="地区"
+              ariaLabel={t('dashboard.region')}
             />
             <SelectControl
               icon={IconFilter}
               value={channel}
-              options={CHANNEL_OPTIONS}
+              options={channelOptions}
               onChange={(value) => setChannel(value as TiktokDashboardChannel)}
-              ariaLabel="渠道"
+              ariaLabel={t('dashboard.channel')}
             />
             <button
               type="button"
@@ -357,7 +397,7 @@ export function DashboardPage() {
                 stroke={2.2}
                 className={status === 'loading' ? 'animate-spin' : ''}
               />
-              刷新
+              {t('common.refresh')}
             </button>
             <button
               type="button"
@@ -366,23 +406,25 @@ export function DashboardPage() {
               className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-white px-3 text-[12px] font-bold text-[#111315] transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               <IconDownload size={15} stroke={2.4} />
-              导出
+              {t('common.export')}
             </button>
           </div>
         </div>
 
         <div className="mb-4 grid grid-cols-1 gap-2 lg:grid-cols-[1fr_auto] lg:items-center">
           <SegmentedControl
-            options={OBJECTIVE_OPTIONS}
+            options={objectiveOptions}
             value={objective}
             onChange={setObjective}
-            ariaLabel="投放目标"
+            ariaLabel={t('dashboard.objective')}
             spacious
           />
 
           <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl bg-[#151719]/78 px-3 py-2 text-[12px] text-white/46 ring-1 ring-white/[0.08]">
             <IconBolt size={15} className="text-[#f5c76a]" stroke={2.2} />
-            <span className="min-w-0 flex-1 truncate">{activityMessage}</span>
+            <span className="min-w-0 flex-1 truncate">
+              {t(activityMessage.key, activityMessage.params)}
+            </span>
             <button
               type="button"
               onClick={() => setShowForecast((current) => !current)}
@@ -394,7 +436,7 @@ export function DashboardPage() {
               )}
             >
               <IconGauge size={14} stroke={2.2} />
-              Forecast
+              {t('dashboard.forecast')}
             </button>
           </div>
         </div>
@@ -412,11 +454,14 @@ export function DashboardPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
               <MetricCard
                 icon={IconShoppingBag}
-                label="归因收入"
-                value={formatCurrency(data.summary.revenue)}
+                label={t('dashboard.controls.revenue')}
+                value={formatCurrency(data.summary.revenue, locale)}
                 delta={data.summary.revenueDelta}
                 meta={
-                  showForecast ? `预测 ${formatCurrency(data.summary.forecastRevenue)}` : '当前窗口'
+                  showForecast
+                    ? t('dashboard.forecast') +
+                      ` ${formatCurrency(data.summary.forecastRevenue, locale)}`
+                    : t('dashboard.currentWindow')
                 }
                 accent="#79e4ff"
                 sparkline={data.timeseries.map((point) => point.revenue)}
@@ -426,7 +471,7 @@ export function DashboardPage() {
                 label="ROAS"
                 value={`${data.summary.roas.toFixed(2)}x`}
                 delta={data.summary.roasDelta}
-                meta={`${formatCurrency(data.summary.spend)} 花费`}
+                meta={`${formatCurrency(data.summary.spend, locale)} ${t('dashboard.spend')}`}
                 accent="#f5c76a"
                 sparkline={data.timeseries.map((point) => point.roas)}
               />
@@ -435,25 +480,25 @@ export function DashboardPage() {
                 label="CVR"
                 value={`${data.summary.cvr.toFixed(2)}%`}
                 delta={data.summary.cvrDelta}
-                meta={`${formatNumber(data.summary.orders)} 单成交`}
+                meta={t('dashboard.orders', { count: formatNumber(data.summary.orders, locale) })}
                 accent="#8dd9a3"
                 sparkline={data.timeseries.map((point) => point.cvr)}
               />
               <MetricCard
                 icon={IconEye}
-                label="3 秒停留"
+                label="3s"
                 value={`${data.summary.thumbStop.toFixed(1)}%`}
                 delta={4.8}
-                meta={`${data.summary.watchAvg.toFixed(1)}s 平均观看`}
+                meta={t('dashboard.avgWatch', { seconds: data.summary.watchAvg.toFixed(1) })}
                 accent="#9da8ff"
                 sparkline={data.timeseries.map((point) => point.ctr)}
               />
               <MetricCard
                 icon={IconGauge}
-                label="归因置信度"
+                label={t('dashboard.confidence')}
                 value={`${data.summary.confidence}%`}
                 delta={2.6}
-                meta="生成因子 × 成交事件"
+                meta={t('dashboard.factorMeta')}
                 accent="#ffb86b"
                 sparkline={data.factorMatrix.map((factor) => factor.confidence)}
               />
@@ -464,39 +509,48 @@ export function DashboardPage() {
                 <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
                   <SectionHeader
                     icon={IconChartBar}
-                    title="投放趋势"
-                    meta={`${formatDate(data.generatedAt)} 刷新`}
+                    title={t('dashboard.trend')}
+                    meta={t('dashboard.refreshed', {
+                      date: formatDate(data.generatedAt, locale),
+                    })}
                     action={
                       <span className="text-[12px] text-white/40">
-                        收入/花费双轴 ·{' '}
-                        {RANGE_OPTIONS.find((option) => option.value === range)?.label}
+                        {t('dashboard.trendMeta', {
+                          range:
+                            RANGE_OPTIONS.find((option) => option.value === range)?.label ?? range,
+                        })}
                       </span>
                     }
                   />
-                  <PerformanceChart points={data.timeseries} />
+                  <PerformanceChart points={data.timeseries} t={t} />
                 </section>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
                   <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
-                    <SectionHeader icon={IconChartPie} title="转化漏斗" meta="从曝光到成交" />
-                    <FunnelChart stages={data.funnel} />
+                    <SectionHeader
+                      icon={IconChartPie}
+                      title={t('dashboard.funnel')}
+                      meta={t('dashboard.funnelMeta')}
+                    />
+                    <FunnelChart stages={data.funnel} locale={locale} t={t} />
                   </section>
 
                   <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
-                    <SectionHeader icon={IconWorld} title="区域贡献" meta="GMV share" />
-                    <GeoBreakdownChart items={data.geoBreakdown} />
+                    <SectionHeader icon={IconWorld} title={t('dashboard.geo')} meta="GMV share" />
+                    <GeoBreakdownChart items={data.geoBreakdown} locale={locale} t={t} />
                   </section>
                 </div>
 
                 <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
                   <SectionHeader
                     icon={IconSparkles}
-                    title="生成因子 × 转化效果"
-                    meta={selectedFactor ? selectedFactor.factor : '点击因子查看诊断'}
+                    title={t('dashboard.factorTitle')}
+                    meta={selectedFactor ? selectedFactor.factor : t('dashboard.factorEmpty')}
                   />
                   <FactorMatrix
                     factors={data.factorMatrix}
                     selectedKey={selectedFactorKey}
+                    t={t}
                     onSelect={(factor) =>
                       setSelectedFactorKey((current) =>
                         current === factor.key ? null : factor.key,
@@ -516,8 +570,8 @@ export function DashboardPage() {
                   <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <SectionHeader
                       icon={IconAdjustments}
-                      title="Campaign 控制台"
-                      meta="支持排序、搜索、预算模拟"
+                      title={t('dashboard.campaignConsole')}
+                      meta={t('dashboard.campaignMeta')}
                     />
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg bg-white/[0.05] px-3 text-white/42 ring-1 ring-white/[0.08] sm:w-[260px]">
@@ -526,7 +580,7 @@ export function DashboardPage() {
                           value={searchQuery}
                           onChange={(event) => setSearchQuery(event.target.value)}
                           className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/32"
-                          placeholder="搜索商品、因子、地区"
+                          placeholder={t('dashboard.searchPlaceholder')}
                         />
                       </label>
                       <button
@@ -535,7 +589,7 @@ export function DashboardPage() {
                         className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#79e4ff] px-3 text-[12px] font-bold text-[#071316] transition-opacity hover:opacity-90"
                       >
                         <IconBolt size={15} stroke={2.5} />
-                        智能调预算
+                        {t('dashboard.smartBudget')}
                       </button>
                     </div>
                   </div>
@@ -547,6 +601,8 @@ export function DashboardPage() {
                     onSelect={(campaign) => setSelectedCampaignId(campaign.id)}
                     onToggle={handleToggleCampaign}
                     onBoost={handleBoostCampaign}
+                    locale={locale}
+                    t={t}
                   />
                 </section>
               </div>
@@ -555,6 +611,8 @@ export function DashboardPage() {
                 <CampaignInspector
                   campaign={selectedCampaign}
                   tests={selectedCampaignTests}
+                  locale={locale}
+                  t={t}
                   onCopyTracking={handleCopyTracking}
                   onToggle={
                     selectedCampaign ? () => handleToggleCampaign(selectedCampaign) : undefined
@@ -563,8 +621,12 @@ export function DashboardPage() {
                     selectedCampaign ? () => handleBoostCampaign(selectedCampaign) : undefined
                   }
                 />
-                <RecommendationPanel items={data.recommendations} onApply={handleOptimizeBudget} />
-                <TracePanel events={data.trace} />
+                <RecommendationPanel
+                  items={data.recommendations}
+                  onApply={handleOptimizeBudget}
+                  t={t}
+                />
+                <TracePanel events={data.trace} t={t} />
               </aside>
             </div>
           </>
@@ -743,13 +805,13 @@ function MiniSparkline({ values, color }: { values: number[]; color: string }) {
   const points = buildPolylinePoints(values, 96, 30);
   return (
     <svg className="h-[30px] w-[96px] shrink-0 overflow-visible" viewBox="0 0 96 30" role="img">
-      <title>趋势</title>
+      <title>Trend</title>
       <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
 
-function PerformanceChart({ points }: { points: TiktokDailyPoint[] }) {
+function PerformanceChart({ points, t }: { points: TiktokDailyPoint[]; t: TFunction }) {
   const width = 760;
   const height = 260;
   const padding = { top: 18, right: 18, bottom: 34, left: 48 };
@@ -774,7 +836,7 @@ function PerformanceChart({ points }: { points: TiktokDailyPoint[] }) {
   return (
     <div className="h-[300px] overflow-hidden rounded-lg bg-[#101214] ring-1 ring-white/[0.05]">
       <svg className="h-full w-full" viewBox={`0 0 ${width} ${height}`} role="img">
-        <title>TikTok 投放趋势</title>
+        <title>{t('dashboard.trend')}</title>
         <defs>
           <linearGradient id="trend-area" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="#79e4ff" stopOpacity="0.26" />
@@ -829,17 +891,25 @@ function PerformanceChart({ points }: { points: TiktokDailyPoint[] }) {
           );
         })}
         <text x={padding.left} y={14} fill="rgba(255,255,255,0.45)" fontSize="11">
-          Revenue
+          {t('dashboard.revenue')}
         </text>
         <text x={width - 88} y={14} fill="rgba(245,199,106,0.75)" fontSize="11">
-          Spend bars
+          {t('dashboard.spendBars')}
         </text>
       </svg>
     </div>
   );
 }
 
-function FunnelChart({ stages }: { stages: TiktokFunnelStage[] }) {
+function FunnelChart({
+  stages,
+  locale,
+  t,
+}: {
+  stages: TiktokFunnelStage[];
+  locale: Locale;
+  t: TFunction;
+}) {
   const max = stages[0]?.value ?? 1;
   return (
     <div className="space-y-2">
@@ -852,7 +922,9 @@ function FunnelChart({ stages }: { stages: TiktokFunnelStage[] }) {
               <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-white/78">
                 {stage.label}
               </span>
-              <span className="text-[11px] text-white/36">{formatCompact(stage.value)}</span>
+              <span className="text-[11px] text-white/36">
+                {formatCompact(stage.value, locale)}
+              </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
               <div
@@ -862,7 +934,9 @@ function FunnelChart({ stages }: { stages: TiktokFunnelStage[] }) {
             </div>
             <div className="mt-2 flex items-center justify-between text-[11px]">
               <span className={strong ? 'text-[#8dd9a3]' : 'text-[#ffb86b]'}>{stage.rate}%</span>
-              <span className="text-white/28">基准 {stage.benchmark}%</span>
+              <span className="text-white/28">
+                {t('dashboard.benchmark', { value: stage.benchmark })}
+              </span>
             </div>
           </div>
         );
@@ -871,7 +945,15 @@ function FunnelChart({ stages }: { stages: TiktokFunnelStage[] }) {
   );
 }
 
-function GeoBreakdownChart({ items }: { items: TiktokGeoBreakdown[] }) {
+function GeoBreakdownChart({
+  items,
+  locale,
+  t,
+}: {
+  items: TiktokGeoBreakdown[];
+  locale: Locale;
+  t: TFunction;
+}) {
   const maxRevenue = Math.max(...items.map((item) => item.revenue), 1);
   return (
     <div className="space-y-3">
@@ -880,7 +962,7 @@ function GeoBreakdownChart({ items }: { items: TiktokGeoBreakdown[] }) {
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="text-[12px] font-semibold text-white/78">{item.region}</span>
             <span className="text-[11px] text-white/38">
-              {formatCurrency(item.revenue)} · {item.roas.toFixed(2)}x
+              {formatCurrency(item.revenue, locale)} · {item.roas.toFixed(2)}x
             </span>
           </div>
           <div className="h-9 overflow-hidden rounded-lg bg-white/[0.035] ring-1 ring-white/[0.04]">
@@ -893,7 +975,7 @@ function GeoBreakdownChart({ items }: { items: TiktokGeoBreakdown[] }) {
           </div>
         </div>
       ))}
-      {items.length === 0 ? <EmptyState text="暂无区域数据" /> : null}
+      {items.length === 0 ? <EmptyState text={t('hotVideos.empty')} /> : null}
     </div>
   );
 }
@@ -901,17 +983,19 @@ function GeoBreakdownChart({ items }: { items: TiktokGeoBreakdown[] }) {
 function FactorMatrix({
   factors,
   selectedKey,
+  t,
   onSelect,
 }: {
   factors: TiktokFactorRow[];
   selectedKey: string | null;
+  t: TFunction;
   onSelect: (factor: TiktokFactorRow) => void;
 }) {
   const columns = [
     { key: 'ctrLift', label: 'CTR' },
     { key: 'cvrLift', label: 'CVR' },
     { key: 'roasLift', label: 'ROAS' },
-    { key: 'retentionLift', label: '留存' },
+    { key: 'retentionLift', label: t('dashboard.retention') },
   ] as const;
 
   return (
@@ -919,15 +1003,15 @@ function FactorMatrix({
       <table className="w-full min-w-[760px] border-separate border-spacing-y-2">
         <thead>
           <tr className="text-left text-[11px] uppercase text-white/32">
-            <th className="px-3 py-1 font-semibold">因子</th>
-            <th className="px-3 py-1 font-semibold">模块</th>
-            <th className="px-3 py-1 font-semibold">信号</th>
+            <th className="px-3 py-1 font-semibold">{t('dashboard.factor')}</th>
+            <th className="px-3 py-1 font-semibold">{t('dashboard.module')}</th>
+            <th className="px-3 py-1 font-semibold">{t('dashboard.signal')}</th>
             {columns.map((column) => (
               <th key={column.key} className="px-3 py-1 text-center font-semibold">
                 {column.label}
               </th>
             ))}
-            <th className="px-3 py-1 text-right font-semibold">置信度</th>
+            <th className="px-3 py-1 text-right font-semibold">{t('dashboard.confidence')}</th>
           </tr>
         </thead>
         <tbody>
@@ -952,7 +1036,7 @@ function FactorMatrix({
                   >
                     <span className="block font-bold text-white/88">{factor.factor}</span>
                     <span className="mt-1 block text-[11px] text-white/32">
-                      Score {factor.score}
+                      {t('dashboard.score', { value: factor.score })}
                     </span>
                   </button>
                 </td>
@@ -1005,6 +1089,8 @@ function CampaignTable({
   onSelect,
   onToggle,
   onBoost,
+  locale,
+  t,
 }: {
   campaigns: TiktokCampaign[];
   sort: SortState;
@@ -1013,6 +1099,8 @@ function CampaignTable({
   onSelect: (campaign: TiktokCampaign) => void;
   onToggle: (campaign: TiktokCampaign) => void;
   onBoost: (campaign: TiktokCampaign) => void;
+  locale: Locale;
+  t: TFunction;
 }) {
   const headers: CampaignSortKey[] = ['revenue', 'roas', 'cvr', 'spend', 'creativeScore'];
 
@@ -1021,9 +1109,9 @@ function CampaignTable({
       <table className="w-full min-w-[980px] border-separate border-spacing-y-2">
         <thead>
           <tr className="text-left text-[11px] uppercase text-white/32">
-            <th className="px-3 py-1 font-semibold">Campaign</th>
-            <th className="px-3 py-1 font-semibold">状态</th>
-            <th className="px-3 py-1 font-semibold">预算</th>
+            <th className="px-3 py-1 font-semibold">{t('dashboard.campaign')}</th>
+            <th className="px-3 py-1 font-semibold">{t('dashboard.status')}</th>
+            <th className="px-3 py-1 font-semibold">{t('dashboard.budget')}</th>
             {headers.map((key) => (
               <th key={key} className="px-3 py-1 text-right font-semibold">
                 <button
@@ -1031,7 +1119,7 @@ function CampaignTable({
                   onClick={() => onSort(key)}
                   className="inline-flex items-center gap-1 transition-colors hover:text-white/72"
                 >
-                  {SORT_LABELS[key]}
+                  {sortLabel(key, t)}
                   {sort.key === key ? (
                     sort.direction === 'desc' ? (
                       <IconArrowDownRight size={12} />
@@ -1042,7 +1130,7 @@ function CampaignTable({
                 </button>
               </th>
             ))}
-            <th className="px-3 py-1 text-right font-semibold">操作</th>
+            <th className="px-3 py-1 text-right font-semibold">{t('dashboard.actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -1080,13 +1168,14 @@ function CampaignTable({
                   </button>
                 </td>
                 <td className="px-3 py-3">
-                  <StatusBadge status={campaign.status} />
+                  <StatusBadge status={campaign.status} t={t} />
                 </td>
                 <td className="px-3 py-3 font-semibold text-white/68">
-                  {formatCurrency(campaign.budget)}/d
+                  {formatCurrency(campaign.budget, locale)}
+                  {t('dashboard.perDay')}
                 </td>
                 <td className="px-3 py-3 text-right font-bold text-white/82">
-                  {formatCurrency(campaign.metrics.revenue)}
+                  {formatCurrency(campaign.metrics.revenue, locale)}
                 </td>
                 <td className="px-3 py-3 text-right text-[#79e4ff]">
                   {campaign.metrics.roas.toFixed(2)}x
@@ -1095,7 +1184,7 @@ function CampaignTable({
                   {campaign.metrics.cvr.toFixed(2)}%
                 </td>
                 <td className="px-3 py-3 text-right text-white/50">
-                  {formatCurrency(campaign.metrics.spend)}
+                  {formatCurrency(campaign.metrics.spend, locale)}
                 </td>
                 <td className="px-3 py-3 text-right font-semibold text-white/72">
                   {campaign.creativeScore}
@@ -1111,7 +1200,7 @@ function CampaignTable({
                       className="inline-flex h-8 items-center gap-1 rounded-lg bg-white/[0.06] px-2 text-[11px] font-semibold text-white/68 transition-colors hover:bg-white/[0.1]"
                     >
                       <IconBolt size={13} />
-                      Boost
+                      {t('dashboard.boost')}
                     </button>
                     <button
                       type="button"
@@ -1126,7 +1215,7 @@ function CampaignTable({
                       ) : (
                         <IconPlayerPause size={13} />
                       )}
-                      {campaign.status === 'paused' ? '启用' : '暂停'}
+                      {campaign.status === 'paused' ? t('dashboard.enable') : t('dashboard.pause')}
                     </button>
                   </div>
                 </td>
@@ -1135,7 +1224,7 @@ function CampaignTable({
           })}
         </tbody>
       </table>
-      {campaigns.length === 0 ? <EmptyState text="没有匹配的 campaign" /> : null}
+      {campaigns.length === 0 ? <EmptyState text={t('dashboard.noCampaigns')} /> : null}
     </div>
   );
 }
@@ -1143,12 +1232,16 @@ function CampaignTable({
 function CampaignInspector({
   campaign,
   tests,
+  locale,
+  t,
   onCopyTracking,
   onToggle,
   onBoost,
 }: {
   campaign: TiktokCampaign | null;
   tests: TiktokAbTest[];
+  locale: Locale;
+  t: TFunction;
   onCopyTracking: () => void;
   onToggle?: () => void;
   onBoost?: () => void;
@@ -1156,14 +1249,18 @@ function CampaignInspector({
   if (!campaign) {
     return (
       <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
-        <EmptyState text="请选择一个 campaign" />
+        <EmptyState text={t('dashboard.chooseCampaign')} />
       </section>
     );
   }
 
   return (
     <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
-      <SectionHeader icon={IconSettings} title="创意诊断" meta={campaign.product} />
+      <SectionHeader
+        icon={IconSettings}
+        title={t('dashboard.creativeDiagnosis')}
+        meta={campaign.product}
+      />
       <div className="grid grid-cols-[128px_minmax(0,1fr)] gap-4">
         <div className="relative aspect-[9/16] overflow-hidden rounded-xl bg-[#0d0f11] ring-1 ring-white/[0.08]">
           <div className="absolute inset-0" style={{ background: campaign.thumbnail }} />
@@ -1186,13 +1283,15 @@ function CampaignInspector({
                 style={{ width: `${campaign.metrics.holdRate}%` }}
               />
             </div>
-            <div className="mt-1 text-[10px] text-white/58">Hold {campaign.metrics.holdRate}%</div>
+            <div className="mt-1 text-[10px] text-white/58">
+              {t('dashboard.hold', { value: campaign.metrics.holdRate })}
+            </div>
           </div>
         </div>
 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={campaign.status} />
+            <StatusBadge status={campaign.status} t={t} />
             <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[11px] font-semibold text-white/44">
               {campaign.stage}
             </span>
@@ -1202,9 +1301,12 @@ function CampaignInspector({
 
           <div className="mt-3 grid grid-cols-2 gap-2">
             <MiniMetric label="ROAS" value={`${campaign.metrics.roas.toFixed(2)}x`} />
-            <MiniMetric label="CPA" value={formatCurrency(campaign.metrics.cpa)} />
-            <MiniMetric label="疲劳度" value={`${campaign.fatigue}%`} />
-            <MiniMetric label="日预算" value={formatCurrency(campaign.budget)} />
+            <MiniMetric label="CPA" value={formatCurrency(campaign.metrics.cpa, locale)} />
+            <MiniMetric label={t('dashboard.fatigue')} value={`${campaign.fatigue}%`} />
+            <MiniMetric
+              label={t('dashboard.dailyBudget')}
+              value={formatCurrency(campaign.budget, locale)}
+            />
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1213,7 +1315,7 @@ function CampaignInspector({
                 key={factor}
                 className="rounded-full bg-[#79e4ff]/10 px-2 py-1 text-[11px] font-semibold text-[#bff4ff] ring-1 ring-[#79e4ff]/18"
               >
-                {factor}
+                {getTiktokFactorLabel(factor, locale)}
               </span>
             ))}
           </div>
@@ -1221,7 +1323,9 @@ function CampaignInspector({
       </div>
 
       <div className="mt-4 rounded-lg bg-white/[0.035] p-3 ring-1 ring-white/[0.04]">
-        <div className="text-[11px] font-bold uppercase text-white/30">素材来源声明</div>
+        <div className="text-[11px] font-bold uppercase text-white/30">
+          {t('dashboard.sourceTitle')}
+        </div>
         <p className="mt-1 text-[12px] leading-5 text-white/50">{campaign.materialSource}</p>
         <p className="mt-1 text-[11px] leading-5 text-white/34">{campaign.sourceDeclaration}</p>
       </div>
@@ -1233,7 +1337,7 @@ function CampaignInspector({
           className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-white/[0.06] text-[11px] font-bold text-white/70 ring-1 ring-white/[0.06] transition-colors hover:bg-white/[0.1]"
         >
           <IconCopy size={14} />
-          复制追踪
+          {t('dashboard.copyTracking')}
         </button>
         <button
           type="button"
@@ -1241,7 +1345,7 @@ function CampaignInspector({
           className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[#79e4ff] text-[11px] font-bold text-[#071316] transition-opacity hover:opacity-90"
         >
           <IconBolt size={14} />
-          加预算
+          {t('dashboard.addBudget')}
         </button>
         <button
           type="button"
@@ -1253,12 +1357,12 @@ function CampaignInspector({
           ) : (
             <IconPlayerPause size={14} />
           )}
-          {campaign.status === 'paused' ? '启用' : '暂停'}
+          {campaign.status === 'paused' ? t('dashboard.enable') : t('dashboard.pause')}
         </button>
       </div>
 
       <div className="mt-4">
-        <div className="mb-2 text-[12px] font-bold text-white/72">A/B 创意对比</div>
+        <div className="mb-2 text-[12px] font-bold text-white/72">{t('dashboard.abTitle')}</div>
         <div className="space-y-2">
           {tests.map((test) => (
             <div key={test.id} className="rounded-lg bg-white/[0.035] p-3 ring-1 ring-white/[0.04]">
@@ -1304,23 +1408,25 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
 function RecommendationPanel({
   items,
   onApply,
+  t,
 }: {
   items: TiktokRecommendation[];
   onApply: () => void;
+  t: TFunction;
 }) {
   return (
     <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
       <SectionHeader
         icon={IconTargetArrow}
-        title="增长建议"
-        meta="Agent 自动归因"
+        title={t('dashboard.growthAdvice')}
+        meta={t('dashboard.agentAttribution')}
         action={
           <button
             type="button"
             onClick={onApply}
             className="rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-[11px] font-bold text-white/68 ring-1 ring-white/[0.06] transition-colors hover:bg-white/[0.1]"
           >
-            一键应用
+            {t('dashboard.applyAll')}
           </button>
         }
       />
@@ -1341,7 +1447,7 @@ function RecommendationPanel({
                 {item.impact}
               </span>
               <span className="rounded-full bg-white/[0.05] px-2 py-1 text-white/45">
-                {item.confidence}% confidence
+                {t('dashboard.confidenceSuffix', { value: item.confidence })}
               </span>
               <span className="rounded-full bg-white/[0.05] px-2 py-1 text-white/45">
                 {item.owner}
@@ -1354,10 +1460,14 @@ function RecommendationPanel({
   );
 }
 
-function TracePanel({ events }: { events: TiktokTraceEvent[] }) {
+function TracePanel({ events, t }: { events: TiktokTraceEvent[]; t: TFunction }) {
   return (
     <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
-      <SectionHeader icon={IconCalendarStats} title="生成过程 Trace" meta="素材—剧本—创作—投放" />
+      <SectionHeader
+        icon={IconCalendarStats}
+        title={t('dashboard.traceTitle')}
+        meta={t('dashboard.traceMeta')}
+      />
       <div className="space-y-3">
         {events.map((event, index) => (
           <div key={event.id} className="relative flex gap-3">
@@ -1391,8 +1501,13 @@ function TracePanel({ events }: { events: TiktokTraceEvent[] }) {
   );
 }
 
-function StatusBadge({ status }: { status: TiktokCampaign['status'] }) {
-  const label = status === 'active' ? '投放中' : status === 'learning' ? '学习中' : '已暂停';
+function StatusBadge({ status, t }: { status: TiktokCampaign['status']; t: TFunction }) {
+  const label =
+    status === 'active'
+      ? t('dashboard.controls.active')
+      : status === 'learning'
+        ? t('dashboard.controls.learning')
+        : t('dashboard.controls.paused');
   return (
     <span
       className={cn(
@@ -1443,30 +1558,52 @@ function buildPolylinePoints(values: number[], width: number, height: number) {
     .join(' ');
 }
 
-function formatCurrency(value: number) {
+function sortLabel(key: CampaignSortKey, t: TFunction) {
+  const labelKey = SORT_LABEL_KEYS[key];
+  if (labelKey === 'ROAS' || labelKey === 'CVR') return labelKey;
+  return t(`dashboard.controls.${labelKey}`);
+}
+
+function formatCurrency(value: number, locale: Locale) {
+  const numberLocale = toNumberLocale(locale);
   if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (Math.abs(value) >= 10_000) return `$${(value / 1_000).toFixed(1)}k`;
-  return new Intl.NumberFormat('en-US', {
+  if (Math.abs(value) >= 10_000) {
+    return new Intl.NumberFormat(numberLocale, {
+      style: 'currency',
+      currency: 'USD',
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(value);
+  }
+  return new Intl.NumberFormat(numberLocale, {
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 0,
   }).format(value);
 }
 
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-US').format(value);
+function formatNumber(value: number, locale: Locale) {
+  return new Intl.NumberFormat(toNumberLocale(locale)).format(value);
 }
 
-function formatCompact(value: number) {
-  return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(
-    value,
-  );
+function formatCompact(value: number, locale: Locale) {
+  return new Intl.NumberFormat(toNumberLocale(locale), {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
-function formatDate(value: string) {
+function formatDate(value: string, locale: Locale) {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '刚刚';
-  return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(
-    date.getMinutes(),
-  ).padStart(2, '0')}`;
+  if (Number.isNaN(date.getTime())) return locale === 'zh' ? '刚刚' : 'Just now';
+  return new Intl.DateTimeFormat(toNumberLocale(locale), {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function toNumberLocale(locale: Locale) {
+  return locale === 'zh' ? 'zh-CN' : 'en-US';
 }

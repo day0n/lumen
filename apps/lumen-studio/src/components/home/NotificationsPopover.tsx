@@ -1,5 +1,6 @@
 'use client';
 
+import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import {
@@ -36,6 +37,7 @@ type NotificationsApiResponse =
     };
 
 export function NotificationsPopover({ triggerClassName }: { triggerClassName?: string } = {}) {
+  const { locale, t } = useI18n();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<OfficialNotification[]>([]);
@@ -64,11 +66,14 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
     async function loadNotifications() {
       try {
         setLoading(true);
-        const response = await fetch('/api/notifications/official', { signal: controller.signal });
+        const response = await fetch('/api/notifications/official', {
+          signal: controller.signal,
+          headers: { 'x-lumen-locale': locale },
+        });
         const payload = (await response.json()) as NotificationsApiResponse;
 
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.ok ? '通知读取失败' : payload.error.message);
+          throw new Error(payload.ok ? t('notifications.readFailed') : payload.error.message);
         }
 
         setNotifications(payload.data.notifications);
@@ -76,7 +81,7 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
         setErrorText(null);
       } catch (error) {
         if (!controller.signal.aborted) {
-          setErrorText(error instanceof Error ? error.message : '通知读取失败');
+          setErrorText(error instanceof Error ? error.message : t('notifications.readFailed'));
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -87,7 +92,7 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
 
     void loadNotifications();
     return () => controller.abort();
-  }, [authLoaded, isSignedIn]);
+  }, [authLoaded, isSignedIn, locale, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -120,7 +125,7 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
     <>
       <button
         type="button"
-        aria-label="通知"
+        aria-label={t('notifications.aria')}
         onClick={() => {
           if (!requireLogin()) return;
           setOpen(true);
@@ -155,12 +160,14 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
               transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
             >
               <aside className="flex w-[190px] shrink-0 flex-col border-r border-white/[0.07] bg-[#1f2021]">
-                <div className="flex h-14 items-center px-5 text-[15px] font-bold">通知</div>
+                <div className="flex h-14 items-center px-5 text-[15px] font-bold">
+                  {t('notifications.title')}
+                </div>
                 <div className="px-4">
                   <div className="flex h-10 items-center justify-between rounded-lg bg-white/[0.08] px-3 text-[13px] font-semibold text-white/86">
                     <span className="flex items-center gap-2">
                       <IconSpeakerphone size={15} stroke={2.2} />
-                      官方通知
+                      {t('notifications.official')}
                     </span>
                     {unreadCount > 0 ? (
                       <span className="min-w-5 rounded-full bg-[#ff5b5f] px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
@@ -174,12 +181,14 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
               <section className="flex min-w-0 flex-1 flex-col">
                 <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
                   <div>
-                    <div className="text-[14px] font-bold">官方通知</div>
-                    <div className="mt-0.5 text-[11px] text-white/38">最新产品功能和平台公告</div>
+                    <div className="text-[14px] font-bold">{t('notifications.official')}</div>
+                    <div className="mt-0.5 text-[11px] text-white/38">
+                      {t('notifications.subtitle')}
+                    </div>
                   </div>
                   <button
                     type="button"
-                    aria-label="关闭通知"
+                    aria-label={t('common.close')}
                     onClick={() => setOpen(false)}
                     className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.08] text-white/58 transition-colors hover:bg-white/[0.12] hover:text-white"
                   >
@@ -191,7 +200,7 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
                   {loading ? (
                     <div className="flex h-full items-center justify-center text-[13px] text-white/42">
                       <IconLoader2 size={18} className="mr-2 animate-spin" stroke={2.2} />
-                      正在读取通知
+                      {t('notifications.loading')}
                     </div>
                   ) : errorText ? (
                     <div className="rounded-xl bg-[#2a171a]/72 px-4 py-3 text-[13px] text-[#ffabb6] ring-1 ring-[#ff5d73]/16">
@@ -199,7 +208,7 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
                     </div>
                   ) : notifications.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-[13px] text-white/38">
-                      暂无官方通知
+                      {t('notifications.empty')}
                     </div>
                   ) : (
                     <div className="space-y-2.5">
@@ -229,11 +238,11 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
                                   ) : null}
                                 </div>
                                 <div className="mt-2 text-[12px] text-white/34">
-                                  {formatDateTime(notification.publishedAt)}
+                                  {formatDateTime(notification.publishedAt, locale)}
                                 </div>
                               </div>
                               <span className="mt-0.5 flex shrink-0 items-center gap-1 text-[12px] text-white/42">
-                                {expanded ? '收起' : '展开'}
+                                {expanded ? t('common.collapse') : t('common.expand')}
                                 <IconChevronDown
                                   size={14}
                                   className={cn('transition-transform', expanded && 'rotate-180')}
@@ -264,16 +273,14 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
   );
 }
 
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
+function formatDateTime(value: string, locale: 'en' | 'zh') {
+  return new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
+    hour12: locale === 'en',
   })
     .format(new Date(value))
     .replace(/\//g, '-');

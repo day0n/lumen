@@ -2,6 +2,8 @@
 
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
+import { useI18n } from '@/i18n/provider';
+import type { Locale } from '@/i18n/routing';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { IconDotsVertical, IconPhoto, IconPlus, IconSearch } from '@tabler/icons-react';
 import Link from 'next/link';
@@ -36,6 +38,7 @@ type ProjectsApiResponse =
     };
 
 export function WorkspacePage() {
+  const { locale, t, localePath } = useI18n();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [projects, setProjects] = useState<StudioProject[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -51,25 +54,28 @@ export function WorkspacePage() {
 
     async function loadProjects() {
       try {
-        const response = await fetch('/api/projects', { signal: controller.signal });
+        const response = await fetch('/api/projects', {
+          signal: controller.signal,
+          headers: { 'x-lumen-locale': locale },
+        });
         const payload = (await response.json()) as ProjectsApiResponse;
 
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.ok ? '项目读取失败' : payload.error.message);
+          throw new Error(payload.ok ? t('workspace.readFailed') : payload.error.message);
         }
 
-        setProjects(payload.data.projects.map(toStudioProject));
+        setProjects(payload.data.projects.map((project) => toStudioProject(project, locale, t)));
         setError(null);
       } catch (loadError) {
         if (!controller.signal.aborted) {
-          setError(loadError instanceof Error ? loadError.message : '项目读取失败');
+          setError(loadError instanceof Error ? loadError.message : t('workspace.readFailed'));
         }
       }
     }
 
     void loadProjects();
     return () => controller.abort();
-  }, [authLoaded, isSignedIn, requireLogin]);
+  }, [authLoaded, isSignedIn, locale, requireLogin, t]);
 
   const visibleProjects = useMemo(() => projects, [projects]);
 
@@ -81,8 +87,10 @@ export function WorkspacePage() {
       <main className="relative z-10 mx-auto max-w-[1180px] px-6 pb-16 pt-28">
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <div>
-            <h1 className="text-[22px] font-bold tracking-tight text-white">工作室</h1>
-            <p className="mt-1 text-[12px] text-white/35">管理你的项目画布和出片草稿</p>
+            <h1 className="text-[22px] font-bold tracking-tight text-white">
+              {t('workspace.title')}
+            </h1>
+            <p className="mt-1 text-[12px] text-white/35">{t('workspace.subtitle')}</p>
           </div>
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -90,7 +98,7 @@ export function WorkspacePage() {
               <IconSearch size={16} stroke={2.1} />
               <input
                 className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/35"
-                placeholder="搜索"
+                placeholder={t('common.search')}
               />
             </label>
           </div>
@@ -103,9 +111,13 @@ export function WorkspacePage() {
         ) : null}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-          <NewProjectCard />
+          <NewProjectCard href={localePath('/canvas/new')} />
           {visibleProjects.map((project) => (
-            <ProjectCard key={project.id} project={project} />
+            <ProjectCard
+              key={project.id}
+              project={project}
+              href={localePath(`/canvas/${project.id}`)}
+            />
           ))}
         </div>
       </main>
@@ -113,10 +125,11 @@ export function WorkspacePage() {
   );
 }
 
-function NewProjectCard() {
+function NewProjectCard({ href }: { href: string }) {
+  const { t } = useI18n();
   return (
     <Link
-      href="/canvas/new"
+      href={href}
       className="group relative flex min-h-[160px] flex-col items-center justify-center gap-3 overflow-hidden rounded-xl bg-[#171b20] ring-1 ring-white/[0.1] transition-colors hover:bg-[#1b2027]"
     >
       <span
@@ -130,16 +143,21 @@ function NewProjectCard() {
       <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_14px_34px_-16px_rgba(255,255,255,0.9)]">
         <IconPlus size={24} stroke={2.7} />
       </span>
-      <span className="relative text-[13px] font-bold text-white/88">开始创作</span>
-      <span className="relative text-[11px] text-white/42">创建新的视频项目</span>
+      <span className="relative text-[13px] font-bold text-white/88">
+        {t('workspace.newProject')}
+      </span>
+      <span className="relative text-[11px] text-white/42">
+        {t('workspace.newProjectSubtitle')}
+      </span>
     </Link>
   );
 }
 
-function ProjectCard({ project }: { project: StudioProject }) {
+function ProjectCard({ project, href }: { project: StudioProject; href: string }) {
+  const { t } = useI18n();
   return (
     <Link
-      href={`/canvas/${project.id}`}
+      href={href}
       className="group overflow-hidden rounded-xl bg-[#202121] p-2.5 text-left ring-1 ring-white/[0.08] transition-colors hover:bg-[#262829]"
     >
       <div
@@ -152,7 +170,7 @@ function ProjectCard({ project }: { project: StudioProject }) {
               <div className="font-display text-[18px] font-extrabold tracking-wider text-white/55">
                 LUMEN
               </div>
-              <div className="text-[18px] font-black text-white">新手教程</div>
+              <div className="text-[18px] font-black text-white">{t('workspace.tutorial')}</div>
             </div>
           </div>
         ) : (
@@ -180,33 +198,60 @@ function ProjectCard({ project }: { project: StudioProject }) {
   );
 }
 
-function toStudioProject(project: ProjectListRecord): StudioProject {
+function toStudioProject(
+  project: ProjectListRecord,
+  locale: Locale,
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+): StudioProject {
   return {
     id: project.id,
-    name: project.title,
-    updatedAt: formatUpdatedAt(project.updatedAt),
+    name: project.title || t('workspace.untitled'),
+    updatedAt: formatUpdatedAt(project.updatedAt, locale, t),
     cover: coverForProject(project.id),
     coverMode: project.id.charCodeAt(0) % 3 === 0 ? 'soft' : undefined,
   };
 }
 
-function formatUpdatedAt(value: string) {
+function formatUpdatedAt(
+  value: string,
+  locale: Locale,
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+) {
   const updatedAt = new Date(value);
-  if (Number.isNaN(updatedAt.getTime())) return '刚刚编辑';
+  if (Number.isNaN(updatedAt.getTime())) return t('workspace.editedJustNow');
 
   const diffMs = Math.max(0, Date.now() - updatedAt.getTime());
   const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return '刚刚编辑';
-  if (minutes < 60) return `编辑于 ${minutes} 分钟前`;
+  if (minutes < 1) return t('workspace.editedJustNow');
+  if (minutes < 60)
+    return t('home.edited', {
+      time: new Intl.RelativeTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+        numeric: 'auto',
+      }).format(-minutes, 'minute'),
+    });
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `编辑于 ${hours} 小时前`;
+  if (hours < 24)
+    return t('home.edited', {
+      time: new Intl.RelativeTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+        numeric: 'auto',
+      }).format(-hours, 'hour'),
+    });
 
   const days = Math.floor(hours / 24);
-  if (days < 30) return `编辑于 ${days} 天前`;
+  if (days < 30)
+    return t('home.edited', {
+      time: new Intl.RelativeTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+        numeric: 'auto',
+      }).format(-days, 'day'),
+    });
 
   const months = Math.floor(days / 30);
-  return `编辑于 ${months} 个月前`;
+  return t('home.edited', {
+    time: new Intl.RelativeTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+      numeric: 'auto',
+    }).format(-months, 'month'),
+  });
 }
 
 function coverForProject(projectId: string) {

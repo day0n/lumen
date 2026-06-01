@@ -1,6 +1,8 @@
 'use client';
 
+import { LanguageToggle } from '@/components/i18n/LanguageToggle';
 import { LumenWordmark } from '@/components/ui/LumenWordmark';
+import { useI18n } from '@/i18n/provider';
 import { cn } from '@/lib/cn';
 import { IconArrowRight } from '@tabler/icons-react';
 import Link from 'next/link';
@@ -12,6 +14,7 @@ interface LandingNavProps {
 
 export function LandingNav({ onHomeIntent }: LandingNavProps) {
   const [scrolled, setScrolled] = useState(false);
+  const { t, localePath } = useI18n();
 
   useEffect(() => {
     const updateScrolled = () => setScrolled(window.scrollY > 36);
@@ -37,21 +40,24 @@ export function LandingNav({ onHomeIntent }: LandingNavProps) {
         )}
       />
       <div className="pointer-events-auto relative mx-auto flex h-[62px] max-w-[1280px] items-center justify-between gap-4 px-5 sm:px-8 lg:px-10">
-        <Link href="/" aria-label="Lumen 首页">
+        <Link href={localePath('/')} aria-label={t('landing.homeAria')}>
           <LumenWordmark markSize={24} wordClassName="text-[28px]" />
         </Link>
 
-        <Link
-          href="/home"
-          prefetch
-          onFocus={() => onHomeIntent?.()}
-          onPointerEnter={() => onHomeIntent?.()}
-          onTouchStart={() => onHomeIntent?.()}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-white px-5 text-[14px] font-bold tracking-normal text-[#0b0d0e] shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
-        >
-          开始创造
-          <IconArrowRight size={15} stroke={2.4} />
-        </Link>
+        <div className="flex items-center gap-2">
+          <LanguageToggle />
+          <Link
+            href={localePath('/home')}
+            prefetch
+            onFocus={() => onHomeIntent?.()}
+            onPointerEnter={() => onHomeIntent?.()}
+            onTouchStart={() => onHomeIntent?.()}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-white px-5 text-[14px] font-bold tracking-normal text-[#0b0d0e] shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
+          >
+            {t('landing.cta')}
+            <IconArrowRight size={15} stroke={2.4} />
+          </Link>
+        </div>
       </div>
     </header>
   );

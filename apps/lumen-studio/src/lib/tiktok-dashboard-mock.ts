@@ -1,3 +1,5 @@
+import type { Locale } from '@/i18n/routing';
+
 export type TiktokDashboardRange = '7d' | '14d' | '30d' | '90d';
 export type TiktokDashboardRegion = 'global' | 'us' | 'sea' | 'uk' | 'de';
 export type TiktokDashboardChannel =
@@ -71,7 +73,7 @@ export interface TiktokCampaign {
   channelLabel: string;
   objective: TiktokDashboardObjective;
   status: 'active' | 'learning' | 'paused';
-  stage: '冷启动' | '放量' | '复盘' | '素材疲劳';
+  stage: string;
   budget: number;
   creativeScore: number;
   fatigue: number;
@@ -88,7 +90,7 @@ export interface TiktokCampaign {
 export interface TiktokFactorRow {
   key: string;
   factor: string;
-  module: '素材' | '剧本' | '创作' | '投放';
+  module: string;
   signal: string;
   score: number;
   confidence: number;
@@ -113,8 +115,8 @@ export interface TiktokRecommendation {
   detail: string;
   impact: string;
   confidence: number;
-  effort: '低' | '中' | '高';
-  owner: '素材 Agent' | '剧本 Agent' | '剪辑 Agent' | '投放 Agent';
+  effort: string;
+  owner: string;
 }
 
 export interface TiktokAbTest {
@@ -420,6 +422,128 @@ const CAMPAIGNS: BaseCampaign[] = [
   },
 ];
 
+type CampaignCopy = Pick<
+  BaseCampaign,
+  | 'name'
+  | 'regionLabel'
+  | 'channelLabel'
+  | 'stage'
+  | 'hook'
+  | 'angle'
+  | 'persona'
+  | 'materialSource'
+  | 'sourceDeclaration'
+>;
+
+const REGION_LABELS: Record<Locale, Record<TiktokDashboardRegion, string>> = {
+  en: {
+    global: 'Global',
+    us: 'United States',
+    sea: 'Southeast Asia',
+    uk: 'United Kingdom',
+    de: 'Germany',
+  },
+  zh: {
+    global: '全球',
+    us: '美国',
+    sea: '东南亚',
+    uk: '英国',
+    de: '德国',
+  },
+};
+
+const CHANNEL_LABELS: Record<Locale, Record<TiktokDashboardChannel, string>> = {
+  en: {
+    all: 'All channels',
+    spark_ads: 'Spark Ads',
+    creator_whitelist: 'Creator whitelist',
+    retargeting: 'Retargeting',
+    live_boost: 'Live Boost',
+  },
+  zh: {
+    all: '全部渠道',
+    spark_ads: 'Spark Ads',
+    creator_whitelist: '达人白名单',
+    retargeting: '重定向',
+    live_boost: 'Live Boost',
+  },
+};
+
+const STAGE_LABELS: Record<Locale, Record<string, string>> = {
+  en: {
+    冷启动: 'Cold start',
+    放量: 'Scaling',
+    复盘: 'Review',
+    素材疲劳: 'Creative fatigue',
+  },
+  zh: {
+    冷启动: '冷启动',
+    放量: '放量',
+    复盘: '复盘',
+    素材疲劳: '素材疲劳',
+  },
+};
+
+const CAMPAIGN_COPY_EN: Record<string, Partial<CampaignCopy>> = {
+  'camp-glow-serum-ugc': {
+    name: 'Glow Serum - UGC 3-second hook',
+    hook: 'Before/after bare-skin application shows the glow difference in 0.8s',
+    angle: 'Stable brightening even for sensitive skin',
+    persona: 'Commuting women aged 25-34',
+    materialSource: 'Merchant product images + structured breakdown of authorized creator videos',
+    sourceDeclaration:
+      'Stores only hook, storyboard, and selling-point structure, not the source video',
+  },
+  'camp-kitchen-slicer-demo': {
+    name: 'Kitchen Slicer - problem demo',
+    hook: 'Failed chopping opens the spot, then cuts to one-tap julienne prep',
+    angle: 'Space saving for small rental kitchens',
+    persona: 'Young families and solo living shoppers',
+    materialSource: 'Product video clips + public platform review summaries',
+    sourceDeclaration: 'Reviews are used only for semantic clustering without user identity',
+  },
+  'camp-air-fryer-retargeting': {
+    name: 'Air Fryer - cart recovery path',
+    hook: '15-second dinner edit with captions calling out oil savings',
+    angle: 'Fast dinners for small apartments',
+    persona: 'Kitchen appliance shoppers with add-to-cart behavior',
+    materialSource: 'Historical product images + AI-generated storyboard rerenders',
+    sourceDeclaration: 'Assets come from owned library items and generated results',
+  },
+  'camp-pet-brush-live': {
+    name: 'Pet Brush - live clip boost',
+    hook: 'The sound and close-up of one-click hair removal are amplified together',
+    angle: 'Efficient cleanup during shedding season',
+    persona: 'New pet owners and apartment pet households',
+    materialSource: 'Authorized live-stream clip + product hero images',
+    sourceDeclaration: 'Live clip assets are owned or authorized by the merchant',
+  },
+  'camp-vacuum-compare': {
+    name: 'Handheld Vacuum - comparison review',
+    hook: 'Split-screen suction comparison before and after cleaning car crumbs',
+    angle: 'Car and sofa gap cleaning',
+    persona: 'Car households and pet households',
+    materialSource: 'Review script + owned product video clips',
+    sourceDeclaration: 'Comparison is an abstract scene and does not cite competitor marks',
+  },
+  'camp-summer-dress-spark': {
+    name: 'Summer Dress - vacation inspiration template',
+    hook: 'Beach walking transition with fabric details close to camera',
+    angle: 'One piece from commute to vacation',
+    persona: 'Light fashion shoppers aged 18-30',
+    materialSource: 'Product images + AI-generated lifestyle scenes',
+    sourceDeclaration: 'Scenes are generated images and do not identify a real location',
+  },
+  'camp-led-mirror-cold': {
+    name: 'LED Mirror - cold-start A/B',
+    hook: 'Light-on moment cuts to makeup detail, captions emphasize natural light',
+    angle: 'High color rendering for small spaces',
+    persona: 'Students and renters who apply makeup',
+    materialSource: 'Product hero images + creator talking-script template',
+    sourceDeclaration: 'Creator speech is generated script copy and does not clone a real voice',
+  },
+};
+
 const FACTORS: TiktokFactorRow[] = [
   {
     key: 'before_after',
@@ -527,6 +651,70 @@ const FACTORS: TiktokFactorRow[] = [
   },
 ];
 
+const MODULE_LABELS_EN: Record<string, string> = {
+  素材: 'Assets',
+  剧本: 'Script',
+  创作: 'Creative',
+  投放: 'Ads',
+};
+
+const FACTOR_COPY_EN: Record<
+  string,
+  Partial<Pick<TiktokFactorRow, 'factor' | 'signal' | 'diagnosis'>>
+> = {
+  before_after: {
+    factor: 'Before/after opener',
+    signal: '0-3s retention',
+    diagnosis: 'Best for beauty and cleaning products because it compresses comprehension quickly.',
+  },
+  product_demo: {
+    factor: 'Real-use demo',
+    signal: 'Post-click purchase',
+    diagnosis: 'Showing scale, usage, and result in one shot makes conversion steadier.',
+  },
+  fast_subtitle: {
+    factor: 'Dense selling-point captions',
+    signal: 'Muted playback',
+    diagnosis: 'Improves silent-context understanding, but more than three lines hurts retention.',
+  },
+  cta_coupon: {
+    factor: 'Coupon anchor CTA',
+    signal: 'Add-to-cart rate',
+    diagnosis: 'Works well for retargeting and live clips; soften price cues in cold start.',
+  },
+  creator_handheld: {
+    factor: 'Handheld creator POV',
+    signal: 'Comment trust',
+    diagnosis: 'Adds authenticity and pairs well with close-up product details.',
+  },
+  soft_bgm: {
+    factor: 'Soft background music',
+    signal: 'Completion rate',
+    diagnosis: 'Improves viewing comfort, but needs a clear CTA to drive conversion.',
+  },
+  problem_first: {
+    factor: 'Problem-first opening',
+    signal: 'Click-through rate',
+    diagnosis: 'Fits home, kitchen, and cleaning products with low explanation cost.',
+  },
+  time_lapse: {
+    factor: '15-second compressed process',
+    signal: 'Average watch time',
+    diagnosis: 'For appliances and food, it improves both retention and conversion.',
+  },
+};
+
+const FACTOR_LABELS: Record<Locale, Record<string, string>> = {
+  en: Object.fromEntries(
+    FACTORS.map((factor) => [factor.key, FACTOR_COPY_EN[factor.key]?.factor ?? factor.key]),
+  ),
+  zh: Object.fromEntries(FACTORS.map((factor) => [factor.key, factor.factor])),
+};
+
+export function getTiktokFactorLabel(key: string, locale: Locale): string {
+  return FACTOR_LABELS[locale][key] ?? key;
+}
+
 const RECOMMENDATIONS: TiktokRecommendation[] = [
   {
     id: 'rec-budget-shift',
@@ -566,6 +754,44 @@ const RECOMMENDATIONS: TiktokRecommendation[] = [
   },
 ];
 
+const RECOMMENDATION_COPY_EN: Record<
+  string,
+  Partial<Pick<TiktokRecommendation, 'title' | 'detail' | 'impact' | 'effort' | 'owner'>>
+> = {
+  'rec-budget-shift': {
+    title: 'Move 18% budget to Glow Serum and Air Fryer',
+    detail:
+      'Both groups beat benchmark on before/after, numeric captions, and retargeting audiences. Estimated 7-day ROAS +0.42.',
+    impact: '+$9.6k revenue',
+    effort: 'Low',
+    owner: 'Ads Agent',
+  },
+  'rec-slicer-cta': {
+    title: 'Keep Kitchen Slicer problem opener and soften first-screen pricing',
+    detail:
+      'Cold-start audiences respond better to demo shots. Move the price anchor to second 8 to reduce early drop-off.',
+    impact: '+6.4% completion',
+    effort: 'Medium',
+    owner: 'Script Agent',
+  },
+  'rec-dress-refresh': {
+    title: 'Refresh the Summer Dress first frame and BGM',
+    detail:
+      'Creative fatigue reached 68%. Use an office-to-beach transition to replace the pure vacation first frame.',
+    impact: '-22% CPA',
+    effort: 'Medium',
+    owner: 'Editing Agent',
+  },
+  'rec-pet-localize': {
+    title: 'Keep onomatopoeia in Pet Brush German captions',
+    detail:
+      'ASMR openers earn stronger sentiment in Germany, so captions should not become only rational selling points.',
+    impact: '+4.8% CVR',
+    effort: 'Low',
+    owner: 'Assets Agent',
+  },
+};
+
 const TRACE: TiktokTraceEvent[] = [
   {
     id: 'trace-ingest',
@@ -601,6 +827,33 @@ const TRACE: TiktokTraceEvent[] = [
   },
 ];
 
+const TRACE_COPY_EN: Record<
+  string,
+  Partial<Pick<TiktokTraceEvent, 'stage' | 'agent' | 'output'>>
+> = {
+  'trace-ingest': {
+    stage: 'Asset ingest',
+    agent: 'Material Agent',
+    output: 'Identified 42 product/video/slice tags and completed authorization source notes',
+  },
+  'trace-script': {
+    stage: 'Script generation',
+    agent: 'Script Agent',
+    output: 'Generated 6 hook-factor combinations and kept 3 A/B candidates',
+  },
+  'trace-render': {
+    stage: 'One-click render',
+    agent: 'Editing Agent',
+    output: 'Exported 9:16 and 16:9 cuts with captions, TTS, and BGM',
+  },
+  'trace-ads': {
+    stage: 'Ad diagnosis',
+    agent: 'Growth Agent',
+    output:
+      'Continuously maps generation factors to conversion events and refreshes attribution confidence',
+  },
+};
+
 export function normalizeTiktokDashboardQuery(
   raw: Partial<Record<keyof TiktokDashboardQuery, string | null>>,
 ): TiktokDashboardQuery {
@@ -616,7 +869,10 @@ export function normalizeTiktokDashboardQuery(
   };
 }
 
-export function buildTiktokDashboardMock(query: TiktokDashboardQuery): TiktokDashboardPayload {
+export function buildTiktokDashboardMock(
+  query: TiktokDashboardQuery,
+  locale: Locale = 'en',
+): TiktokDashboardPayload {
   const days = Number.parseInt(query.range, 10);
   const scale = days / 30;
   const objectiveMultiplier = getObjectiveMultiplier(query.objective);
@@ -631,14 +887,14 @@ export function buildTiktokDashboardMock(query: TiktokDashboardQuery): TiktokDas
   });
   const baseCampaigns = filtered.length > 0 ? filtered : CAMPAIGNS.slice(0, 5);
   const campaigns = baseCampaigns.map((campaign, index) =>
-    toCampaign(campaign, scale, objectiveMultiplier + index * 0.015),
+    toCampaign(campaign, scale, objectiveMultiplier + index * 0.015, locale),
   );
   const summary = buildSummary(campaigns);
   const timeseries = buildTimeseries(campaigns, days, query);
-  const factorMatrix = buildFactors(query, campaigns);
-  const funnel = buildFunnel(summary);
+  const factorMatrix = buildFactors(query, campaigns, locale);
+  const funnel = buildFunnel(summary, locale);
   const geoBreakdown = buildGeoBreakdown(campaigns, summary.revenue);
-  const abTests = buildAbTests(campaigns);
+  const abTests = buildAbTests(campaigns, locale);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -648,10 +904,10 @@ export function buildTiktokDashboardMock(query: TiktokDashboardQuery): TiktokDas
     campaigns,
     factorMatrix,
     funnel,
-    recommendations: RECOMMENDATIONS,
+    recommendations: localizeRecommendations(locale),
     abTests,
     geoBreakdown,
-    trace: TRACE,
+    trace: localizeTrace(locale),
   };
 }
 
@@ -670,7 +926,12 @@ function getObjectiveMultiplier(objective: TiktokDashboardObjective) {
   return 1;
 }
 
-function toCampaign(base: BaseCampaign, scale: number, multiplier: number): TiktokCampaign {
+function toCampaign(
+  base: BaseCampaign,
+  scale: number,
+  multiplier: number,
+  locale: Locale,
+): TiktokCampaign {
   const spend = Math.round(base.metrics30d.spend * scale * (0.92 + multiplier * 0.08));
   const revenue = Math.round(base.metrics30d.revenue * scale * multiplier);
   const orders = Math.max(1, Math.round(base.metrics30d.orders * scale * multiplier));
@@ -685,7 +946,7 @@ function toCampaign(base: BaseCampaign, scale: number, multiplier: number): Tikt
   const cpa = roundMetric(spend / orders, 2);
 
   return {
-    ...base,
+    ...localizeCampaignBase(base, locale),
     budget: Math.round(base.budget * multiplier),
     metrics: {
       spend,
@@ -702,6 +963,43 @@ function toCampaign(base: BaseCampaign, scale: number, multiplier: number): Tikt
       holdRate: roundMetric(base.metrics30d.holdRate * (0.96 + multiplier * 0.04), 1),
     },
   };
+}
+
+function localizeCampaignBase(base: BaseCampaign, locale: Locale): BaseCampaign {
+  const englishCopy = locale === 'en' ? CAMPAIGN_COPY_EN[base.id] : null;
+  return {
+    ...base,
+    ...englishCopy,
+    regionLabel: REGION_LABELS[locale][base.region],
+    channelLabel: CHANNEL_LABELS[locale][base.channel],
+    stage: STAGE_LABELS[locale][base.stage] ?? base.stage,
+  };
+}
+
+function localizeFactor(factor: TiktokFactorRow, locale: Locale): TiktokFactorRow {
+  if (locale === 'zh') return factor;
+  const copy = FACTOR_COPY_EN[factor.key];
+  return {
+    ...factor,
+    ...copy,
+    module: MODULE_LABELS_EN[factor.module] ?? factor.module,
+  };
+}
+
+function localizeRecommendations(locale: Locale): TiktokRecommendation[] {
+  if (locale === 'zh') return RECOMMENDATIONS;
+  return RECOMMENDATIONS.map((recommendation) => ({
+    ...recommendation,
+    ...RECOMMENDATION_COPY_EN[recommendation.id],
+  }));
+}
+
+function localizeTrace(locale: Locale): TiktokTraceEvent[] {
+  if (locale === 'zh') return TRACE;
+  return TRACE.map((event) => ({
+    ...event,
+    ...TRACE_COPY_EN[event.id],
+  }));
 }
 
 function buildSummary(campaigns: TiktokCampaign[]): TiktokDashboardSummary {
@@ -797,7 +1095,11 @@ function buildTimeseries(
   });
 }
 
-function buildFactors(query: TiktokDashboardQuery, campaigns: TiktokCampaign[]): TiktokFactorRow[] {
+function buildFactors(
+  query: TiktokDashboardQuery,
+  campaigns: TiktokCampaign[],
+  locale: Locale,
+): TiktokFactorRow[] {
   const activeFactorKeys = new Set(campaigns.flatMap((campaign) => campaign.factors));
   return FACTORS.map((factor, index) => {
     const activeBoost = activeFactorKeys.has(factor.key) ? 1.1 : 0.88;
@@ -817,53 +1119,75 @@ function buildFactors(query: TiktokDashboardQuery, campaigns: TiktokCampaign[]):
       roasLift: roundMetric(factor.roasLift * boost + index * 0.06, 1),
       retentionLift: roundMetric(factor.retentionLift * boost, 1),
     };
-  }).sort((a, b) => b.roasLift - a.roasLift);
+  })
+    .map((factor) => localizeFactor(factor, locale))
+    .sort((a, b) => b.roasLift - a.roasLift);
 }
 
-function buildFunnel(summary: TiktokDashboardSummary): TiktokFunnelStage[] {
+const FUNNEL_LABELS: Record<Locale, Record<string, string>> = {
+  en: {
+    impressions: 'Impressions',
+    threeSecondViews: '3s views',
+    productClicks: 'Product clicks',
+    addToCart: 'Add to cart',
+    checkout: 'Checkout',
+    orders: 'Orders',
+  },
+  zh: {
+    impressions: '曝光',
+    threeSecondViews: '3 秒观看',
+    productClicks: '商品点击',
+    addToCart: '加购',
+    checkout: '结账',
+    orders: '成交',
+  },
+};
+
+function buildFunnel(summary: TiktokDashboardSummary, locale: Locale): TiktokFunnelStage[] {
   const threeSecondViews = Math.round(summary.impressions * (summary.thumbStop / 100));
   const productClicks = summary.clicks;
   const addToCart = Math.round(summary.orders * 2.35);
   const checkout = Math.round(summary.orders * 1.44);
+  const labels = FUNNEL_LABELS[locale];
   return [
     {
       key: 'impressions',
-      label: '曝光',
+      label: labels.impressions ?? 'Impressions',
       value: summary.impressions,
       rate: 100,
       benchmark: 100,
     },
     {
       key: 'threeSecondViews',
-      label: '3 秒观看',
+      label: labels.threeSecondViews ?? '3s views',
       value: threeSecondViews,
       rate: roundMetric((threeSecondViews / summary.impressions) * 100, 1),
       benchmark: 35,
     },
     {
       key: 'productClicks',
-      label: '商品点击',
+      label: labels.productClicks ?? 'Product clicks',
       value: productClicks,
       rate: roundMetric((productClicks / threeSecondViews) * 100, 1),
       benchmark: 8.6,
     },
     {
       key: 'addToCart',
-      label: '加购',
+      label: labels.addToCart ?? 'Add to cart',
       value: addToCart,
       rate: roundMetric((addToCart / productClicks) * 100, 1),
       benchmark: 6.8,
     },
     {
       key: 'checkout',
-      label: '结账',
+      label: labels.checkout ?? 'Checkout',
       value: checkout,
       rate: roundMetric((checkout / addToCart) * 100, 1),
       benchmark: 58,
     },
     {
       key: 'orders',
-      label: '成交',
+      label: labels.orders ?? 'Orders',
       value: summary.orders,
       rate: roundMetric((summary.orders / checkout) * 100, 1),
       benchmark: 66,
@@ -896,7 +1220,7 @@ function buildGeoBreakdown(
     .sort((a, b) => b.revenue - a.revenue);
 }
 
-function buildAbTests(campaigns: TiktokCampaign[]): TiktokAbTest[] {
+function buildAbTests(campaigns: TiktokCampaign[], locale: Locale): TiktokAbTest[] {
   return campaigns.slice(0, 4).flatMap((campaign, index) => {
     const base = campaign.metrics;
     return [
@@ -916,7 +1240,7 @@ function buildAbTests(campaigns: TiktokCampaign[]): TiktokAbTest[] {
         id: `${campaign.id}-b`,
         campaignId: campaign.id,
         variant: 'B',
-        hook: `强化：${campaign.angle}`,
+        hook: `${locale === 'zh' ? '强化：' : 'Strengthen: '}${campaign.angle}`,
         spend: Math.round(base.spend * 0.52),
         roas: roundMetric(base.roas * (1.06 + index * 0.015), 2),
         cvr: roundMetric(base.cvr * (1.04 + index * 0.012), 2),

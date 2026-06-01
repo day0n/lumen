@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { CreateHotVideoInput } from '@lumen/db';
 
+import type { Locale } from '@/i18n/routing';
 import { getStudioServerConfig } from './config';
 import { isObjectStorageConfigured, uploadFromUrl } from './objectStorage';
 
@@ -84,13 +85,23 @@ export function isTikTokUrl(value: string): boolean {
   return /tiktok\.com\//i.test(value);
 }
 
-export async function scrapeTikTokVideo(url: string): Promise<ScrapedHotVideo> {
+export async function scrapeTikTokVideo(
+  url: string,
+  options: { locale?: Locale } = {},
+): Promise<ScrapedHotVideo> {
+  const locale = options.locale ?? 'en';
   const config = getStudioServerConfig();
   if (!config.APIFY_API_TOKEN) {
-    throw new TikTokScrapeError('APIFY_API_TOKEN 未配置，无法解析 TikTok 链接');
+    throw new TikTokScrapeError(
+      locale === 'zh'
+        ? 'APIFY_API_TOKEN 未配置，无法解析 TikTok 链接'
+        : 'APIFY_API_TOKEN is not configured, so TikTok links cannot be parsed',
+    );
   }
   if (!isTikTokUrl(url)) {
-    throw new TikTokScrapeError('链接不是 TikTok 视频地址');
+    throw new TikTokScrapeError(
+      locale === 'zh' ? '链接不是 TikTok 视频地址' : 'The link is not a TikTok video URL',
+    );
   }
 
   const wantStorage = isObjectStorageConfigured();
@@ -117,22 +128,39 @@ export async function scrapeTikTokVideo(url: string): Promise<ScrapedHotVideo> {
       signal: AbortSignal.timeout(ACTOR_TIMEOUT_SECONDS * 1000 + 5000),
     });
   } catch (error) {
-    throw new TikTokScrapeError('Apify 请求失败（超时或网络错误）', error);
+    throw new TikTokScrapeError(
+      locale === 'zh'
+        ? 'Apify 请求失败（超时或网络错误）'
+        : 'Apify request failed due to timeout or network error',
+      error,
+    );
   }
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new TikTokScrapeError(`Apify 返回 ${response.status}: ${text.slice(0, 200)}`);
+    throw new TikTokScrapeError(
+      locale === 'zh'
+        ? `Apify 返回 ${response.status}: ${text.slice(0, 200)}`
+        : `Apify returned ${response.status}: ${text.slice(0, 200)}`,
+    );
   }
 
   const items = (await response.json().catch(() => null)) as TikTokScrapeItem[] | null;
   if (!Array.isArray(items) || items.length === 0) {
-    throw new TikTokScrapeError('TikTok 返回空结果，请确认链接是否有效');
+    throw new TikTokScrapeError(
+      locale === 'zh'
+        ? 'TikTok 返回空结果，请确认链接是否有效'
+        : 'TikTok returned no results. Please confirm the link is valid.',
+    );
   }
 
   const item = items[0];
   if (!item) {
-    throw new TikTokScrapeError('TikTok 返回空结果，请确认链接是否有效');
+    throw new TikTokScrapeError(
+      locale === 'zh'
+        ? 'TikTok 返回空结果，请确认链接是否有效'
+        : 'TikTok returned no results. Please confirm the link is valid.',
+    );
   }
 
   const externalId = item.id ?? '';
@@ -177,6 +205,7 @@ export async function scrapeTikTokVideo(url: string): Promise<ScrapedHotVideo> {
 
   return {
     input: mapToCreateInput(item, url, {
+      locale,
       thumbnailUrl: storedThumbnail,
       previewUrl: storedPreview,
     }),
@@ -196,11 +225,12 @@ function pickVideoSource(item: TikTokScrapeItem): string {
 function mapToCreateInput(
   item: TikTokScrapeItem,
   fallbackUrl: string,
-  overrides: { thumbnailUrl?: string; previewUrl?: string } = {},
+  overrides: { locale?: Locale; thumbnailUrl?: string; previewUrl?: string } = {},
 ): CreateHotVideoInput {
+  const locale = overrides.locale ?? 'en';
   const palette = pickPalette(item.id ?? fallbackUrl);
   const text = (item.text ?? '').trim();
-  const title = truncate(text || 'TikTok 视频', 240);
+  const title = truncate(text || (locale === 'zh' ? 'TikTok 视频' : 'TikTok video'), 240);
   const author = item.authorMeta?.nickName || item.authorMeta?.name || 'TikTok creator';
   const productName = truncate(text.split(/[#\n]/)[0]?.trim() || author, 120);
   const tags = extractTags(item);
@@ -221,9 +251,9 @@ function mapToCreateInput(
     authorHandle: item.authorMeta?.name ? `@${item.authorMeta.name}` : undefined,
     thumbnailUrl,
     previewUrl,
-    region: item.authorMeta?.region || '未知',
-    category: '未分类',
-    videoType: '用户原创',
+    region: item.authorMeta?.region || (locale === 'zh' ? '未知' : 'Unknown'),
+    category: locale === 'zh' ? '未分类' : 'Uncategorized',
+    videoType: locale === 'zh' ? '用户原创' : 'User generated',
     paletteCss: palette.palette,
     accentColor: palette.accent,
     metrics: {
@@ -231,12 +261,19 @@ function mapToCreateInput(
       revenueUsd: 0,
       revenueLabel: '—',
       viewsCount: views,
-      viewsLabel: formatCount(views),
+      viewsLabel: formatCount(views, locale),
       roas: 0,
     },
     analysis: {
       hook: truncate(text, 280),
-      angle: likes > 0 ? `点赞 ${formatCount(likes)} · 浏览 ${formatCount(views)}` : '待 AI 拆解',
+      angle:
+        likes > 0
+          ? locale === 'zh'
+            ? `点赞 ${formatCount(likes, locale)} · 浏览 ${formatCount(views, locale)}`
+            : `${formatCount(likes, locale)} likes · ${formatCount(views, locale)} views`
+          : locale === 'zh'
+            ? '待 AI 拆解'
+            : 'Pending AI breakdown',
       score: 0,
       tags,
       structure: [],
@@ -266,8 +303,14 @@ function extractTags(item: TikTokScrapeItem): string[] {
   return tags;
 }
 
-function formatCount(value: number): string {
+function formatCount(value: number, locale: Locale): string {
   if (!Number.isFinite(value) || value <= 0) return '0';
+  if (locale === 'en') {
+    return new Intl.NumberFormat('en-US', {
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(value);
+  }
   if (value >= 10_000) {
     const wan = value / 10_000;
     return `${wan >= 100 ? wan.toFixed(0) : wan.toFixed(2)}万`;

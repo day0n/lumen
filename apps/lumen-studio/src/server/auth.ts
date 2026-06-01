@@ -6,7 +6,7 @@ import type { UserRecord } from '@lumen/db';
 import { getUserRepository } from './db';
 
 export class UnauthorizedError extends Error {
-  constructor(message = '请先登录') {
+  constructor(message = 'Please sign in first') {
     super(message);
     this.name = 'UnauthorizedError';
   }

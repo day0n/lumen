@@ -8,6 +8,8 @@
 import { requireStudioUser } from '@/server/auth';
 import { getStudioServerConfig } from '@/server/config';
 import { failJson, routeError } from '@/server/http';
+import { translate } from '@/i18n/messages';
+import { resolveRequestLocale } from '@/server/locale';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,21 +19,25 @@ interface RunEventsContext {
 }
 
 export async function GET(request: Request, context: RunEventsContext) {
+  const locale = resolveRequestLocale(request);
   try {
     await requireStudioUser();
   } catch (error) {
-    return routeError(error);
+    return routeError(error, locale);
   }
 
   const { runId } = await context.params;
-  if (!runId) return failJson('runId is required', 400);
+  if (!runId) return failJson(translate(locale, 'api.runIdRequired'), 400);
 
   const config = getStudioServerConfig();
 
   const controller = new AbortController();
   request.signal.addEventListener('abort', () => controller.abort(), { once: true });
 
-  const headers: Record<string, string> = { accept: 'text/event-stream' };
+  const headers: Record<string, string> = {
+    accept: 'text/event-stream',
+    'x-lumen-locale': locale,
+  };
   const lastEventId = request.headers.get('last-event-id');
   if (lastEventId) headers['last-event-id'] = lastEventId;
 
@@ -46,12 +52,18 @@ export async function GET(request: Request, context: RunEventsContext) {
       },
     );
   } catch (error) {
-    return failJson(`无法连接 agent 服务: ${(error as Error).message}`, 502);
+    return failJson(
+      translate(locale, 'api.agentConnectionFailed', { message: (error as Error).message }),
+      502,
+    );
   }
 
   if (!upstream.ok || !upstream.body) {
     const text = await upstream.text().catch(() => '');
-    return failJson(text || `agent 返回 ${upstream.status}`, upstream.status);
+    return failJson(
+      text || translate(locale, 'api.agentReturned', { status: upstream.status }),
+      upstream.status,
+    );
   }
 
   return new Response(upstream.body, {

@@ -1,11 +1,14 @@
+import { stripLocalePrefix } from '@/i18n/routing';
+
 const LOGIN_REQUIRED_PREFIXES = ['/canvas', '/materials'] as const;
 
 export function isLoginRequiredPath(href: string): boolean {
   const pathname = readPathname(href);
   if (!pathname) return false;
 
+  const normalizedPath = stripLocalePrefix(pathname);
   return LOGIN_REQUIRED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+    (prefix) => normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`),
   );
 }
 

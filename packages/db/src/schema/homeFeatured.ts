@@ -12,6 +12,26 @@ const HexColorSchema = z
   .trim()
   .regex(/^#[0-9a-fA-F]{6}$/, 'expected hex color like #79e4ff');
 
+const HomeFeaturedTranslationSchema = z
+  .object({
+    badge: z.string().trim().min(1).max(40).optional(),
+    title: z.string().trim().min(1).max(120).optional(),
+    subtitle: z.string().trim().min(1).max(120).optional(),
+    description: z.string().trim().min(1).max(400).optional(),
+    statsLabel: z.string().trim().max(80).optional(),
+    ctaLabel: z.string().trim().max(40).optional(),
+  })
+  .strict();
+
+const HomeFeaturedTranslationsSchema = z
+  .object({
+    en: HomeFeaturedTranslationSchema.optional(),
+    zh: HomeFeaturedTranslationSchema.optional(),
+  })
+  .strict();
+
+export type HomeFeaturedTranslations = z.infer<typeof HomeFeaturedTranslationsSchema>;
+
 export const HomeFeaturedItemDocumentSchema = z
   .object({
     _id: z.string().min(1),
@@ -21,6 +41,7 @@ export const HomeFeaturedItemDocumentSchema = z
     description: z.string().trim().min(1).max(400),
     stats_label: z.string().trim().max(80).optional(),
     cta_label: z.string().trim().max(40).optional(),
+    translations: HomeFeaturedTranslationsSchema.optional(),
     cta_href: z.string().trim().max(2048).optional(),
     cover_url: z.string().trim().min(1).max(2048).optional(),
     background_css: z.string().trim().min(1).max(600),
@@ -64,6 +85,7 @@ export const CreateHomeFeaturedItemInputSchema = z
     description: z.string().trim().min(1).max(400),
     statsLabel: z.string().trim().max(80).optional(),
     ctaLabel: z.string().trim().max(40).optional(),
+    translations: HomeFeaturedTranslationsSchema.optional(),
     ctaHref: z.string().trim().max(2048).optional(),
     coverUrl: z.string().trim().min(1).max(2048).optional(),
     backgroundCss: z.string().trim().min(1).max(600),

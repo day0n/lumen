@@ -4,6 +4,8 @@ import * as Sentry from '@sentry/nextjs';
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 
+import { translate } from '@/i18n/messages';
+import { DEFAULT_LOCALE, type Locale } from '@/i18n/routing';
 import { UnauthorizedError } from './auth';
 
 export function okJson<T>(data: T, init?: ResponseInit) {
@@ -14,18 +16,17 @@ export function failJson(message: string, status = 500, detail?: unknown) {
   return NextResponse.json({ ok: false, error: { message, detail } }, { status });
 }
 
-export function routeError(error: unknown) {
+export function routeError(error: unknown, locale: Locale = DEFAULT_LOCALE) {
   if (error instanceof UnauthorizedError) {
-    return failJson(error.message, 401);
+    return failJson(translate(locale, 'api.unauthorized'), 401);
   }
 
   if (error instanceof ZodError) {
-    return failJson('请求数据不符合约束', 400, error.flatten());
+    return failJson(translate(locale, 'api.invalidRequest'), 400, error.flatten());
   }
 
   Sentry.captureException(error);
-  const message = error instanceof Error ? error.message : 'Internal server error';
-  return failJson(message, 500);
+  return failJson(translate(locale, 'api.internalError'), 500);
 }
 
 export async function readJson(request: Request): Promise<unknown> {

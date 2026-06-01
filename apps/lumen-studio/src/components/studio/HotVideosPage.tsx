@@ -2,6 +2,8 @@
 
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
+import { useI18n } from '@/i18n/provider';
+import type { Locale } from '@/i18n/routing';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { useUser } from '@clerk/nextjs';
@@ -55,6 +57,7 @@ interface HotVideoView {
   sales: number;
   revenueUsd: number;
   revenueLabel: string;
+  viewsCount: number;
   viewsLabel: string;
   roas: number;
   hook: string;
@@ -89,50 +92,99 @@ interface ListHotVideosApiResponse {
 
 type Filters = Record<FilterKey, string>;
 
-const FILTERS: { key: FilterKey; label: string; options: string[] }[] = [
-  { key: 'owner', label: '已下载', options: ['全部', '仅我的'] },
-  { key: 'region', label: '地区', options: ['全部', '美国', '越南', '菲律宾', '泰国', '西班牙'] },
+interface FilterOption {
+  value: string;
+  labelKey: string;
+  apiValue?: string;
+}
+
+interface FilterConfig {
+  key: FilterKey;
+  labelKey: string;
+  options: FilterOption[];
+}
+
+const FILTERS: FilterConfig[] = [
+  {
+    key: 'owner',
+    labelKey: 'hotVideos.filters.owner',
+    options: [
+      { value: 'all', labelKey: 'hotVideos.filters.all' },
+      { value: 'me', labelKey: 'hotVideos.filters.mine' },
+    ],
+  },
+  {
+    key: 'region',
+    labelKey: 'hotVideos.filters.region',
+    options: [
+      { value: 'all', labelKey: 'hotVideos.filters.all' },
+      { value: 'us', labelKey: 'hotVideos.filters.us', apiValue: '美国' },
+      { value: 'vietnam', labelKey: 'hotVideos.filters.vietnam', apiValue: '越南' },
+      { value: 'philippines', labelKey: 'hotVideos.filters.philippines', apiValue: '菲律宾' },
+      { value: 'thailand', labelKey: 'hotVideos.filters.thailand', apiValue: '泰国' },
+      { value: 'spain', labelKey: 'hotVideos.filters.spain', apiValue: '西班牙' },
+    ],
+  },
   {
     key: 'category',
-    label: '品类',
-    options: ['全部', '美妆个护', '居家日用', '女装与女士内衣', '食品饮料', '电脑办公'],
+    labelKey: 'hotVideos.filters.category',
+    options: [
+      { value: 'all', labelKey: 'hotVideos.filters.all' },
+      { value: 'beauty', labelKey: 'hotVideos.filters.beauty', apiValue: '美妆个护' },
+      { value: 'home', labelKey: 'hotVideos.filters.home', apiValue: '居家日用' },
+      { value: 'womens', labelKey: 'hotVideos.filters.womens', apiValue: '女装与女士内衣' },
+      { value: 'food', labelKey: 'hotVideos.filters.food', apiValue: '食品饮料' },
+      { value: 'office', labelKey: 'hotVideos.filters.office', apiValue: '电脑办公' },
+    ],
   },
-  { key: 'gmv', label: 'GMV', options: ['全部', '$1k+', '$5k+', '$10k+'] },
-  { key: 'videoType', label: '视频类型', options: ['全部', '用户原创', '达人口播', '测评种草'] },
-  { key: 'published', label: '发布日期', options: ['近 7 天', '近 30 天', '全部'] },
+  {
+    key: 'gmv',
+    labelKey: 'hotVideos.filters.gmv',
+    options: [
+      { value: 'all', labelKey: 'hotVideos.filters.all' },
+      { value: '1000', labelKey: 'hotVideos.filters.gmv1k' },
+      { value: '5000', labelKey: 'hotVideos.filters.gmv5k' },
+      { value: '10000', labelKey: 'hotVideos.filters.gmv10k' },
+    ],
+  },
+  {
+    key: 'videoType',
+    labelKey: 'hotVideos.filters.videoType',
+    options: [
+      { value: 'all', labelKey: 'hotVideos.filters.all' },
+      { value: 'ugc', labelKey: 'hotVideos.filters.ugc', apiValue: '用户原创' },
+      { value: 'creator', labelKey: 'hotVideos.filters.creator', apiValue: '达人口播' },
+      { value: 'review', labelKey: 'hotVideos.filters.review', apiValue: '测评种草' },
+    ],
+  },
+  {
+    key: 'published',
+    labelKey: 'hotVideos.filters.published',
+    options: [
+      { value: '7d', labelKey: 'hotVideos.filters.sevenDays' },
+      { value: '30d', labelKey: 'hotVideos.filters.thirtyDays' },
+      { value: 'all', labelKey: 'hotVideos.filters.all' },
+    ],
+  },
 ];
 
 const DEFAULT_FILTERS: Filters = {
-  owner: '全部',
-  region: '全部',
-  category: '全部',
-  gmv: '全部',
-  videoType: '全部',
-  published: '全部',
-};
-
-const PUBLISHED_RANGE: Record<string, '7d' | '30d' | 'all'> = {
-  '近 7 天': '7d',
-  '近 30 天': '30d',
-  全部: 'all',
-};
-
-const GMV_MIN: Record<string, number | undefined> = {
-  全部: undefined,
-  '$1k+': 1000,
-  '$5k+': 5000,
-  '$10k+': 10000,
+  owner: 'all',
+  region: 'all',
+  category: 'all',
+  gmv: 'all',
+  videoType: 'all',
+  published: 'all',
 };
 
 function buildQueryString(filters: Filters, query: string): string {
   const params = new URLSearchParams();
-  if (filters.owner === '仅我的') params.set('owner', 'me');
-  if (filters.region !== '全部') params.set('region', filters.region);
-  if (filters.category !== '全部') params.set('category', filters.category);
-  if (filters.videoType !== '全部') params.set('videoType', filters.videoType);
-  const publishedRange = PUBLISHED_RANGE[filters.published];
-  if (publishedRange && publishedRange !== 'all') params.set('published', publishedRange);
-  const gmvMin = GMV_MIN[filters.gmv];
+  if (filters.owner === 'me') params.set('owner', 'me');
+  setMappedFilterParam(params, 'region', filters.region);
+  setMappedFilterParam(params, 'category', filters.category);
+  setMappedFilterParam(params, 'videoType', filters.videoType);
+  if (filters.published !== 'all') params.set('published', filters.published);
+  const gmvMin = filters.gmv === 'all' ? undefined : Number.parseInt(filters.gmv, 10);
   if (gmvMin !== undefined) params.set('gmvMin', String(gmvMin));
   const trimmed = query.trim();
   if (trimmed) params.set('q', trimmed);
@@ -140,14 +192,25 @@ function buildQueryString(filters: Filters, query: string): string {
   return params.toString();
 }
 
-function toView(record: HotVideoRecord): HotVideoView {
+function setMappedFilterParam(params: URLSearchParams, key: FilterKey, value: string) {
+  if (value === 'all') return;
+  const filter = FILTERS.find((item) => item.key === key);
+  const option = filter?.options.find((item) => item.value === value);
+  params.set(key, option?.apiValue ?? value);
+}
+
+function toView(record: HotVideoRecord, locale: Locale): HotVideoView {
   const date = new Date(record.publishedAt);
   const valid = !Number.isNaN(date.getTime());
   const daysAgo = valid
     ? Math.max(0, Math.floor((Date.now() - date.getTime()) / (24 * 60 * 60 * 1000)))
     : 0;
   const publishedAtLabel = valid
-    ? `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
+    ? new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      }).format(date)
     : '—';
 
   return {
@@ -163,6 +226,7 @@ function toView(record: HotVideoRecord): HotVideoView {
     sales: record.metrics.sales,
     revenueUsd: record.metrics.revenueUsd,
     revenueLabel: record.metrics.revenueLabel,
+    viewsCount: record.metrics.viewsCount,
     viewsLabel: record.metrics.viewsLabel,
     roas: record.metrics.roas,
     hook: record.analysis.hook,
@@ -179,6 +243,7 @@ function toView(record: HotVideoRecord): HotVideoView {
 }
 
 export function HotVideosPage() {
+  const { locale, t } = useI18n();
   const { user } = useUser();
   const { isSignedIn, requireLogin } = useLoginRedirect();
   const currentClerkUserId = isSignedIn ? user?.id : undefined;
@@ -203,7 +268,7 @@ export function HotVideosPage() {
   }, [searchQuery]);
 
   useEffect(() => {
-    if (filters.owner === '仅我的' && !isSignedIn) {
+    if (filters.owner === 'me' && !isSignedIn) {
       setVideos([]);
       setLoading(false);
       setLoadError(null);
@@ -217,15 +282,18 @@ export function HotVideosPage() {
     async function load() {
       try {
         const qs = buildQueryString(filters, appliedQuery);
-        const response = await fetch(`/api/hot-videos?${qs}`, { signal: controller.signal });
+        const response = await fetch(`/api/hot-videos?${qs}`, {
+          signal: controller.signal,
+          headers: { 'x-lumen-locale': locale },
+        });
         const payload = (await response.json()) as ListHotVideosApiResponse;
         if (!response.ok || !payload.ok || !payload.data) {
-          throw new Error(payload.error?.message ?? '加载失败');
+          throw new Error(payload.error?.message ?? t('hotVideos.loadFailed'));
         }
-        setVideos(payload.data.items.map(toView));
+        setVideos(payload.data.items.map((item) => toView(item, locale)));
       } catch (error) {
         if (controller.signal.aborted) return;
-        setLoadError(error instanceof Error ? error.message : '加载失败');
+        setLoadError(error instanceof Error ? error.message : t('hotVideos.loadFailed'));
         setVideos([]);
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -234,18 +302,17 @@ export function HotVideosPage() {
 
     void load();
     return () => controller.abort();
-  }, [filters, appliedQuery, isSignedIn]);
+  }, [filters, appliedQuery, isSignedIn, locale, t]);
 
   const totalSales = videos.reduce((sum, v) => sum + v.sales, 0);
   const avgViewsLabel = useMemo(() => {
     if (!videos.length) return '—';
-    const wan = videos
-      .map((v) => Number.parseFloat(v.viewsLabel.replace('万', '')))
-      .filter((n) => Number.isFinite(n));
-    if (!wan.length) return '—';
-    const avg = wan.reduce((s, n) => s + n, 0) / wan.length;
-    return `${Math.round(avg)}万`;
-  }, [videos]);
+    const avg = videos.reduce((sum, video) => sum + video.viewsCount, 0) / videos.length;
+    return new Intl.NumberFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(avg);
+  }, [locale, videos]);
 
   const replicaVideo =
     replicaTarget?.source === 'video'
@@ -253,7 +320,7 @@ export function HotVideosPage() {
       : (replicaPreview ?? undefined);
 
   const handleFilterChange = (key: FilterKey, value: string) => {
-    if (key === 'owner' && value === '仅我的' && !requireLogin('/hot-videos')) {
+    if (key === 'owner' && value === 'me' && !requireLogin('/hot-videos')) {
       return;
     }
     setFilters((current) => ({ ...current, [key]: value }));
@@ -267,11 +334,11 @@ export function HotVideosPage() {
     const value = referenceInput.trim();
 
     if (!value) {
-      setInputError('粘贴 TikTok 视频链接');
+      setInputError(t('hotVideos.pasteLink'));
       return;
     }
     if (!isLikelyLink(value)) {
-      setInputError('请粘贴一个有效的视频链接');
+      setInputError(t('hotVideos.invalidLink'));
       return;
     }
 
@@ -281,7 +348,7 @@ export function HotVideosPage() {
     try {
       const response = await fetch('/api/hot-videos/parse-link', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-lumen-locale': locale },
         body: JSON.stringify({ url: value }),
       });
       const payload = (await response.json()) as {
@@ -291,18 +358,18 @@ export function HotVideosPage() {
       };
 
       if (!response.ok || !payload.ok || !payload.data) {
-        setInputError(payload.error?.message ?? '解析失败，请重试');
+        setInputError(payload.error?.message ?? t('hotVideos.parseFailed'));
         return;
       }
 
-      const view = toView(payload.data);
+      const view = toView(payload.data, locale);
       setVideos((current) => [view, ...current.filter((v) => v.id !== view.id)]);
       setReplicaPreview(view);
       setReplicaTarget(createVideoReference(view));
       setConfigOpen(true);
       setReferenceInput('');
     } catch (error) {
-      setInputError(error instanceof Error ? error.message : '解析失败，请重试');
+      setInputError(error instanceof Error ? error.message : t('hotVideos.parseFailed'));
     } finally {
       setParseLoading(false);
     }
@@ -316,7 +383,7 @@ export function HotVideosPage() {
         setInputError(null);
       }
     } catch {
-      setInputError('浏览器暂未允许读取剪贴板');
+      setInputError(t('hotVideos.clipboardDenied'));
     }
   };
 
@@ -349,13 +416,13 @@ export function HotVideosPage() {
           <div className="relative text-center">
             <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-white/[0.055] px-3 py-1.5 text-[12px] font-semibold text-white/68 ring-1 ring-white/[0.07]">
               <IconFlame size={14} stroke={2.4} />
-              爆款参考
+              {t('hotVideos.badge')}
             </div>
             <h1 className="font-display mx-auto mt-5 max-w-[820px] text-[34px] font-extrabold leading-tight tracking-tight text-white md:text-[46px]">
-              从爆款视频里拆出下一条带货脚本
+              {t('hotVideos.title')}
             </h1>
             <p className="mx-auto mt-3 max-w-[760px] text-[14px] leading-7 text-white/52">
-              粘贴 TikTok 视频链接，AI 会拉取视频元数据并拆出脚本结构。
+              {t('hotVideos.subtitle')}
             </p>
 
             <form
@@ -371,7 +438,7 @@ export function HotVideosPage() {
                     if (inputError) setInputError(null);
                   }}
                   disabled={parseLoading}
-                  placeholder="粘贴 TikTok 视频链接（https://www.tiktok.com/...）"
+                  placeholder={t('hotVideos.inputPlaceholder')}
                   className="min-w-0 flex-1 bg-transparent text-[14px] text-white outline-none placeholder:text-white/30 disabled:opacity-60"
                 />
                 <button
@@ -381,7 +448,7 @@ export function HotVideosPage() {
                   className="hidden h-10 items-center gap-1.5 rounded-xl bg-white/[0.055] px-3 text-[12px] font-semibold text-white/58 ring-1 ring-white/[0.06] transition-colors hover:bg-white/[0.09] hover:text-white disabled:opacity-60 sm:flex"
                 >
                   <IconCopyPlus size={15} stroke={2.2} />
-                  粘贴
+                  {t('hotVideos.paste')}
                 </button>
                 <button
                   type="submit"
@@ -391,11 +458,11 @@ export function HotVideosPage() {
                   {parseLoading ? (
                     <>
                       <IconLoader2 size={15} className="animate-spin" stroke={2.4} />
-                      正在拆解…
+                      {t('hotVideos.parsing')}
                     </>
                   ) : (
                     <>
-                      拆解参考
+                      {t('hotVideos.parse')}
                       <IconArrowRight size={15} stroke={2.5} />
                     </>
                   )}
@@ -427,7 +494,7 @@ export function HotVideosPage() {
               className="ml-auto flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[#ff5fbf] transition-colors hover:bg-[#ff5fbf]/10"
             >
               <IconRefresh size={13} stroke={2.4} />
-              重置筛选
+              {t('common.resetFilters')}
             </button>
           </div>
         </section>
@@ -435,11 +502,15 @@ export function HotVideosPage() {
         <section className="mt-5">
           <div className="mb-4 flex flex-wrap items-end gap-3">
             <div>
-              <h2 className="text-[18px] font-bold text-white">热门参考</h2>
+              <h2 className="text-[18px] font-bold text-white">{t('hotVideos.hotRefs')}</h2>
               <div className="mt-1 text-[12px] text-white/35">
                 {loading
-                  ? '正在加载…'
-                  : `${videos.length} 条结果 · ${totalSales.toLocaleString('zh-CN')} 销量 · 平均 ${avgViewsLabel}浏览`}
+                  ? `${t('hotVideos.loading')}...`
+                  : t('hotVideos.resultsMeta', {
+                      count: videos.length,
+                      sales: totalSales.toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US'),
+                      views: avgViewsLabel,
+                    })}
               </div>
             </div>
             <label className="ml-auto flex h-10 min-w-[260px] items-center gap-2 rounded-xl bg-[#141619] px-3 ring-1 ring-white/[0.08]">
@@ -447,7 +518,7 @@ export function HotVideosPage() {
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="搜索标题、商品、标签"
+                placeholder={t('hotVideos.searchPlaceholder')}
                 className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/30"
               />
             </label>
@@ -455,18 +526,16 @@ export function HotVideosPage() {
 
           {loadError ? (
             <div className="rounded-[18px] bg-[#1c1e20] p-6 text-[13px] text-[#f5c76a] ring-1 ring-white/[0.07]">
-              加载失败：{loadError}
+              {t('hotVideos.loadFailed')}: {loadError}
             </div>
           ) : loading && videos.length === 0 ? (
             <div className="flex h-40 items-center justify-center rounded-[18px] bg-[#1c1e20] text-white/52 ring-1 ring-white/[0.07]">
               <IconLoader2 size={20} className="mr-2 animate-spin" stroke={2.2} />
-              加载中
+              {t('hotVideos.loading')}
             </div>
           ) : videos.length === 0 ? (
             <div className="rounded-[18px] bg-[#1c1e20] p-10 text-center text-[13px] text-white/48 ring-1 ring-white/[0.07]">
-              {filters.owner === '仅我的'
-                ? '你还没有下载过视频，粘贴 TikTok 链接即可加入个人库'
-                : '当前筛选条件下没有结果'}
+              {filters.owner === 'me' ? t('hotVideos.emptyMine') : t('hotVideos.empty')}
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -521,6 +590,7 @@ function HotVideoCard({
   onUse: () => void;
   onPreview: () => void;
 }) {
+  const { locale, t } = useI18n();
   const stop = (event: React.MouseEvent) => {
     event.stopPropagation();
   };
@@ -539,7 +609,7 @@ function HotVideoCard({
           <button
             type="button"
             onClick={onPreview}
-            aria-label="打开视频预览"
+            aria-label={t('hotVideos.originalPreview')}
             className="absolute inset-0 text-left focus:outline-none"
           >
             <VideoStill video={video} />
@@ -565,10 +635,12 @@ function HotVideoCard({
                 ? 'bg-[#79e4ff]/22 text-[#79e4ff] ring-1 ring-[#79e4ff]/32'
                 : 'bg-black/36 text-white/74',
             )}
-            title={ownedByMe ? '我已下载' : '其他用户下载'}
+            title={
+              ownedByMe ? t('hotVideos.card.downloaded') : t('hotVideos.card.downloadedByOthers')
+            }
           >
             <IconHeart size={14} fill={ownedByMe ? 'currentColor' : 'none'} stroke={2.2} />
-            {ownedByMe ? '已下载' : null}
+            {ownedByMe ? t('hotVideos.card.downloaded') : null}
           </span>
         </div>
         {!video.previewUrl ? (
@@ -588,20 +660,28 @@ function HotVideoCard({
         <div className="grid grid-cols-2 gap-2">
           <CardStat
             icon={<IconShoppingBag size={13} stroke={2.2} />}
-            label="销量"
+            label={t('hotVideos.card.sales')}
             value={video.sales}
+            locale={locale}
           />
           <CardStat
             icon={<IconTrendingUp size={13} stroke={2.2} />}
-            label="销售额"
+            label={t('hotVideos.card.revenue')}
             value={video.revenueLabel}
+            locale={locale}
           />
           <CardStat
             icon={<IconEye size={13} stroke={2.2} />}
-            label="浏览量"
+            label={t('hotVideos.card.views')}
             value={video.viewsLabel}
+            locale={locale}
           />
-          <CardStat icon={<IconFlame size={13} stroke={2.2} />} label="ROAS" value={video.roas} />
+          <CardStat
+            icon={<IconFlame size={13} stroke={2.2} />}
+            label="ROAS"
+            value={video.roas}
+            locale={locale}
+          />
         </div>
 
         <button
@@ -618,10 +698,10 @@ function HotVideoCard({
           }}
           title={
             !signedIn
-              ? '注册后可下载并复刻视频'
+              ? t('hotVideos.card.signupTitle')
               : ownedByMe
-                ? '基于该视频生成新内容'
-                : '只能复刻自己下载的视频'
+                ? t('hotVideos.card.remixTitle')
+                : t('hotVideos.card.mineOnly')
           }
           className={cn(
             'flex h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[12px] font-semibold transition-colors',
@@ -635,17 +715,17 @@ function HotVideoCard({
           {ownedByMe ? (
             <>
               <IconCheck size={14} stroke={2.4} />
-              爆款复刻
+              {t('hotVideos.card.remix')}
             </>
           ) : !signedIn ? (
             <>
               <IconLock size={13} stroke={2.4} />
-              注册后复刻
+              {t('hotVideos.card.signupRemix')}
             </>
           ) : (
             <>
               <IconLock size={13} stroke={2.4} />
-              仅自己下载可复刻
+              {t('hotVideos.card.mineOnly')}
             </>
           )}
         </button>
@@ -661,6 +741,7 @@ function VideoPreviewModal({
   video: HotVideoView;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -693,7 +774,7 @@ function VideoPreviewModal({
         <button
           type="button"
           onClick={onClose}
-          aria-label="关闭视频预览"
+          aria-label={t('common.close')}
           className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-xl bg-black/52 text-white/72 ring-1 ring-white/[0.1] backdrop-blur transition-colors hover:bg-black/72 hover:text-white"
         >
           <IconX size={18} stroke={2.2} />
@@ -721,7 +802,7 @@ function VideoPreviewModal({
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-[13px] text-white/45">
-              视频不可用
+              {t('hotVideos.previewUnavailable')}
             </div>
           )}
         </div>
@@ -733,7 +814,9 @@ function VideoPreviewModal({
             <span className="opacity-40">·</span>
             <span>{video.region}</span>
             <span className="opacity-40">·</span>
-            <span>浏览 {video.viewsLabel}</span>
+            <span>
+              {t('hotVideos.card.views')} {video.viewsLabel}
+            </span>
             {video.sourceUrl ? (
               <a
                 href={video.sourceUrl}
@@ -742,7 +825,7 @@ function VideoPreviewModal({
                 className="ml-auto inline-flex items-center gap-1 text-[#79e4ff] hover:text-white"
               >
                 <IconExternalLink size={13} stroke={2.2} />
-                打开原始链接
+                {t('hotVideos.openOriginal')}
               </a>
             ) : null}
           </div>
@@ -761,6 +844,7 @@ function ReplicaConfigModal({
   video?: HotVideoView;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const fileInputId = useId();
   const [uploadedImages, setUploadedImages] = useState<UploadedProductImage[]>([]);
   const [prompt, setPrompt] = useState('');
@@ -796,7 +880,7 @@ function ReplicaConfigModal({
         <button
           type="button"
           onClick={onClose}
-          aria-label="关闭复刻配置"
+          aria-label={t('common.close')}
           className="absolute right-5 top-5 z-10 flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1] hover:text-white"
         >
           <IconX size={18} stroke={2.2} />
@@ -804,7 +888,9 @@ function ReplicaConfigModal({
 
         <div className="grid min-h-0 flex-1 gap-0 overflow-y-auto lg:grid-cols-[320px_minmax(0,1fr)]">
           <section className="border-b border-white/[0.07] p-6 lg:border-b-0 lg:border-r">
-            <div className="text-[12px] font-semibold text-white/42">原视频预览</div>
+            <div className="text-[12px] font-semibold text-white/42">
+              {t('hotVideos.originalPreview')}
+            </div>
             <div className="mt-4 flex justify-center lg:justify-start">
               <div className="relative aspect-[9/16] w-full max-w-[264px] overflow-hidden rounded-[18px] bg-black ring-1 ring-white/[0.08]">
                 {video ? (
@@ -821,7 +907,7 @@ function ReplicaConfigModal({
                       {target.label}
                     </div>
                     <div className="mt-0.5 text-[11px] text-white/45">
-                      {target.source === 'link' ? '外部链接' : video?.region}
+                      {target.source === 'link' ? t('hotVideos.externalLink') : video?.region}
                     </div>
                   </div>
                 </div>
@@ -838,21 +924,17 @@ function ReplicaConfigModal({
                 <IconSparkles size={19} stroke={2.3} />
               </span>
               <div>
-                <h2 className="text-[20px] font-bold text-white">爆款复刻配置</h2>
-                <p className="mt-1 text-[13px] text-white/42">
-                  设置你的复刻参数，AI 将基于原视频生成全新内容
-                </p>
+                <h2 className="text-[20px] font-bold text-white">{t('hotVideos.configTitle')}</h2>
+                <p className="mt-1 text-[13px] text-white/42">{t('hotVideos.configSubtitle')}</p>
               </div>
             </div>
 
             <div className="mt-7">
               <div className="flex items-center gap-2 text-[14px] font-bold text-white">
-                上传商品图片（必填，最多9张）
+                {t('hotVideos.uploadProduct')}
                 <span className="text-[#f5c76a]">*</span>
               </div>
-              <p className="mt-2 text-[12px] leading-5 text-white/38">
-                请上传白底商品图，更多角度产品图可以让视频一致性更强。
-              </p>
+              <p className="mt-2 text-[12px] leading-5 text-white/38">{t('hotVideos.uploadTip')}</p>
 
               <input
                 id={fileInputId}
@@ -872,7 +954,7 @@ function ReplicaConfigModal({
                   )}
                 >
                   <IconPlus size={22} stroke={2.2} />
-                  上传
+                  {t('common.upload')}
                 </label>
 
                 {uploadedImages.map((image) => (
@@ -887,7 +969,7 @@ function ReplicaConfigModal({
                     <button
                       type="button"
                       onClick={() => removeImage(image.id)}
-                      aria-label={`移除 ${image.name}`}
+                      aria-label={`${t('common.remove')} ${image.name}`}
                       className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#24272a] text-white/55 ring-1 ring-white/[0.12] hover:text-white"
                     >
                       <IconX size={13} stroke={2.2} />
@@ -896,18 +978,20 @@ function ReplicaConfigModal({
                 ))}
               </div>
 
-              <div className="mt-3 text-[12px] text-white/36">已上传 {uploadedImages.length}/9</div>
+              <div className="mt-3 text-[12px] text-white/36">
+                {t('hotVideos.uploaded', { count: uploadedImages.length })}
+              </div>
             </div>
 
             <div className="mt-6">
               <label htmlFor="replica-prompt" className="text-[14px] font-bold text-white">
-                复刻提示词（选填）
+                {t('hotVideos.promptLabel')}
               </label>
               <textarea
                 id="replica-prompt"
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
-                placeholder="请输入产品信息、卖点、价格及原视频修改需求，AI 将基于原爆款结构生成新的带货内容"
+                placeholder={t('hotVideos.promptPlaceholder')}
                 className="mt-3 h-[112px] w-full resize-none rounded-xl bg-white/[0.045] px-4 py-3 text-[13px] leading-6 text-white outline-none ring-1 ring-white/[0.08] placeholder:text-white/28 focus:ring-[#79e4ff]/34"
               />
             </div>
@@ -915,16 +999,16 @@ function ReplicaConfigModal({
             <div className="mt-6">
               <div className="flex items-center gap-2 text-[14px] font-bold text-white">
                 <IconSettings size={16} stroke={2.2} />
-                视频设置
+                {t('hotVideos.videoSettings')}
               </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {[
-                  ['视频比例', '9:16'],
-                  ['时长', '15s'],
-                  ['文案语言', '中文'],
-                  ['生成模式', '标准复刻'],
-                  ['清晰度', '720p'],
-                  ['生成数量', '1条'],
+                  [t('hotVideos.settings.aspect'), '9:16'],
+                  [t('hotVideos.settings.duration'), '15s'],
+                  [t('hotVideos.settings.copyLanguage'), t('hotVideos.settings.chinese')],
+                  [t('hotVideos.settings.mode'), t('hotVideos.settings.standard')],
+                  [t('hotVideos.settings.quality'), '720p'],
+                  [t('hotVideos.settings.count'), t('hotVideos.settings.one')],
                 ].map(([label, value]) => (
                   <button
                     key={label}
@@ -941,9 +1025,7 @@ function ReplicaConfigModal({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.08] px-6 py-4">
-          <div className="text-[12px] text-white/38">
-            生成时间约 2-5 分钟，可在项目管理中查看进度
-          </div>
+          <div className="text-[12px] text-white/38">{t('hotVideos.generationTime')}</div>
           <button
             type="button"
             disabled={!canGenerate}
@@ -955,8 +1037,10 @@ function ReplicaConfigModal({
             )}
           >
             <IconUpload size={15} stroke={2.3} />
-            生成
-            <span className="rounded-full bg-black/10 px-2 py-0.5 text-[11px]">75 积分</span>
+            {t('hotVideos.generate')}
+            <span className="rounded-full bg-black/10 px-2 py-0.5 text-[11px]">
+              {t('hotVideos.credits')}
+            </span>
           </button>
         </div>
       </motion.div>
@@ -979,6 +1063,7 @@ function LinkReplicaPreview({ target }: { target: ReferenceItem }) {
 }
 
 function CardVideoPlayer({ video }: { video: HotVideoView }) {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -1051,7 +1136,7 @@ function CardVideoPlayer({ video }: { video: HotVideoView }) {
           <button
             type="button"
             onClick={togglePlay}
-            aria-label={playing ? '暂停视频' : '播放视频'}
+            aria-label={playing ? t('common.pause') : t('common.play')}
             className="flex h-8 w-8 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/18 transition-colors hover:bg-white/22"
           >
             {playing ? (
@@ -1068,7 +1153,7 @@ function CardVideoPlayer({ video }: { video: HotVideoView }) {
           <button
             type="button"
             onClick={() => setMuted((value) => !value)}
-            aria-label={muted ? '取消静音' : '静音'}
+            aria-label={muted ? t('common.unmute') : t('common.mute')}
             className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/82 ring-1 ring-white/14 transition-colors hover:bg-white/18 hover:text-white"
           >
             {muted ? (
@@ -1081,7 +1166,7 @@ function CardVideoPlayer({ video }: { video: HotVideoView }) {
           <button
             type="button"
             onClick={toggleFullscreen}
-            aria-label="全屏播放"
+            aria-label={t('common.fullscreen')}
             className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/82 ring-1 ring-white/14 transition-colors hover:bg-white/18 hover:text-white"
           >
             <IconMaximize size={15} stroke={2.1} />
@@ -1095,7 +1180,7 @@ function CardVideoPlayer({ video }: { video: HotVideoView }) {
           step="0.01"
           value={duration ? Math.min(currentTime, duration) : 0}
           onChange={handleSeek}
-          aria-label="视频时间进度条"
+          aria-label={t('common.videoTimeline')}
           className="mt-2 h-1 w-full cursor-pointer accent-[#79e4ff]"
           style={{
             accentColor: video.accent,
@@ -1189,10 +1274,12 @@ function formatDuration(value: number): string {
 function CardStat({
   icon,
   label,
+  locale,
   value,
 }: {
   icon: React.ReactNode;
   label: string;
+  locale: Locale;
   value: string | number;
 }) {
   return (
@@ -1202,7 +1289,9 @@ function CardStat({
         {label}
       </div>
       <div className="mt-1 truncate text-[12px] font-bold text-white/82">
-        {typeof value === 'number' ? value.toLocaleString('zh-CN') : value}
+        {typeof value === 'number'
+          ? value.toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US')
+          : value}
       </div>
     </div>
   );
@@ -1226,13 +1315,15 @@ function FilterPill({
   value,
   onChange,
 }: {
-  filter: { key: FilterKey; label: string; options: string[] };
+  filter: FilterConfig;
   value: string;
   onChange: (value: string) => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const reallyActive = value !== DEFAULT_FILTERS[filter.key];
+  const activeOption = filter.options.find((option) => option.value === value);
 
   useEffect(() => {
     if (!open) return;
@@ -1264,9 +1355,9 @@ function FilterPill({
             : 'bg-[#1a1c1f] text-white/82 ring-1 ring-white/[0.07] hover:bg-[#23262a] hover:ring-white/[0.12]',
         )}
       >
-        <span className="font-medium text-white/52">{filter.label}</span>
+        <span className="font-medium text-white/52">{t(filter.labelKey)}</span>
         <span className={cn('font-bold', reallyActive ? 'text-[#ff5fbf]' : 'text-white')}>
-          {value}
+          {activeOption ? t(activeOption.labelKey) : value}
         </span>
         <IconChevronDown
           size={14}
@@ -1282,13 +1373,13 @@ function FilterPill({
       {open ? (
         <div className="absolute left-0 top-[calc(100%+6px)] z-30 min-w-[180px] overflow-hidden rounded-2xl bg-[#1f2226] py-1.5 shadow-[0_22px_60px_-26px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.07]">
           {filter.options.map((option) => {
-            const selected = option === value;
+            const selected = option.value === value;
             return (
               <button
-                key={option}
+                key={option.value}
                 type="button"
                 onClick={() => {
-                  onChange(option);
+                  onChange(option.value);
                   setOpen(false);
                 }}
                 className={cn(
@@ -1304,7 +1395,7 @@ function FilterPill({
                   ) : (
                     <span className="inline-block w-[14px]" />
                   )}
-                  {option}
+                  {t(option.labelKey)}
                 </span>
                 <IconChevronRight size={13} className="text-white/24" stroke={2.2} />
               </button>

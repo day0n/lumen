@@ -1,7 +1,10 @@
 import { ClerkProvider } from '@clerk/nextjs';
+import { zhCN } from '@clerk/localizations';
 import { ColorSchemeScript } from '@mantine/core';
 import type { Metadata, Viewport } from 'next';
 import { Inter, Manrope } from 'next/font/google';
+import { getRequestLocale } from '@/i18n/server';
+import { localePath } from '@/i18n/routing';
 import { Providers } from './providers';
 import '@mantine/core/styles.css';
 import '@xyflow/react/dist/style.css';
@@ -20,12 +23,20 @@ const display = Manrope({
   weight: ['600', '700', '800'],
 });
 
-export const metadata: Metadata = {
-  title: 'Lumen — 把商品变成爆款带货视频',
-  description:
-    'Lumen 是面向 TikTok Shop 商家的 AIGC 带货视频生成系统。粘贴商品链接，AI 在画布上自动搭工作流出片。',
-  applicationName: 'Lumen',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale();
+  return {
+    title:
+      locale === 'zh'
+        ? 'Lumen — 把商品变成爆款带货视频'
+        : 'Lumen — Turn products into videos that sell',
+    description:
+      locale === 'zh'
+        ? 'Lumen 是面向 TikTok Shop 商家的 AIGC 带货视频生成系统。粘贴商品链接，AI 在画布上自动搭工作流出片。'
+        : 'Lumen is an AI video creation studio for TikTok Shop sellers. Paste a product link and let AI assemble a workflow on canvas.',
+    applicationName: 'Lumen',
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: '#0c0a07',
@@ -34,20 +45,27 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = await getRequestLocale();
+
   return (
-    <html lang="zh-CN" className={`${inter.variable} ${display.variable}`} suppressHydrationWarning>
+    <html
+      lang={locale === 'zh' ? 'zh-CN' : 'en'}
+      className={`${inter.variable} ${display.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <ColorSchemeScript defaultColorScheme="dark" forceColorScheme="dark" />
       </head>
       <body>
         <ClerkProvider
-          signInUrl="/sign-in"
-          signUpUrl="/sign-up"
-          signInFallbackRedirectUrl="/"
-          signUpFallbackRedirectUrl="/"
+          localization={locale === 'zh' ? (zhCN as never) : undefined}
+          signInUrl={localePath('/sign-in', locale)}
+          signUpUrl={localePath('/sign-up', locale)}
+          signInFallbackRedirectUrl={localePath('/', locale)}
+          signUpFallbackRedirectUrl={localePath('/', locale)}
         >
-          <Providers>{children}</Providers>
+          <Providers initialLocale={locale}>{children}</Providers>
         </ClerkProvider>
       </body>
     </html>

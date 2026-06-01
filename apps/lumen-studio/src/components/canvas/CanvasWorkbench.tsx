@@ -80,6 +80,7 @@ import type { ChangeEvent, MouseEvent, KeyboardEvent as ReactKeyboardEvent } fro
 import { ChatPanel } from '@/features/agent-chat/ChatPanel';
 import { useWorkflowWs } from '@/features/workflow/use-workflow-ws';
 import type { NodeState } from '@/features/workflow/use-workflow-ws';
+import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { arrangeCanvasNodes } from '@/lib/canvas/auto-layout';
 import { checkCycle } from '@/lib/canvas/cycle-detection';
@@ -287,25 +288,57 @@ const nodeCatalog = [
 
 const defaultModels: Record<NodeKind, ModelOption[]> = {
   text: [
-    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', badges: ['快速高效', '通用', '10 ~ 20s'] },
-    { id: 'doubao-seed-2.0-pro', label: '豆包 Seed 2.0', badges: ['中文创作', '稳定', '10 ~ 20s'] },
+    {
+      id: 'gemini-3.5-flash',
+      label: 'Gemini 3.5 Flash',
+      badges: ['canvas.models.fast', 'canvas.models.general', '10 ~ 20s'],
+    },
+    {
+      id: 'doubao-seed-2.0-pro',
+      label: 'Doubao Seed 2.0',
+      badges: ['canvas.models.chineseWriting', 'canvas.models.stable', '10 ~ 20s'],
+    },
   ],
   image: [
-    { id: 'nano-banana2', label: 'Nano Banana 2', badges: ['写实图片', '高质量', '10 ~ 20s'] },
+    {
+      id: 'nano-banana2',
+      label: 'Nano Banana 2',
+      badges: ['canvas.models.realisticImage', 'canvas.models.highQuality', '10 ~ 20s'],
+    },
     {
       id: 'doubao-seedream-3.0',
       label: 'Seedream 3.0',
-      badges: ['中文友好', '多风格', '10 ~ 20s'],
+      badges: ['canvas.models.chineseFriendly', 'canvas.models.multiStyle', '10 ~ 20s'],
     },
   ],
   video: [
-    { id: 'veo-3.1', label: 'Veo 3.1', badges: ['高质量视频', '4K', '60 ~ 120s'] },
-    { id: 'seedance-1.5-pro', label: 'Seedance 1.5', badges: ['快速成片', '动态强', '30 ~ 90s'] },
-    { id: 'lumen-video-edit', label: '自动剪辑', badges: ['本地合成', '多视频', '30 ~ 120s'] },
+    {
+      id: 'veo-3.1',
+      label: 'Veo 3.1',
+      badges: ['canvas.models.highQualityVideo', '4K', '60 ~ 120s'],
+    },
+    {
+      id: 'seedance-1.5-pro',
+      label: 'Seedance 1.5',
+      badges: ['canvas.models.autoEdit', 'canvas.models.dynamic', '30 ~ 90s'],
+    },
+    {
+      id: 'lumen-video-edit',
+      label: 'Auto edit',
+      badges: ['canvas.models.localEdit', 'canvas.models.multiVideo', '30 ~ 120s'],
+    },
   ],
   audio: [
-    { id: 'fish-tts', label: 'Fish TTS', badges: ['自然音色', '多语种', '5 ~ 10s'] },
-    { id: 'doubao-tts', label: '豆包 TTS', badges: ['中文配音', '快速', '5 ~ 10s'] },
+    {
+      id: 'fish-tts',
+      label: 'Fish TTS',
+      badges: ['canvas.models.naturalVoice', 'canvas.models.multilingual', '5 ~ 10s'],
+    },
+    {
+      id: 'doubao-tts',
+      label: 'Doubao TTS',
+      badges: ['canvas.models.chineseVoice', 'canvas.models.quick', '5 ~ 10s'],
+    },
   ],
 };
 
@@ -473,13 +506,16 @@ function resolveFrames(inputImage: string, inputLastFrameImage: string, upstream
   return { first, last };
 }
 
-function getNodeTitle(data: LumenNodeData) {
+function getNodeTitle(
+  data: LumenNodeData,
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+) {
   const template = getTemplate(data.kind);
   if (!data.title || data.title === legacyNodeTitles[data.kind]) {
-    return template.title;
+    return t(`canvas.nodeKinds.${data.kind}`);
   }
 
-  return data.title;
+  return data.title === template.title ? t(`canvas.nodeKinds.${data.kind}`) : data.title;
 }
 
 function isWorkflowNodeBusy(status?: LumenNodeData['status']) {
@@ -625,6 +661,7 @@ export function CanvasWorkbench({ projectId, createOnMount = false }: CanvasWork
 function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { locale, t, localePath } = useI18n();
   const { isLoaded: authReady, isSignedIn, requireLogin } = useLoginRedirect();
   const initialPrompt = useMemo(() => searchParams?.get('prompt') ?? null, [searchParams]);
   const shouldOpenAgentChat = searchParams?.get('agent') === 'chat';
@@ -634,7 +671,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState(projectId ?? null);
   const [currentOwnerId, setCurrentOwnerId] = useState<string | null>(null);
-  const [projectTitle, setProjectTitle] = useState('未命名画布');
+  const [projectTitle, setProjectTitle] = useState(() => t('canvas.untitled'));
   const [saveState, setSaveState] = useState<CanvasSaveState>(projectId ? 'loading' : 'idle');
   const [nodes, setNodes, onNodesChange] = useNodesState<LumenNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<LumenEdge>([]);
@@ -662,7 +699,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       .filter(([, groupNodes]) => groupNodes.length >= 2)
       .map(([id, groupNodes]) => ({
         id,
-        name: groupNodes[0]?.data.groupName || '新建组',
+        name: groupNodes[0]?.data.groupName || t('canvas.group'),
         nodes: groupNodes,
         bounds: getNodeBounds(groupNodes, 20),
         selected: groupNodes.some((node) => node.selected),
@@ -674,7 +711,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         }),
       }))
       .filter((group) => group.bounds);
-  }, [edges, nodes]);
+  }, [edges, nodes, t]);
   const runnableNodeIds = useMemo(() => {
     const result = new Set<string>();
     for (const node of nodes) {
@@ -731,6 +768,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     projectId: currentProjectId,
     workflowId: currentProjectId,
     userId: currentOwnerId,
+    locale,
     onNodeStateChange: handleNodeStateChange,
   });
 
@@ -761,12 +799,12 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           data: {
             ...node.data,
             groupId,
-            groupName: '新建组',
+            groupName: t('canvas.group'),
           },
         };
       }),
     );
-  }, [selectedNodes.length, setNodes]);
+  }, [selectedNodes.length, setNodes, t]);
 
   const ungroupNodes = useCallback(
     (groupId: string) => {
@@ -811,8 +849,9 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
       const response = await fetch(`/api/projects/${currentProjectId}`, {
         signal: options.signal,
+        headers: { 'x-lumen-locale': locale },
       });
-      const project = await readProjectResponse(response);
+      const project = await readProjectResponse(response, t('canvas.projectFailed'));
       setCurrentOwnerId(project.ownerId);
       setProjectTitle(project.title);
       setNodes(withCanvasNodeLayering(project.canvas.nodes));
@@ -822,7 +861,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       setSaveState('saved');
       return project;
     },
-    [currentProjectId, setEdges, setNodes],
+    [currentProjectId, locale, setEdges, setNodes, t],
   );
 
   const handleAgentWorkflowUpdate = useCallback(
@@ -876,14 +915,14 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       try {
         const response = await fetch('/api/projects', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-lumen-locale': locale },
           body: JSON.stringify({
             title: projectTitle,
             canvas,
           }),
           signal: controller.signal,
         });
-        const project = await readProjectResponse(response);
+        const project = await readProjectResponse(response, t('canvas.projectFailed'));
         setCurrentProjectId(project.id);
         setCurrentOwnerId(project.ownerId);
         setProjectTitle(project.title);
@@ -896,7 +935,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         if (initialPrompt) queryParams.set('prompt', initialPrompt);
         if (shouldOpenAgentChat) queryParams.set('agent', 'chat');
         const query = queryParams.toString();
-        router.replace(`/canvas/${project.id}${query ? `?${query}` : ''}`);
+        router.replace(localePath(`/canvas/${project.id}${query ? `?${query}` : ''}`));
       } catch (error) {
         if (controller.signal.aborted) {
           return;
@@ -917,6 +956,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     currentProjectId,
     edges,
     initialPrompt,
+    locale,
+    localePath,
     nodes,
     projectTitle,
     router,
@@ -924,6 +965,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     setNodes,
     shouldOpenAgentChat,
     isSignedIn,
+    t,
   ]);
 
   useEffect(() => {
@@ -967,11 +1009,11 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       try {
         const response = await fetch(`/api/projects/${currentProjectId}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-lumen-locale': locale },
           body: JSON.stringify({ canvas }),
           signal: controller.signal,
         });
-        const project = await readProjectResponse(response);
+        const project = await readProjectResponse(response, t('canvas.projectFailed'));
         lastSavedCanvas.current = JSON.stringify(project.canvas);
         setSaveState('saved');
       } catch (error) {
@@ -986,7 +1028,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [authReady, currentProjectId, edges, isSignedIn, nodes]);
+  }, [authReady, currentProjectId, edges, isSignedIn, locale, nodes, t]);
 
   const addCanvasNode = useCallback(
     (template = getTemplate(activeKind), position?: XYPosition) => {
@@ -1280,25 +1322,26 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const restoreHistoryRecord = useCallback(
     async (record: ProjectHistoryRecord) => {
       if (!currentProjectId) {
-        throw new Error('项目不存在');
+        throw new Error(t('canvas.history.missingProject'));
       }
 
       let snapshot = record;
       if (!snapshot.canvas) {
         const response = await fetch(
           `/api/projects/${currentProjectId}/history/${encodeURIComponent(record.id)}`,
+          { headers: { 'x-lumen-locale': locale } },
         );
         const payload = (await response.json()) as ProjectHistoryRecordApiResponse;
 
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.ok ? '历史读取失败' : payload.error.message);
+          throw new Error(payload.ok ? t('canvas.history.readFailed') : payload.error.message);
         }
 
         snapshot = payload.data.history;
       }
 
       if (!snapshot.canvas) {
-        throw new Error('历史记录缺少画布快照');
+        throw new Error(t('canvas.history.missingSnapshot'));
       }
 
       setProjectTitle(snapshot.title);
@@ -1306,7 +1349,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       setEdges(withCanvasEdgeLayering(snapshot.canvas.edges));
       setHistoryPanelOpen(false);
     },
-    [currentProjectId, setEdges, setNodes],
+    [currentProjectId, locale, setEdges, setNodes, t],
   );
 
   const canvasActions = useMemo<CanvasActions>(
@@ -1488,11 +1531,14 @@ function readNodeStatus(value: unknown): NodeState['status'] | null {
   return null;
 }
 
-async function readProjectResponse(response: Response): Promise<CanvasProjectPayload> {
+async function readProjectResponse(
+  response: Response,
+  fallbackMessage: string,
+): Promise<CanvasProjectPayload> {
   const payload = (await response.json()) as ProjectApiResponse;
 
   if (!response.ok || !payload.ok) {
-    throw new Error(payload.ok ? '项目请求失败' : payload.error.message);
+    throw new Error(payload.ok ? fallbackMessage : payload.error.message);
   }
 
   return payload.data.project;
@@ -1545,6 +1591,7 @@ function GroupFrame({
   running: boolean;
   selected: boolean;
 }) {
+  const { t } = useI18n();
   return [
     <div
       key="frame"
@@ -1586,7 +1633,7 @@ function GroupFrame({
         </span>
         <button
           type="button"
-          aria-label="整组执行"
+          aria-label={t('canvas.groupActions.runGroup')}
           aria-busy={running}
           disabled={!canRun || running}
           onClick={onRun}
@@ -1601,16 +1648,16 @@ function GroupFrame({
           ) : (
             <IconPlayerPlay size={14} stroke={2.4} />
           )}
-          {running ? '运行中' : '整组执行'}
+          {running ? t('canvas.node.running') : t('canvas.groupActions.runGroup')}
         </button>
         <button
           type="button"
-          aria-label="解组"
+          aria-label={t('canvas.groupActions.ungroup')}
           onClick={onUngroup}
           className="flex h-8 items-center gap-1.5 rounded-[13px] px-2.5 text-[12px] font-black text-white/72 transition-colors hover:bg-white/[0.08] hover:text-white"
         >
           <IconGridDots size={14} stroke={2.4} />
-          解组
+          {t('canvas.groupActions.ungroup')}
         </button>
       </div>
     ) : null,
@@ -1626,6 +1673,7 @@ function SelectionGroupToolbar({
   onGroup: () => void;
   selectedCount: number;
 }) {
+  const { t } = useI18n();
   return (
     <div
       className="nodrag nopan pointer-events-auto absolute flex items-center gap-1.5 rounded-[18px] bg-[#232427]/95 p-1.5 text-white shadow-[0_20px_56px_rgba(0,0,0,0.42)] ring-1 ring-white/[0.12] backdrop-blur-xl"
@@ -1637,16 +1685,16 @@ function SelectionGroupToolbar({
     >
       <span className="flex h-8 items-center gap-1.5 rounded-[13px] bg-white/[0.08] px-2.5 text-[12px] font-black text-white/82">
         <IconSelectAll size={14} stroke={2.2} />
-        已选 {selectedCount}
+        {t('canvas.groupActions.selected', { count: selectedCount })}
       </span>
       <button
         type="button"
-        aria-label="打组"
+        aria-label={t('canvas.groupActions.group')}
         onClick={onGroup}
         className="flex h-8 items-center gap-1.5 rounded-[13px] px-2.5 text-[12px] font-black text-white/72 transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconLayoutGrid size={14} stroke={2.4} />
-        打组
+        {t('canvas.groupActions.group')}
       </button>
     </div>
   );
@@ -1661,7 +1709,8 @@ function CanvasTopbar({
   saveState: CanvasSaveState;
   title: string;
 }) {
-  const saveLabel = getSaveLabel(saveState);
+  const { locale, t, localePath } = useI18n();
+  const saveLabel = getSaveLabel(saveState, t);
   const [shareState, setShareState] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
 
   const shareProject = useCallback(async () => {
@@ -1669,11 +1718,14 @@ function CanvasTopbar({
 
     setShareState('copying');
     try {
-      const response = await fetch(`/api/projects/${projectId}/share`, { method: 'POST' });
+      const response = await fetch(`/api/projects/${projectId}/share`, {
+        method: 'POST',
+        headers: { 'x-lumen-locale': locale },
+      });
       const payload = (await response.json()) as ShareProjectApiResponse;
 
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.ok ? '分享链接生成失败' : payload.error.message);
+        throw new Error(payload.ok ? t('canvas.shareLinkFailed') : payload.error.message);
       }
 
       await navigator.clipboard.writeText(payload.data.shareUrl);
@@ -1684,14 +1736,14 @@ function CanvasTopbar({
       setShareState('error');
       window.setTimeout(() => setShareState('idle'), 2200);
     }
-  }, [projectId, shareState]);
+  }, [locale, projectId, shareState, t]);
 
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex h-20 items-center justify-between px-5">
       <div className="pointer-events-auto flex items-center gap-3">
         <Link
-          href="/canvas/projects"
-          aria-label="返回工作室"
+          href={localePath('/canvas/projects')}
+          aria-label={t('canvas.back')}
           className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.07] text-white/70 ring-1 ring-white/[0.09] transition-colors hover:bg-white/[0.12] hover:text-white"
         >
           <IconArrowLeft size={18} stroke={2.2} />
@@ -1710,7 +1762,7 @@ function CanvasTopbar({
               {saveLabel}
             </span>
           </div>
-          <p className="mt-1 text-[12px] text-white/42">Lumen 工作室 / 商品短视频项目</p>
+          <p className="mt-1 text-[12px] text-white/42">{t('canvas.studioPath')}</p>
         </div>
       </div>
 
@@ -1718,7 +1770,9 @@ function CanvasTopbar({
         <NotificationsPopover triggerClassName="h-10 w-10 rounded-2xl bg-white/[0.07] text-white/66 ring-white/[0.08] hover:bg-white/[0.12]" />
         <button
           type="button"
-          aria-label={shareState === 'copied' ? '分享链接已复制' : '分享项目'}
+          aria-label={
+            shareState === 'copied' ? t('canvas.shareLinkCopied') : t('canvas.shareProject')
+          }
           disabled={!projectId || shareState === 'copying'}
           onClick={shareProject}
           className="flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-[13px] font-bold text-[#111315] shadow-[0_16px_40px_rgba(0,0,0,0.28)] transition-transform hover:scale-[1.02]"
@@ -1731,27 +1785,30 @@ function CanvasTopbar({
             <IconShare3 size={16} stroke={2.3} />
           )}
           {shareState === 'copied'
-            ? '已复制链接'
+            ? t('canvas.shareCopied')
             : shareState === 'error'
-              ? '复制失败'
-              : '分享项目'}
+              ? t('canvas.shareFailed')
+              : t('canvas.shareProject')}
         </button>
       </div>
     </header>
   );
 }
 
-function getSaveLabel(saveState: CanvasSaveState) {
+function getSaveLabel(
+  saveState: CanvasSaveState,
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+) {
   switch (saveState) {
     case 'loading':
-      return '读取中';
+      return t('canvas.save.loading');
     case 'saving':
-      return '保存中';
+      return t('canvas.save.saving');
     case 'error':
-      return '保存失败';
+      return t('canvas.save.error');
     case 'idle':
     case 'saved':
-      return '自动保存';
+      return t('canvas.save.autosave');
   }
 }
 
@@ -1774,14 +1831,15 @@ function LeftToolbar({
   onToggleMaterialPanel: () => void;
   onToggleMenu: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <aside className="absolute left-5 top-24 z-40 flex items-start">
       <div className="flex h-[430px] w-[64px] flex-col items-center rounded-[28px] bg-[#151719]/90 p-2 shadow-[0_22px_70px_rgba(0,0,0,0.42)] ring-1 ring-white/[0.08] backdrop-blur-xl">
         <button
           type="button"
           aria-expanded={menuOpen}
-          aria-label="添加节点"
-          title="添加节点"
+          aria-label={t('canvas.toolbar.addNode')}
+          title={t('canvas.toolbar.addNode')}
           onClick={onToggleMenu}
           className={`flex h-11 w-11 items-center justify-center rounded-full shadow-[0_10px_28px_rgba(255,255,255,0.14)] transition-transform hover:scale-105 ${
             menuOpen ? 'bg-[#79e4ff] text-[#061016]' : 'bg-white text-[#111315]'
@@ -1793,16 +1851,16 @@ function LeftToolbar({
         <div className="mt-4 flex flex-col items-center gap-2">
           <ToolbarButton
             active={materialPanelOpen}
-            ariaLabel="素材库"
+            ariaLabel={t('canvas.toolbar.materials')}
             icon={IconFolder}
-            label="素材库"
+            label={t('canvas.toolbar.materials')}
             onClick={onToggleMaterialPanel}
           />
           <ToolbarButton
             active={historyPanelOpen}
-            ariaLabel="历史版本"
+            ariaLabel={t('canvas.toolbar.history')}
             icon={IconClock}
-            label="历史"
+            label={t('canvas.toolbar.history')}
             onClick={onToggleHistoryPanel}
           />
         </div>
@@ -1830,6 +1888,7 @@ function ToolbarButton({
   label: string;
   onClick?: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
@@ -1857,6 +1916,7 @@ function MaterialLibraryPanel({
   onClose: () => void;
   projectId: string | null;
 }) {
+  const { locale, t } = useI18n();
   const [activeCategory, setActiveCategory] = useState<MaterialAssetCategory | null>(null);
   const [activeKind, setActiveKind] = useState<MaterialAssetKind>('image');
   const [myAssetsExpanded, setMyAssetsExpanded] = useState(false);
@@ -1877,18 +1937,21 @@ function MaterialLibraryPanel({
       try {
         const response = await fetch(`/api/material-assets?workflowId=${projectId}`, {
           signal: controller.signal,
+          headers: { 'x-lumen-locale': locale },
         });
         const payload = (await response.json()) as MaterialAssetsApiResponse;
 
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.ok ? '素材读取失败' : payload.error.message);
+          throw new Error(payload.ok ? t('canvas.materials.readFailed') : payload.error.message);
         }
 
         setAssets(payload.data.assets);
         setError(null);
       } catch (loadError) {
         if (!controller.signal.aborted) {
-          setError(loadError instanceof Error ? loadError.message : '素材读取失败');
+          setError(
+            loadError instanceof Error ? loadError.message : t('canvas.materials.readFailed'),
+          );
         }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -1897,7 +1960,7 @@ function MaterialLibraryPanel({
 
     void loadAssets();
     return () => controller.abort();
-  }, [projectId]);
+  }, [locale, projectId, t]);
 
   const visibleAssets = useMemo(() => {
     if (!activeCategory) return [];
@@ -1934,19 +1997,21 @@ function MaterialLibraryPanel({
       <div className="flex items-center gap-2 px-4 pt-4">
         <button
           type="button"
-          aria-label="收起素材库"
+          aria-label={t('canvas.materials.collapse')}
           onClick={onClose}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/52 transition-colors hover:bg-white/[0.08] hover:text-white"
         >
           <IconChevronLeft size={19} stroke={2.2} />
         </button>
         <h2 className="min-w-0 flex-1 truncate font-display text-[24px] font-black tracking-tight text-white">
-          素材库
+          {t('canvas.materials.title')}
         </h2>
       </div>
 
       <div className="mt-3 flex-1 overflow-y-auto px-4 pb-4">
-        <div className="mb-2 px-2 text-[12px] font-bold text-white/36">分类</div>
+        <div className="mb-2 px-2 text-[12px] font-bold text-white/36">
+          {t('canvas.materials.categories')}
+        </div>
         <div className="space-y-1">
           {materialCategories.map((category) => {
             const active = category.id === activeCategory;
@@ -1985,7 +2050,7 @@ function MaterialLibraryPanel({
                     )}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[14px] font-bold text-white/72 group-hover:text-white">
-                    {category.label}
+                    {t(`canvas.materials.${category.id}`)}
                   </span>
                   <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold text-white/36">
                     {categoryCounts[category.id] ?? 0}
@@ -2014,25 +2079,27 @@ function MaterialLibraryPanel({
 
         <div className="mt-5 px-2 text-[12px] font-bold text-white/36">
           {!activeCategory
-            ? '选择分类'
+            ? t('canvas.materials.selectCategory')
             : activeCategory === 'my_assets'
-              ? materialKinds.find((kind) => kind.id === activeKind)?.label
-              : materialCategories.find((category) => category.id === activeCategory)?.label}
+              ? t(`canvas.materials.${activeKind}`)
+              : t(`canvas.materials.${activeCategory}`)}
         </div>
 
         <div className="mt-2 space-y-2">
           {!activeCategory ? (
-            <PanelEmptyState label={loading ? '正在同步运行结果' : '选择一个分类查看历史结果'} />
+            <PanelEmptyState
+              label={loading ? t('canvas.materials.loading') : t('canvas.materials.selectCategory')}
+            />
           ) : loading ? (
-            <PanelEmptyState label="正在同步运行结果" />
+            <PanelEmptyState label={t('canvas.materials.loading')} />
           ) : error ? (
             <PanelEmptyState label={error} tone="error" />
           ) : visibleAssets.length === 0 ? (
             <PanelEmptyState
               label={
                 activeCategory === 'my_assets'
-                  ? '当前工作流暂无成功生成结果'
-                  : '当前工作流暂无此类素材'
+                  ? t('canvas.materials.emptyGenerated')
+                  : t('canvas.materials.emptyCategory')
               }
             />
           ) : (
@@ -2053,6 +2120,7 @@ function ProjectHistoryPanel({
   onRestore: (record: ProjectHistoryRecord) => Promise<void> | void;
   projectId: string | null;
 }) {
+  const { locale, t } = useI18n();
   const [history, setHistory] = useState<ProjectHistoryRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -2071,18 +2139,19 @@ function ProjectHistoryPanel({
       try {
         const response = await fetch(`/api/projects/${projectId}/history`, {
           signal: controller.signal,
+          headers: { 'x-lumen-locale': locale },
         });
         const payload = (await response.json()) as ProjectHistoryApiResponse;
 
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.ok ? '历史读取失败' : payload.error.message);
+          throw new Error(payload.ok ? t('canvas.history.readFailed') : payload.error.message);
         }
 
         setHistory(payload.data.history);
         setError(null);
       } catch (loadError) {
         if (!controller.signal.aborted) {
-          setError(loadError instanceof Error ? loadError.message : '历史读取失败');
+          setError(loadError instanceof Error ? loadError.message : t('canvas.history.readFailed'));
         }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -2091,7 +2160,7 @@ function ProjectHistoryPanel({
 
     void loadHistory();
     return () => controller.abort();
-  }, [projectId]);
+  }, [locale, projectId, t]);
 
   const handleRestore = async (record: ProjectHistoryRecord) => {
     setRestoringId(record.id);
@@ -2099,7 +2168,9 @@ function ProjectHistoryPanel({
     try {
       await onRestore(record);
     } catch (restoreError) {
-      setError(restoreError instanceof Error ? restoreError.message : '历史恢复失败');
+      setError(
+        restoreError instanceof Error ? restoreError.message : t('canvas.history.restoreFailed'),
+      );
     } finally {
       setRestoringId(null);
     }
@@ -2110,26 +2181,28 @@ function ProjectHistoryPanel({
       <div className="flex items-center gap-2 px-4 pt-4">
         <button
           type="button"
-          aria-label="收起历史"
+          aria-label={t('canvas.history.collapse')}
           onClick={onClose}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/52 transition-colors hover:bg-white/[0.08] hover:text-white"
         >
           <IconChevronLeft size={19} stroke={2.2} />
         </button>
         <h2 className="min-w-0 flex-1 truncate font-display text-[24px] font-black tracking-tight text-white">
-          历史
+          {t('canvas.history.title')}
         </h2>
       </div>
 
       <div className="mt-3 flex-1 overflow-y-auto px-4 pb-4">
-        <div className="mb-2 px-2 text-[12px] font-bold text-white/36">最近三次编辑</div>
+        <div className="mb-2 px-2 text-[12px] font-bold text-white/36">
+          {t('canvas.history.recent')}
+        </div>
         <div className="space-y-2">
           {loading ? (
-            <PanelEmptyState label="正在读取历史" />
+            <PanelEmptyState label={t('canvas.history.loading')} />
           ) : error ? (
             <PanelEmptyState label={error} tone="error" />
           ) : history.length === 0 ? (
-            <PanelEmptyState label="暂无真实编辑历史" />
+            <PanelEmptyState label={t('canvas.history.empty')} />
           ) : (
             history.map((record) => (
               <button
@@ -2144,15 +2217,20 @@ function ProjectHistoryPanel({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-bold text-white/84">
-                    {historyActionLabel(record.action)}
+                    {historyActionLabel(record.action, t)}
                   </span>
                   <span className="mt-1 block truncate text-[11px] font-medium text-white/38">
-                    {formatMaterialDate(record.createdAt)} · {record.nodeCount} 节点 /{' '}
-                    {record.edgeCount} 连接
+                    {t('canvas.history.meta', {
+                      date: formatMaterialDate(record.createdAt, locale, t),
+                      nodes: record.nodeCount,
+                      edges: record.edgeCount,
+                    })}
                   </span>
                 </span>
                 <span className="rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-bold text-white/42">
-                  {restoringId === record.id ? '读取' : '恢复'}
+                  {restoringId === record.id
+                    ? t('canvas.history.reading')
+                    : t('canvas.history.restore')}
                 </span>
               </button>
             ))
@@ -2164,6 +2242,7 @@ function ProjectHistoryPanel({
 }
 
 function MaterialAssetCard({ asset }: { asset: MaterialAssetRecord }) {
+  const { locale, t } = useI18n();
   return (
     <button
       type="button"
@@ -2192,7 +2271,7 @@ function MaterialAssetCard({ asset }: { asset: MaterialAssetRecord }) {
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-bold text-white/84">{asset.title}</span>
         <span className="mt-1 block truncate text-[11px] font-medium text-white/38">
-          {materialKindLabel(asset.kind)} · {formatMaterialDate(asset.updatedAt)}
+          {materialKindLabel(asset.kind, t)} · {formatMaterialDate(asset.updatedAt, locale, t)}
         </span>
       </span>
       <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase text-white/32">
@@ -2240,6 +2319,7 @@ function MaterialKindButton({
   kind: (typeof materialKinds)[number];
   onClick: () => void;
 }) {
+  const { t } = useI18n();
   const Icon = kind.icon;
   return (
     <button
@@ -2252,50 +2332,66 @@ function MaterialKindButton({
       }`}
     >
       <Icon size={15} stroke={2.1} />
-      <span className="min-w-0 flex-1 truncate">{kind.label}</span>
+      <span className="min-w-0 flex-1 truncate">{t(`canvas.materials.${kind.id}`)}</span>
       <span className="text-[11px] text-white/34">{count}</span>
     </button>
   );
 }
 
-function materialKindLabel(kind: MaterialAssetKind) {
+function materialKindLabel(
+  kind: MaterialAssetKind,
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+) {
   switch (kind) {
     case 'image':
-      return '图片';
+      return t('canvas.materials.image');
     case 'video':
-      return '视频';
+      return t('canvas.materials.video');
     case 'audio':
-      return '音乐';
+      return t('canvas.materials.audio');
   }
 }
 
-function historyActionLabel(action: ProjectHistoryRecord['action']) {
+function historyActionLabel(
+  action: ProjectHistoryRecord['action'],
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+) {
   switch (action) {
     case 'created':
-      return '创建工作流';
+      return t('canvas.history.created');
     case 'updated':
-      return '编辑工作流';
+      return t('canvas.history.updated');
     case 'restored':
-      return '恢复工作流';
+      return t('canvas.history.restored');
   }
 }
 
-function formatMaterialDate(value: string) {
+function formatMaterialDate(
+  value: string,
+  locale: 'en' | 'zh',
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+) {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '刚刚';
+  if (Number.isNaN(date.getTime())) return t('common.justNow');
 
   const diffMs = Math.max(0, Date.now() - date.getTime());
   const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes} 分钟前`;
+  const formatter = new Intl.RelativeTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    numeric: 'auto',
+  });
+  if (minutes < 1) return t('common.justNow');
+  if (minutes < 60) return formatter.format(-minutes, 'minute');
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
+  if (hours < 24) return formatter.format(-hours, 'hour');
 
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} 天前`;
+  if (days < 30) return formatter.format(-days, 'day');
 
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 function NodeAddMenu({
@@ -2305,9 +2401,13 @@ function NodeAddMenu({
   activeKind: NodeKind;
   onPickTemplate: (template: NodeTemplate) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="ml-3 w-[248px] rounded-[22px] bg-[#202123]/94 p-2.5 shadow-[0_24px_80px_rgba(0,0,0,0.46)] ring-1 ring-white/[0.08] backdrop-blur-2xl">
-      <div className="px-2 pb-2 pt-1 text-[12px] font-semibold text-white/48">添加节点</div>
+      <div className="px-2 pb-2 pt-1 text-[12px] font-semibold text-white/48">
+        {t('canvas.toolbar.addNode')}
+      </div>
       <div className="space-y-1">
         {nodeCatalog.map((template) => {
           const Icon = template.icon;
@@ -2328,7 +2428,9 @@ function NodeAddMenu({
                 <Icon size={18} stroke={2.2} />
               </span>
               <span className="min-w-0">
-                <span className="block text-[13px] font-bold text-white/88">{template.title}</span>
+                <span className="block text-[13px] font-bold text-white/88">
+                  {t(`canvas.nodeKinds.${template.kind}`)}
+                </span>
               </span>
             </button>
           );
@@ -2351,6 +2453,7 @@ function QuickNodeMenu({
   onPick: (template: NodeTemplate) => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const isFromSource = handleType === 'source';
   const compatible = useMemo(() => {
     return nodeCatalog.filter((template) =>
@@ -2385,7 +2488,7 @@ function QuickNodeMenu({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="px-2 pb-1 pt-1 text-[11px] font-semibold text-white/46">
-          {isFromSource ? '连接到' : '从此处来源'}
+          {isFromSource ? t('canvas.node.connectTo') : t('canvas.node.sourceFrom')}
         </div>
         {compatible.map((template) => {
           const Icon = template.icon;
@@ -2401,7 +2504,9 @@ function QuickNodeMenu({
               >
                 <Icon size={16} stroke={2.2} />
               </span>
-              <span className="text-[13px] font-bold text-white/86">{template.title}</span>
+              <span className="text-[13px] font-bold text-white/86">
+                {t(`canvas.nodeKinds.${template.kind}`)}
+              </span>
             </button>
           );
         })}
@@ -2485,6 +2590,7 @@ function ModelPicker({
   onChange: (modelId: string) => void;
   value: string;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const models = defaultModels[kind];
   const selected = models.find((model) => model.id === value) ?? models[0];
@@ -2501,7 +2607,7 @@ function ModelPicker({
       <button
         type="button"
         aria-expanded={open}
-        aria-label="选择模型"
+        aria-label={t('canvas.node.chooseModel')}
         disabled={disabled}
         className={`flex h-9 w-full min-w-0 items-center gap-2 rounded-[13px] px-2.5 text-left text-[12px] font-black outline-none ring-1 transition-colors disabled:cursor-not-allowed ${
           open
@@ -2511,7 +2617,9 @@ function ModelPicker({
         onClick={() => setOpen((current) => !current)}
       >
         <IconSparkles size={13} stroke={2.4} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{selected?.label ?? '选择模型'}</span>
+        <span className="min-w-0 flex-1 truncate">
+          {selected?.label ?? t('canvas.node.chooseModel')}
+        </span>
         <IconChevronDown
           size={14}
           stroke={2.5}
@@ -2554,7 +2662,7 @@ function ModelPicker({
                         key={badge}
                         className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[10px] font-bold text-white/48"
                       >
-                        {badge}
+                        {badge.startsWith('canvas.') ? t(badge) : badge}
                       </span>
                     ))}
                   </span>
@@ -2591,6 +2699,7 @@ function FrameImageSlot({
   onDragEnd?: () => void;
   onDrop?: () => void;
 }) {
+  const { t } = useI18n();
   const canDrag = Boolean(draggable && image);
   return (
     <div
@@ -2630,26 +2739,26 @@ function FrameImageSlot({
           <IconUpload size={18} stroke={2.2} />
         )}
         <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/50 py-1 text-center text-[10px] font-black text-white/78">
-          {image ? label : '上传'}
+          {image ? label : t('canvas.node.upload')}
         </span>
         <input className="sr-only" type="file" accept="image/*" onChange={onUpload} />
       </label>
       {fromUpstream ? (
         <span className="pointer-events-none absolute left-1 top-1 z-10 rounded-full bg-[#79e4ff]/22 px-1.5 py-0.5 text-[9px] font-black text-[#c9f1ff] ring-1 ring-[#79e4ff]/30">
-          上游
+          {t('canvas.node.upstream')}
         </span>
       ) : null}
       {image && onClear ? (
         <button
           type="button"
-          aria-label={`清除${label}`}
+          aria-label={t('canvas.node.clearSlot', { label })}
           className="absolute right-1 top-1 z-10 rounded-full bg-black/54 px-1.5 py-0.5 text-[10px] font-black text-white/78 opacity-0 transition-opacity hover:bg-black/72 group-hover/upload:opacity-100"
           onClick={(event) => {
             event.stopPropagation();
             onClear();
           }}
         >
-          清除
+          {t('canvas.node.clear')}
         </button>
       ) : null}
     </div>
@@ -2693,6 +2802,7 @@ function ParamPills<T extends string | number>({
 }
 
 function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
+  const { t } = useI18n();
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
   const { runSingleNode, updateNodeData, connectionError, canRunNode } =
     useContext(CanvasActionsContext);
@@ -2703,7 +2813,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const canRun = canRunNode(id);
   const isNodeBusy = isWorkflowNodeBusy(status);
   const progressPercent = Math.max(isNodeBusy ? 14 : 0, Math.round(progress * 100));
-  const nodeTitle = getNodeTitle(data);
+  const nodeTitle = getNodeTitle(data, t);
   const inputImage = getSettingString(data.settings, 'inputImage');
   const inputLastFrameImage = getSettingString(data.settings, 'inputLastFrameImage');
   const aspectRatio = getAspectRatio(data.settings);
@@ -2903,7 +3013,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       >
         <div className="border-b border-white/[0.06] p-2.5">
           <input
-            aria-label="节点标题"
+            aria-label={t('canvas.node.title')}
             className="nodrag nopan mb-2 h-6 w-full bg-transparent px-1 text-[12px] font-bold text-white/78 outline-none placeholder:text-white/24"
             onChange={(event) => updateNodeData(id, { title: event.target.value })}
             value={nodeTitle}
@@ -2936,19 +3046,21 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
                 isVideoEdit ? (
                   <div className="mb-2 space-y-2">
                     <div className="flex items-center justify-between rounded-[10px] bg-[#2d2e30]/86 px-3 py-2 ring-1 ring-white/[0.07]">
-                      <span className="text-[10px] font-black text-white/40">片段</span>
+                      <span className="text-[10px] font-black text-white/40">
+                        {t('canvas.node.clips')}
+                      </span>
                       <span className="rounded-full bg-white/[0.08] px-2 py-1 text-[11px] font-black text-white/72">
                         {upstreamVideos.length}
                       </span>
                     </div>
                     <ParamPills
-                      label="比例"
+                      label={t('canvas.node.ratio')}
                       options={aspectRatioOptions}
                       value={aspectRatio as (typeof aspectRatioOptions)[number]}
                       onSelect={(ratio) => updateSettings({ aspectRatio: ratio })}
                     />
                     <ParamPills
-                      label="清晰度"
+                      label={t('canvas.node.resolution')}
                       options={editVideoResolutionOptions}
                       value={editVideoResolution}
                       onSelect={(resolution) => updateSettings({ resolution })}
@@ -2959,7 +3071,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
                     <div className="flex items-center gap-1.5">
                       <FrameImageSlot
                         image={resolvedFirstFrame}
-                        label="首帧"
+                        label={t('canvas.node.firstFrame')}
                         fromUpstream={firstFromUpstream}
                         draggable
                         dropActive={frameDragActive}
@@ -2971,8 +3083,8 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
                       />
                       <button
                         type="button"
-                        aria-label="交换首尾帧"
-                        title="交换首尾帧"
+                        aria-label={t('canvas.node.swapFrames')}
+                        title={t('canvas.node.swapFrames')}
                         disabled={!resolvedFirstFrame || !resolvedLastFrame}
                         className="nodrag flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/64 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.16] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
                         onClick={handleSwapFrames}
@@ -2981,7 +3093,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
                       </button>
                       <FrameImageSlot
                         image={resolvedLastFrame}
-                        label="尾帧"
+                        label={t('canvas.node.lastFrame')}
                         fromUpstream={lastFromUpstream}
                         draggable
                         dropActive={frameDragActive}
@@ -3003,25 +3115,25 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
                             updateSettings({ inputImage: '', inputLastFrameImage: '' })
                           }
                         >
-                          清除
+                          {t('canvas.node.clear')}
                         </button>
                       ) : null}
                     </div>
                     <ParamPills
-                      label="比例"
+                      label={t('canvas.node.ratio')}
                       options={aspectRatioOptions}
                       value={aspectRatio as (typeof aspectRatioOptions)[number]}
                       onSelect={(ratio) => updateSettings({ aspectRatio: ratio })}
                     />
                     <ParamPills
-                      label="时长"
+                      label={t('canvas.node.duration')}
                       options={videoDurationOptions}
                       value={videoDuration}
                       onSelect={handleSelectDuration}
                       format={(seconds) => `${seconds}s`}
                     />
                     <ParamPills
-                      label="清晰度"
+                      label={t('canvas.node.resolution')}
                       options={videoResolutionOptions}
                       value={videoResolution}
                       onSelect={handleSelectResolution}
@@ -3032,7 +3144,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
                 <div className="mb-2 grid grid-cols-[auto_1fr] gap-2">
                   <FrameImageSlot
                     image={inputImage}
-                    label="输入图"
+                    label={t('canvas.node.inputImage')}
                     onClear={inputImage ? () => updateSettings({ inputImage: '' }) : undefined}
                     onUpload={(event) => handleAssetUpload(event, 'inputImage')}
                   />
@@ -3057,7 +3169,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
                         className="nodrag ml-auto h-7 rounded-[9px] px-2 text-[11px] font-black text-white/34 transition-colors hover:bg-white/[0.08] hover:text-white/76"
                         onClick={() => updateSettings({ inputImage: '' })}
                       >
-                        清除
+                        {t('canvas.node.clear')}
                       </button>
                     ) : null}
                   </div>
@@ -3066,11 +3178,11 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
             ) : null}
             <div className="rounded-[10px] bg-[#2d2e30]/86 p-3 ring-1 ring-white/[0.07]">
               <ImeTextarea
-                aria-label="输入"
+                aria-label={t('canvas.node.input')}
                 onValueChange={(next) => updateNodeData(id, { prompt: next })}
                 onKeyDown={handlePromptKeyDown}
                 className="nodrag nowheel block min-h-[112px] w-full resize-none bg-transparent text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/32"
-                placeholder={styles.promptPlaceholder}
+                placeholder={t('canvas.node.promptPlaceholder')}
                 value={data.prompt}
               />
             </div>
@@ -3084,9 +3196,9 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
               />
               <button
                 type="button"
-                aria-label="运行节点"
+                aria-label={t('canvas.node.run')}
                 aria-busy={isNodeBusy}
-                title={isNodeBusy ? '运行中' : '运行节点'}
+                title={isNodeBusy ? t('canvas.node.running') : t('canvas.node.run')}
                 disabled={!canRun || isNodeBusy}
                 className={`nodrag flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-black shadow-[0_12px_28px_rgba(0,0,0,0.22)] transition-colors disabled:cursor-not-allowed ${
                   isNodeBusy
@@ -3135,6 +3247,7 @@ function NodeOutputEditor({
   data: LumenNodeData;
   onChange: (output: string) => void;
 }) {
+  const { t } = useI18n();
   const output = data.output ?? '';
   const trimmedOutput = output.trim();
 
@@ -3142,7 +3255,7 @@ function NodeOutputEditor({
     if (trimmedOutput && (trimmedOutput.startsWith('data:image') || isHttpUrl(trimmedOutput))) {
       return (
         <img
-          alt="图片"
+          alt={t('canvas.node.imageAlt')}
           className="h-full w-full object-cover"
           onError={(event) => {
             event.currentTarget.style.opacity = '0';
@@ -3202,16 +3315,17 @@ function NodeOutputEditor({
 
   return (
     <ImeTextarea
-      aria-label="输出"
+      aria-label={t('canvas.node.output')}
       className="nodrag nowheel block min-h-[104px] w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/26"
       onValueChange={onChange}
-      placeholder="双击开始编辑..."
+      placeholder={t('canvas.node.output')}
       value={output}
     />
   );
 }
 
 function ImageOutputUpload({ onChange }: { onChange: (output: string) => void }) {
+  const { t } = useI18n();
   const handleUpload = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -3226,7 +3340,7 @@ function ImageOutputUpload({ onChange }: { onChange: (output: string) => void })
   return (
     <label className="nodrag group/output flex min-h-[104px] w-full cursor-pointer flex-col items-center justify-center gap-2 px-3 py-2.5 text-white/30 transition-colors hover:text-white/64">
       <IconPhoto size={30} stroke={1.6} className="opacity-70" />
-      <span className="text-[12px] font-bold">点击上传图片</span>
+      <span className="text-[12px] font-bold">{t('canvas.node.textUpload')}</span>
       <input className="sr-only" type="file" accept="image/*" onChange={handleUpload} />
     </label>
   );
@@ -3237,6 +3351,7 @@ function isHttpUrl(value: string): boolean {
 }
 
 function LumenSmoothEdge(props: EdgeProps<LumenEdge>) {
+  const { t } = useI18n();
   const { id, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, selected } =
     props;
   const [isHovered, setIsHovered] = useState(false);
@@ -3287,7 +3402,7 @@ function LumenSmoothEdge(props: EdgeProps<LumenEdge>) {
       >
         <button
           type="button"
-          aria-label="删除连线"
+          aria-label={t('canvas.node.deleteEdge')}
           className={`nodrag nopan flex h-7 w-7 items-center justify-center rounded-full bg-[#ff5d73] text-white shadow-[0_10px_24px_rgba(255,93,115,0.28)] transition-opacity hover:opacity-100 ${
             selected || isHovered ? 'opacity-100' : 'opacity-55'
           }`}
@@ -3359,6 +3474,7 @@ function BottomControls({
   onSelectAll: () => void;
   selectedElementCount: number;
 }) {
+  const { t } = useI18n();
   const reactFlow = useReactFlow<LumenNode, LumenEdge>();
   const [zoom, setZoom] = useState(100);
 
@@ -3370,81 +3486,81 @@ function BottomControls({
     <div className="absolute bottom-5 left-5 z-30 flex items-center gap-2 rounded-2xl bg-[#17191c]/88 p-2 text-white/64 shadow-[0_16px_48px_rgba(0,0,0,0.4)] ring-1 ring-white/[0.08] backdrop-blur-xl">
       <button
         type="button"
-        aria-label="适配全部节点"
+        aria-label={t('canvas.toolbar.fit')}
         onClick={() => reactFlow.fitView({ padding: 0.28, duration: 260 })}
         className="group relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconLayoutGrid size={17} stroke={2.1} />
-        <ControlTooltip label="适配全部节点" />
+        <ControlTooltip label={t('canvas.toolbar.fit')} />
       </button>
       <button
         type="button"
-        aria-label="全选"
+        aria-label={t('canvas.toolbar.selectAll')}
         onClick={onSelectAll}
         className="group relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconSelectAll size={17} stroke={2.1} />
-        <ControlTooltip label="全选画布元素" />
+        <ControlTooltip label={t('canvas.toolbar.selectAll')} />
       </button>
       <button
         type="button"
-        aria-label="整理画布"
-        title="整理画布"
+        aria-label={t('canvas.toolbar.arrange')}
+        title={t('canvas.toolbar.arrange')}
         onClick={onArrange}
         disabled={!canArrange}
         className="group relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
       >
         <IconHierarchy2 size={17} stroke={2.1} />
-        <ControlTooltip label="自动整理布局" />
+        <ControlTooltip label={t('canvas.toolbar.arrange')} />
       </button>
       <button
         type="button"
-        aria-label="网格"
+        aria-label={t('canvas.toolbar.grid')}
         className="group relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.08] text-white"
       >
         <IconGridDots size={17} stroke={2.1} />
-        <ControlTooltip label="网格对齐（已开启）" />
+        <ControlTooltip label={t('canvas.toolbar.grid')} />
       </button>
       <button
         type="button"
-        aria-label="居中画布"
+        aria-label={t('canvas.toolbar.center')}
         onClick={() => reactFlow.setCenter(0, 0, { zoom: 1, duration: 260 })}
         className="group relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconFocusCentered size={17} stroke={2.1} />
-        <ControlTooltip label="回到画布中心" />
+        <ControlTooltip label={t('canvas.toolbar.center')} />
       </button>
       <div className="h-5 w-px bg-white/[0.1]" />
       <button
         type="button"
-        aria-label="缩小"
+        aria-label={t('canvas.toolbar.zoomOut')}
         onClick={() => reactFlow.zoomOut({ duration: 180 })}
         className="group relative flex h-8 w-8 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconZoomOut size={16} stroke={2.1} />
-        <ControlTooltip label="缩小" />
+        <ControlTooltip label={t('canvas.toolbar.zoomOut')} />
       </button>
       <span className="min-w-12 text-center text-[13px] font-semibold text-white/70">{zoom}%</span>
       <button
         type="button"
-        aria-label="放大"
+        aria-label={t('canvas.toolbar.zoomIn')}
         onClick={() => reactFlow.zoomIn({ duration: 180 })}
         className="group relative flex h-8 w-8 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
       >
         <IconZoomIn size={16} stroke={2.1} />
-        <ControlTooltip label="放大" />
+        <ControlTooltip label={t('canvas.toolbar.zoomIn')} />
       </button>
       {selectedElementCount > 0 ? (
         <>
           <div className="h-5 w-px bg-white/[0.1]" />
           <button
             type="button"
-            aria-label="删除选中元素"
+            aria-label={t('canvas.toolbar.deleteSelected')}
             onClick={onDeleteSelected}
             className="group relative flex h-8 w-8 items-center justify-center rounded-xl text-[#ff8b9b] transition-colors hover:bg-[#ff5d73]/16 hover:text-[#ffb3bf]"
           >
             <IconTrash size={16} stroke={2.1} />
-            <ControlTooltip label="删除选中元素" />
+            <ControlTooltip label={t('canvas.toolbar.deleteSelected')} />
           </button>
         </>
       ) : null}

@@ -1,4 +1,5 @@
 import { okJson, routeError, withApiRouteSpan } from '@/server/http';
+import { resolveRequestLocale } from '@/server/locale';
 import { listStudioProjectHistory } from '@/server/projects';
 
 export const runtime = 'nodejs';
@@ -11,7 +12,8 @@ interface ProjectHistoryRouteContext {
 
 export const GET = withApiRouteSpan(
   'GET /api/projects/:projectId/history',
-  async (_request: Request, context: ProjectHistoryRouteContext) => {
+  async (request: Request, context: ProjectHistoryRouteContext) => {
+    const locale = resolveRequestLocale(request);
     try {
       const { projectId } = await context.params;
       const history = await listStudioProjectHistory(projectId);
@@ -22,7 +24,7 @@ export const GET = withApiRouteSpan(
 
       return okJson({ history });
     } catch (error) {
-      return routeError(error);
+      return routeError(error, locale);
     }
   },
 );

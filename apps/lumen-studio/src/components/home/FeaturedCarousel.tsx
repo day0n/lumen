@@ -1,5 +1,6 @@
 'use client';
 
+import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { isLoginRequiredPath } from '@/lib/protected-paths';
@@ -38,49 +39,67 @@ type HomeFeaturedApiResponse =
 const FEATURED_POSTERS: Slide[] = [
   {
     id: 'agent-mode-pop',
-    title: 'Agent 模式上线',
+    title: 'Agent mode is live',
     href: '/canvas/new?agent=chat',
     coverUrl: '/home-posters/selected/agent-pop.png',
     accent: '#ff4aa2',
   },
   {
     id: 'material-mythic',
-    title: '素材库上线',
+    title: 'Asset library is live',
     href: '/canvas/new',
     coverUrl: '/home-posters/selected/material-mythic.png',
     accent: '#f1d1a4',
   },
   {
     id: 'hot-remix-collage',
-    title: '爆款复刻上线',
+    title: 'Viral remix is live',
     href: '/hot-videos',
     coverUrl: '/home-posters/selected/hot-remix-collage.png',
     accent: '#f36b5f',
   },
   {
     id: 'agent-chat-minimal',
-    title: 'Agent Chat 上线',
+    title: 'Agent Chat is live',
     href: '/canvas/new?agent=chat',
     coverUrl: '/home-posters/selected/agent-chat-minimal.png',
     accent: '#c7e8ff',
   },
   {
     id: 'material-archive',
-    title: '素材库上线',
+    title: 'Asset library is live',
     href: '/canvas/new',
     coverUrl: '/home-posters/selected/material-archive.png',
     accent: '#63e5cb',
   },
   {
     id: 'agent-glass',
-    title: 'Agent 模式上线',
+    title: 'Agent mode is live',
     href: '/canvas/new?agent=chat',
     coverUrl: '/home-posters/selected/agent-glass.png',
     accent: '#a5f6ff',
   },
 ];
 
+const ZH_FALLBACK_TITLES: Record<string, string> = {
+  'agent-mode-pop': 'Agent 模式上线',
+  'material-mythic': '素材库上线',
+  'hot-remix-collage': '爆款复刻上线',
+  'agent-chat-minimal': 'Agent Chat 上线',
+  'material-archive': '素材库上线',
+  'agent-glass': 'Agent 模式上线',
+};
+
+function localizeFallbackSlides(locale: 'en' | 'zh'): Slide[] {
+  if (locale === 'en') return FEATURED_POSTERS;
+  return FEATURED_POSTERS.map((slide) => ({
+    ...slide,
+    title: ZH_FALLBACK_TITLES[slide.id] ?? slide.title,
+  }));
+}
+
 export function FeaturedCarousel() {
+  const { locale, localePath, t } = useI18n();
   const { isLoaded: authLoaded, requireLogin } = useLoginRedirect();
   const [remoteSlides, setRemoteSlides] = useState<Slide[]>([]);
   const [current, setCurrent] = useState(0);
@@ -92,7 +111,10 @@ export function FeaturedCarousel() {
 
     async function loadFeatured() {
       try {
-        const response = await fetch('/api/home/featured', { signal: controller.signal });
+        const response = await fetch('/api/home/featured', {
+          signal: controller.signal,
+          headers: { 'x-lumen-locale': locale },
+        });
         const payload = (await response.json()) as HomeFeaturedApiResponse;
         if (!response.ok || !payload.ok) return;
 
@@ -113,9 +135,9 @@ export function FeaturedCarousel() {
 
     void loadFeatured();
     return () => controller.abort();
-  }, []);
+  }, [locale]);
 
-  const slides = remoteSlides.length > 0 ? remoteSlides : FEATURED_POSTERS;
+  const slides = remoteSlides.length > 0 ? remoteSlides : localizeFallbackSlides(locale);
   const safeCurrent = current % slides.length;
 
   const next = useCallback(() => {
@@ -180,6 +202,7 @@ export function FeaturedCarousel() {
             <PosterSlide
               key={slide.id}
               diff={diff}
+              href={localePath(slide.href)}
               sideOffset={sideOffset}
               slide={slide}
               slideHeight={slideHeight}
@@ -191,7 +214,7 @@ export function FeaturedCarousel() {
 
         <button
           type="button"
-          aria-label="上一个精选"
+          aria-label={t('home.featuredPrev')}
           onClick={prev}
           className="absolute left-4 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-xl bg-[#202225]/86 text-white/70 ring-1 ring-white/[0.08] backdrop-blur transition-colors hover:bg-[#2a2d30] hover:text-white md:left-8"
         >
@@ -199,7 +222,7 @@ export function FeaturedCarousel() {
         </button>
         <button
           type="button"
-          aria-label="下一个精选"
+          aria-label={t('home.featuredNext')}
           onClick={next}
           className="absolute right-4 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-xl bg-[#202225]/86 text-white/70 ring-1 ring-white/[0.08] backdrop-blur transition-colors hover:bg-[#2a2d30] hover:text-white md:right-8"
         >
@@ -212,7 +235,7 @@ export function FeaturedCarousel() {
           <button
             key={slide.id}
             type="button"
-            aria-label={`切换到 ${slide.title}`}
+            aria-label={t('home.featuredGoTo', { title: slide.title })}
             onClick={() => setCurrent(index)}
             className={cn(
               'h-1.5 rounded-full transition-all',
@@ -228,6 +251,7 @@ export function FeaturedCarousel() {
 function PosterSlide({
   slide,
   diff,
+  href,
   onClick,
   sideOffset,
   slideHeight,
@@ -235,6 +259,7 @@ function PosterSlide({
 }: {
   slide: Slide;
   diff: number;
+  href: string;
   onClick: (event: MouseEvent<HTMLAnchorElement>, href: string) => void;
   sideOffset: number;
   slideHeight: number;
@@ -249,9 +274,9 @@ function PosterSlide({
 
   return (
     <motion.a
-      href={slide.href}
+      href={href}
       aria-label={slide.title}
-      onClick={(event) => onClick(event, slide.href)}
+      onClick={(event) => onClick(event, href)}
       className="absolute left-1/2 top-1/2 block overflow-hidden rounded-[22px] bg-[#111315] text-left ring-1 ring-white/[0.09]"
       style={{
         boxShadow: isCenter ? '0 28px 86px -56px rgba(255,255,255,0.34)' : undefined,

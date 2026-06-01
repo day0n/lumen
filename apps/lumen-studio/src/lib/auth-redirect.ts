@@ -1,18 +1,20 @@
 'use client';
 
 import { useAuth, useClerk } from '@clerk/nextjs';
+import { useI18n } from '@/i18n/provider';
 import { useCallback } from 'react';
 
 export function useLoginRedirect() {
   const { isLoaded, isSignedIn } = useAuth();
   const clerk = useClerk();
+  const { localePath } = useI18n();
 
   const redirectToRegistration = useCallback(
     (target?: string) => {
       if (!isLoaded) return false;
       if (isSignedIn) return true;
 
-      const redirectUrl = resolveRedirectUrl(target);
+      const redirectUrl = resolveRedirectUrl(target, localePath);
       void clerk.redirectToSignUp({
         redirectUrl,
         signInFallbackRedirectUrl: redirectUrl,
@@ -20,7 +22,7 @@ export function useLoginRedirect() {
       });
       return false;
     },
-    [clerk, isLoaded, isSignedIn],
+    [clerk, isLoaded, isSignedIn, localePath],
   );
 
   return {
@@ -32,12 +34,12 @@ export function useLoginRedirect() {
   };
 }
 
-function resolveRedirectUrl(target?: string) {
+function resolveRedirectUrl(target: string | undefined, localePath: (href: string) => string) {
   if (target) {
     if (/^https?:\/\//i.test(target)) return target;
-    return target.startsWith('/') ? target : `/${target}`;
+    return localePath(target.startsWith('/') ? target : `/${target}`);
   }
 
-  if (typeof window === 'undefined') return '/';
+  if (typeof window === 'undefined') return localePath('/');
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
