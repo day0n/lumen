@@ -6,7 +6,7 @@
  *
  * 设计取舍：
  *   - 消息只追加、不改写，以最大化 LLM 端的前缀缓存命中
- *   - 喂给 LLM 的历史会剔除纯展示用的角色（见 LLM_EXCLUDED_ROLES）
+ *   - 喂给 LLM 的历史会剔除纯展示用的角色（见 DISPLAY_ONLY_ROLES）
  *   - 截取历史窗口时，保证每条 tool 结果都能在窗口内找到对应的 assistant 工具调用
  */
 
@@ -24,7 +24,9 @@ const REDIS_META_PREFIX = 'lumen:agent:session:meta:';
 const REDIS_CTX_PREFIX = 'lumen:agent:session:ctx:';
 const REDIS_TTL_SEC = 60 * 60 * 24;
 
-const LLM_EXCLUDED_ROLES = new Set(['act_call', 'act_event', 'act_result', 'flow_event']);
+// 这些角色仅用于前端展示工具调用/事件轨迹，回放给 LLM 时需要过滤掉。
+// 字面量是 agent↔studio 的 wire 契约，不可改动；这里只维护"哪些角色不入模型上下文"。
+const DISPLAY_ONLY_ROLES = new Set(['act_call', 'act_event', 'act_result', 'flow_event']);
 
 interface SessionDoc {
   _id: string;
@@ -129,7 +131,7 @@ export class Session {
    */
   toLLMHistory(maxMessages = 500): MessageList {
     const all = this.messages.filter(
-      (m) => !(m as { is_ephemeral?: boolean }).is_ephemeral && !LLM_EXCLUDED_ROLES.has(m.role),
+      (m) => !(m as { is_ephemeral?: boolean }).is_ephemeral && !DISPLAY_ONLY_ROLES.has(m.role),
     );
     let sliced = maxMessages > 0 ? all.slice(-maxMessages) : [...all];
 

@@ -21,7 +21,8 @@ import { isToolResult } from '../domain/contracts/tools.js';
 import { logger } from '../platform/logger.js';
 import { addAssistantMessage, addToolResult } from './prompt/builder.js';
 
-const DEFAULT_TOOL_RESULT_MAX_CHARS = 16_000;
+// 单条工具结果回填进上下文前的字符上限，超出则尾部截断（纯调优值，非协议）。
+const TOOL_OUTPUT_CHAR_BUDGET = 20_000;
 
 const ERROR_CONTINUE_HINT =
   '\n\nHint: read the failure above first, then fix the arguments or switch to another route before retrying.';
@@ -83,7 +84,7 @@ export class InferenceLoop {
     this.model = opts.model;
     this.tools = opts.tools;
     this.maxIterations = opts.maxIterations ?? 40;
-    this.toolResultMaxChars = opts.toolResultMaxChars ?? DEFAULT_TOOL_RESULT_MAX_CHARS;
+    this.toolResultMaxChars = opts.toolResultMaxChars ?? TOOL_OUTPUT_CHAR_BUDGET;
     this.hooks = opts.hooks ?? {};
     this.hiddenTools = opts.hiddenTools ?? new Set();
     this.maxTokens = opts.maxTokens;
