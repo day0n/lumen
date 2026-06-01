@@ -18,12 +18,15 @@ import {
   IconArrowUp,
   IconBrain,
   IconCheck,
-  IconChevronDown,
   IconCircleDot,
   IconCopy,
+  IconExternalLink,
   IconGitBranch,
   IconLoader2,
-  IconMinus,
+  IconMessages,
+  IconMicrophone,
+  IconPaperclip,
+  IconPhoto,
   IconPlayerStopFilled,
   IconPlus,
   IconThumbDown,
@@ -360,40 +363,22 @@ export function ChatPanel({
   }
 
   return (
-    <div className="absolute bottom-[76px] right-3 z-40 h-[min(420px,calc(100vh-152px))] w-[min(500px,calc(100vw-88px))]">
+    <div className="absolute inset-y-0 right-0 z-40 w-[min(720px,calc(100vw_-_24px))] sm:w-[min(720px,52vw)] sm:min-w-[440px]">
       <motion.aside
-        initial={{ opacity: 0, y: 18, scale: 0.985, filter: 'blur(6px)' }}
-        animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+        initial={{ opacity: 0, x: 34, filter: 'blur(6px)' }}
+        animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
         transition={{ type: 'spring', stiffness: 260, damping: 30 }}
-        className="relative flex h-full w-full flex-col overflow-hidden rounded-[24px] border border-white/[0.16] bg-[#171718]/98 text-white shadow-[0_30px_96px_-42px_rgba(0,0,0,0.95)] backdrop-blur-2xl"
+        className="relative flex h-full w-full flex-col overflow-hidden border-l border-white/[0.08] bg-[#151515] text-white shadow-[0_30px_100px_-52px_rgba(0,0,0,0.98)]"
       >
-        <div className="pointer-events-none absolute inset-x-9 bottom-[82px] h-36 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.055),rgba(121,228,255,0.035)_38%,transparent_72%)] blur-2xl" />
-
-        <header className="relative z-10 flex h-[62px] shrink-0 items-center justify-between px-5">
+        <header className="relative z-10 flex h-[56px] shrink-0 items-center justify-between border-b border-white/[0.07] px-5">
           <div className="flex min-w-0 items-center gap-2.5">
-            <StatusRing busy={busy} compact />
-            <button
-              type="button"
-              onClick={() => setSessionsOpen((value) => !value)}
-              aria-label={t('chat.history')}
-              title={t('chat.history')}
-              className="flex min-w-0 items-center gap-1.5 rounded-lg px-1 py-1 transition-colors hover:bg-white/[0.06]"
-            >
-              <span className="min-w-0 max-w-[260px] truncate text-[18px] font-semibold tracking-normal text-white">
-                {title}
-              </span>
-              <IconChevronDown
-                size={16}
-                className={cn(
-                  'shrink-0 text-white/42 transition-transform',
-                  sessionsOpen ? 'rotate-180' : 'rotate-0',
-                )}
-                stroke={2.2}
-              />
-            </button>
+            <span className="min-w-0 truncate text-[14px] font-semibold leading-5 text-white/88">
+              {title}
+            </span>
+            {busy ? <StatusRing busy compact /> : null}
           </div>
 
-          <div className="flex items-center text-white/68">
+          <div className="flex items-center gap-1 text-white/50">
             <button
               type="button"
               onClick={startNewSession}
@@ -407,16 +392,30 @@ export function ChatPanel({
                   : 'text-white/68 hover:bg-white/[0.07] hover:text-white',
               )}
             >
-              <IconPlus size={20} stroke={2.2} />
+              <IconPlus size={18} stroke={2.2} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setSessionsOpen((value) => !value)}
+              aria-label={t('chat.history')}
+              title={t('chat.history')}
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
+                sessionsOpen
+                  ? 'bg-white/[0.08] text-white'
+                  : 'hover:bg-white/[0.07] hover:text-white',
+              )}
+            >
+              <IconMessages size={17} stroke={2.15} />
             </button>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              aria-label={t('common.collapse')}
-              title={t('common.collapse')}
+              aria-label={t('common.close')}
+              title={t('common.close')}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-white/68 transition-colors hover:bg-white/[0.07] hover:text-white"
             >
-              <IconMinus size={23} stroke={2.2} />
+              <IconX size={18} stroke={2.2} />
             </button>
           </div>
         </header>
@@ -436,7 +435,7 @@ export function ChatPanel({
 
         <div
           ref={scrollRef}
-          className="relative z-10 flex-1 overflow-y-auto px-6 pb-5 pt-1 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]"
+          className="relative z-10 flex-1 overflow-y-auto px-5 pb-5 pt-5 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]"
         >
           {messages.length === 0 ? (
             <WelcomeMessage />
@@ -471,19 +470,6 @@ export function ChatPanel({
           onStop={stop}
         />
       </motion.aside>
-
-      <motion.button
-        type="button"
-        onClick={() => setOpen(false)}
-        aria-label={t('chat.collapseAgent')}
-        title={t('common.collapse')}
-        whileHover={{ scale: 1.04 }}
-        whileTap={{ scale: 0.96 }}
-        transition={{ type: 'spring', stiffness: 360, damping: 24 }}
-        className="absolute -bottom-[58px] right-0 z-50 flex h-11 w-11 items-center justify-center"
-      >
-        <LumenOrb active={busy} />
-      </motion.button>
     </div>
   );
 }
@@ -780,6 +766,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
   const isFailed = message.status === 'failed';
   const liveLabel = getLiveLabel(message, t);
   const richContent = parseRichMessageContent(message.content);
+  const inspirationResults = extractInspirationResults(message.events);
 
   return (
     <motion.li
@@ -799,6 +786,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         ) : null}
 
         {isStreaming ? <ThinkingLine label={liveLabel} /> : null}
+        <InspirationResultGrid items={inspirationResults} />
         <Timeline items={message.events} />
         {message.content && !isStreaming && !isFailed ? <MessageActions /> : null}
 
@@ -833,6 +821,16 @@ interface MediaAttachment {
   type: 'image' | 'video' | 'audio';
   url: string;
   label: string;
+}
+
+interface InspirationCardItem {
+  title: string;
+  description: string;
+  url: string;
+  thumbnailUrl: string;
+  category: string;
+  tags: string[];
+  score: number | null;
 }
 
 function RichMessageText({ parts }: { parts: RichTextPart[] }) {
@@ -914,6 +912,63 @@ function MediaPreviewList({ media }: { media: MediaAttachment[] }) {
   );
 }
 
+function InspirationResultGrid({ items }: { items: InspirationCardItem[] }) {
+  const { locale } = useI18n();
+  if (items.length === 0) return null;
+
+  const title = locale === 'zh' ? '找到的灵感图' : 'Inspiration references';
+  const openLabel = locale === 'zh' ? '打开原图' : 'Open image';
+
+  return (
+    <div className="mt-4 max-w-[94%]">
+      <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold leading-5 text-white/58">
+        <IconPhoto size={15} stroke={2.2} className="text-[#8ee7ff]/78" />
+        <span>{title}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+        {items.map((item, index) => (
+          <a
+            key={item.url}
+            href={item.url}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(
+              'group overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.045] transition-colors hover:border-white/[0.2] hover:bg-white/[0.07]',
+              index === 0 || index === 3 ? 'sm:col-span-2' : '',
+            )}
+          >
+            <div
+              className={cn(
+                'bg-black/30',
+                index === 0 || index === 3 ? 'aspect-[16/9]' : 'aspect-[4/3]',
+              )}
+            >
+              <img
+                src={item.thumbnailUrl}
+                alt={item.title}
+                loading="lazy"
+                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
+              />
+            </div>
+            <div className="min-w-0 px-2.5 py-2">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="min-w-0 flex-1 truncate text-[12px] font-semibold leading-5 text-white/82">
+                  {item.title}
+                </span>
+                <IconExternalLink size={12} stroke={2.2} className="shrink-0 text-white/34" />
+              </div>
+              <div className="mt-0.5 truncate text-[11px] leading-4 text-white/38">
+                {[item.category, ...item.tags.slice(0, 2)].filter(Boolean).join(' · ')}
+              </div>
+              <div className="sr-only">{openLabel}</div>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Timeline({ items }: { items?: ChatTimelineItem[] }) {
   const { t } = useI18n();
   const visible = (items ?? []).filter((item) => item.kind !== 'connection').slice(-12);
@@ -921,19 +976,19 @@ function Timeline({ items }: { items?: ChatTimelineItem[] }) {
   if (visible.length === 0) return null;
 
   return (
-    <div className="mt-4 max-w-[94%] space-y-2 border-l border-white/[0.1] pl-3">
+    <div className="mt-4 max-w-[94%] space-y-2">
       {visible.map((item) => (
         <div
           key={item.id}
-          className="group flex min-w-0 items-start gap-2.5 text-[12px] leading-5 text-white/42"
+          className="group flex min-w-0 items-start gap-2.5 rounded-[10px] border border-white/[0.06] bg-white/[0.035] px-2.5 py-2 text-[12px] leading-5 text-white/42"
         >
           <TimelineIcon item={item} />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 truncate font-medium text-white/68">{item.title}</span>
+              <span className="min-w-0 truncate font-semibold text-white/72">{item.title}</span>
               <span
                 className={cn(
-                  'shrink-0 rounded-full border px-1.5 py-0 text-[10px] leading-[16px]',
+                  'shrink-0 rounded-full border px-1.5 py-0 text-[10px] font-medium leading-[16px]',
                   timelineBadgeClass(item.status),
                 )}
               >
@@ -941,7 +996,7 @@ function Timeline({ items }: { items?: ChatTimelineItem[] }) {
               </span>
             </div>
             {item.detail ? (
-              <div className="mt-0.5 min-w-0 truncate text-white/32">{item.detail}</div>
+              <div className="mt-0.5 min-w-0 truncate text-white/38">{item.detail}</div>
             ) : null}
           </div>
         </div>
@@ -1018,11 +1073,11 @@ function ThinkingLine({ label }: { label: string }) {
     <motion.div
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-5 flex items-center gap-2 text-[13px] text-white/42"
+      className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-white/[0.07] bg-white/[0.045] px-2.5 py-1.5 text-[12px] font-semibold text-white/58"
     >
-      <LumenMark size={18} className="opacity-65" />
-      <IconLoader2 size={13} className="animate-spin text-[#79e4ff]/70" stroke={2.4} />
+      <IconBrain size={14} className="text-white/48" stroke={2.2} />
       <span>{label}</span>
+      <IconLoader2 size={13} className="animate-spin text-[#79e4ff]/70" stroke={2.4} />
     </motion.div>
   );
 }
@@ -1035,6 +1090,42 @@ function StreamingCaret() {
       transition={{ duration: 0.95, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
     />
   );
+}
+
+function extractInspirationResults(events?: ChatTimelineItem[]): InspirationCardItem[] {
+  const byUrl = new Map<string, InspirationCardItem>();
+  for (const event of events ?? []) {
+    if (event.eventName !== 'inspiration_results') continue;
+    const results = Array.isArray(event.payload?.results) ? event.payload.results : [];
+    for (const raw of results) {
+      const item = parseInspirationItem(raw);
+      if (item) byUrl.set(item.url, item);
+    }
+  }
+  return [...byUrl.values()].slice(0, 12);
+}
+
+function parseInspirationItem(raw: unknown): InspirationCardItem | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const data = raw as Record<string, unknown>;
+  const url = readText(data.url);
+  if (!url) return null;
+  const title = readText(data.title) ?? 'Inspiration';
+  return {
+    title,
+    description: readText(data.description) ?? '',
+    url,
+    thumbnailUrl: readText(data.thumbnail_url) ?? url,
+    category: readText(data.category) ?? '',
+    tags: Array.isArray(data.tags)
+      ? data.tags.map((tag) => readText(tag)).filter((tag): tag is string => Boolean(tag))
+      : [],
+    score: typeof data.score === 'number' ? data.score : null,
+  };
+}
+
+function readText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
 function Composer({
@@ -1070,8 +1161,8 @@ function Composer({
   const canSend = Boolean(draft.trim()) || attachments.length > 0;
 
   return (
-    <form onSubmit={onSubmit} className="relative z-10 shrink-0 px-4 pb-4 pt-2">
-      <div className="rounded-[22px] border border-white/[0.16] bg-[#222325]/95 px-4 py-3 shadow-[0_18px_70px_-48px_rgba(0,0,0,0.85)] transition-shadow focus-within:border-white/[0.28]">
+    <form onSubmit={onSubmit} className="relative z-10 shrink-0 px-2.5 pb-3 pt-2">
+      <div className="rounded-[18px] border border-white/[0.08] bg-[#202020] px-3 py-3 shadow-[0_18px_60px_-46px_rgba(0,0,0,0.92)] transition-colors focus-within:border-white/[0.16]">
         {attachments.length > 0 ? (
           <AttachmentStrip attachments={attachments} onRemoveAttachment={onRemoveAttachment} />
         ) : null}
@@ -1082,16 +1173,71 @@ function Composer({
           </div>
         ) : null}
 
-        <div className="flex items-end gap-3">
+        <div className="mb-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy || uploading}
+            aria-label={uploading ? t('chat.uploading') : t('chat.uploadImages')}
+            title={uploading ? t('chat.uploading') : t('chat.uploadImages')}
+            className={cn(
+              'flex h-9 w-9 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.045] transition-colors',
+              busy || uploading
+                ? 'cursor-not-allowed text-white/24'
+                : 'text-white/56 hover:bg-white/[0.08] hover:text-white',
+            )}
+          >
+            {uploading ? (
+              <IconLoader2 size={18} className="animate-spin" stroke={2.2} />
+            ) : (
+              <IconPaperclip size={17} stroke={2.1} />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy || uploading}
+            aria-label={t('chat.uploadImages')}
+            title={t('chat.uploadImages')}
+            className={cn(
+              'flex h-9 w-9 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.045] transition-colors',
+              busy || uploading
+                ? 'cursor-not-allowed text-white/24'
+                : 'text-white/56 hover:bg-white/[0.08] hover:text-white',
+            )}
+          >
+            <IconPhoto size={17} stroke={2.1} />
+          </button>
+        </div>
+
+        <div className="min-h-[72px]">
           <textarea
             ref={textareaRef}
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
             onKeyDown={onKeyDown}
             placeholder={t('chat.placeholder')}
-            rows={1}
-            className="max-h-[96px] min-h-[28px] flex-1 resize-none bg-transparent py-1 text-[15px] leading-[24px] text-white outline-none placeholder:text-white/30"
+            rows={3}
+            className="max-h-[128px] min-h-[72px] w-full resize-none bg-transparent text-[14px] leading-6 text-white outline-none placeholder:text-white/32"
           />
+        </div>
+
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy || uploading}
+            aria-label={uploading ? t('chat.uploading') : t('chat.uploadImages')}
+            title={uploading ? t('chat.uploading') : t('chat.uploadImages')}
+            className={cn(
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
+              busy || uploading
+                ? 'cursor-not-allowed text-white/24'
+                : 'text-white/62 hover:bg-white/[0.07] hover:text-white',
+            )}
+          >
+            <IconPlus size={21} stroke={2.1} />
+          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -1100,26 +1246,17 @@ function Composer({
             className="hidden"
             onChange={onFileChange}
           />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={busy || uploading}
-            aria-label={uploading ? t('chat.uploading') : t('chat.uploadImages')}
-            title={uploading ? t('chat.uploading') : t('chat.uploadImages')}
-            className={cn(
-              'mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
-              busy || uploading
-                ? 'cursor-not-allowed text-white/28'
-                : 'text-white/70 hover:bg-white/[0.07] hover:text-white',
-            )}
-          >
-            {uploading ? (
-              <IconLoader2 size={18} className="animate-spin" stroke={2.2} />
-            ) : (
-              <IconPlus size={22} stroke={2.1} />
-            )}
-          </button>
-          <SendOrStopButton busy={busy} canSend={canSend} disabled={uploading} onStop={onStop} />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label={t('home.voiceInput')}
+              title={t('home.voiceInput')}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-white/44 transition-colors hover:bg-white/[0.07] hover:text-white/78"
+            >
+              <IconMicrophone size={16} stroke={2.1} />
+            </button>
+            <SendOrStopButton busy={busy} canSend={canSend} disabled={uploading} onStop={onStop} />
+          </div>
         </div>
       </div>
     </form>

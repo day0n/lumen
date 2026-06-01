@@ -18,7 +18,7 @@ import { serve } from '@hono/node-server';
 import { buildApp } from './adapters/inbound/http/server.js';
 import { ModelRouter } from './adapters/outbound/llm/router.js';
 import { MemoryManager } from './adapters/outbound/memory.js';
-import { closeMongo, getMongo } from './adapters/outbound/persistence/mongo.js';
+import { closeMongo, getMongo, getStudioMongo } from './adapters/outbound/persistence/mongo.js';
 import { closeRedis, getRedis } from './adapters/outbound/persistence/redis.js';
 import { SessionManager } from './adapters/outbound/persistence/session.js';
 import { ChatRunner } from './application/chatRunner.js';
@@ -47,6 +47,7 @@ async function main(): Promise<void> {
   );
 
   const db = await getMongo();
+  const studioDb = await getStudioMongo();
   const redis = getRedis();
   const sessionManager = new SessionManager(db, redis);
 
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
     workspaceDir: resolve(process.cwd(), 'workspace'),
     webProxy: cfg.HTTP_PROXY || null,
     restrictToWorkspace: false,
+    inspirationDb: studioDb,
     toolEnv: {
       braveApiKey: cfg.BRAVE_API_KEY,
       foreplayApiKey: cfg.FOREPLAY_API_KEY,

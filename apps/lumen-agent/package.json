@@ -8,10 +8,12 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "lint": "biome check src",
+    "seed:inspiration": "tsx scripts/seed-inspiration-assets.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.1",
+    "@aws-sdk/client-s3": "^3.1054.0",
     "@hono/node-server": "^1.13.7",
     "@lumen/shared": "workspace:*",
     "@sentry/node": "^10.55.0",

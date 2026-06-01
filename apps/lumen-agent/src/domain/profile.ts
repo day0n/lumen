@@ -5,6 +5,7 @@
  * system prompt / model）。
  */
 
+import type { Db } from 'mongodb';
 import type { Tool } from '../adapters/outbound/tools/base.js';
 import type { ToolCatalog } from '../adapters/outbound/tools/registry.js';
 import type { SkillLibrary } from '../application/skills.js';
@@ -18,6 +19,9 @@ export interface AgentDeps {
 
   /** 是否限制工具访问到 workspaceDir。 */
   restrictToWorkspace: boolean;
+
+  /** Studio database, used by tools that read shared product/material libraries. */
+  inspirationDb?: Db;
 
   /**
    * tool 工厂可以从这里读 provider 配置 / 第三方 client。

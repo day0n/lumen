@@ -20,6 +20,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.30.1
         version: 0.30.1
+      '@aws-sdk/client-s3':
+        specifier: ^3.1054.0
+        version: 3.1054.0
       '@hono/node-server':
         specifier: ^1.13.7
         version: 1.19.14(hono@4.12.23)

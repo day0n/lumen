@@ -1138,6 +1138,7 @@ function workflowTimelineStatus(
   data: Record<string, unknown>,
 ): ChatTimelineStatus {
   if (eventName === 'workflow_update' || eventName === 'workflow_completed') return 'success';
+  if (eventName === 'inspiration_results') return 'success';
   if (eventName !== 'workflow_node_status') return 'info';
   const status = readString(data.status);
   if (status === 'queued') return 'queued';
@@ -1155,6 +1156,9 @@ function formatWorkflowEventTitle(
   if (eventName === 'workflow_update') return translate(locale, 'chat.timeline.workflowUpdated');
   if (eventName === 'workflow_completed') {
     return translate(locale, 'chat.timeline.workflowCompleted');
+  }
+  if (eventName === 'inspiration_results') {
+    return locale === 'zh' ? '找到灵感图' : 'Inspiration found';
   }
   if (eventName === 'workflow_node_status') {
     const status = readString(data.status);
@@ -1197,6 +1201,12 @@ function summarizeWorkflowEventDetail(
     ].filter(Boolean);
     return parts.length > 0 ? parts.join(' · ') : undefined;
   }
+  if (eventName === 'inspiration_results') {
+    const query = readString(data.query);
+    const count = Array.isArray(data.results) ? data.results.length : null;
+    const parts = [query, count !== null ? `${count} images` : null].filter(Boolean);
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+  }
   return summarizeArguments(data);
 }
 
@@ -1214,6 +1224,7 @@ function workflowTimelineId(
     const nodeId = readString(data.node_id) ?? 'canvas';
     return `tool.event.${toolCallId}.${eventName}.${reason}.${nodeId}`;
   }
+  if (eventName === 'inspiration_results') return `tool.event.${toolCallId}.${eventName}`;
   return `tool.event.${toolCallId}.${eventName}`;
 }
 
