@@ -7,6 +7,7 @@ import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import {
   IconAlertTriangle,
+  IconArrowUpRight,
   IconCheck,
   IconChevronDown,
   IconLoader2,
@@ -220,78 +221,19 @@ export function MaterialsPage() {
           </div>
         </motion.header>
 
-        <div className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-3">
-          {materialCategories.map((category, index) => {
-            const Icon = category.icon;
-            const active = activeCategory === category.id;
-            const accent = category.accent;
-            return (
-              <motion.button
-                type="button"
-                key={category.id}
-                onClick={() => setActiveCategory(category.id)}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.42, delay: index * 0.05, ease: [0.32, 0.72, 0, 1] }}
-                className={cn(
-                  'group relative min-h-[150px] overflow-hidden rounded-[18px] bg-[#1c1e20] p-5 text-left transition-colors',
-                  active
-                    ? 'bg-[#222528]'
-                    : 'ring-1 ring-white/[0.07] hover:bg-[#202325] hover:ring-white/[0.14]',
-                )}
-                style={
-                  active
-                    ? { boxShadow: `0 0 0 1.5px ${accent}99, 0 22px 60px -34px ${accent}` }
-                    : undefined
-                }
-              >
-                <span className="relative flex items-center justify-between">
-                  <span
-                    className="text-[12px] font-bold tabular-nums"
-                    style={active ? { color: accent } : { color: 'rgba(255,255,255,0.3)' }}
-                  >
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
-                  <span
-                    className={cn(
-                      'flex h-7 min-w-[28px] items-center justify-center rounded-full border px-2 text-[12px] font-bold tabular-nums',
-                      !active && 'border-white/[0.08] bg-white/[0.04] text-white/60',
-                    )}
-                    style={
-                      active
-                        ? {
-                            backgroundColor: `${accent}1f`,
-                            color: accent,
-                            borderColor: `${accent}55`,
-                          }
-                        : undefined
-                    }
-                  >
-                    {counts[category.id] ?? 0}
-                  </span>
-                </span>
-                <span className="relative mt-7 flex items-end gap-4">
-                  <span
-                    className={cn(
-                      'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition-colors',
-                      !active && 'bg-white/[0.05] text-white/70 ring-1 ring-white/[0.07]',
-                    )}
-                    style={active ? { backgroundColor: `${accent}1a`, color: accent } : undefined}
-                  >
-                    <Icon size={22} stroke={1.9} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[19px] font-bold leading-none text-white">
-                      {t(`materials.categories.${category.id}.title`)}
-                    </span>
-                    <span className="mt-2.5 block text-[12.5px] leading-5 text-white/42">
-                      {t(`materials.categories.${category.id}.desc`)}
-                    </span>
-                  </span>
-                </span>
-              </motion.button>
-            );
-          })}
+        <div className="mt-8 grid grid-cols-1 gap-3.5 md:grid-cols-3">
+          {materialCategories.map((category, index) => (
+            <CategoryCard
+              key={category.id}
+              category={category}
+              index={index}
+              active={activeCategory === category.id}
+              count={counts[category.id] ?? 0}
+              title={t(`materials.categories.${category.id}.title`)}
+              desc={t(`materials.categories.${category.id}.desc`)}
+              onSelect={() => setActiveCategory(category.id)}
+            />
+          ))}
         </div>
 
         {loadError ? (
@@ -375,6 +317,136 @@ export function MaterialsPage() {
         />
       ) : null}
     </div>
+  );
+}
+
+function CategoryCard({
+  category,
+  index,
+  active,
+  count,
+  title,
+  desc,
+  onSelect,
+}: {
+  category: { id: MaterialAssetCategory; icon: typeof IconPhoto; accent: string };
+  index: number;
+  active: boolean;
+  count: number;
+  title: string;
+  desc: string;
+  onSelect: () => void;
+}) {
+  const Icon = category.icon;
+  const accent = category.accent;
+  const cardRef = useRef<HTMLButtonElement | null>(null);
+  const [spot, setSpot] = useState<{ x: number; y: number } | null>(null);
+
+  const handleMove = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = cardRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setSpot({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+  }, []);
+
+  return (
+    <motion.button
+      ref={cardRef}
+      type="button"
+      onClick={onSelect}
+      onMouseMove={handleMove}
+      onMouseLeave={() => setSpot(null)}
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, delay: index * 0.06, ease: [0.32, 0.72, 0, 1] }}
+      className={cn(
+        'group relative min-h-[164px] overflow-hidden rounded-[20px] p-5 text-left transition-[transform,background-color] duration-300 will-change-transform hover:-translate-y-0.5',
+        active ? 'bg-[#1f2225]' : 'bg-[#1a1c1f] ring-1 ring-white/[0.07] hover:ring-white/[0.12]',
+      )}
+      style={
+        active
+          ? { boxShadow: `inset 0 0 0 1.5px ${accent}80, 0 26px 70px -38px ${accent}` }
+          : undefined
+      }
+    >
+      {/* accent top band */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-px transition-opacity duration-300"
+        style={{
+          background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
+          opacity: active ? 0.9 : 0,
+        }}
+      />
+      {/* mouse-follow spotlight */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -inset-px transition-opacity duration-300"
+        style={{
+          opacity: spot ? 1 : 0,
+          background: spot
+            ? `radial-gradient(220px circle at ${spot.x}px ${spot.y}px, ${accent}1f, transparent 70%)`
+            : undefined,
+        }}
+      />
+      {/* watermark icon */}
+      <Icon
+        aria-hidden
+        size={132}
+        stroke={1}
+        className="pointer-events-none absolute -bottom-7 -right-5 transition-[transform,opacity,color] duration-500 group-hover:scale-105"
+        style={{ color: accent, opacity: active ? 0.12 : 0.05 }}
+      />
+
+      <span className="relative flex items-center justify-between">
+        <span
+          className="font-display text-[13px] font-extrabold tabular-nums tracking-wide"
+          style={{ color: active ? accent : 'rgba(255,255,255,0.28)' }}
+        >
+          {String(index + 1).padStart(2, '0')}
+        </span>
+        <span
+          className={cn(
+            'flex h-7 min-w-[28px] items-center justify-center rounded-full px-2 text-[12px] font-bold tabular-nums ring-1',
+            !active && 'bg-white/[0.04] text-white/55 ring-white/[0.08]',
+          )}
+          style={
+            active
+              ? { backgroundColor: `${accent}1f`, color: accent, boxShadow: `inset 0 0 0 1px ${accent}55` }
+              : undefined
+          }
+        >
+          {count}
+        </span>
+      </span>
+
+      <span className="relative mt-7 flex items-end gap-4">
+        <span
+          className={cn(
+            'flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-colors duration-300',
+            !active && 'bg-white/[0.05] text-white/70 ring-1 ring-white/[0.07] group-hover:text-white',
+          )}
+          style={
+            active
+              ? { backgroundColor: `${accent}1f`, color: accent, boxShadow: `inset 0 0 0 1px ${accent}40` }
+              : undefined
+          }
+        >
+          <Icon size={22} stroke={1.9} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            <span className="block text-[19px] font-bold leading-none text-white">{title}</span>
+            <IconArrowUpRight
+              size={16}
+              stroke={2.4}
+              className="shrink-0 -translate-x-1 opacity-0 transition-[transform,opacity] duration-300 group-hover:translate-x-0 group-hover:opacity-100"
+              style={{ color: active ? accent : 'rgba(255,255,255,0.5)' }}
+            />
+          </span>
+          <span className="mt-2.5 block text-[12.5px] leading-5 text-white/42">{desc}</span>
+        </span>
+      </span>
+    </motion.button>
   );
 }
 
