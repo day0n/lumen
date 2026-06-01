@@ -51,6 +51,7 @@ export function I18nProvider({
 
   useEffect(() => {
     persistLocale(locale);
+    document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
   }, [locale]);
 
   const setLocale = useCallback((nextLocale: Locale) => {
