@@ -32,7 +32,7 @@ export function LandingNav() {
           scrolled ? 'opacity-100' : 'opacity-0',
         )}
       />
-      <div className="pointer-events-auto relative mx-auto flex h-[62px] max-w-[1160px] items-center justify-between gap-4 px-7 md:px-10">
+      <div className="pointer-events-auto relative mx-auto flex h-[62px] max-w-[1280px] items-center justify-between gap-4 px-5 sm:px-8 lg:px-10">
         <Link href="/" aria-label="Lumen 首页">
           <LumenWordmark markSize={24} wordClassName="text-[28px]" />
         </Link>
