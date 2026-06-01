@@ -686,46 +686,31 @@ function HotVideoCard({
 
         <button
           type="button"
-          disabled={signedIn && !ownedByMe}
           onClick={(event) => {
             stop(event);
             if (!signedIn) {
               onRequireLogin();
               return;
             }
-            if (!ownedByMe) return;
             onUse();
           }}
-          title={
-            !signedIn
-              ? t('hotVideos.card.signupTitle')
-              : ownedByMe
-                ? t('hotVideos.card.remixTitle')
-                : t('hotVideos.card.mineOnly')
-          }
+          title={!signedIn ? t('hotVideos.card.signupTitle') : t('hotVideos.card.remixTitle')}
           className={cn(
             'flex h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[12px] font-semibold transition-colors',
-            ownedByMe
+            signedIn
               ? 'bg-white/[0.075] text-white/82 ring-1 ring-white/[0.06] hover:bg-white hover:text-[#111315]'
-              : !signedIn
-                ? 'bg-white/[0.055] text-white/62 ring-1 ring-white/[0.05] hover:bg-white hover:text-[#111315]'
-                : 'cursor-not-allowed bg-white/[0.035] text-white/32 ring-1 ring-white/[0.04]',
+              : 'bg-white/[0.055] text-white/62 ring-1 ring-white/[0.05] hover:bg-white hover:text-[#111315]',
           )}
         >
-          {ownedByMe ? (
+          {signedIn ? (
             <>
               <IconCheck size={14} stroke={2.4} />
               {t('hotVideos.card.remix')}
             </>
-          ) : !signedIn ? (
-            <>
-              <IconLock size={13} stroke={2.4} />
-              {t('hotVideos.card.signupRemix')}
-            </>
           ) : (
             <>
               <IconLock size={13} stroke={2.4} />
-              {t('hotVideos.card.mineOnly')}
+              {t('hotVideos.card.signupRemix')}
             </>
           )}
         </button>
