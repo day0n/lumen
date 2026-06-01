@@ -51,8 +51,8 @@ function buildSellingPointPrompt(
   const language = locale === 'zh' ? '简体中文' : 'English';
   const typeLabel = {
     item: locale === 'zh' ? '商品素材' : 'product asset',
-    character: locale === 'zh' ? '出镜角色素材' : 'presenter asset',
-    scene: locale === 'zh' ? '展示场景素材' : 'display-scene asset',
+    character: locale === 'zh' ? 'AI模特素材' : 'AI model asset',
+    scene: locale === 'zh' ? '真人模特素材' : 'real model asset',
   }[input.category];
 
   return [

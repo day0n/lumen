@@ -2438,8 +2438,8 @@ function PanelEmptyState({ label, tone = 'muted' }: { label: string; tone?: 'mut
 const materialCategories = [
   { id: 'my_assets', label: '画布结果' },
   { id: 'item', label: '商品图集' },
-  { id: 'character', label: '出镜人设' },
-  { id: 'scene', label: '展示图' },
+  { id: 'character', label: 'AI模特' },
+  { id: 'scene', label: '真人模特' },
 ] satisfies Array<{ id: MaterialAssetCategory; label: string }>;
 
 const materialKinds = [
