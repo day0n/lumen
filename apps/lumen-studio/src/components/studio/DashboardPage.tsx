@@ -48,7 +48,7 @@ import {
   IconWorld,
 } from '@tabler/icons-react';
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 
 type DashboardStatus = 'idle' | 'loading' | 'ready' | 'error';
 type CampaignSortKey = 'revenue' | 'roas' | 'cvr' | 'spend' | 'creativeScore';
@@ -772,9 +772,25 @@ function MetricCard({
 }) {
   const positive = delta >= 0;
   return (
-    <section className="min-h-[132px] rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-white/[0.06]">
+    <section className="group relative min-h-[150px] overflow-hidden rounded-2xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08] transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:ring-white/[0.16]">
+      {/* accent glow */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-40 blur-2xl transition-opacity duration-300 group-hover:opacity-70"
+        style={{ background: `radial-gradient(circle, ${accent}, transparent 70%)` }}
+      />
+      {/* accent top hairline */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-px"
+        style={{ background: `linear-gradient(90deg, transparent, ${accent}66, transparent)` }}
+      />
+
+      <div className="relative mb-3 flex items-start justify-between gap-3">
+        <span
+          className="flex h-9 w-9 items-center justify-center rounded-xl ring-1"
+          style={{ backgroundColor: `${accent}1a`, boxShadow: `inset 0 0 0 1px ${accent}33` }}
+        >
           <Icon size={18} stroke={2.2} style={{ color: accent }} />
         </span>
         <span
@@ -789,24 +805,55 @@ function MetricCard({
           {Math.abs(delta).toFixed(1)}%
         </span>
       </div>
-      <div className="text-[12px] font-semibold text-white/42">{label}</div>
-      <div className="mt-1 flex items-end gap-3">
-        <div className="min-w-0 flex-1 text-[25px] font-bold leading-none tracking-tight text-white">
-          {value}
-        </div>
+      <div className="relative text-[12px] font-semibold text-white/42">{label}</div>
+      <div className="relative mt-1.5 text-[26px] font-bold leading-none tracking-tight text-white">
+        {value}
+      </div>
+      <div className="relative mt-3 flex items-end justify-between gap-3">
+        <div className="min-w-0 flex-1 truncate text-[11px] text-white/34">{meta}</div>
         <MiniSparkline values={sparkline} color={accent} />
       </div>
-      <div className="mt-3 truncate text-[11px] text-white/34">{meta}</div>
     </section>
   );
 }
 
 function MiniSparkline({ values, color }: { values: number[]; color: string }) {
-  const points = buildPolylinePoints(values, 96, 30);
+  const gradientId = useId();
+  const width = 104;
+  const height = 36;
+  const points = buildPolylinePoints(values, width, height);
+  const areaPoints = `0,${height} ${points} ${width},${height}`;
+  const lastY = (() => {
+    const last = points.split(' ').pop();
+    const y = last?.split(',')[1];
+    return y ? Number.parseFloat(y) : height / 2;
+  })();
+  const lastX = width;
   return (
-    <svg className="h-[30px] w-[96px] shrink-0 overflow-visible" viewBox="0 0 96 30" role="img">
+    <svg
+      className="h-[36px] w-[104px] shrink-0 overflow-visible"
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      preserveAspectRatio="none"
+    >
       <title>Trend</title>
-      <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" />
+      <defs>
+        <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.32" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={areaPoints} fill={`url(#${gradientId})`} />
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx={lastX} cy={lastY} r="2.4" fill={color} />
+      <circle cx={lastX} cy={lastY} r="4.5" fill={color} fillOpacity="0.25" />
     </svg>
   );
 }
