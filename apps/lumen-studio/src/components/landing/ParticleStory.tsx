@@ -167,10 +167,10 @@ export function ParticleStory() {
       const particleReveal = smoothstep(0.12, 0.26, progress);
       const particleSpread = smoothstep(0.14, 0.34, progress);
       const sceneProgress = clamp((progress - 0.26) / 0.7, 0, 1);
-      const scaled = sceneProgress * (STORY_SCENES.length - 1);
+      const scaled = sceneProgress * STORY_SCENES.length;
       const scene = Math.min(STORY_SCENES.length - 1, Math.floor(scaled));
       const nextScene = Math.min(STORY_SCENES.length - 1, scene + 1);
-      const local = scaled - scene;
+      const local = clamp(scaled - scene, 0, 1);
       const sceneMorph = smoothstep(0.42, 1, local);
       const spriteProgress = reducedMotion ? 0 : smoothstep(0.08, 0.92, local);
       const spriteScaled = spriteProgress * (SPRITE_FRAME_COUNT - 1);
