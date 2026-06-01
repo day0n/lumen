@@ -6,6 +6,8 @@ const StudioServerConfigSchema = z
     MONGODB_DB: z.string().min(1).default('lumen_app'),
     WORKFLOW_MONGODB_DB: z.string().min(1).default('lumen_engine'),
     REDIS_URL: z.string().optional().default(''),
+    LUMEN_AGENT_URL: z.string().optional().default(''),
+    NEXT_PUBLIC_AGENT_URL: z.string().optional().default(''),
     APIFY_API_TOKEN: z.string().optional().default(''),
     R2_ACCOUNT_ID: z.string().optional().default(''),
     R2_BUCKET: z.string().optional().default(''),
@@ -22,6 +24,8 @@ export type StudioServerConfig = Pick<
   | 'MONGODB_DB'
   | 'WORKFLOW_MONGODB_DB'
   | 'REDIS_URL'
+  | 'LUMEN_AGENT_URL'
+  | 'NEXT_PUBLIC_AGENT_URL'
   | 'APIFY_API_TOKEN'
   | 'R2_ACCOUNT_ID'
   | 'R2_BUCKET'
@@ -44,6 +48,10 @@ export function getStudioServerConfig(): StudioServerConfig {
     throw new Error(`Invalid studio server config: ${message}`);
   }
 
-  cachedConfig = parsed.data;
+  cachedConfig = {
+    ...parsed.data,
+    LUMEN_AGENT_URL:
+      parsed.data.LUMEN_AGENT_URL || parsed.data.NEXT_PUBLIC_AGENT_URL || 'http://localhost:3001',
+  };
   return cachedConfig;
 }

@@ -30,8 +30,6 @@ import {
   IconSparkles,
   IconTrendingUp,
   IconUpload,
-  IconVolume,
-  IconVolumeOff,
   IconX,
 } from '@tabler/icons-react';
 import { motion } from 'motion/react';
@@ -519,9 +517,6 @@ function HotVideoCard({
   onUse: () => void;
   onPreview: () => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-  const [muted, setMuted] = useState(true);
-
   const stop = (event: React.MouseEvent) => {
     event.stopPropagation();
   };
@@ -531,18 +526,23 @@ function HotVideoCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.42, delay: index * 0.035, ease: [0.32, 0.72, 0, 1] }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       className="group overflow-hidden rounded-[18px] bg-[#1c1e20] ring-1 ring-white/[0.07] transition-colors hover:bg-[#222528]"
     >
-      <button
-        type="button"
-        onClick={onPreview}
-        aria-label="打开视频预览"
-        className="relative block aspect-[3/4] w-full overflow-hidden text-left focus:outline-none"
-      >
-        <VideoStill video={video} hovered={hovered} muted={muted} />
-        <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+      <div className="relative aspect-[3/4] w-full overflow-hidden bg-black text-left">
+        {video.previewUrl ? (
+          <VideoStill video={video} controls />
+        ) : (
+          <button
+            type="button"
+            onClick={onPreview}
+            aria-label="打开视频预览"
+            className="absolute inset-0 text-left focus:outline-none"
+          >
+            <VideoStill video={video} />
+          </button>
+        )}
+
+        <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
           <span
             className="rounded-full px-2.5 py-1 text-[11px] font-bold text-[#111315]"
             style={{ background: video.accent }}
@@ -553,24 +553,7 @@ function HotVideoCard({
             {video.videoType}
           </span>
         </div>
-        <div className="absolute right-3 top-3 flex items-center gap-2">
-          {video.previewUrl ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                stop(event);
-                setMuted((current) => !current);
-              }}
-              aria-label={muted ? '取消静音' : '静音'}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-black/52 text-white/82 backdrop-blur transition-colors hover:bg-black/72 hover:text-white"
-            >
-              {muted ? (
-                <IconVolumeOff size={16} stroke={2.2} />
-              ) : (
-                <IconVolume size={16} stroke={2.2} />
-              )}
-            </button>
-          ) : null}
+        <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-2">
           <span
             className={cn(
               'flex h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold backdrop-blur',
@@ -584,7 +567,12 @@ function HotVideoCard({
             {ownedByMe ? '已下载' : null}
           </span>
         </div>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.82))] px-3 pb-3 pt-16">
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.82))] px-3 pt-16',
+            video.previewUrl ? 'pb-14' : 'pb-3',
+          )}
+        >
           <div className="line-clamp-2 text-[13px] font-bold leading-5 text-white">
             {video.title}
           </div>
@@ -593,7 +581,7 @@ function HotVideoCard({
             {video.publishedAt}
           </div>
         </div>
-      </button>
+      </div>
 
       <div className="space-y-3 p-3.5">
         <div className="grid grid-cols-2 gap-2">
@@ -819,7 +807,7 @@ function ReplicaConfigModal({
             <div className="mt-4 flex justify-center lg:justify-start">
               <div className="relative aspect-[9/16] w-full max-w-[264px] overflow-hidden rounded-[18px] bg-black ring-1 ring-white/[0.08]">
                 {video ? (
-                  <VideoStill video={video} hovered />
+                  <VideoStill video={video} autoPlay muted />
                 ) : (
                   <LinkReplicaPreview target={target} />
                 )}
@@ -991,67 +979,35 @@ function LinkReplicaPreview({ target }: { target: ReferenceItem }) {
 
 function VideoStill({
   video,
-  hovered = false,
-  muted = true,
+  autoPlay = false,
+  controls = false,
+  muted = false,
 }: {
   video: HotVideoView;
-  hovered?: boolean;
+  autoPlay?: boolean;
+  controls?: boolean;
   muted?: boolean;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const hasVideo = Boolean(video.previewUrl);
   const cover = video.thumbnailUrl;
-
-  useEffect(() => {
-    const node = videoRef.current;
-    if (!node) return;
-    node.muted = muted;
-  }, [muted]);
-
-  useEffect(() => {
-    const node = videoRef.current;
-    if (!node) return;
-    if (hovered) {
-      node.currentTime = 0;
-      void node.play().catch(() => {
-        // Autoplay can be blocked when tab is hidden; ignore.
-      });
-    } else {
-      node.pause();
-      node.currentTime = 0;
-    }
-  }, [hovered]);
 
   if (hasVideo) {
     return (
       <div className="absolute inset-0" style={{ background: video.paletteCss }}>
-        {cover ? (
-          <img
-            src={cover}
-            alt={video.title}
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            className={cn(
-              'absolute inset-0 h-full w-full object-cover transition-opacity duration-200',
-              hovered ? 'opacity-0' : 'opacity-100',
-            )}
-          />
-        ) : null}
         <video
-          ref={videoRef}
           src={video.previewUrl}
           poster={cover}
-          loop
+          autoPlay={autoPlay}
+          controls={controls}
+          loop={autoPlay && !controls}
+          muted={muted}
           playsInline
           preload="metadata"
-          className={cn(
-            'absolute inset-0 h-full w-full object-cover transition-opacity duration-200',
-            hovered ? 'opacity-100' : 'opacity-0',
-          )}
+          className="absolute inset-0 h-full w-full object-cover"
         >
           <track kind="captions" />
         </video>
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.05)_0%,transparent_30%,rgba(0,0,0,0.45)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.05)_0%,transparent_30%,rgba(0,0,0,0.45)_100%)]" />
       </div>
     );
   }
@@ -1066,7 +1022,7 @@ function VideoStill({
           referrerPolicy="no-referrer"
           className="absolute inset-0 h-full w-full object-cover"
         />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.05)_0%,transparent_30%,rgba(0,0,0,0.45)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.05)_0%,transparent_30%,rgba(0,0,0,0.45)_100%)]" />
         <div className="absolute left-5 top-[45%] flex h-10 w-10 items-center justify-center rounded-full bg-white/82 text-[#111315] opacity-0 shadow-[0_10px_34px_-18px_rgba(255,255,255,0.9)] transition-opacity group-hover:opacity-100">
           <IconPlayerPlay size={16} fill="currentColor" stroke={1.5} />
         </div>
