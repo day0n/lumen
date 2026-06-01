@@ -11,8 +11,31 @@ export type MaterialAssetKind = z.infer<typeof MaterialAssetKindSchema>;
 export const MaterialAssetCategorySchema = z.enum(['my_assets', 'character', 'scene', 'item']);
 export type MaterialAssetCategory = z.infer<typeof MaterialAssetCategorySchema>;
 
+export const UserUploadMaterialAssetCategorySchema = z.enum(['character', 'scene', 'item']);
+export type UserUploadMaterialAssetCategory = z.infer<typeof UserUploadMaterialAssetCategorySchema>;
+
 export const MaterialAssetSourceSchema = z.enum(['workflow_result', 'user_upload', 'manual']);
 export type MaterialAssetSource = z.infer<typeof MaterialAssetSourceSchema>;
+
+const MaterialAssetMetadataDocumentSchema = z
+  .object({
+    subcategory: z.string().trim().min(1).max(80).optional(),
+    original_name: z.string().trim().min(1).max(180).optional(),
+    selling_points: z.array(z.string().trim().min(1).max(120)).max(6).optional(),
+    batch_id: z.string().trim().min(1).max(80).optional(),
+    position: z.number().int().min(0).max(100).optional(),
+  })
+  .strict();
+
+const MaterialAssetMetadataRecordSchema = z
+  .object({
+    subcategory: z.string().trim().min(1).max(80).optional(),
+    originalName: z.string().trim().min(1).max(180).optional(),
+    sellingPoints: z.array(z.string().trim().min(1).max(120)).max(6).optional(),
+    batchId: z.string().trim().min(1).max(80).optional(),
+    position: z.number().int().min(0).max(100).optional(),
+  })
+  .strict();
 
 export const MaterialAssetDocumentSchema = z
   .object({
@@ -32,6 +55,7 @@ export const MaterialAssetDocumentSchema = z
     content_type: z.string().trim().min(1).optional(),
     size: z.number().int().nonnegative().optional(),
     input_prompt: MaterialInputPromptSchema.optional(),
+    metadata: MaterialAssetMetadataDocumentSchema.optional(),
     created_at: z.date(),
     updated_at: z.date(),
   })
@@ -56,6 +80,7 @@ export const MaterialAssetRecordSchema = z
     contentType: z.string().optional(),
     size: z.number().int().nonnegative().optional(),
     inputPrompt: MaterialInputPromptSchema.optional(),
+    metadata: MaterialAssetMetadataRecordSchema.optional(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
@@ -93,3 +118,20 @@ export const UpsertWorkflowMaterialAssetInputSchema = z
 export type UpsertWorkflowMaterialAssetInput = z.infer<
   typeof UpsertWorkflowMaterialAssetInputSchema
 >;
+
+export const CreateUserMaterialAssetInputSchema = z
+  .object({
+    ownerId: z.string().min(1),
+    category: UserUploadMaterialAssetCategorySchema,
+    kind: MaterialAssetKindSchema.default('image'),
+    title: z.string().trim().min(1).max(160),
+    url: z.string().trim().min(1),
+    thumbnailUrl: z.string().trim().min(1).optional(),
+    r2Key: z.string().trim().min(1).optional(),
+    contentType: z.string().trim().min(1).optional(),
+    size: z.number().int().nonnegative().optional(),
+    inputPrompt: MaterialInputPromptSchema.optional(),
+    metadata: MaterialAssetMetadataRecordSchema.optional(),
+  })
+  .strict();
+export type CreateUserMaterialAssetInput = z.infer<typeof CreateUserMaterialAssetInputSchema>;

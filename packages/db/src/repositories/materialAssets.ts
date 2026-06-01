@@ -1,6 +1,10 @@
+import { randomUUID } from 'node:crypto';
+
 import type { Db, Filter } from 'mongodb';
 
 import {
+  type CreateUserMaterialAssetInput,
+  CreateUserMaterialAssetInputSchema,
   type ListMaterialAssetsInput,
   ListMaterialAssetsInputSchema,
   type MaterialAssetDocument,
@@ -175,6 +179,40 @@ export class MaterialAssetRepository {
     return toMaterialAssetRecord(document);
   }
 
+  async createUserUpload(input: CreateUserMaterialAssetInput): Promise<MaterialAssetRecord> {
+    const parsed = CreateUserMaterialAssetInputSchema.parse(input);
+    const now = new Date();
+    const document: MaterialAssetDocument = {
+      _id: `asset_${randomUUID()}`,
+      owner_id: parsed.ownerId,
+      category: parsed.category,
+      kind: parsed.kind,
+      source: 'user_upload',
+      title: parsed.title,
+      url: parsed.url,
+      ...(parsed.thumbnailUrl ? { thumbnail_url: parsed.thumbnailUrl } : {}),
+      ...(parsed.r2Key ? { r2_key: parsed.r2Key } : {}),
+      ...(parsed.contentType ? { content_type: parsed.contentType } : {}),
+      ...(parsed.size !== undefined ? { size: parsed.size } : {}),
+      ...(parsed.inputPrompt ? { input_prompt: parsed.inputPrompt } : {}),
+      ...(parsed.metadata ? { metadata: toDocumentMetadata(parsed.metadata) } : {}),
+      created_at: now,
+      updated_at: now,
+    };
+
+    await this.collection().insertOne(document);
+    return toMaterialAssetRecord(document);
+  }
+
+  async deleteUserUpload(ownerId: string, assetId: string): Promise<boolean> {
+    const result = await this.collection().deleteOne({
+      _id: assetId,
+      owner_id: ownerId,
+      source: 'user_upload',
+    });
+    return result.deletedCount > 0;
+  }
+
   private collection() {
     return this.db.collection<MaterialAssetDocument>(MATERIAL_ASSETS_COLLECTION);
   }
@@ -203,6 +241,7 @@ function toMaterialAssetRecord(document: MaterialAssetDocument): MaterialAssetRe
     contentType: parsed.content_type,
     size: parsed.size,
     inputPrompt: parsed.input_prompt,
+    metadata: parsed.metadata ? toRecordMetadata(parsed.metadata) : undefined,
     createdAt: parsed.created_at.toISOString(),
     updatedAt: parsed.updated_at.toISOString(),
   });
@@ -285,4 +324,26 @@ function normalizedString(value: unknown): string | undefined {
 function truncateMaterialPrompt(value: unknown): string | undefined {
   const normalized = normalizedString(value);
   return normalized ? normalized.slice(0, 100) : undefined;
+}
+
+function toDocumentMetadata(metadata: CreateUserMaterialAssetInput['metadata']) {
+  if (!metadata) return undefined;
+  return {
+    ...(metadata.subcategory ? { subcategory: metadata.subcategory } : {}),
+    ...(metadata.originalName ? { original_name: metadata.originalName } : {}),
+    ...(metadata.sellingPoints?.length ? { selling_points: metadata.sellingPoints } : {}),
+    ...(metadata.batchId ? { batch_id: metadata.batchId } : {}),
+    ...(metadata.position !== undefined ? { position: metadata.position } : {}),
+  };
+}
+
+function toRecordMetadata(metadata: MaterialAssetDocument['metadata']) {
+  if (!metadata) return undefined;
+  return {
+    ...(metadata.subcategory ? { subcategory: metadata.subcategory } : {}),
+    ...(metadata.original_name ? { originalName: metadata.original_name } : {}),
+    ...(metadata.selling_points?.length ? { sellingPoints: metadata.selling_points } : {}),
+    ...(metadata.batch_id ? { batchId: metadata.batch_id } : {}),
+    ...(metadata.position !== undefined ? { position: metadata.position } : {}),
+  };
 }

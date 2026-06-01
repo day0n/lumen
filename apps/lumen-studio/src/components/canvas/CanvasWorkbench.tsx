@@ -75,7 +75,12 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { ChangeEvent, MouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type {
+  ChangeEvent,
+  MouseEvent,
+  DragEvent as ReactDragEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 
 import { ChatPanel } from '@/features/agent-chat/ChatPanel';
 import { useWorkflowWs } from '@/features/workflow/use-workflow-ws';
@@ -152,8 +157,24 @@ type MaterialAssetRecord = {
   contentType?: string;
   size?: number;
   inputPrompt?: string;
+  metadata?: {
+    subcategory?: string;
+    originalName?: string;
+    sellingPoints?: string[];
+    batchId?: string;
+    position?: number;
+  };
   createdAt: string;
   updatedAt: string;
+};
+
+type MaterialAssetDragPayload = {
+  id: string;
+  kind: MaterialAssetKind;
+  title: string;
+  url: string;
+  category: MaterialAssetCategory;
+  sellingPoints?: string[];
 };
 
 type ProjectHistoryRecord = {
@@ -354,6 +375,7 @@ const aspectRatioOptions = ['1:1', '4:5', '16:9', '9:16'] as const;
 const videoDurationOptions = [4, 6, 8] as const;
 const videoResolutionOptions = ['720p', '1080p', '4k'] as const;
 const editVideoResolutionOptions = ['720p', '1080p'] as const;
+const MATERIAL_ASSET_DRAG_TYPE = 'application/x-lumen-material-asset';
 // 1080p / 4k 仅支持 8s（Veo 约束）
 const resolutionRequiresEightSeconds = (resolution: string) =>
   resolution === '1080p' || resolution === '4k';
@@ -524,6 +546,63 @@ function isWorkflowNodeBusy(status?: LumenNodeData['status']) {
 
 function canConnectNodeKinds(sourceKind: NodeKind, targetKind: NodeKind) {
   return compatibleTargetKinds[sourceKind].includes(targetKind);
+}
+
+function materialAssetKindToNodeKind(kind: MaterialAssetKind): NodeKind {
+  switch (kind) {
+    case 'image':
+      return 'image';
+    case 'video':
+      return 'video';
+    case 'audio':
+      return 'audio';
+  }
+}
+
+function materialAssetPrompt(asset: MaterialAssetDragPayload) {
+  const points = asset.sellingPoints?.filter(Boolean) ?? [];
+  if (points.length === 0) return asset.title;
+  return [asset.title, ...points.map((point) => `- ${point}`)].join('\n');
+}
+
+function toMaterialAssetDragPayload(asset: MaterialAssetRecord): MaterialAssetDragPayload {
+  return {
+    id: asset.id,
+    kind: asset.kind,
+    title: asset.title,
+    url: asset.url,
+    category: asset.category,
+    ...(asset.metadata?.sellingPoints?.length
+      ? { sellingPoints: asset.metadata.sellingPoints }
+      : {}),
+  };
+}
+
+function readMaterialAssetDragPayload(dataTransfer: DataTransfer): MaterialAssetDragPayload | null {
+  const raw = dataTransfer.getData(MATERIAL_ASSET_DRAG_TYPE);
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<MaterialAssetDragPayload>;
+    if (
+      !value.id ||
+      !value.url ||
+      !value.title ||
+      !value.category ||
+      (value.kind !== 'image' && value.kind !== 'video' && value.kind !== 'audio')
+    ) {
+      return null;
+    }
+    return {
+      id: value.id,
+      kind: value.kind,
+      title: value.title,
+      url: value.url,
+      category: value.category,
+      ...(value.sellingPoints?.length ? { sellingPoints: value.sellingPoints } : {}),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function readFileAsDataUrl(file: File) {
@@ -1052,6 +1131,51 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     [activeKind, reactFlow, setNodes],
   );
 
+  const addMaterialAssetNode = useCallback(
+    (asset: MaterialAssetDragPayload, position: XYPosition) => {
+      const kind = materialAssetKindToNodeKind(asset.kind);
+      const template = getTemplate(kind);
+      const nextNode: LumenNode = {
+        id: `${kind}-${Date.now()}-${Math.round(Math.random() * 9999)}`,
+        type: 'lumenNode',
+        position,
+        selected: true,
+        zIndex: 20,
+        data: {
+          ...createNodeData(template),
+          title: asset.title || template.title,
+          prompt: materialAssetPrompt(asset),
+          output: asset.url,
+          status: 'success',
+          progress: 1,
+        },
+      };
+
+      setNodes((currentNodes) => [
+        ...currentNodes.map((node) => ({ ...node, selected: false })),
+        nextNode,
+      ]);
+    },
+    [setNodes],
+  );
+
+  const handleFlowDragOver = useCallback((event: ReactDragEvent) => {
+    if (!event.dataTransfer.types.includes(MATERIAL_ASSET_DRAG_TYPE)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleFlowDrop = useCallback(
+    (event: ReactDragEvent) => {
+      const asset = readMaterialAssetDragPayload(event.dataTransfer);
+      if (!asset) return;
+      event.preventDefault();
+      const position = reactFlow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      addMaterialAssetNode(asset, position);
+    },
+    [addMaterialAssetNode, reactFlow],
+  );
+
   const isValidConnection = useCallback(
     (connection: Connection | LumenEdge) => {
       return canCreateConnection(connection, nodes, edges);
@@ -1374,6 +1498,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
             onReconnect={onReconnect}
+            onDragOver={handleFlowDragOver}
+            onDrop={handleFlowDrop}
             isValidConnection={isValidConnection}
             edgesFocusable
             edgesReconnectable
@@ -1888,7 +2014,6 @@ function ToolbarButton({
   label: string;
   onClick?: () => void;
 }) {
-  const { t } = useI18n();
   return (
     <button
       type="button"
@@ -2246,8 +2371,18 @@ function MaterialAssetCard({ asset }: { asset: MaterialAssetRecord }) {
   return (
     <button
       type="button"
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = 'copy';
+        event.dataTransfer.setData(
+          MATERIAL_ASSET_DRAG_TYPE,
+          JSON.stringify(toMaterialAssetDragPayload(asset)),
+        );
+        event.dataTransfer.setData('text/uri-list', asset.url);
+        event.dataTransfer.setData('text/plain', asset.title);
+      }}
       onClick={() => window.open(asset.url, '_blank', 'noopener,noreferrer')}
-      className="flex w-full items-center gap-3 rounded-2xl bg-white/[0.045] p-2 text-left ring-1 ring-white/[0.055] transition-colors hover:bg-white/[0.08]"
+      className="flex w-full cursor-grab items-center gap-3 rounded-2xl bg-white/[0.045] p-2 text-left ring-1 ring-white/[0.055] transition-colors hover:bg-white/[0.08] active:cursor-grabbing"
     >
       <span className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-[#202328] ring-1 ring-white/[0.06]">
         {asset.kind === 'image' && (asset.thumbnailUrl || asset.url) ? (
@@ -2273,6 +2408,11 @@ function MaterialAssetCard({ asset }: { asset: MaterialAssetRecord }) {
         <span className="mt-1 block truncate text-[11px] font-medium text-white/38">
           {materialKindLabel(asset.kind, t)} · {formatMaterialDate(asset.updatedAt, locale, t)}
         </span>
+        {asset.metadata?.sellingPoints?.[0] ? (
+          <span className="mt-1 block truncate text-[10.5px] text-white/28">
+            {asset.metadata.sellingPoints[0]}
+          </span>
+        ) : null}
       </span>
       <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase text-white/32">
         {asset.kind}
@@ -2296,10 +2436,10 @@ function PanelEmptyState({ label, tone = 'muted' }: { label: string; tone?: 'mut
 }
 
 const materialCategories = [
-  { id: 'my_assets', label: '我的资产' },
-  { id: 'character', label: '角色' },
-  { id: 'scene', label: '场景' },
-  { id: 'item', label: '道具' },
+  { id: 'my_assets', label: '画布结果' },
+  { id: 'item', label: '商品图集' },
+  { id: 'character', label: '出镜人设' },
+  { id: 'scene', label: '展示图' },
 ] satisfies Array<{ id: MaterialAssetCategory; label: string }>;
 
 const materialKinds = [

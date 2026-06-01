@@ -14,6 +14,9 @@ const StudioServerConfigSchema = z
     R2_ACCESS_KEY_ID: z.string().optional().default(''),
     R2_SECRET_ACCESS_KEY: z.string().optional().default(''),
     R2_PUBLIC_BASE_URL: z.string().optional().default(''),
+    GOOGLE_OC_JSON: z.string().optional().default(''),
+    GOOGLE_CLOUD_PROJECT: z.string().optional().default(''),
+    GOOGLE_CLOUD_LOCATION: z.string().optional().default('global'),
     NEXT_PUBLIC_APP_URL: z.string().optional().default(''),
   })
   .passthrough();
@@ -32,6 +35,9 @@ export type StudioServerConfig = Pick<
   | 'R2_ACCESS_KEY_ID'
   | 'R2_SECRET_ACCESS_KEY'
   | 'R2_PUBLIC_BASE_URL'
+  | 'GOOGLE_OC_JSON'
+  | 'GOOGLE_CLOUD_PROJECT'
+  | 'GOOGLE_CLOUD_LOCATION'
   | 'NEXT_PUBLIC_APP_URL'
 >;
 

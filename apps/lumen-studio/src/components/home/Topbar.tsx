@@ -9,7 +9,7 @@ import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { isLoginRequiredPath } from '@/lib/protected-paths';
 import { UserButton } from '@clerk/nextjs';
-import { IconChartBar, IconDeviceTv, IconFolder, IconHome } from '@tabler/icons-react';
+import { IconChartBar, IconDeviceTv, IconFolder, IconHome, IconPhoto } from '@tabler/icons-react';
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -18,6 +18,7 @@ import type { MouseEvent } from 'react';
 const navItems = [
   { labelKey: 'nav.home', href: '/home', icon: IconHome },
   { labelKey: 'nav.studio', href: '/canvas/projects', activePrefix: '/canvas', icon: IconFolder },
+  { labelKey: 'nav.materials', href: '/materials', icon: IconPhoto },
   { labelKey: 'nav.hotVideos', href: '/hot-videos', icon: IconDeviceTv },
   { labelKey: 'nav.dashboard', href: '/dashboard', icon: IconChartBar },
 ];
@@ -112,7 +113,7 @@ export function Topbar() {
         </div>
       </div>
 
-      <nav className="fixed inset-x-4 bottom-4 z-50 grid grid-cols-4 gap-1 rounded-2xl bg-[#111315]/92 p-1 ring-1 ring-white/[0.08] backdrop-blur-xl lg:hidden">
+      <nav className="fixed inset-x-4 bottom-4 z-50 grid grid-cols-5 gap-1 rounded-2xl bg-[#111315]/92 p-1 ring-1 ring-white/[0.08] backdrop-blur-xl lg:hidden">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active =
