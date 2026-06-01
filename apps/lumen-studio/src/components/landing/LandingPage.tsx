@@ -3,10 +3,8 @@
 import { LandingNav } from '@/components/landing/LandingNav';
 import { ParticleStory } from '@/components/landing/ParticleStory';
 import { LumenWordmark } from '@/components/ui/LumenWordmark';
-import { useLoginRedirect } from '@/lib/auth-redirect';
 import { IconArrowRight } from '@tabler/icons-react';
 import Link from 'next/link';
-import type { MouseEvent } from 'react';
 
 const footerGroups = [
   {
@@ -28,16 +26,6 @@ const footerGroups = [
 ] as const;
 
 export function LandingPage() {
-  const { isLoaded, requireLogin } = useLoginRedirect();
-
-  const handleOpenWorkspace = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!isLoaded) {
-      event.preventDefault();
-      return;
-    }
-    if (!requireLogin('/canvas/projects')) event.preventDefault();
-  };
-
   return (
     <div className="min-h-screen bg-[#0c0d0f] text-[#f4f6f8]">
       <LandingNav />
@@ -79,8 +67,7 @@ export function LandingPage() {
                 <span className="border-t border-[#101214]/[0.16] pt-3">成片复盘</span>
               </div>
               <Link
-                href="/canvas/projects"
-                onClick={handleOpenWorkspace}
+                href="/home"
                 className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#101214] px-6 text-[14px] font-bold tracking-normal text-white transition-transform hover:scale-[1.02] active:scale-[0.98]"
               >
                 开始创造
@@ -125,8 +112,7 @@ export function LandingPage() {
         <div className="mt-16 flex flex-col gap-5 border-t border-white/[0.08] pt-7 text-[12px] tracking-normal text-white/[0.38] sm:flex-row sm:items-center sm:justify-between">
           <p>© 2026 Lumen</p>
           <Link
-            href="/canvas/projects"
-            onClick={handleOpenWorkspace}
+            href="/home"
             className="inline-flex h-10 w-fit items-center justify-center gap-2 self-end rounded-full border border-white/[0.12] px-4 text-[13px] font-bold tracking-normal text-white transition-colors hover:border-white/[0.28] hover:bg-white/[0.06] sm:self-auto"
           >
             开始创造
