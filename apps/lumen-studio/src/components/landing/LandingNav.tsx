@@ -6,7 +6,11 @@ import { IconArrowRight } from '@tabler/icons-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-export function LandingNav() {
+interface LandingNavProps {
+  onHomeIntent?: () => void;
+}
+
+export function LandingNav({ onHomeIntent }: LandingNavProps) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -39,6 +43,10 @@ export function LandingNav() {
 
         <Link
           href="/home"
+          prefetch
+          onFocus={() => onHomeIntent?.()}
+          onPointerEnter={() => onHomeIntent?.()}
+          onTouchStart={() => onHomeIntent?.()}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-white px-5 text-[14px] font-bold tracking-normal text-[#0b0d0e] shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
         >
           开始创造

@@ -72,7 +72,11 @@ const INTRO_STRIPES = Array.from({ length: 58 }, (_, index) => {
   };
 });
 
-export function ParticleStory() {
+interface ParticleStoryProps {
+  onHomeIntent?: () => void;
+}
+
+export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const progressRef = useRef(0);
@@ -308,6 +312,10 @@ export function ParticleStory() {
             <div className="mt-7 flex flex-wrap justify-center gap-2.5">
               <Link
                 href="/home"
+                prefetch
+                onFocus={() => onHomeIntent?.()}
+                onPointerEnter={() => onHomeIntent?.()}
+                onTouchStart={() => onHomeIntent?.()}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#79e4ff] px-4 text-[13px] font-bold tracking-normal text-[#071316] transition-transform active:scale-[0.98]"
               >
                 开始创作

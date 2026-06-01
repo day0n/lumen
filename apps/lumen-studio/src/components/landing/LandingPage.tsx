@@ -2,6 +2,7 @@
 
 import { LandingNav } from '@/components/landing/LandingNav';
 import { ParticleStory } from '@/components/landing/ParticleStory';
+import { useHomeRoutePreload } from '@/components/landing/useHomeRoutePreload';
 import { LumenWordmark } from '@/components/ui/LumenWordmark';
 import { IconArrowRight } from '@tabler/icons-react';
 import Link from 'next/link';
@@ -26,11 +27,13 @@ const footerGroups = [
 ] as const;
 
 export function LandingPage() {
+  const warmHomeRoute = useHomeRoutePreload();
+
   return (
     <div className="min-h-screen bg-[#0c0d0f] text-[#f4f6f8]">
-      <LandingNav />
+      <LandingNav onHomeIntent={warmHomeRoute} />
       <main>
-        <ParticleStory />
+        <ParticleStory onHomeIntent={warmHomeRoute} />
 
         <section className="relative z-20 overflow-hidden rounded-b-[34px] bg-[#f4f1e8] px-6 py-16 text-[#101214] shadow-[0_28px_80px_rgba(0,0,0,0.34)] md:px-16 md:py-20 lg:px-[120px]">
           <div
@@ -68,6 +71,10 @@ export function LandingPage() {
               </div>
               <Link
                 href="/home"
+                prefetch
+                onFocus={() => warmHomeRoute()}
+                onPointerEnter={() => warmHomeRoute()}
+                onTouchStart={() => warmHomeRoute()}
                 className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#101214] px-6 text-[14px] font-bold tracking-normal text-white transition-transform hover:scale-[1.02] active:scale-[0.98]"
               >
                 开始创造
@@ -98,6 +105,16 @@ export function LandingPage() {
                     <Link
                       key={`${group.title}-${item.label}`}
                       href={item.href}
+                      prefetch={item.href === '/home' ? true : undefined}
+                      onFocus={() => {
+                        if (item.href === '/home') warmHomeRoute();
+                      }}
+                      onPointerEnter={() => {
+                        if (item.href === '/home') warmHomeRoute();
+                      }}
+                      onTouchStart={() => {
+                        if (item.href === '/home') warmHomeRoute();
+                      }}
                       className="block text-[14px] font-medium tracking-normal text-white/[0.64] transition-colors hover:text-white"
                     >
                       {item.label}
@@ -113,6 +130,10 @@ export function LandingPage() {
           <p>© 2026 Lumen</p>
           <Link
             href="/home"
+            prefetch
+            onFocus={() => warmHomeRoute()}
+            onPointerEnter={() => warmHomeRoute()}
+            onTouchStart={() => warmHomeRoute()}
             className="inline-flex h-10 w-fit items-center justify-center gap-2 self-end rounded-full border border-white/[0.12] px-4 text-[13px] font-bold tracking-normal text-white transition-colors hover:border-white/[0.28] hover:bg-white/[0.06] sm:self-auto"
           >
             开始创造
