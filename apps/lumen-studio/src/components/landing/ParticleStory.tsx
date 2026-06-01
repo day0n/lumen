@@ -164,19 +164,22 @@ export function ParticleStory() {
       const progress = displayedProgressRef.current;
       const intro = 1 - smoothstep(0.08, 0.22, progress);
       const story = smoothstep(0.26, 0.36, progress);
-      const particleReveal = smoothstep(0.12, 0.26, progress);
-      const particleSpread = smoothstep(0.14, 0.34, progress);
+      const particleReveal = 0.22 + smoothstep(0.04, 0.2, progress) * 0.78;
+      const particleGather = smoothstep(0.19, 0.35, progress);
       const sceneProgress = clamp((progress - 0.26) / 0.7, 0, 1);
       const scaled = sceneProgress * STORY_SCENES.length;
       const scene = Math.min(STORY_SCENES.length - 1, Math.floor(scaled));
       const nextScene = Math.min(STORY_SCENES.length - 1, scene + 1);
       const local = clamp(scaled - scene, 0, 1);
       const sceneMorph = smoothstep(0.42, 1, local);
+      const sceneDisperse =
+        story * smoothstep(0.08, 0.34, local) * (1 - smoothstep(0.7, 0.96, local)) * 0.62;
       const spriteProgress = reducedMotion ? 0 : smoothstep(0.08, 0.92, local);
       const spriteScaled = spriteProgress * (SPRITE_FRAME_COUNT - 1);
       const frameA = Math.floor(spriteScaled);
       const frameB = Math.min(SPRITE_FRAME_COUNT - 1, frameA + 1);
       const frameMorph = smoothstep(0, 1, spriteScaled - frameA);
+      const seconds = time / 1000;
       const now = performance.now();
 
       if (now - lastStateUpdate > 55) {
@@ -185,11 +188,14 @@ export function ParticleStory() {
       }
 
       context.clearRect(0, 0, width, height);
+      paintParticleAtmosphere(context, width, height, progress, seconds);
 
       const scale = width < 640 ? Math.min(width, height) * 1.08 : Math.min(width, height) * 0.92;
       const offsetX = width * 0.5 + mouseRef.current.x * (width < 640 ? 5 : 18);
       const offsetY =
         height * (width < 640 ? 0.56 : 0.53) + mouseRef.current.y * (width < 640 ? 4 : 12);
+      const fieldWidth = width / scale;
+      const fieldHeight = height / scale;
       const currentFrames = targets[scene] ?? targets[0] ?? [];
       const nextFrames = targets[nextScene] ?? currentFrames;
 
@@ -205,24 +211,31 @@ export function ParticleStory() {
           const c = nextFrames[0]?.[index] ?? a;
           if (!particle || !a || !b || !c) continue;
 
-          const swirl = reducedMotion ? { x: 0, y: 0 } : particleDrift(particle, progress, local);
+          const swirl = reducedMotion
+            ? { x: 0, y: 0 }
+            : particleDrift(particle, progress, local, seconds);
+          const cloud = reducedMotion
+            ? particleCloud(particle, 0, 0, fieldWidth, fieldHeight)
+            : particleCloud(particle, progress, seconds, fieldWidth, fieldHeight);
           const frameX = lerp(a.x, b.x, frameMorph);
           const frameY = lerp(a.y, b.y, frameMorph);
           const frameZ = lerp(a.z, b.z, frameMorph);
           const frameDarkness = lerp(a.darkness, b.darkness, frameMorph);
           const targetX = lerp(frameX, c.x, sceneMorph) + swirl.x;
           const targetY = lerp(frameY, c.y, sceneMorph) + swirl.y;
-          const birthX = particle.homeX * 0.16 + Math.sin(particle.phase) * 0.025;
-          const birthY = particle.homeY * 0.1 + Math.cos(particle.phase) * 0.018;
-          const x = lerp(birthX, targetX, particleSpread) * scale;
-          const y = lerp(birthY, targetY, particleSpread) * scale;
+          const targetMix = clamp(particleGather * (1 - sceneDisperse), 0, 1);
+          const x = lerp(cloud.x, targetX, targetMix) * scale;
+          const y = lerp(cloud.y, targetY, targetMix) * scale;
           const depth = lerp(frameZ, c.z, sceneMorph);
           const darkness = lerp(frameDarkness, c.darkness, sceneMorph);
           const alpha =
             clamp(0.08 + depth * 0.62 + darkness * 0.34 + particle.seed * 0.18, 0.08, 0.94) *
-            particleReveal;
-          const color = particleColor(particle, alpha, depth, darkness);
-          const size = particle.size * (0.52 + depth * 0.78 + darkness * 0.24);
+            particleReveal *
+            (0.34 + targetMix * 0.66);
+          const color = particleColor(particle, alpha, depth, darkness, targetMix, cloud.fade);
+          const size =
+            particle.size *
+            (0.46 + depth * 0.72 + darkness * 0.2 + (1 - targetMix) * particle.seed * 0.22);
 
           context.fillStyle = color;
           context.fillRect(x, y, size, size);
@@ -405,18 +418,26 @@ function particleTarget(width: number) {
   return 48000;
 }
 
-function particleColor(particle: Particle, alpha: number, depth: number, darkness: number) {
+function particleColor(
+  particle: Particle,
+  alpha: number,
+  depth: number,
+  darkness: number,
+  targetMix: number,
+  cloudFade: number,
+) {
   if (particle.lane > 0.985) {
-    return `rgba(245,199,106,${clamp(alpha * 0.28, 0, 0.24)})`;
+    return `rgba(245,199,106,${clamp(alpha * (0.18 + targetMix * 0.18) * cloudFade, 0, 0.22)})`;
   }
 
   if (particle.lane > 0.94) {
-    return `rgba(121,228,255,${clamp(alpha * 0.36, 0, 0.34)})`;
+    return `rgba(121,228,255,${clamp(alpha * (0.22 + targetMix * 0.22) * cloudFade, 0, 0.34)})`;
   }
 
   const tone = Math.round(188 + depth * 54 + particle.seed * 18 - darkness * 24);
   const blueLift = Math.round(5 + depth * 10);
-  return `rgba(${tone},${tone + blueLift},${tone + blueLift * 2},${clamp(alpha * 0.76, 0, 0.82)})`;
+  const cloudLift = Math.round((1 - targetMix) * 18);
+  return `rgba(${tone + cloudLift},${tone + blueLift + cloudLift},${tone + blueLift * 2 + cloudLift},${clamp(alpha * (0.36 + targetMix * 0.4) * cloudFade, 0, 0.82)})`;
 }
 
 function loadMaskSheet(src: string): Promise<MaskSample[][]> {
@@ -583,16 +604,73 @@ function particleDrift(
   particle: Particle,
   progress: number,
   local: number,
+  seconds: number,
 ): { x: number; y: number } {
-  const path = progress * 13 + local * 2.4 + particle.phase;
+  const path =
+    progress * 13 + local * 2.4 + seconds * (0.18 + particle.seed * 0.18) + particle.phase;
   const ribbon = Math.sin(path * (1.15 + particle.seed * 0.42));
   const counter = Math.cos(path * 0.78 + particle.phase * 0.7);
   const strength = 0.002 + particle.lane * 0.007;
 
   return {
-    x: ribbon * strength + Math.sin(progress * 23 + particle.phase) * strength * 0.34,
+    x:
+      ribbon * strength +
+      Math.sin(progress * 23 + seconds * 0.3 + particle.phase) * strength * 0.34,
     y: counter * strength * 0.72,
   };
+}
+
+function particleCloud(
+  particle: Particle,
+  progress: number,
+  seconds: number,
+  fieldWidth: number,
+  fieldHeight: number,
+): { fade: number; x: number; y: number } {
+  const sweep = progress * 1.6 + seconds * (0.035 + particle.seed * 0.022);
+  const ribbon = Math.sin(particle.phase + sweep * 2.1);
+  const counter = Math.cos(particle.phase * 0.7 + sweep * 1.4);
+  const diagonal = (particle.homeX - particle.homeY) * 0.12;
+  const lanePush = (particle.lane - 0.5) * 0.24;
+  const x =
+    particle.homeX * fieldWidth * 0.56 +
+    diagonal +
+    lanePush +
+    ribbon * (0.026 + particle.seed * 0.03);
+  const y =
+    particle.homeY * fieldHeight * 0.5 +
+    particle.homeX * 0.14 +
+    counter * (0.026 + (1 - particle.seed) * 0.028);
+  const centerFalloff =
+    1 - clamp((Math.abs(particle.homeX) + Math.abs(particle.homeY)) * 0.24, 0, 0.42);
+  const wave = 0.86 + Math.sin(seconds * 0.42 + particle.phase) * 0.14;
+
+  return {
+    fade: clamp(centerFalloff * wave, 0.36, 1),
+    x,
+    y,
+  };
+}
+
+function paintParticleAtmosphere(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  progress: number,
+  seconds: number,
+) {
+  const glow = 0.28 + smoothstep(0.12, 0.42, progress) * 0.38;
+  const drift = Math.sin(seconds * 0.08) * width * 0.04;
+  const gradient = context.createLinearGradient(drift, 0, width - drift, height);
+  gradient.addColorStop(0, `rgba(121,228,255,${0.035 * glow})`);
+  gradient.addColorStop(0.5, `rgba(255,255,255,${0.018 * glow})`);
+  gradient.addColorStop(1, `rgba(245,199,106,${0.026 * glow})`);
+
+  context.save();
+  context.globalCompositeOperation = 'screen';
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, width, height);
+  context.restore();
 }
 
 function seeded(value: number) {
