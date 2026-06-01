@@ -46,6 +46,7 @@ body {
 
 html {
   scrollbar-gutter: stable;
+  overscroll-behavior: none;
 }
 
 body {
@@ -59,6 +60,17 @@ body {
   font-family: "Songti SC", "Noto Serif SC", "Source Han Serif SC", STSong, SimSun, Georgia, serif;
   font-synthesis-weight: none;
   letter-spacing: 0;
+}
+
+.lumen-wordmark {
+  font-family: "Bodoni 72", Didot, "Times New Roman", "Songti SC", serif;
+  font-feature-settings: "liga" 1, "dlig" 1, "swsh" 1;
+  font-size: 30px;
+  font-style: italic;
+  font-synthesis-style: none;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-rendering: geometricPrecision;
 }
 
 /* film grain overlay — gives the entire page that subtle "real photography" texture */
