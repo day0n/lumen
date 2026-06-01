@@ -18,6 +18,7 @@ import {
   IconUser,
   IconX,
 } from '@tabler/icons-react';
+import { motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 
@@ -80,17 +81,34 @@ type UploadPreview = {
 };
 
 const MAX_UPLOAD_IMAGES = 9;
-const SELLING_POINT_KEYS = ['point-1', 'point-2', 'point-3'] as const;
 
 const materialCategories = [
-  { id: 'item', icon: IconPhoto, tone: 'from-[#18332d] via-[#234b43] to-[#101616]' },
-  { id: 'character', icon: IconUser, tone: 'from-[#31283a] via-[#3f3a55] to-[#15151b]' },
-  { id: 'scene', icon: IconPhoto, tone: 'from-[#333018] via-[#4c4720] to-[#17150e]' },
+  {
+    id: 'item',
+    icon: IconPhoto,
+    accent: '#79e4ff',
+  },
+  {
+    id: 'character',
+    icon: IconSparkles,
+    accent: '#ff5fbf',
+  },
+  {
+    id: 'scene',
+    icon: IconUser,
+    accent: '#f5c76a',
+  },
 ] satisfies Array<{
   id: MaterialAssetCategory;
   icon: typeof IconPhoto;
-  tone: string;
+  accent: string;
 }>;
+
+const accentByCategory: Record<MaterialAssetCategory, string> = {
+  item: '#79e4ff',
+  character: '#ff5fbf',
+  scene: '#f5c76a',
+};
 
 const subcategoryOptions: Record<MaterialAssetCategory, string[]> = {
   item: ['美妆护肤', '家居清洁', '数码配件', '服饰鞋包', '食品饮品', '宠物用品', '运动户外'],
@@ -173,70 +191,105 @@ export function MaterialsPage() {
     [locale, t],
   );
 
+  const activeAccent = accentByCategory[activeCategory];
+
   return (
     <div className="relative min-h-screen text-white">
       <AuroraBackdrop />
       <Topbar />
 
-      <main className="relative z-10 mx-auto max-w-[1180px] px-6 pb-24 pt-28">
-        <div className="flex flex-wrap items-start gap-4">
-          <div className="min-w-0">
-            <h1 className="text-[24px] font-bold tracking-tight text-white">
-              {t('materials.title')}
-            </h1>
-            <p className="mt-1 max-w-[620px] text-[12px] leading-5 text-white/38">
-              {t('materials.subtitle')}
-            </p>
+      <main className="relative z-10 mx-auto max-w-[1200px] px-6 pb-24 pt-28">
+        <motion.header
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.32, 0.72, 0, 1] }}
+          className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between"
+        >
+          <div className="flex min-w-0 items-center gap-4">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-white ring-1 ring-white/[0.08]">
+              <IconPhoto size={26} stroke={1.9} />
+            </span>
+            <div className="min-w-0">
+              <h1 className="font-display text-[30px] font-extrabold leading-tight tracking-tight text-white sm:text-[40px]">
+                {t('materials.title')}
+              </h1>
+              <p className="mt-2 max-w-[560px] text-[13px] leading-6 text-white/48 sm:text-[14px]">
+                {t('materials.subtitle')}
+              </p>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setUploadOpen(true)}
-            className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-[13px] font-bold text-[#111315] shadow-[0_16px_34px_rgba(0,0,0,0.28)] transition-transform hover:scale-[1.02] active:scale-[0.99]"
-          >
-            <IconUpload size={16} stroke={2.3} />
-            {t('materials.upload')}
-          </button>
-        </div>
+        </motion.header>
 
-        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
-          {materialCategories.map((category) => {
+        <div className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-3">
+          {materialCategories.map((category, index) => {
             const Icon = category.icon;
             const active = activeCategory === category.id;
+            const accent = category.accent;
             return (
-              <button
+              <motion.button
                 type="button"
                 key={category.id}
                 onClick={() => setActiveCategory(category.id)}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.42, delay: index * 0.05, ease: [0.32, 0.72, 0, 1] }}
                 className={cn(
-                  'group relative min-h-[112px] overflow-hidden rounded-xl p-4 text-left ring-1 transition-colors',
+                  'group relative min-h-[150px] overflow-hidden rounded-[18px] bg-[#1c1e20] p-5 text-left transition-colors',
                   active
-                    ? 'bg-[#202328] ring-white/18'
-                    : 'bg-[#17191b]/88 ring-white/[0.08] hover:bg-[#1d2023]',
+                    ? 'bg-[#222528]'
+                    : 'ring-1 ring-white/[0.07] hover:bg-[#202325] hover:ring-white/[0.14]',
                 )}
+                style={
+                  active
+                    ? { boxShadow: `0 0 0 1.5px ${accent}99, 0 22px 60px -34px ${accent}` }
+                    : undefined
+                }
               >
-                <span
-                  className={cn(
-                    'absolute inset-0 bg-gradient-to-br opacity-70 transition-opacity group-hover:opacity-90',
-                    category.tone,
-                  )}
-                />
-                <span className="relative flex items-start gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.12] text-white/80 ring-1 ring-white/[0.08]">
-                    <Icon size={19} stroke={2.1} />
+                <span className="relative flex items-center justify-between">
+                  <span
+                    className="text-[12px] font-bold tabular-nums"
+                    style={active ? { color: accent } : { color: 'rgba(255,255,255,0.3)' }}
+                  >
+                    {String(index + 1).padStart(2, '0')}
                   </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[15px] font-bold text-white">
-                      {t(`materials.categories.${category.id}.title`)}
-                    </span>
-                    <span className="mt-1 block text-[12px] leading-5 text-white/50">
-                      {t(`materials.categories.${category.id}.desc`)}
-                    </span>
-                  </span>
-                  <span className="rounded-full bg-black/20 px-2 py-0.5 text-[11px] font-bold text-white/62">
+                  <span
+                    className={cn(
+                      'flex h-7 min-w-[28px] items-center justify-center rounded-full border px-2 text-[12px] font-bold tabular-nums',
+                      !active && 'border-white/[0.08] bg-white/[0.04] text-white/60',
+                    )}
+                    style={
+                      active
+                        ? {
+                            backgroundColor: `${accent}1f`,
+                            color: accent,
+                            borderColor: `${accent}55`,
+                          }
+                        : undefined
+                    }
+                  >
                     {counts[category.id] ?? 0}
                   </span>
                 </span>
-              </button>
+                <span className="relative mt-7 flex items-end gap-4">
+                  <span
+                    className={cn(
+                      'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition-colors',
+                      !active && 'bg-white/[0.05] text-white/70 ring-1 ring-white/[0.07]',
+                    )}
+                    style={active ? { backgroundColor: `${accent}1a`, color: accent } : undefined}
+                  >
+                    <Icon size={22} stroke={1.9} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[19px] font-bold leading-none text-white">
+                      {t(`materials.categories.${category.id}.title`)}
+                    </span>
+                    <span className="mt-2.5 block text-[12.5px] leading-5 text-white/42">
+                      {t(`materials.categories.${category.id}.desc`)}
+                    </span>
+                  </span>
+                </span>
+              </motion.button>
             );
           })}
         </div>
@@ -248,38 +301,61 @@ export function MaterialsPage() {
           </div>
         ) : null}
 
-        <section className="mt-6">
-          <div className="mb-3 flex items-center gap-3">
-            <h2 className="text-[16px] font-bold text-white">
-              {t(`materials.categories.${activeCategory}.title`)}
-            </h2>
-            <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-bold text-white/42">
-              {visibleAssets.length}
-            </span>
+        <section className="mt-8">
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: activeAccent }}
+              />
+              <h2 className="text-[18px] font-bold text-white">
+                {t(`materials.categories.${activeCategory}.title`)}
+              </h2>
+              <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-white/[0.05] px-2 text-[12px] font-bold text-white/52 ring-1 ring-white/[0.07]">
+                {visibleAssets.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setUploadOpen(true)}
+              className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-[13px] font-bold text-[#111315] shadow-[0_14px_34px_-22px_rgba(255,255,255,0.9)] transition-transform active:scale-[0.97]"
+            >
+              <IconUpload size={16} stroke={2.3} />
+              {t('materials.upload')}
+            </button>
           </div>
 
           {loading ? (
-            <div className="flex h-[220px] items-center justify-center rounded-xl bg-white/[0.035] text-[13px] text-white/42 ring-1 ring-white/[0.07]">
-              <IconLoader2 size={16} className="mr-2 animate-spin" />
+            <div className="flex h-[280px] items-center justify-center rounded-[18px] bg-[#1c1e20] text-[13px] text-white/48 ring-1 ring-white/[0.07]">
+              <IconLoader2 size={18} className="mr-2 animate-spin" stroke={2.2} />
               {t('common.loading')}
             </div>
           ) : visibleAssets.length === 0 ? (
-            <div className="flex h-[220px] flex-col items-center justify-center rounded-xl bg-white/[0.035] text-center ring-1 ring-white/[0.07]">
-              <IconPhoto size={30} className="text-white/28" stroke={1.8} />
-              <div className="mt-3 text-[13px] font-bold text-white/56">{t('materials.empty')}</div>
+            <div className="flex h-[300px] flex-col items-center justify-center rounded-[18px] bg-[#1c1e20] text-center ring-1 ring-white/[0.07]">
+              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.04] text-white/30 ring-1 ring-white/[0.06]">
+                <IconPhoto size={30} stroke={1.6} />
+              </span>
+              <div className="mt-4 text-[14px] font-semibold text-white/56">
+                {t('materials.empty')}
+              </div>
               <button
                 type="button"
                 onClick={() => setUploadOpen(true)}
-                className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-white/[0.08] px-3 text-[12px] font-bold text-white/76 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.13] hover:text-white"
+                className="mt-5 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/[0.06] px-3.5 text-[12px] font-semibold text-white/78 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1] hover:text-white"
               >
-                <IconPlus size={15} stroke={2.4} />
+                <IconUpload size={15} stroke={2.3} />
                 {t('materials.upload')}
               </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {visibleAssets.map((asset) => (
-                <MaterialCard key={asset.id} asset={asset} onDelete={() => handleDelete(asset)} />
+              {visibleAssets.map((asset, index) => (
+                <MaterialCard
+                  key={asset.id}
+                  asset={asset}
+                  index={index}
+                  onDelete={() => handleDelete(asset)}
+                />
               ))}
             </div>
           )}
@@ -304,42 +380,49 @@ export function MaterialsPage() {
 
 function MaterialCard({
   asset,
+  index,
   onDelete,
 }: {
   asset: MaterialAssetRecord;
+  index: number;
   onDelete: () => Promise<void>;
 }) {
   const { locale, t } = useI18n();
   const [deleting, setDeleting] = useState(false);
   const points = asset.metadata?.sellingPoints ?? [];
   return (
-    <article className="group overflow-hidden rounded-xl bg-[#17191b] ring-1 ring-white/[0.08] transition-colors hover:bg-[#1d2023]">
+    <motion.article
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.42, delay: index * 0.03, ease: [0.32, 0.72, 0, 1] }}
+      className="group overflow-hidden rounded-[18px] bg-[#1c1e20] ring-1 ring-white/[0.07] transition-colors hover:bg-[#222528] hover:ring-white/[0.12]"
+    >
       <button
         type="button"
         onClick={() => window.open(asset.url, '_blank', 'noopener,noreferrer')}
-        className="relative block aspect-[4/3] w-full overflow-hidden bg-[#24272a]"
+        className="relative block aspect-[4/3] w-full overflow-hidden bg-black"
       >
         {asset.thumbnailUrl || asset.url ? (
           <img
             src={asset.thumbnailUrl ?? asset.url}
             alt={asset.title}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
           />
         ) : (
           <span className="flex h-full w-full items-center justify-center text-white/26">
             <IconPhoto size={34} stroke={1.8} />
           </span>
         )}
-        <span className="absolute left-3 top-3 rounded-full bg-black/48 px-2 py-1 text-[10px] font-bold text-white/72 backdrop-blur">
+        <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white/82 backdrop-blur">
           {asset.metadata?.subcategory ?? t(`materials.categories.${asset.category}.title`)}
         </span>
       </button>
 
-      <div className="p-3">
+      <div className="space-y-3 p-3.5">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-bold text-white/88">{asset.title}</div>
-            <div className="mt-1 truncate text-[11px] text-white/36">
+            <div className="truncate text-[14px] font-bold text-white">{asset.title}</div>
+            <div className="mt-1 truncate text-[11px] text-white/38">
               {formatMaterialDate(asset.updatedAt, locale)} · {formatBytes(asset.size)}
             </div>
           </div>
@@ -354,7 +437,7 @@ function MaterialCard({
                 setDeleting(false);
               }
             }}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/34 transition-colors hover:bg-[#ff5d73]/12 hover:text-[#ff9caa] disabled:opacity-45"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/32 transition-colors hover:bg-[#ff5d73]/14 hover:text-[#ff9caa] disabled:opacity-45"
             aria-label={t('materials.delete')}
           >
             {deleting ? (
@@ -365,11 +448,11 @@ function MaterialCard({
           </button>
         </div>
         {points.length ? (
-          <div className="mt-3 flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {points.slice(0, 3).map((point) => (
               <span
                 key={point}
-                className="max-w-full truncate rounded-lg bg-white/[0.055] px-2 py-1 text-[10.5px] font-medium text-white/48 ring-1 ring-white/[0.06]"
+                className="max-w-full truncate rounded-lg bg-white/[0.045] px-2 py-1 text-[10.5px] font-medium text-white/52 ring-1 ring-white/[0.06]"
                 title={point}
               >
                 {point}
@@ -378,7 +461,7 @@ function MaterialCard({
           </div>
         ) : null}
       </div>
-    </article>
+    </motion.article>
   );
 }
 
@@ -392,10 +475,11 @@ function UploadMaterialDialog({
   onUploaded: (assets: MaterialAssetRecord[]) => void;
 }) {
   const { locale, t } = useI18n();
-  const [category, setCategory] = useState<MaterialAssetCategory>(activeCategory);
+  const category = activeCategory;
+  const accent = accentByCategory[category];
   const [title, setTitle] = useState('');
   const [subcategory, setSubcategory] = useState(subcategoryOptions[activeCategory][0] ?? '');
-  const [sellingPoints, setSellingPoints] = useState(['', '', '']);
+  const [sellingPointsText, setSellingPointsText] = useState('');
   const [files, setFiles] = useState<UploadPreview[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -405,12 +489,16 @@ function UploadMaterialDialog({
   const filesRef = useRef<UploadPreview[]>([]);
 
   useEffect(() => {
-    setSubcategory(subcategoryOptions[category][0] ?? '');
-  }, [category]);
-
-  useEffect(() => {
     filesRef.current = files;
   }, [files]);
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !uploading) onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose, uploading]);
 
   useEffect(() => {
     return () => {
@@ -457,12 +545,6 @@ function UploadMaterialDialog({
     });
   }, []);
 
-  const updatePoint = useCallback((index: number, value: string) => {
-    setSellingPoints((current) =>
-      current.map((point, pointIndex) => (pointIndex === index ? value : point)),
-    );
-  }, []);
-
   const handleGeneratePoints = useCallback(async () => {
     if (!title.trim()) {
       setError(t('materials.nameRequired'));
@@ -483,11 +565,7 @@ function UploadMaterialDialog({
       if (!response.ok || !payload.ok) {
         throw new Error(payload.ok ? t('materials.pointsFailed') : payload.error.message);
       }
-      setSellingPoints([
-        payload.data.points[0] ?? '',
-        payload.data.points[1] ?? '',
-        payload.data.points[2] ?? '',
-      ]);
+      setSellingPointsText(payload.data.points.filter(Boolean).join('\n'));
     } catch (pointError) {
       setError(pointError instanceof Error ? pointError.message : t('materials.pointsFailed'));
     } finally {
@@ -511,6 +589,10 @@ function UploadMaterialDialog({
       form.append('title', title.trim());
       form.append('category', category);
       form.append('subcategory', subcategory);
+      const sellingPoints = sellingPointsText
+        .split(/\r?\n/)
+        .map((point) => point.trim())
+        .filter(Boolean);
       for (const point of sellingPoints) {
         if (point.trim()) form.append('sellingPoints', point.trim());
       }
@@ -529,21 +611,35 @@ function UploadMaterialDialog({
         setUploading(false);
       }
     },
-    [category, files, locale, onClose, onUploaded, sellingPoints, subcategory, t, title],
+    [category, files, locale, onClose, onUploaded, sellingPointsText, subcategory, t, title],
   );
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/62 px-4 py-8 backdrop-blur-md">
-      <form
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 px-4 py-8 backdrop-blur-xl">
+      <motion.form
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}
         onSubmit={handleSubmit}
-        className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-2xl bg-[#141618] p-5 text-white shadow-[0_28px_90px_rgba(0,0,0,0.58)] ring-1 ring-white/[0.1]"
+        className="max-h-[92vh] w-full max-w-[580px] overflow-y-auto rounded-[22px] bg-[#17191c] p-6 text-white shadow-[0_40px_120px_-50px_rgba(0,0,0,0.95)] ring-1 ring-white/[0.09]"
       >
         <div className="flex items-start gap-3">
-          <div>
-            <h2 className="text-[18px] font-bold text-white">{t('materials.dialogTitle')}</h2>
-            <p className="mt-1 text-[12px] text-white/36">
-              {t(`materials.categories.${category}.title`)}
-            </p>
+          <div className="flex items-center gap-3">
+            <span
+              className="flex h-11 w-11 items-center justify-center rounded-xl"
+              style={{ backgroundColor: `${accent}1a`, color: accent }}
+            >
+              <IconUpload size={20} stroke={2.1} />
+            </span>
+            <div>
+              <h2 className="text-[19px] font-bold text-white">{t('materials.dialogTitle')}</h2>
+              <p
+                className="mt-1.5 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold"
+                style={{ backgroundColor: `${accent}1a`, color: accent }}
+              >
+                {t(`materials.categories.${category}.title`)}
+              </p>
+            </div>
           </div>
           <button
             type="button"
@@ -556,27 +652,8 @@ function UploadMaterialDialog({
           </button>
         </div>
 
-        <div className="mt-5 grid grid-cols-3 gap-2">
-          {materialCategories.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              disabled={uploading}
-              onClick={() => setCategory(item.id)}
-              className={cn(
-                'h-10 rounded-xl text-[12px] font-bold ring-1 transition-colors disabled:opacity-50',
-                category === item.id
-                  ? 'bg-white text-[#111315] ring-white'
-                  : 'bg-white/[0.055] text-white/56 ring-white/[0.07] hover:bg-white/[0.09] hover:text-white',
-              )}
-            >
-              {t(`materials.categories.${item.id}.title`)}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-5">
-          <div className="mb-2 flex items-center justify-between text-[12px] font-bold text-white/48">
+        <div className="mt-6">
+          <div className="mb-2 flex items-center justify-between text-[12px] font-semibold text-white/52">
             <span>{t('materials.images')}</span>
             <span>
               {t('materials.uploadedCount', { count: files.length, max: MAX_UPLOAD_IMAGES })}
@@ -587,22 +664,22 @@ function UploadMaterialDialog({
               type="button"
               disabled={uploading || files.length >= MAX_UPLOAD_IMAGES}
               onClick={() => fileInputRef.current?.click()}
-              className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/16 bg-white/[0.035] text-white/42 transition-colors hover:border-white/28 hover:bg-white/[0.06] hover:text-white/72 disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl bg-white/[0.03] text-white/42 ring-1 ring-dashed ring-white/16 transition-colors hover:bg-white/[0.06] hover:text-white/75 hover:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45"
             >
               <IconPlus size={20} stroke={2.2} />
-              <span className="text-[11px] font-bold">{t('materials.pickImages')}</span>
+              <span className="text-[11px] font-semibold">{t('materials.pickImages')}</span>
             </button>
             {files.map((file) => (
               <div
                 key={file.id}
-                className="group relative aspect-square overflow-hidden rounded-xl bg-[#24272a] ring-1 ring-white/[0.08]"
+                className="group relative aspect-square overflow-hidden rounded-xl bg-black ring-1 ring-white/[0.08]"
               >
                 <img src={file.previewUrl} alt="" className="h-full w-full object-cover" />
                 <button
                   type="button"
                   disabled={uploading}
                   onClick={() => removeFile(file.id)}
-                  className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-lg bg-black/56 text-white/74 opacity-0 transition-opacity group-hover:opacity-100 disabled:opacity-0"
+                  className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-lg bg-black/60 text-white/78 opacity-0 ring-1 ring-white/[0.14] transition-opacity group-hover:opacity-100 disabled:opacity-0"
                   aria-label={t('common.remove')}
                 >
                   <IconX size={13} />
@@ -621,20 +698,20 @@ function UploadMaterialDialog({
         </div>
 
         <label className="mt-5 block">
-          <span className="mb-2 block text-[12px] font-bold text-white/48">
+          <span className="mb-2 block text-[12px] font-semibold text-white/52">
             {t('materials.name')}
           </span>
           <input
             value={title}
             disabled={uploading}
             onChange={(event) => setTitle(event.target.value)}
-            className="h-11 w-full rounded-xl bg-[#0d0f12] px-3 text-[13px] text-white outline-none ring-1 ring-white/[0.08] transition-shadow placeholder:text-white/24 focus:ring-[#79e4ff]/38"
+            className="h-11 w-full rounded-xl bg-[#111315] px-3.5 text-[13px] text-white outline-none ring-1 ring-white/[0.08] transition-colors placeholder:text-white/26 focus:ring-white/24"
             placeholder={t('materials.namePlaceholder')}
           />
         </label>
 
         <label className="mt-4 block">
-          <span className="mb-2 block text-[12px] font-bold text-white/48">
+          <span className="mb-2 block text-[12px] font-semibold text-white/52">
             {t('materials.subcategory')}
           </span>
           <span className="relative block">
@@ -642,10 +719,10 @@ function UploadMaterialDialog({
               value={subcategory}
               disabled={uploading}
               onChange={(event) => setSubcategory(event.target.value)}
-              className="h-11 w-full appearance-none rounded-xl bg-[#0d0f12] px-3 pr-10 text-[13px] text-white outline-none ring-1 ring-white/[0.08] focus:ring-[#79e4ff]/38"
+              className="h-11 w-full appearance-none rounded-xl bg-[#111315] px-3.5 pr-10 text-[13px] text-white outline-none ring-1 ring-white/[0.08] transition-colors focus:ring-white/24"
             >
               {subcategoryOptions[category].map((option) => (
-                <option key={option} value={option} className="bg-[#111315] text-white">
+                <option key={option} value={option} className="bg-[#17191c] text-white">
                   {option}
                 </option>
               ))}
@@ -659,14 +736,14 @@ function UploadMaterialDialog({
 
         <div className="mt-5">
           <div className="mb-2 flex items-center gap-2">
-            <span className="text-[12px] font-bold text-white/48">
+            <span className="text-[12px] font-semibold text-white/52">
               {t('materials.sellingPoints')}
             </span>
             <button
               type="button"
               disabled={uploading || generatingPoints}
               onClick={handleGeneratePoints}
-              className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-white/[0.07] px-2.5 text-[11px] font-bold text-white/68 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.11] hover:text-white disabled:opacity-50"
+              className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-white/[0.05] px-2.5 text-[11px] font-semibold text-white/72 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.09] hover:text-white disabled:opacity-50"
             >
               {generatingPoints ? (
                 <IconLoader2 size={14} className="animate-spin" />
@@ -676,30 +753,25 @@ function UploadMaterialDialog({
               {t('materials.generatePoints')}
             </button>
           </div>
-          <div className="space-y-2">
-            {SELLING_POINT_KEYS.map((key, index) => (
-              <input
-                key={key}
-                value={sellingPoints[index] ?? ''}
-                disabled={uploading}
-                onChange={(event) => updatePoint(index, event.target.value)}
-                className="h-11 w-full rounded-xl bg-[#0d0f12] px-3 text-[13px] text-white outline-none ring-1 ring-white/[0.08] transition-shadow placeholder:text-white/24 focus:ring-[#79e4ff]/38"
-                placeholder={t('materials.sellingPointPlaceholder', { index: index + 1 })}
-              />
-            ))}
-          </div>
+          <textarea
+            value={sellingPointsText}
+            disabled={uploading}
+            onChange={(event) => setSellingPointsText(event.target.value)}
+            className="min-h-[108px] w-full resize-none rounded-xl bg-[#111315] px-3.5 py-3 text-[13px] leading-5 text-white outline-none ring-1 ring-white/[0.08] transition-colors placeholder:text-white/26 focus:ring-white/24"
+            placeholder={t('materials.sellingPointPlaceholder')}
+          />
         </div>
 
         {uploading ? (
-          <div className="mt-5 rounded-xl bg-white/[0.045] p-3 ring-1 ring-white/[0.07]">
-            <div className="mb-2 flex items-center justify-between text-[12px] font-bold text-white/54">
+          <div className="mt-5 rounded-xl bg-white/[0.035] p-3 ring-1 ring-white/[0.07]">
+            <div className="mb-2 flex items-center justify-between text-[12px] font-semibold text-white/58">
               <span>{t('materials.uploading')}</span>
               <span>{uploadProgress}%</span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-black/30">
+            <div className="h-2 overflow-hidden rounded-full bg-black/40">
               <div
-                className="h-full rounded-full bg-[#79e4ff] transition-all duration-200"
-                style={{ width: `${uploadProgress}%` }}
+                className="h-full rounded-full transition-all duration-200"
+                style={{ width: `${uploadProgress}%`, backgroundColor: accent }}
               />
             </div>
           </div>
@@ -711,29 +783,29 @@ function UploadMaterialDialog({
           </div>
         ) : null}
 
-        <div className="mt-5 flex items-center gap-2">
+        <div className="mt-6 flex items-center gap-2">
           <button
             type="button"
             disabled={uploading}
             onClick={onClose}
-            className="h-10 flex-1 rounded-xl bg-white/[0.07] text-[13px] font-bold text-white/68 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.1] hover:text-white disabled:opacity-50"
+            className="h-10 flex-1 rounded-xl bg-white/[0.05] text-[13px] font-semibold text-white/72 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.09] hover:text-white disabled:opacity-50"
           >
             {t('common.close')}
           </button>
           <button
             type="submit"
             disabled={uploading}
-            className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-white text-[13px] font-bold text-[#111315] transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-white text-[13px] font-bold text-[#111315] transition-transform active:scale-[0.97] disabled:opacity-50"
           >
             {uploading ? (
               <IconLoader2 size={15} className="animate-spin" />
             ) : (
-              <IconCheck size={15} />
+              <IconCheck size={15} stroke={2.4} />
             )}
             {t('materials.confirmUpload')}
           </button>
         </div>
-      </form>
+      </motion.form>
     </div>
   );
 }
