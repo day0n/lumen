@@ -360,6 +360,11 @@ const defaultModels: Record<NodeKind, ModelOption[]> = {
       label: 'Doubao TTS',
       badges: ['canvas.models.chineseVoice', 'canvas.models.quick', '5 ~ 10s'],
     },
+    {
+      id: 'suno-music',
+      label: 'Suno Music',
+      badges: ['canvas.models.music', 'Suno', '60 ~ 180s'],
+    },
   ],
 };
 

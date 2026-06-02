@@ -315,6 +315,7 @@ const en = {
       chineseVoice: 'Chinese voice',
       quick: 'Quick',
       autoEdit: 'Auto edit',
+      music: 'Music',
     },
   },
   chat: {
@@ -898,6 +899,7 @@ const zh: typeof en = {
       chineseVoice: '中文配音',
       quick: '快速',
       autoEdit: '自动剪辑',
+      music: '音乐生成',
     },
   },
   chat: {

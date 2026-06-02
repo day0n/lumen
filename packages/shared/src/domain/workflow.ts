@@ -25,6 +25,7 @@ export const WorkflowModelCatalog = {
   audio: [
     { id: 'fish-tts', label: 'Fish TTS' },
     { id: 'doubao-tts', label: 'Doubao TTS' },
+    { id: 'suno-music', label: 'Suno Music' },
   ],
 } as const;
 

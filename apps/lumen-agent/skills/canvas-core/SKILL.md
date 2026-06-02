@@ -47,6 +47,15 @@ Default production-backed models:
 - `video`: `veo-3.1`
 - `audio`: `fish-tts`
 
+Audio node models:
+
+- `fish-tts` (default): voiceover / narration / spoken text-to-speech.
+- `suno-music`: full music / song generation (KIE Suno). Use this when the user
+  asks for background music, a song, a jingle, a soundtrack, or BGM. The node
+  `prompt` describes the music (style, mood, genre, optional lyrics). Set
+  `settings.instrumental: true` for an instrumental track with no vocals. A
+  music run takes roughly 60–180s. The output is an audio URL, same as TTS.
+
 Avoid placeholder / non-production models such as `doubao-seed-2.0-pro`,
 `doubao-seedream-3.0`, `seedance-1.5-pro`, and `doubao-tts` unless the user
 explicitly asks for them.
@@ -77,7 +86,8 @@ Typical layers:
 3. Script nodes: hook, short spoken script, captions, CTA.
 4. Visual nodes: one or more image nodes for key frames or scenes.
 5. Motion nodes: one video node per important scene or final video output.
-6. Audio nodes: voiceover, sound style, or music notes when needed.
+6. Audio nodes: voiceover (`fish-tts`) for spoken script, or music (`suno-music`)
+   for background music / songs / BGM when needed.
 7. Final edit node: for multi-clip output, add one rightmost `video` node with
    `modelId: "lumen-video-edit"` and connect every source video clip to it.
 
