@@ -41,6 +41,7 @@ export interface ChatTimelineItem {
   detail?: string;
   createdAt: number;
   durationMs?: number;
+  toolCallId?: string;
   toolName?: string;
   eventName?: string;
   payload?: Record<string, unknown>;
@@ -740,6 +741,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
         status: 'running',
         title: translate('en', 'chat.timeline.callTool', { tool: formatToolName(toolName, 'en') }),
         detail: summarizeArguments(args),
+        toolCallId,
         toolName,
         payload: args,
         createdAt,
@@ -764,6 +766,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
           item.error ??
           formatToolResultDetail(readNumber(item.duration_ms), readNumber(item.output_size_bytes)),
         durationMs: readNumber(item.duration_ms) ?? undefined,
+        toolCallId,
         toolName,
         createdAt,
       });
@@ -781,6 +784,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
         status: workflowTimelineStatus(eventName, data),
         title: formatWorkflowEventTitle(eventName, data, 'en'),
         detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName),
+        toolCallId: item.tool_call_id ?? `history-${index}`,
         toolName,
         eventName,
         payload: data,
@@ -919,6 +923,7 @@ function handleEvent(
           status: 'running',
           title: tt('chat.timeline.callTool', { tool: formatToolName(toolName, locale) }),
           detail: summarizeArguments(args),
+          toolCallId,
           toolName,
           payload: args,
           createdAt: Date.now(),
@@ -940,6 +945,7 @@ function handleEvent(
           status: workflowTimelineStatus(eventName, data),
           title: formatWorkflowEventTitle(eventName, data, locale),
           detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName, locale),
+          toolCallId,
           toolName,
           eventName,
           payload: data,
@@ -967,6 +973,7 @@ function handleEvent(
               : tt('chat.timeline.toolDone', { tool: formatToolName(toolName, locale) }),
           detail: error ?? formatToolResultDetail(durationMs, bytes),
           durationMs: durationMs ?? undefined,
+          toolCallId,
           toolName,
           createdAt: Date.now(),
         }),
@@ -985,6 +992,7 @@ function handleEvent(
           status: 'error',
           title: tt('chat.timeline.toolFailed', { tool: formatToolName(toolName, locale) }),
           detail: error,
+          toolCallId,
           toolName,
           createdAt: Date.now(),
         }),

@@ -18,6 +18,7 @@ import {
   IconArrowUp,
   IconBrain,
   IconCheck,
+  IconChevronDown,
   IconCircleDot,
   IconCopy,
   IconExternalLink,
@@ -761,6 +762,11 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }
 
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
+  return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+}
+
 function LumenOrb({ active }: { active: boolean }) {
   return (
     <span className="relative flex h-10 w-10 items-center justify-center">
@@ -854,7 +860,6 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
   const isFailed = message.status === 'failed';
   const liveLabel = getLiveLabel(message, t);
   const richContent = parseRichMessageContent(message.content);
-  const inspirationResults = extractInspirationResults(message.events);
 
   return (
     <motion.li
@@ -874,7 +879,6 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         ) : null}
 
         {isStreaming ? <ThinkingLine label={liveLabel} /> : null}
-        <InspirationResultGrid items={inspirationResults} />
         <Timeline items={message.events} />
         {message.content && !isStreaming && !isFailed ? <MessageActions /> : null}
 
@@ -1070,7 +1074,13 @@ function MediaPreviewList({ media }: { media: MediaAttachment[] }) {
   );
 }
 
-function InspirationResultGrid({ items }: { items: InspirationCardItem[] }) {
+function InspirationResultGrid({
+  compact = false,
+  items,
+}: {
+  compact?: boolean;
+  items: InspirationCardItem[];
+}) {
   const { locale } = useI18n();
   if (items.length === 0) return null;
 
@@ -1078,12 +1088,12 @@ function InspirationResultGrid({ items }: { items: InspirationCardItem[] }) {
   const openLabel = locale === 'zh' ? '打开原图' : 'Open image';
 
   return (
-    <div className="mt-4 max-w-[94%]">
+    <div className={compact ? 'mt-3' : 'mt-4 max-w-[94%]'}>
       <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold leading-5 text-white/58">
         <IconPhoto size={15} stroke={2.2} className="text-[#8ee7ff]/78" />
         <span>{title}</span>
       </div>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+      <div className={cn('grid gap-2.5', compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3')}>
         {items.map((item, index) => (
           <a
             key={item.url}
@@ -1092,13 +1102,13 @@ function InspirationResultGrid({ items }: { items: InspirationCardItem[] }) {
             rel="noreferrer"
             className={cn(
               'group overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.045] transition-colors hover:border-white/[0.2] hover:bg-white/[0.07]',
-              index === 0 || index === 3 ? 'sm:col-span-2' : '',
+              !compact && (index === 0 || index === 3) ? 'sm:col-span-2' : '',
             )}
           >
             <div
               className={cn(
                 'bg-black/30',
-                index === 0 || index === 3 ? 'aspect-[16/9]' : 'aspect-[4/3]',
+                !compact && (index === 0 || index === 3) ? 'aspect-[16/9]' : 'aspect-[4/3]',
               )}
             >
               <img
@@ -1129,38 +1139,250 @@ function InspirationResultGrid({ items }: { items: InspirationCardItem[] }) {
 
 function Timeline({ items }: { items?: ChatTimelineItem[] }) {
   const { t } = useI18n();
-  const visible = (items ?? []).filter((item) => item.kind !== 'connection').slice(-12);
+  const runs = buildToolActivityRuns(items).slice(-10);
+  const errors = (items ?? [])
+    .filter((item) => item.kind === 'error' && !item.toolCallId)
+    .slice(-3);
 
-  if (visible.length === 0) return null;
+  if (runs.length === 0 && errors.length === 0) return null;
 
   return (
     <div className="mt-4 max-w-[94%] space-y-2">
-      {visible.map((item) => (
-        <div
+      {runs.map((run) => (
+        <ToolActivityItem key={run.id} run={run} />
+      ))}
+      {errors.map((item) => (
+        <TimelineStandaloneItem
           key={item.id}
-          className="group flex min-w-0 items-start gap-2.5 rounded-[10px] border border-white/[0.06] bg-white/[0.035] px-2.5 py-2 text-[12px] leading-5 text-white/42"
-        >
-          <TimelineIcon item={item} />
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 truncate font-semibold text-white/72">{item.title}</span>
-              <span
-                className={cn(
-                  'shrink-0 rounded-full border px-1.5 py-0 text-[10px] font-medium leading-[16px]',
-                  timelineBadgeClass(item.status),
-                )}
-              >
-                {timelineStatusLabel(item, t)}
-              </span>
-            </div>
-            {item.detail ? (
-              <div className="mt-0.5 min-w-0 truncate text-white/38">{item.detail}</div>
-            ) : null}
-          </div>
-        </div>
+          item={item}
+          statusLabel={timelineStatusLabel(item, t)}
+        />
       ))}
     </div>
   );
+}
+
+interface ToolActivityRun {
+  id: string;
+  createdAt: number;
+  status: ChatTimelineItem['status'];
+  root?: ChatTimelineItem;
+  events: ChatTimelineItem[];
+}
+
+function ToolActivityItem({ run }: { run: ToolActivityRun }) {
+  const { t } = useI18n();
+  const title = toolRunTitle(run);
+  const detail = toolRunDetail(run);
+  const richItems = extractInspirationResults(run.events);
+  const hasChildren = Boolean(detail) || run.events.length > 0 || richItems.length > 0;
+  const defaultOpen = run.status === 'running' || richItems.length > 0 || run.status === 'error';
+
+  return (
+    <details
+      open={defaultOpen}
+      className="group overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.035] text-[12px] leading-5 text-white/46"
+    >
+      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2.5 px-2.5 py-2 outline-none transition-colors hover:bg-white/[0.035] [&::-webkit-details-marker]:hidden">
+        <ToolRunIcon status={run.status} />
+        <span className="min-w-0 flex-1 truncate font-semibold text-white/76">{title}</span>
+        {run.root?.durationMs ? (
+          <span className="shrink-0 text-[11px] font-medium text-white/32">
+            {formatDuration(run.root.durationMs)}
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            'shrink-0 rounded-full border px-1.5 py-0 text-[10px] font-medium leading-[16px]',
+            timelineBadgeClass(run.status),
+          )}
+        >
+          {timelineStatusLabel({ ...(run.root ?? run.events[0]!), status: run.status }, t)}
+        </span>
+        {hasChildren ? (
+          <IconChevronDown
+            size={14}
+            stroke={2.2}
+            className="shrink-0 text-white/30 transition-transform group-open:rotate-180"
+          />
+        ) : null}
+      </summary>
+
+      {hasChildren ? (
+        <div className="border-t border-white/[0.055] px-2.5 pb-2.5 pt-2">
+          {detail ? <div className="mb-2 min-w-0 break-words text-white/42">{detail}</div> : null}
+          {run.events.length > 0 ? (
+            <div className="space-y-1.5">
+              {run.events.slice(-5).map((event) => (
+                <ToolEventRow key={event.id} item={event} />
+              ))}
+            </div>
+          ) : null}
+          <InspirationResultGrid items={richItems} compact />
+        </div>
+      ) : null}
+    </details>
+  );
+}
+
+function ToolEventRow({ item }: { item: ChatTimelineItem }) {
+  const progress = readProgress(item.payload?.progress);
+
+  return (
+    <div className="rounded-md bg-black/18 px-2 py-1.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <span
+          className={cn(
+            'h-1.5 w-1.5 shrink-0 rounded-full',
+            item.status === 'running'
+              ? 'bg-[#79e4ff]'
+              : item.status === 'success'
+                ? 'bg-[#7ee787]'
+                : item.status === 'error'
+                  ? 'bg-[#ff7b8a]'
+                  : 'bg-white/30',
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate font-medium text-white/58">{item.title}</span>
+      </div>
+      {item.detail ? (
+        <div className="mt-0.5 min-w-0 truncate pl-3.5 text-[11px] text-white/34">
+          {item.detail}
+        </div>
+      ) : null}
+      {progress !== null && item.status === 'running' ? (
+        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.07]">
+          <div
+            className="h-full rounded-full bg-[#79e4ff]/75 transition-all duration-300"
+            style={{ width: `${Math.max(8, Math.round(progress * 100))}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TimelineStandaloneItem({
+  item,
+  statusLabel,
+}: {
+  item: ChatTimelineItem;
+  statusLabel: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-2.5 rounded-lg border border-white/[0.07] bg-white/[0.035] px-2.5 py-2 text-[12px] leading-5 text-white/42">
+      <TimelineIcon item={item} />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate font-semibold text-white/72">{item.title}</span>
+          <span
+            className={cn(
+              'shrink-0 rounded-full border px-1.5 py-0 text-[10px] font-medium leading-[16px]',
+              timelineBadgeClass(item.status),
+            )}
+          >
+            {statusLabel}
+          </span>
+        </div>
+        {item.detail ? (
+          <div className="mt-0.5 min-w-0 truncate text-white/38">{item.detail}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function buildToolActivityRuns(items: ChatTimelineItem[] | undefined): ToolActivityRun[] {
+  const runs = new Map<string, ToolActivityRun>();
+
+  const ensureRun = (id: string, createdAt: number): ToolActivityRun => {
+    const existing = runs.get(id);
+    if (existing) return existing;
+    const run: ToolActivityRun = {
+      id,
+      createdAt,
+      status: 'info',
+      events: [],
+    };
+    runs.set(id, run);
+    return run;
+  };
+
+  for (const item of items ?? []) {
+    if (item.kind !== 'tool' && item.kind !== 'act_event') continue;
+    const id = item.toolCallId ?? parseToolCallId(item);
+    if (!id) continue;
+    const run = ensureRun(id, item.createdAt);
+    if (item.kind === 'tool') {
+      run.root = item;
+      run.createdAt = Math.min(run.createdAt, item.createdAt);
+    } else {
+      const index = run.events.findIndex((event) => event.id === item.id);
+      if (index === -1) run.events.push(item);
+      else run.events[index] = item;
+    }
+    run.status = deriveToolRunStatus(run);
+  }
+
+  return [...runs.values()].sort((a, b) => a.createdAt - b.createdAt);
+}
+
+function deriveToolRunStatus(run: ToolActivityRun): ChatTimelineItem['status'] {
+  if (run.root?.status === 'error' || run.events.some((event) => event.status === 'error')) {
+    return 'error';
+  }
+  if (
+    run.root?.status === 'running' ||
+    run.root?.status === 'queued' ||
+    run.events.some((event) => event.status === 'running' || event.status === 'queued')
+  ) {
+    return 'running';
+  }
+  if (run.root?.status === 'success' || run.events.some((event) => event.status === 'success')) {
+    return 'success';
+  }
+  return run.root?.status ?? run.events.at(-1)?.status ?? 'info';
+}
+
+function toolRunTitle(run: ToolActivityRun): string {
+  if (run.status === 'running' && run.root?.title) return run.root.title;
+  const event =
+    [...run.events].reverse().find((item) => item.status !== 'info') ?? run.events.at(-1);
+  return event?.title ?? run.root?.title ?? run.root?.toolName ?? 'Tool';
+}
+
+function toolRunDetail(run: ToolActivityRun): string | undefined {
+  if (run.status === 'running') return run.root?.detail;
+  const event = [...run.events].reverse().find((item) => item.detail);
+  return event?.detail ?? run.root?.detail;
+}
+
+function parseToolCallId(item: ChatTimelineItem): string | null {
+  if (item.id.startsWith('tool.event.')) {
+    return item.id.split('.')[2] ?? null;
+  }
+  if (item.id.startsWith('tool.')) return item.id.slice('tool.'.length) || null;
+  return null;
+}
+
+function ToolRunIcon({ status }: { status: ChatTimelineItem['status'] }) {
+  const className = cn(
+    'flex h-4 w-4 shrink-0 items-center justify-center',
+    status === 'running'
+      ? 'text-[#79e4ff]'
+      : status === 'success'
+        ? 'text-[#7ee787]'
+        : status === 'error'
+          ? 'text-[#ff7b8a]'
+          : 'text-white/34',
+  );
+
+  if (status === 'running') {
+    return <IconLoader2 size={15} className={cn(className, 'animate-spin')} stroke={2.4} />;
+  }
+  if (status === 'success') return <IconCheck size={15} className={className} stroke={2.6} />;
+  if (status === 'error') return <IconX size={15} className={className} stroke={2.6} />;
+  return <IconTool size={15} className={className} stroke={2.2} />;
 }
 
 function TimelineIcon({ item }: { item: ChatTimelineItem }) {
@@ -1284,6 +1506,11 @@ function parseInspirationItem(raw: unknown): InspirationCardItem | null {
 
 function readText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readProgress(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(1, value));
 }
 
 function Composer({
