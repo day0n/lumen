@@ -162,9 +162,9 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
 
       const progress = displayedProgressRef.current;
       const intro = 1 - smoothstep(0.08, 0.22, progress);
-      const story = smoothstep(0.26, 0.36, progress);
+      const story = smoothstep(0.22, 0.3, progress);
       const particleReveal = 0.22 + smoothstep(0.04, 0.2, progress) * 0.78;
-      const particleGather = smoothstep(0.19, 0.35, progress);
+      const particleGather = smoothstep(0.13, 0.24, progress);
       const sceneProgress = clamp((progress - 0.26) / 0.7, 0, 1);
       const scaled = sceneProgress * STORY_SCENES.length;
       const scene = Math.min(STORY_SCENES.length - 1, Math.floor(scaled));
@@ -173,33 +173,17 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
       const sceneMorph = smoothstep(0.42, 1, local);
       const sceneDisperse =
         story * smoothstep(0.22, 0.48, local) * (1 - smoothstep(0.64, 0.94, local)) * 0.66;
-      const spriteProgress = reducedMotion ? 0 : smoothstep(0.08, 0.92, local);
+      const seconds = time / 1000;
+      const scrollSpriteProgress = smoothstep(0.08, 0.92, local);
+      const timeSpriteProgress = pingPong(seconds * 0.34 + scene * 0.31);
+      const spriteProgress = reducedMotion
+        ? 0
+        : clamp(lerp(scrollSpriteProgress, timeSpriteProgress, 0.46), 0, 1);
       const spriteScaled = spriteProgress * (SPRITE_FRAME_COUNT - 1);
       const frameA = Math.floor(spriteScaled);
       const frameB = Math.min(SPRITE_FRAME_COUNT - 1, frameA + 1);
       const frameMorph = smoothstep(0, 1, spriteScaled - frameA);
-      const seconds = time / 1000;
       const now = performance.now();
-      const debugTargetMix = clamp(particleGather * (1 - sceneDisperse), 0, 1);
-
-      if (process.env.NODE_ENV !== 'production') {
-        (
-          window as typeof window & {
-            __lumenParticlePhase?: Record<string, number>;
-            __lumenParticleTargetPreview?: Point[];
-          }
-        ).__lumenParticlePhase = {
-          debugTargetMix,
-          local,
-          progress,
-          scene,
-          sceneDisperse,
-          story,
-          targetProgress,
-        };
-        (window as typeof window & { __lumenParticleTargetPreview?: Point[] })
-          .__lumenParticleTargetPreview = (targets[scene]?.[frameA] ?? []).slice(0, 12);
-      }
 
       if (now - lastStateUpdate > 55) {
         lastStateUpdate = now;
@@ -242,7 +226,7 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
           const frameDarkness = lerp(a.darkness, b.darkness, frameMorph);
           const targetX = lerp(frameX, c.x, sceneMorph) + swirl.x;
           const targetY = lerp(frameY, c.y, sceneMorph) + swirl.y;
-          const targetMix = debugTargetMix;
+          const targetMix = clamp(particleGather * (1 - sceneDisperse), 0, 1);
           const x = lerp(cloud.x, targetX, targetMix) * scale;
           const y = lerp(cloud.y, targetY, targetMix) * scale;
           const depth = lerp(frameZ, c.z, sceneMorph);
@@ -268,15 +252,6 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
     Promise.all(STORY_SCENES.map((sceneItem) => loadMaskSheet(SPRITE_SHEETS[sceneItem.key])))
       .then((loadedFrames) => {
         if (disposed) return;
-        if (process.env.NODE_ENV !== 'production') {
-          (
-            window as typeof window & {
-              __lumenParticleMasks?: number[][];
-            }
-          ).__lumenParticleMasks = loadedFrames.map((sceneFrames) =>
-            sceneFrames.map((samples) => samples.length),
-          );
-        }
         maskFrames = loadedFrames;
         rebuild();
       })
@@ -715,6 +690,11 @@ function clamp(value: number, min: number, max: number) {
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
+}
+
+function pingPong(value: number) {
+  const folded = value % 2;
+  return folded > 1 ? 2 - folded : folded;
 }
 
 function smoothstep(edge0: number, edge1: number, value: number) {
