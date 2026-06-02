@@ -813,7 +813,7 @@ function WelcomeMessage() {
       transition={{ duration: 0.26, ease: [0.32, 0.72, 0, 1] }}
       className="mt-auto pb-3"
     >
-      <div className="max-w-[90%] text-[17px] font-semibold leading-[1.5] text-white/92">
+      <div className="max-w-[90%] text-[14px] font-medium leading-6 text-white/72">
         {t('chat.welcome')}
       </div>
     </motion.div>
@@ -870,7 +870,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         {message.content ? (
           <div
             className={cn(
-              'max-w-[92%] text-[17px] font-semibold leading-[1.55] text-white/92',
+              'max-w-[92%] text-[14px] font-medium leading-6 text-white/72',
               hasActivity ? 'mt-4' : '',
             )}
           >
@@ -882,15 +882,15 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         {message.content && !isStreaming && !isFailed ? <MessageActions /> : null}
 
         {isFailed ? (
-          <div className="mt-3 text-[13px] leading-6 text-[#ff9aa6]">
+          <div className="mt-3 text-[14px] font-medium leading-6 text-[#ff9aa6]">
             {message.error ?? t('chat.failed')}
           </div>
         ) : null}
 
         {message.thinking?.trim() && !isStreaming ? (
-          <details className="mt-3 max-w-[92%] text-[12px] text-white/38">
+          <details className="mt-3 max-w-[92%] text-[14px] font-medium leading-6 text-white/42">
             <summary className="cursor-pointer list-none marker:hidden">{thinkingLabel}</summary>
-            <div className="mt-1 whitespace-pre-wrap break-words leading-5">
+            <div className="mt-1 whitespace-pre-wrap break-words leading-6">
               {message.thinking.trim()}
             </div>
           </details>
@@ -939,12 +939,7 @@ function RichMessageText({ blocks }: { blocks: MarkdownBlock[] }) {
             <div
               key={blockKey}
               className={cn(
-                'font-bold leading-snug text-white/95',
-                block.level <= 1
-                  ? 'text-[18px]'
-                  : block.level === 2
-                    ? 'text-[16px]'
-                    : 'text-[15px]',
+                'text-[14px] font-medium leading-6 text-white/78',
                 blockIndex > 0 ? 'mt-1' : '',
               )}
             >
@@ -1006,7 +1001,7 @@ function renderInlines(nodes: InlineNode[], blockIndex: number) {
     }
     if (node.kind === 'bold') {
       return (
-        <strong key={key} className="font-bold text-white">
+        <strong key={key} className="font-medium text-white/82">
           {node.text}
         </strong>
       );
@@ -1061,7 +1056,7 @@ function MediaPreviewList({ media }: { media: MediaAttachment[] }) {
             href={item.url}
             target="_blank"
             rel="noreferrer"
-            className="block truncate border-t border-white/[0.08] px-3 py-2 text-[12px] font-medium leading-5 text-white/54 transition-colors hover:text-white/82"
+            className="block truncate border-t border-white/[0.08] px-3 py-2 text-[14px] font-medium leading-6 text-white/54 transition-colors hover:text-white/82"
           >
             {item.label}
           </a>
@@ -1086,7 +1081,7 @@ function InspirationResultGrid({
 
   return (
     <div className={compact ? 'mt-3' : 'mt-4 max-w-[94%]'}>
-      <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold leading-5 text-white/58">
+      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium leading-6 text-white/58">
         <IconPhoto size={15} stroke={2.2} className="text-[#8ee7ff]/78" />
         <span>{title}</span>
       </div>
@@ -1117,12 +1112,12 @@ function InspirationResultGrid({
             </div>
             <div className="min-w-0 px-2.5 py-2">
               <div className="flex min-w-0 items-center gap-1.5">
-                <span className="min-w-0 flex-1 truncate text-[12px] font-semibold leading-5 text-white/82">
+                <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-6 text-white/78">
                   {item.title}
                 </span>
                 <IconExternalLink size={12} stroke={2.2} className="shrink-0 text-white/34" />
               </div>
-              <div className="mt-0.5 truncate text-[11px] leading-4 text-white/38">
+              <div className="mt-0.5 truncate text-[14px] font-medium leading-6 text-white/38">
                 {[item.category, ...item.tags.slice(0, 2)].filter(Boolean).join(' · ')}
               </div>
               <div className="sr-only">{openLabel}</div>
@@ -1186,19 +1181,15 @@ function ToolActivityItem({ run }: { run: ToolActivityRun }) {
   const inlineStatus = toolRunInlineStatus(run.status, t);
 
   return (
-    <details open={defaultOpen} className="group text-[12px] leading-5 text-white/46">
+    <details open={defaultOpen} className="group text-[14px] font-medium leading-6 text-white/46">
       <summary className="-ml-[19px] flex min-w-0 cursor-pointer list-none items-center gap-2 py-1.5 pr-1 outline-none transition-colors hover:text-white/72 [&::-webkit-details-marker]:hidden">
         <TimelineDot status={run.status} />
-        <span className="min-w-0 flex-1 truncate font-semibold text-white/64">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-white/68">{title}</span>
         {run.root?.durationMs ? (
-          <span className="shrink-0 text-[11px] font-medium text-white/30">
-            {formatDuration(run.root.durationMs)}
-          </span>
+          <span className="shrink-0 text-white/34">{formatDuration(run.root.durationMs)}</span>
         ) : null}
         {inlineStatus ? (
-          <span className={cn('shrink-0 text-[11px] font-medium', inlineStatus.className)}>
-            {inlineStatus.label}
-          </span>
+          <span className={cn('shrink-0', inlineStatus.className)}>{inlineStatus.label}</span>
         ) : null}
         {hasDetails ? (
           <IconChevronDown
@@ -1211,7 +1202,7 @@ function ToolActivityItem({ run }: { run: ToolActivityRun }) {
 
       {hasDetails ? (
         <div className="pb-2 pl-3">
-          {detail ? <div className="mb-1 min-w-0 break-words text-white/38">{detail}</div> : null}
+          {detail ? <div className="mb-1 min-w-0 break-words text-white/42">{detail}</div> : null}
           {visibleEvents.length > 0 ? (
             <div className="space-y-1">
               {visibleEvents.slice(-5).map((event) => (
@@ -1244,12 +1235,10 @@ function ToolEventRow({ item }: { item: ChatTimelineItem }) {
                   : 'bg-white/30',
           )}
         />
-        <span className="min-w-0 flex-1 truncate font-medium text-white/48">{item.title}</span>
+        <span className="min-w-0 flex-1 truncate text-white/48">{item.title}</span>
       </div>
       {item.detail ? (
-        <div className="mt-0.5 min-w-0 truncate pl-3.5 text-[11px] text-white/30">
-          {item.detail}
-        </div>
+        <div className="mt-0.5 min-w-0 truncate pl-3.5 text-white/34">{item.detail}</div>
       ) : null}
       {progress !== null && item.status === 'running' ? (
         <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.07]">
@@ -1276,14 +1265,12 @@ function TimelineStandaloneItem({
     <div className="-ml-[19px] pb-2">
       <div className="flex min-w-0 items-center gap-2 py-1.5 pr-1">
         <TimelineDot status={item.status} />
-        <span className="min-w-0 flex-1 truncate font-semibold text-white/64">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-white/68">{title}</span>
         {inlineStatus ? (
-          <span className={cn('shrink-0 text-[11px] font-medium', inlineStatus.className)}>
-            {inlineStatus.label}
-          </span>
+          <span className={cn('shrink-0', inlineStatus.className)}>{inlineStatus.label}</span>
         ) : null}
       </div>
-      {item.detail ? <div className="pl-8 text-[12px] text-white/34">{item.detail}</div> : null}
+      {item.detail ? <div className="pl-8 text-white/38">{item.detail}</div> : null}
     </div>
   );
 }
@@ -1463,7 +1450,7 @@ function ThinkingLine({ label }: { label: string }) {
     <motion.div
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-4 inline-flex items-center gap-2 text-[12px] font-semibold text-white/46"
+      className="mt-4 inline-flex items-center gap-2 text-[14px] font-medium leading-6 text-white/46"
     >
       <span>{label}</span>
       <IconLoader2 size={13} className="animate-spin text-[#79e4ff]/70" stroke={2.4} />
