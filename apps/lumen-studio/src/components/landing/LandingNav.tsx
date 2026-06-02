@@ -35,13 +35,13 @@ export function LandingNav({ onHomeIntent }: LandingNavProps) {
       <div
         aria-hidden
         className={cn(
-          'pointer-events-none absolute left-1/2 top-1/2 h-12 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/[0.18] blur-3xl transition-opacity duration-300',
+          'pointer-events-none absolute left-1/2 top-1/2 h-9 w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/[0.18] blur-3xl transition-opacity duration-300',
           scrolled ? 'opacity-100' : 'opacity-0',
         )}
       />
-      <div className="pointer-events-auto relative mx-auto flex h-[62px] max-w-[1280px] items-center justify-between gap-4 px-[26px] sm:px-10 lg:px-[52px]">
+      <div className="pointer-events-auto relative mx-auto flex h-[50px] max-w-[1280px] items-center justify-between gap-4 px-[26px] sm:px-10 lg:px-[52px]">
         <Link href={localePath('/')} aria-label={t('landing.homeAria')}>
-          <LumenWordmark markSize={24} wordClassName="text-[28px]" />
+          <LumenWordmark markSize={20} wordClassName="text-[22px]" />
         </Link>
 
         <div className="flex items-center gap-2">
@@ -52,10 +52,10 @@ export function LandingNav({ onHomeIntent }: LandingNavProps) {
             onFocus={() => onHomeIntent?.()}
             onPointerEnter={() => onHomeIntent?.()}
             onTouchStart={() => onHomeIntent?.()}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-white px-5 text-[14px] font-bold tracking-normal text-[#0b0d0e] shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-white px-4 text-[12.5px] font-bold tracking-normal text-[#0b0d0e] shadow-[0_10px_26px_rgba(0,0,0,0.22)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
           >
             {t('landing.cta')}
-            <IconArrowRight size={15} stroke={2.4} />
+            <IconArrowRight size={13} stroke={2.4} />
           </Link>
         </div>
       </div>
