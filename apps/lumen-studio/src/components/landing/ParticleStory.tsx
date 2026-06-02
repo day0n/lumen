@@ -161,11 +161,11 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
           : lerp(renderedProgress, targetProgress, progressEase);
 
       const progress = displayedProgressRef.current;
-      const intro = 1 - smoothstep(0.08, 0.22, progress);
-      const story = smoothstep(0.22, 0.3, progress);
-      const particleReveal = 0.22 + smoothstep(0.04, 0.2, progress) * 0.78;
-      const particleGather = smoothstep(0.13, 0.24, progress);
-      const sceneProgress = clamp((progress - 0.26) / 0.7, 0, 1);
+      const intro = 1 - smoothstep(0.015, 0.06, progress);
+      const story = smoothstep(0.08, 0.14, progress);
+      const particleReveal = 0.34 + smoothstep(0.004, 0.035, progress) * 0.66;
+      const particleGather = smoothstep(0.04, 0.085, progress);
+      const sceneProgress = clamp((progress - 0.1) / 0.84, 0, 1);
       const scaled = sceneProgress * STORY_SCENES.length;
       const scene = Math.min(STORY_SCENES.length - 1, Math.floor(scaled));
       const nextScene = Math.min(STORY_SCENES.length - 1, scene + 1);
