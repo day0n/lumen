@@ -172,7 +172,7 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
       const local = clamp(scaled - scene, 0, 1);
       const sceneMorph = smoothstep(0.42, 1, local);
       const sceneDisperse =
-        story * smoothstep(0.08, 0.34, local) * (1 - smoothstep(0.7, 0.96, local)) * 0.62;
+        story * smoothstep(0.22, 0.48, local) * (1 - smoothstep(0.64, 0.94, local)) * 0.66;
       const spriteProgress = reducedMotion ? 0 : smoothstep(0.08, 0.92, local);
       const spriteScaled = spriteProgress * (SPRITE_FRAME_COUNT - 1);
       const frameA = Math.floor(spriteScaled);
@@ -180,6 +180,26 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
       const frameMorph = smoothstep(0, 1, spriteScaled - frameA);
       const seconds = time / 1000;
       const now = performance.now();
+      const debugTargetMix = clamp(particleGather * (1 - sceneDisperse), 0, 1);
+
+      if (process.env.NODE_ENV !== 'production') {
+        (
+          window as typeof window & {
+            __lumenParticlePhase?: Record<string, number>;
+            __lumenParticleTargetPreview?: Point[];
+          }
+        ).__lumenParticlePhase = {
+          debugTargetMix,
+          local,
+          progress,
+          scene,
+          sceneDisperse,
+          story,
+          targetProgress,
+        };
+        (window as typeof window & { __lumenParticleTargetPreview?: Point[] })
+          .__lumenParticleTargetPreview = (targets[scene]?.[frameA] ?? []).slice(0, 12);
+      }
 
       if (now - lastStateUpdate > 55) {
         lastStateUpdate = now;
@@ -189,7 +209,7 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
       context.clearRect(0, 0, width, height);
       paintParticleAtmosphere(context, width, height, progress, seconds);
 
-      const scale = width < 640 ? Math.min(width, height) * 1.08 : Math.min(width, height) * 0.92;
+      const scale = width < 640 ? Math.min(width, height) * 0.92 : Math.min(width, height) * 0.68;
       const offsetX = width * 0.5 + mouseRef.current.x * (width < 640 ? 5 : 18);
       const offsetY =
         height * (width < 640 ? 0.56 : 0.53) + mouseRef.current.y * (width < 640 ? 4 : 12);
@@ -222,7 +242,7 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
           const frameDarkness = lerp(a.darkness, b.darkness, frameMorph);
           const targetX = lerp(frameX, c.x, sceneMorph) + swirl.x;
           const targetY = lerp(frameY, c.y, sceneMorph) + swirl.y;
-          const targetMix = clamp(particleGather * (1 - sceneDisperse), 0, 1);
+          const targetMix = debugTargetMix;
           const x = lerp(cloud.x, targetX, targetMix) * scale;
           const y = lerp(cloud.y, targetY, targetMix) * scale;
           const depth = lerp(frameZ, c.z, sceneMorph);
@@ -248,6 +268,15 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
     Promise.all(STORY_SCENES.map((sceneItem) => loadMaskSheet(SPRITE_SHEETS[sceneItem.key])))
       .then((loadedFrames) => {
         if (disposed) return;
+        if (process.env.NODE_ENV !== 'production') {
+          (
+            window as typeof window & {
+              __lumenParticleMasks?: number[][];
+            }
+          ).__lumenParticleMasks = loadedFrames.map((sceneFrames) =>
+            sceneFrames.map((samples) => samples.length),
+          );
+        }
         maskFrames = loadedFrames;
         rebuild();
       })
@@ -543,9 +572,7 @@ function buildTargets(count: number, framesByScene: MaskSample[][][]): Point[][]
     framesByScene.every((sceneFrames) => sceneFrames.length > 0)
   ) {
     return framesByScene.map((sceneFrames, sceneIndex) =>
-      sceneFrames.map((samples, frameIndex) =>
-        buildMaskTarget(count, samples, 1400 + sceneIndex * 1800 + frameIndex * 131),
-      ),
+      sceneFrames.map((samples) => buildMaskTarget(count, samples, 1400 + sceneIndex * 1800)),
     );
   }
 

@@ -41,6 +41,7 @@ import {
   type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type RefObject,
   useCallback,
   useEffect,
@@ -87,6 +88,17 @@ interface AgentChatUploadResponse {
   message?: string;
 }
 
+const PANEL_MIN_WIDTH = 360;
+const PANEL_MAX_WIDTH = 1100;
+const PANEL_DEFAULT_WIDTH = 640;
+const PANEL_WIDTH_STORAGE_KEY = 'lumen.agentChat.panelWidth';
+
+function clampPanelWidth(value: number): number {
+  const viewportCap = typeof window !== 'undefined' ? window.innerWidth - 24 : PANEL_MAX_WIDTH;
+  const max = Math.min(PANEL_MAX_WIDTH, viewportCap);
+  return Math.max(PANEL_MIN_WIDTH, Math.min(max, value));
+}
+
 export function ChatPanel({
   projectId,
   sessionId,
@@ -131,6 +143,61 @@ export function ChatPanel({
   const router = useRouter();
   const pathname = usePathname();
   const busy = isBusy(status);
+
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
+  const [resizing, setResizing] = useState(false);
+  const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY));
+    if (Number.isFinite(stored) && stored > 0) {
+      setPanelWidth(clampPanelWidth(stored));
+    }
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setPanelWidth((current) => clampPanelWidth(current));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const handleResizeMove = useCallback((event: PointerEvent) => {
+    const state = resizeStateRef.current;
+    if (!state) return;
+    // Dragging left (negative delta) widens the right-anchored panel.
+    const next = clampPanelWidth(state.startWidth + (state.startX - event.clientX));
+    setPanelWidth(next);
+  }, []);
+
+  const stopResize = useCallback(() => {
+    resizeStateRef.current = null;
+    setResizing(false);
+    window.removeEventListener('pointermove', handleResizeMove);
+    window.removeEventListener('pointerup', stopResize);
+    setPanelWidth((current) => {
+      window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(Math.round(current)));
+      return current;
+    });
+  }, [handleResizeMove]);
+
+  const startResize = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      resizeStateRef.current = { startX: event.clientX, startWidth: panelWidth };
+      setResizing(true);
+      window.addEventListener('pointermove', handleResizeMove);
+      window.addEventListener('pointerup', stopResize);
+    },
+    [panelWidth, handleResizeMove, stopResize],
+  );
+
+  useEffect(
+    () => () => {
+      window.removeEventListener('pointermove', handleResizeMove);
+      window.removeEventListener('pointerup', stopResize);
+    },
+    [handleResizeMove, stopResize],
+  );
 
   const loadSessions = useCallback(
     async (opts: { autoSelectLatest?: boolean } = {}) => {
@@ -363,11 +430,32 @@ export function ChatPanel({
   }
 
   return (
-    <div className="absolute inset-y-0 right-0 z-40 w-[min(720px,calc(100vw_-_24px))] sm:w-[min(720px,52vw)] sm:min-w-[440px]">
+    <div
+      className="absolute inset-y-0 right-0 z-40 max-w-[calc(100vw_-_24px)]"
+      style={{ width: panelWidth }}
+    >
+      <button
+        type="button"
+        aria-label={t('chat.resizePanel')}
+        title={t('chat.resizePanel')}
+        onPointerDown={startResize}
+        onDoubleClick={() => setPanelWidth(clampPanelWidth(PANEL_DEFAULT_WIDTH))}
+        className={cn(
+          'group absolute inset-y-0 left-0 z-50 flex w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center',
+          resizing ? '' : 'transition-opacity',
+        )}
+      >
+        <span
+          className={cn(
+            'h-full w-[2px] rounded-full transition-colors',
+            resizing ? 'bg-[#8ee7ff]' : 'bg-transparent group-hover:bg-[#8ee7ff]/55',
+          )}
+        />
+      </button>
       <motion.aside
         initial={{ opacity: 0, x: 34, filter: 'blur(6px)' }}
         animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-        transition={{ type: 'spring', stiffness: 260, damping: 30 }}
+        transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 260, damping: 30 }}
         className="relative flex h-full w-full flex-col overflow-hidden border-l border-white/[0.08] bg-[#151515] text-white shadow-[0_30px_100px_-52px_rgba(0,0,0,0.98)]"
       >
         <header className="relative z-10 flex h-[56px] shrink-0 items-center justify-between border-b border-white/[0.07] px-5">
@@ -753,7 +841,7 @@ function UserMessage({ message }: { message: ChatMessage }) {
       className="flex justify-end"
     >
       <div className="max-w-[72%] rounded-[16px] bg-[#323335] px-3.5 py-2.5 text-[14px] font-medium leading-6 text-white shadow-[0_12px_32px_-24px_rgba(0,0,0,0.85)]">
-        <RichMessageText parts={richContent.parts} />
+        <RichMessageText blocks={richContent.blocks} />
         <MediaPreviewList media={richContent.media} />
       </div>
     </motion.li>
@@ -779,7 +867,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
       <div className="min-w-0 flex-1">
         {message.content ? (
           <div className="max-w-[92%] text-[17px] font-semibold leading-[1.55] text-white/92">
-            <RichMessageText parts={richContent.parts} />
+            <RichMessageText blocks={richContent.blocks} />
             {isStreaming ? <StreamingCaret /> : null}
             <MediaPreviewList media={richContent.media} />
           </div>
@@ -811,10 +899,16 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
   );
 }
 
-interface RichTextPart {
-  type: 'text' | 'link';
-  text: string;
-  href?: string;
+type InlineNode =
+  | { kind: 'text'; text: string }
+  | { kind: 'bold'; text: string }
+  | { kind: 'link'; text: string; href: string }
+  | { kind: 'image'; alt: string; src: string };
+
+interface MarkdownBlock {
+  type: 'heading' | 'paragraph';
+  level: number;
+  inlines: InlineNode[];
 }
 
 interface MediaAttachment {
@@ -833,27 +927,91 @@ interface InspirationCardItem {
   score: number | null;
 }
 
-function RichMessageText({ parts }: { parts: RichTextPart[] }) {
+function RichMessageText({ blocks }: { blocks: MarkdownBlock[] }) {
   return (
-    <span className="whitespace-pre-wrap break-words">
-      {parts.map((part, index) => {
-        if (part.type === 'link' && part.href) {
+    <div className="space-y-2">
+      {blocks.map((block, blockIndex) => {
+        const inlines = renderInlines(block.inlines, blockIndex);
+        const blockKey = `${block.type}-${blockIndex}-${inlineKeyHint(block.inlines)}`;
+        if (block.type === 'heading') {
           return (
-            <a
-              key={`${part.href}-${index}`}
-              href={part.href}
-              target="_blank"
-              rel="noreferrer"
-              className="break-all text-[#8ee7ff] underline decoration-[#8ee7ff]/35 underline-offset-4 transition-colors hover:text-white"
+            <div
+              key={blockKey}
+              className={cn(
+                'font-bold leading-snug text-white/95',
+                block.level <= 1
+                  ? 'text-[18px]'
+                  : block.level === 2
+                    ? 'text-[16px]'
+                    : 'text-[15px]',
+                blockIndex > 0 ? 'mt-1' : '',
+              )}
             >
-              {part.text}
-            </a>
+              {inlines}
+            </div>
           );
         }
-        return <span key={`${part.text}-${index}`}>{part.text}</span>;
+        return (
+          <div key={blockKey} className="whitespace-pre-wrap break-words">
+            {inlines}
+          </div>
+        );
       })}
-    </span>
+    </div>
   );
+}
+
+function inlineKeyHint(nodes: InlineNode[]): string {
+  const first = nodes[0];
+  if (!first) return 'empty';
+  if (first.kind === 'image') return first.src.slice(-16);
+  if (first.kind === 'link') return first.href.slice(-16);
+  return first.text.slice(0, 16);
+}
+
+function renderInlines(nodes: InlineNode[], blockIndex: number) {
+  return nodes.map((node, index) => {
+    const key = `${blockIndex}-${index}`;
+    if (node.kind === 'image') {
+      return (
+        <a
+          key={key}
+          href={node.src}
+          target="_blank"
+          rel="noreferrer"
+          className="my-2 block overflow-hidden rounded-lg border border-white/[0.12] bg-black/35"
+        >
+          <img
+            src={node.src}
+            alt={node.alt}
+            loading="lazy"
+            className="max-h-[280px] w-full object-contain"
+          />
+        </a>
+      );
+    }
+    if (node.kind === 'link') {
+      return (
+        <a
+          key={key}
+          href={node.href}
+          target="_blank"
+          rel="noreferrer"
+          className="break-all text-[#8ee7ff] underline decoration-[#8ee7ff]/35 underline-offset-4 transition-colors hover:text-white"
+        >
+          {node.text}
+        </a>
+      );
+    }
+    if (node.kind === 'bold') {
+      return (
+        <strong key={key} className="font-bold text-white">
+          {node.text}
+        </strong>
+      );
+    }
+    return <span key={key}>{node.text}</span>;
+  });
 }
 
 function MediaPreviewList({ media }: { media: MediaAttachment[] }) {
@@ -1352,35 +1510,84 @@ function SendOrStopButton({
 }
 
 function parseRichMessageContent(content: string): {
-  parts: RichTextPart[];
+  blocks: MarkdownBlock[];
   media: MediaAttachment[];
 } {
-  const parts: RichTextPart[] = [];
   const media = new Map<string, MediaAttachment>();
-  const markdownLinkPattern = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const blocks: MarkdownBlock[] = [];
+  let paragraph: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length === 0) return;
+    const text = paragraph.join('\n').trim();
+    paragraph = [];
+    if (!text) return;
+    blocks.push({ type: 'paragraph', level: 0, inlines: parseInlineMarkdown(text, media) });
+  };
+
+  for (const rawLine of content.split('\n')) {
+    const trimmed = rawLine.trim();
+    const heading = /^(#{1,6})\s+(.*\S)\s*$/.exec(trimmed);
+    if (heading) {
+      flushParagraph();
+      blocks.push({
+        type: 'heading',
+        level: heading[1]!.length,
+        inlines: parseInlineMarkdown(heading[2]!, media),
+      });
+      continue;
+    }
+    if (trimmed === '') {
+      flushParagraph();
+      continue;
+    }
+    paragraph.push(rawLine);
+  }
+  flushParagraph();
+
+  return { blocks, media: [...media.values()] };
+}
+
+// Inline markdown: image ![alt](url), link [label](url), bold **text**, and bare URLs.
+function parseInlineMarkdown(text: string, media: Map<string, MediaAttachment>): InlineNode[] {
+  const nodes: InlineNode[] = [];
+  const pattern = /(!?)\[([^\]\n]*)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*/g;
   let cursor = 0;
 
-  for (const match of content.matchAll(markdownLinkPattern)) {
-    const matchStart = match.index ?? 0;
-    appendTextWithBareLinks(content.slice(cursor, matchStart), parts, media);
-
-    const label = match[1]?.trim() || 'media';
-    const url = normalizeMessageUrl(match[2] ?? '');
-    if (url) {
-      parts.push({ type: 'link', text: label, href: url });
-      addMediaAttachment(media, url, label);
+  for (const match of text.matchAll(pattern)) {
+    const start = match.index ?? 0;
+    if (start > cursor) {
+      appendTextWithBareLinks(text.slice(cursor, start), nodes, media);
     }
-    cursor = matchStart + match[0].length;
+
+    if (match[4] !== undefined) {
+      nodes.push({ kind: 'bold', text: match[4] });
+    } else {
+      const isImage = match[1] === '!';
+      const label = match[2]?.trim() ?? '';
+      const url = normalizeMessageUrl(match[3] ?? '');
+      if (url && isImage) {
+        nodes.push({ kind: 'image', alt: label || 'image', src: url });
+      } else if (url) {
+        const linkText = label || shortenUrl(url);
+        nodes.push({ kind: 'link', text: linkText, href: url });
+        addMediaAttachment(media, url, linkText);
+      } else {
+        nodes.push({ kind: 'text', text: match[0] });
+      }
+    }
+    cursor = start + match[0].length;
   }
 
-  appendTextWithBareLinks(content.slice(cursor), parts, media);
-
-  return { parts, media: [...media.values()] };
+  if (cursor < text.length) {
+    appendTextWithBareLinks(text.slice(cursor), nodes, media);
+  }
+  return nodes;
 }
 
 function appendTextWithBareLinks(
   text: string,
-  parts: RichTextPart[],
+  nodes: InlineNode[],
   media: Map<string, MediaAttachment>,
 ) {
   if (!text) return;
@@ -1390,22 +1597,22 @@ function appendTextWithBareLinks(
   for (const match of text.matchAll(bareUrlPattern)) {
     const matchStart = match.index ?? 0;
     if (matchStart > cursor) {
-      parts.push({ type: 'text', text: text.slice(cursor, matchStart) });
+      nodes.push({ kind: 'text', text: text.slice(cursor, matchStart) });
     }
 
     const url = normalizeMessageUrl(match[0]);
     if (url) {
       const label = shortenUrl(url);
-      parts.push({ type: 'link', text: label, href: url });
+      nodes.push({ kind: 'link', text: label, href: url });
       addMediaAttachment(media, url, label);
     } else {
-      parts.push({ type: 'text', text: match[0] });
+      nodes.push({ kind: 'text', text: match[0] });
     }
     cursor = matchStart + match[0].length;
   }
 
   if (cursor < text.length) {
-    parts.push({ type: 'text', text: text.slice(cursor) });
+    nodes.push({ kind: 'text', text: text.slice(cursor) });
   }
 }
 
