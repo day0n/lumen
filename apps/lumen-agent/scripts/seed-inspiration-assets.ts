@@ -42,7 +42,15 @@ for (const root of envRoots) {
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const EMBEDDING_DIMS = 1536;
 const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
-const DEFAULT_IMAGE_SIZE = '1024x1536';
+
+// gpt-image-1 只支持这三种尺寸；facets.aspect_ratio 会被映射到最接近的一种，
+// 保证写进库的 aspect_ratio 和真实生成的画幅一致（否则按画幅过滤会"撒谎"）。
+const IMAGE_SIZES = {
+  landscape: '1536x1024', // ≈1.50
+  square: '1024x1024', // 1.00
+  portrait: '1024x1536', // ≈0.67
+} as const;
+const FALLBACK_IMAGE_SIZE = IMAGE_SIZES.portrait;
 
 interface InspirationFacets {
   era: string;
@@ -90,6 +98,7 @@ function buildPrompt(seed: InspirationSeed): string {
     '',
     'Create a polished, original reference image for a creative inspiration library.',
     'No brand logos, no readable text, no trademarks, no watermarks.',
+    'If people appear, they must be clearly adult, respectful, non-sexualized, and suitable as commercial visual references.',
     'Make it useful as visual reference for short-form product marketing.',
     `Aspect ratio cue: ${seed.facets.aspect_ratio}.`,
   ].join('\n');
@@ -610,9 +619,616 @@ const DEFAULT_SEEDS: InspirationSeed[] = [
   },
 ];
 
+const ADDITIONAL_SEEDS: InspirationSeed[] = [
+  {
+    slug: 'adult-blonde-woman-clean-studio-portrait',
+    title: 'Adult blonde woman clean studio portrait',
+    description:
+      'Polished adult blonde model portrait for beauty, fashion, and creator references.',
+    category: 'people',
+    tagsZh: ['成人', '金发美女', '人像', '棚拍', '干净妆容', '时尚'],
+    tagsEn: ['adult', 'blonde woman', 'portrait', 'studio', 'clean makeup', 'fashion'],
+    facets: {
+      era: 'modern',
+      scene: 'studio portrait',
+      style: 'clean beauty editorial',
+      subject: 'adult blonde woman',
+      mood: 'confident',
+      color: 'cream soft gold',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A respectful adult blonde woman studio portrait, clean makeup, soft cream backdrop, natural skin texture, premium fashion and beauty editorial lighting, realistic commercial photography, no logos, no text.',
+  },
+  {
+    slug: 'adult-blonde-woman-cafe-window-lifestyle',
+    title: 'Adult blonde woman cafe window lifestyle',
+    description: 'Soft lifestyle portrait with casual knitwear and window light.',
+    category: 'people',
+    tagsZh: ['成人', '金发美女', '咖啡馆', '生活方式', '针织衫', '自然光'],
+    tagsEn: ['adult', 'blonde woman', 'cafe', 'lifestyle', 'knitwear', 'window light'],
+    facets: {
+      era: 'modern',
+      scene: 'cafe window',
+      style: 'natural lifestyle photo',
+      subject: 'adult blonde woman',
+      mood: 'warm relaxed',
+      color: 'latte cream blue',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A respectful adult blonde woman sitting by a cafe window in casual knitwear, warm natural light, coffee cup without branding, candid lifestyle photography, no logos, no readable text.',
+  },
+  {
+    slug: 'baseball-cap-streetwear-closeup',
+    title: 'Baseball cap streetwear closeup',
+    description: 'Clean cap detail for streetwear, accessory, and product styling references.',
+    category: 'accessories',
+    tagsZh: ['棒球帽', '街头', '配饰', '帽檐', '棉布', '潮流'],
+    tagsEn: ['baseball cap', 'streetwear', 'accessory', 'brim', 'cotton', 'fashion'],
+    facets: {
+      era: 'modern',
+      scene: 'urban wall',
+      style: 'product lifestyle closeup',
+      subject: 'baseball cap',
+      mood: 'casual cool',
+      color: 'navy concrete white',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A generic baseball cap close-up on an urban concrete background, visible cotton texture and curved brim, streetwear product lifestyle photography, no logos, no text, no brand marks.',
+  },
+  {
+    slug: 'adult-model-baseball-cap-summer-portrait',
+    title: 'Adult model with baseball cap summer portrait',
+    description: 'Sunny adult portrait reference centered on cap styling and casual fashion.',
+    category: 'people',
+    tagsZh: ['成人', '棒球帽', '夏日', '人像', '休闲穿搭', '阳光'],
+    tagsEn: ['adult', 'baseball cap', 'summer', 'portrait', 'casual outfit', 'sunny'],
+    facets: {
+      era: 'modern',
+      scene: 'sunny sidewalk',
+      style: 'lifestyle portrait',
+      subject: 'adult model wearing baseball cap',
+      mood: 'bright casual',
+      color: 'sky blue white tan',
+      region: 'global',
+      aspect_ratio: '9:16',
+    },
+    prompt:
+      'A respectful adult model wearing a plain baseball cap and casual summer outfit on a sunny sidewalk, lifestyle portrait, bright natural light, no logos, no readable text.',
+  },
+  {
+    slug: 'red-lip-beauty-editorial-adult-model',
+    title: 'Red lip beauty editorial adult model',
+    description: 'Bold makeup portrait for lipstick and beauty campaign references.',
+    category: 'beauty',
+    tagsZh: ['成人模特', '红唇', '美妆大片', '妆容', '高级感'],
+    tagsEn: ['adult model', 'red lip', 'beauty editorial', 'makeup', 'premium'],
+    facets: {
+      era: 'modern',
+      scene: 'studio closeup',
+      style: 'beauty editorial',
+      subject: 'adult makeup model',
+      mood: 'bold elegant',
+      color: 'red black ivory',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A respectful adult beauty model close-up with precise red lipstick, minimal black outfit, ivory studio background, premium realistic beauty editorial photography, no logos, no text.',
+  },
+  {
+    slug: 'silver-haired-elegant-adult-woman',
+    title: 'Silver-haired elegant adult woman',
+    description: 'Mature fashion portrait for premium lifestyle and skincare references.',
+    category: 'people',
+    tagsZh: ['成熟女性', '银发', '优雅', '人像', '高级生活方式'],
+    tagsEn: ['mature woman', 'silver hair', 'elegant', 'portrait', 'premium lifestyle'],
+    facets: {
+      era: 'modern',
+      scene: 'soft studio',
+      style: 'premium lifestyle portrait',
+      subject: 'silver-haired adult woman',
+      mood: 'calm elegant',
+      color: 'silver taupe cream',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'An elegant silver-haired adult woman in a neutral tailored outfit, soft studio light, refined premium lifestyle portrait, realistic photography, no logos, no text.',
+  },
+  {
+    slug: 'curly-hair-denim-adult-model',
+    title: 'Curly hair denim adult model',
+    description: 'Casual denim portrait with textured hair and approachable fashion energy.',
+    category: 'people',
+    tagsZh: ['成人模特', '卷发', '牛仔', '休闲', '自然人像'],
+    tagsEn: ['adult model', 'curly hair', 'denim', 'casual', 'natural portrait'],
+    facets: {
+      era: 'modern',
+      scene: 'studio daylight',
+      style: 'casual fashion portrait',
+      subject: 'curly-haired adult model',
+      mood: 'friendly confident',
+      color: 'denim blue warm white',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A respectful curly-haired adult model wearing a plain denim jacket, natural smile, soft daylight studio, casual fashion portrait, no logos, no readable text.',
+  },
+  {
+    slug: 'brunette-business-creator-desk',
+    title: 'Brunette business creator desk',
+    description: 'Work-focused adult creator portrait for productivity and SaaS references.',
+    category: 'people',
+    tagsZh: ['成人女性', '办公桌', '创作者', '商务休闲', '电脑'],
+    tagsEn: ['adult woman', 'desk', 'creator', 'business casual', 'laptop'],
+    facets: {
+      era: 'modern',
+      scene: 'home office',
+      style: 'work lifestyle photo',
+      subject: 'adult creator at desk',
+      mood: 'focused',
+      color: 'charcoal cream green',
+      region: 'global',
+      aspect_ratio: '16:9',
+    },
+    prompt:
+      'A brunette adult woman creator at a tidy home office desk with a generic laptop, business casual outfit, focused expression, realistic work lifestyle photography, no logos, no readable screen text.',
+  },
+  {
+    slug: 'athletic-adult-man-training-portrait',
+    title: 'Athletic adult man training portrait',
+    description: 'Fitness portrait for sports gear, wellness, and training references.',
+    category: 'people',
+    tagsZh: ['成年男性', '健身', '运动', '训练', '汗水', '健康'],
+    tagsEn: ['adult man', 'fitness', 'sports', 'training', 'sweat', 'wellness'],
+    facets: {
+      era: 'modern',
+      scene: 'gym wall',
+      style: 'sports portrait',
+      subject: 'athletic adult man',
+      mood: 'determined',
+      color: 'black grey cyan',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A respectful athletic adult man after training near a gym wall, plain performance shirt with no logo, sweat texture, dramatic sports portrait lighting, realistic photography, no text.',
+  },
+  {
+    slug: 'asian-adult-streetwear-night-portrait',
+    title: 'Asian adult streetwear night portrait',
+    description: 'Urban night portrait for streetwear, creator, and city campaign references.',
+    category: 'people',
+    tagsZh: ['亚洲成人', '街头穿搭', '夜景', '霓虹', '城市'],
+    tagsEn: ['asian adult', 'streetwear', 'night portrait', 'neon', 'city'],
+    facets: {
+      era: 'modern',
+      scene: 'night street',
+      style: 'cinematic street portrait',
+      subject: 'asian adult model',
+      mood: 'cool moody',
+      color: 'neon blue magenta black',
+      region: 'asia',
+      aspect_ratio: '9:16',
+    },
+    prompt:
+      'A respectful Asian adult model in plain streetwear on a rainy city street at night, soft neon reflections, cinematic street portrait, no logos, no readable signs.',
+  },
+  {
+    slug: 'vintage-leather-jacket-adult-portrait',
+    title: 'Vintage leather jacket adult portrait',
+    description: 'Retro adult portrait with leather jacket styling and analog character.',
+    category: 'fashion',
+    tagsZh: ['成人模特', '皮夹克', '复古', '胶片', '街头'],
+    tagsEn: ['adult model', 'leather jacket', 'vintage', 'film', 'street'],
+    facets: {
+      era: '1990s',
+      scene: 'brick alley',
+      style: 'analog fashion portrait',
+      subject: 'leather jacket outfit',
+      mood: 'independent',
+      color: 'black brick amber',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A respectful adult model wearing a plain vintage leather jacket in a brick alley, analog fashion portrait, subtle film grain, no logos, no readable text.',
+  },
+  {
+    slug: 'sunglasses-beach-lifestyle-accessory',
+    title: 'Sunglasses beach lifestyle accessory',
+    description: 'Sunny eyewear product mood for summer and travel campaigns.',
+    category: 'accessories',
+    tagsZh: ['墨镜', '海滩', '夏日', '配饰', '旅行', '阳光'],
+    tagsEn: ['sunglasses', 'beach', 'summer', 'accessory', 'travel', 'sunlight'],
+    facets: {
+      era: 'modern',
+      scene: 'beach towel',
+      style: 'sunny product lifestyle',
+      subject: 'sunglasses',
+      mood: 'breezy',
+      color: 'sand blue amber',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'Generic sunglasses on a beach towel beside shells and a plain water bottle, bright summer sunlight, realistic product lifestyle photography, no logos, no text.',
+  },
+  {
+    slug: 'chunky-sneaker-street-flatlay',
+    title: 'Chunky sneaker street flatlay',
+    description: 'Footwear flatlay for sneaker, activewear, and street campaign references.',
+    category: 'accessories',
+    tagsZh: ['球鞋', '街头', '鞋子', '平铺', '运动潮流'],
+    tagsEn: ['sneakers', 'street', 'footwear', 'flatlay', 'athleisure'],
+    facets: {
+      era: 'modern',
+      scene: 'concrete ground',
+      style: 'streetwear flatlay',
+      subject: 'chunky sneakers',
+      mood: 'fresh sporty',
+      color: 'white grey lime',
+      region: 'global',
+      aspect_ratio: '1:1',
+    },
+    prompt:
+      'A pair of generic chunky sneakers on clean concrete with plain socks and sport towel, streetwear flatlay product photo, no logos, no text, no brand marks.',
+  },
+  {
+    slug: 'canvas-tote-market-lifestyle',
+    title: 'Canvas tote market lifestyle',
+    description: 'Reusable tote bag lifestyle scene for everyday product references.',
+    category: 'accessories',
+    tagsZh: ['帆布包', '市集', '环保', '生活方式', '日常'],
+    tagsEn: ['canvas tote', 'market', 'eco', 'lifestyle', 'everyday'],
+    facets: {
+      era: 'modern',
+      scene: 'farmers market',
+      style: 'natural lifestyle photo',
+      subject: 'canvas tote bag',
+      mood: 'fresh everyday',
+      color: 'cream green red',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A plain canvas tote bag filled with fresh produce at an outdoor market, natural morning light, realistic lifestyle product photography, no logos, no readable text.',
+  },
+  {
+    slug: 'minimal-watch-wrist-macro',
+    title: 'Minimal watch wrist macro',
+    description: 'Premium wrist accessory macro for watch and jewelry references.',
+    category: 'accessories',
+    tagsZh: ['手表', '腕表', '微距', '高级', '配饰'],
+    tagsEn: ['watch', 'wristwatch', 'macro', 'premium', 'accessory'],
+    facets: {
+      era: 'modern',
+      scene: 'soft studio macro',
+      style: 'premium accessory macro',
+      subject: 'minimal wristwatch',
+      mood: 'precise refined',
+      color: 'steel black cream',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A minimal generic wristwatch on an adult wrist, close macro view, premium soft studio lighting, refined accessory photography, no logos, no readable text or brand marks.',
+  },
+  {
+    slug: 'structured-handbag-minimal-studio',
+    title: 'Structured handbag minimal studio',
+    description: 'Clean handbag product reference for premium fashion campaigns.',
+    category: 'accessories',
+    tagsZh: ['手袋', '包包', '极简', '棚拍', '高级时尚'],
+    tagsEn: ['handbag', 'bag', 'minimal', 'studio', 'premium fashion'],
+    facets: {
+      era: 'modern',
+      scene: 'minimal studio',
+      style: 'fashion product photo',
+      subject: 'structured handbag',
+      mood: 'quiet premium',
+      color: 'cream black silver',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A structured generic handbag on a minimal cream studio plinth, soft shadows, premium fashion product photography, no logos, no text, no brand marks.',
+  },
+  {
+    slug: 'headphones-commute-adult-portrait',
+    title: 'Headphones commute adult portrait',
+    description: 'Urban audio lifestyle portrait for electronics and creator references.',
+    category: 'electronics',
+    tagsZh: ['成人', '耳机', '通勤', '城市', '音频', '生活方式'],
+    tagsEn: ['adult', 'headphones', 'commute', 'city', 'audio', 'lifestyle'],
+    facets: {
+      era: 'modern',
+      scene: 'subway platform',
+      style: 'urban lifestyle portrait',
+      subject: 'adult wearing headphones',
+      mood: 'focused calm',
+      color: 'grey blue white',
+      region: 'global',
+      aspect_ratio: '9:16',
+    },
+    prompt:
+      'A respectful adult commuter wearing generic over-ear headphones on a subway platform, urban lifestyle portrait, shallow depth of field, no logos, no readable signs.',
+  },
+  {
+    slug: 'skincare-model-bathroom-mirror',
+    title: 'Skincare model bathroom mirror',
+    description: 'Adult skincare routine reference with mirror, towel, and clean bathroom light.',
+    category: 'beauty',
+    tagsZh: ['成人模特', '护肤', '浴室镜子', '洁面', '清晨'],
+    tagsEn: ['adult model', 'skincare', 'bathroom mirror', 'face care', 'morning'],
+    facets: {
+      era: 'modern',
+      scene: 'bathroom mirror',
+      style: 'clean routine photo',
+      subject: 'adult skincare routine',
+      mood: 'fresh honest',
+      color: 'white aqua skin tone',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A respectful adult model doing a skincare routine at a bathroom mirror, white towel, clean natural light, unlabeled skincare bottle, realistic routine photography, no logos, no text.',
+  },
+  {
+    slug: 'makeup-brush-vanity-closeup',
+    title: 'Makeup brush vanity closeup',
+    description: 'Cosmetic texture closeup for makeup and vanity visual references.',
+    category: 'beauty',
+    tagsZh: ['化妆刷', '粉底', '美妆', '化妆台', '质感'],
+    tagsEn: ['makeup brush', 'foundation', 'beauty', 'vanity', 'texture'],
+    facets: {
+      era: 'modern',
+      scene: 'vanity table',
+      style: 'beauty macro photo',
+      subject: 'makeup brushes',
+      mood: 'soft polished',
+      color: 'rose beige gold',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'Makeup brushes and powder texture on a vanity table, unlabeled cosmetics, soft rose beige light, realistic beauty macro photography, no logos, no readable text.',
+  },
+  {
+    slug: 'barbershop-men-grooming-adult',
+    title: 'Barbershop men grooming adult',
+    description: 'Men grooming scene for haircare, beard, and lifestyle references.',
+    category: 'beauty',
+    tagsZh: ['成年男性', '理发店', '男士护理', '胡须', '复古'],
+    tagsEn: ['adult man', 'barbershop', 'men grooming', 'beard', 'vintage'],
+    facets: {
+      era: 'modern',
+      scene: 'barbershop',
+      style: 'warm documentary photo',
+      subject: 'adult grooming',
+      mood: 'crafted classic',
+      color: 'brown amber cream',
+      region: 'global',
+      aspect_ratio: '16:9',
+    },
+    prompt:
+      'A respectful adult man in a barbershop grooming scene, barber cape without logo, warm mirror light, vintage tools, realistic documentary lifestyle photography, no readable text.',
+  },
+  {
+    slug: 'adult-hands-jewelry-closeup',
+    title: 'Adult hands jewelry closeup',
+    description: 'Hands and jewelry detail for accessory, nail, and beauty references.',
+    category: 'accessories',
+    tagsZh: ['成人手部', '首饰', '戒指', '美甲', '细节'],
+    tagsEn: ['adult hands', 'jewelry', 'rings', 'nails', 'detail'],
+    facets: {
+      era: 'modern',
+      scene: 'soft tabletop',
+      style: 'accessory detail photo',
+      subject: 'hands with rings',
+      mood: 'delicate',
+      color: 'gold nude cream',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'Adult hands wearing generic rings with neat nails on a soft cream tabletop, delicate accessory detail photography, no logos, no text, no brand marks.',
+  },
+  {
+    slug: 'baseball-field-cap-lifestyle',
+    title: 'Baseball field cap lifestyle',
+    description: 'Sporty cap and field reference for outdoor lifestyle campaigns.',
+    category: 'lifestyle',
+    tagsZh: ['棒球帽', '棒球场', '运动', '户外', '美式生活方式'],
+    tagsEn: ['baseball cap', 'baseball field', 'sports', 'outdoor', 'american lifestyle'],
+    facets: {
+      era: 'modern',
+      scene: 'baseball field',
+      style: 'sunny lifestyle photo',
+      subject: 'cap on bench',
+      mood: 'sporty nostalgic',
+      color: 'green tan navy',
+      region: 'us',
+      aspect_ratio: '16:9',
+    },
+    prompt:
+      'A plain baseball cap on a wooden bench beside a baseball field, golden afternoon light, sporty outdoor lifestyle photography, no logos, no text.',
+  },
+  {
+    slug: 'adult-skateboard-urban-fashion',
+    title: 'Adult skateboard urban fashion',
+    description: 'Street fashion and skateboard scene for youth-culture product references.',
+    category: 'people',
+    tagsZh: ['成人', '滑板', '街头穿搭', '城市', '运动休闲'],
+    tagsEn: ['adult', 'skateboard', 'street fashion', 'city', 'sport casual'],
+    facets: {
+      era: 'modern',
+      scene: 'urban skate spot',
+      style: 'street fashion photo',
+      subject: 'adult skateboarder',
+      mood: 'active casual',
+      color: 'concrete red blue',
+      region: 'global',
+      aspect_ratio: '9:16',
+    },
+    prompt:
+      'A respectful adult skateboarder holding a generic skateboard at an urban skate spot, plain streetwear, energetic street fashion photography, no logos, no readable text.',
+  },
+  {
+    slug: 'cowboy-hat-western-fashion-adult',
+    title: 'Cowboy hat western fashion adult',
+    description: 'Western hat styling reference for festival, denim, and outdoor campaigns.',
+    category: 'fashion',
+    tagsZh: ['成人模特', '牛仔帽', '西部风', '牛仔', '户外'],
+    tagsEn: ['adult model', 'cowboy hat', 'western', 'denim', 'outdoor'],
+    facets: {
+      era: 'modern',
+      scene: 'open field',
+      style: 'western fashion portrait',
+      subject: 'cowboy hat outfit',
+      mood: 'free spirited',
+      color: 'tan denim sky',
+      region: 'us',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A respectful adult model wearing a plain cowboy hat and denim jacket in an open field, western fashion portrait, warm natural light, no logos, no text.',
+  },
+  {
+    slug: 'raincoat-city-adult-portrait',
+    title: 'Raincoat city adult portrait',
+    description: 'Rainwear and city portrait reference for outerwear and commute campaigns.',
+    category: 'fashion',
+    tagsZh: ['成人模特', '雨衣', '城市', '雨天', '通勤穿搭'],
+    tagsEn: ['adult model', 'raincoat', 'city', 'rain', 'commute outfit'],
+    facets: {
+      era: 'modern',
+      scene: 'rainy crosswalk',
+      style: 'cinematic lifestyle portrait',
+      subject: 'raincoat outfit',
+      mood: 'urban practical',
+      color: 'yellow grey blue',
+      region: 'global',
+      aspect_ratio: '9:16',
+    },
+    prompt:
+      'A respectful adult model wearing a plain raincoat at a rainy city crosswalk, umbrella, wet reflections, cinematic lifestyle portrait, no logos, no readable text.',
+  },
+  {
+    slug: 'chef-hands-food-prep-closeup',
+    title: 'Chef hands food prep closeup',
+    description: 'Hands-on cooking prep scene for food tools and kitchen product references.',
+    category: 'food',
+    tagsZh: ['成人手部', '厨师', '备餐', '厨房', '食材'],
+    tagsEn: ['adult hands', 'chef', 'food prep', 'kitchen', 'ingredients'],
+    facets: {
+      era: 'modern',
+      scene: 'kitchen prep counter',
+      style: 'food documentary closeup',
+      subject: 'hands preparing food',
+      mood: 'crafted fresh',
+      color: 'wood green steel',
+      region: 'global',
+      aspect_ratio: '16:9',
+    },
+    prompt:
+      'Adult chef hands preparing fresh ingredients on a kitchen counter, generic knife and cutting board, realistic food documentary close-up, no logos, no readable text.',
+  },
+  {
+    slug: 'yoga-mat-morning-lifestyle',
+    title: 'Yoga mat morning lifestyle',
+    description: 'Wellness scene for fitness, home, and self-care campaign references.',
+    category: 'lifestyle',
+    tagsZh: ['瑜伽垫', '晨练', '健康', '生活方式', '居家'],
+    tagsEn: ['yoga mat', 'morning workout', 'wellness', 'lifestyle', 'home'],
+    facets: {
+      era: 'modern',
+      scene: 'sunlit apartment',
+      style: 'wellness lifestyle photo',
+      subject: 'yoga mat setup',
+      mood: 'calm healthy',
+      color: 'sage cream sunlight',
+      region: 'global',
+      aspect_ratio: '9:16',
+    },
+    prompt:
+      'A sunlit apartment wellness setup with a plain yoga mat, towel, water bottle without branding, calm morning light, realistic lifestyle photography, no text.',
+  },
+  {
+    slug: 'office-casual-phone-adult-portrait',
+    title: 'Office casual phone adult portrait',
+    description:
+      'Everyday creator portrait with phone for app, productivity, and social references.',
+    category: 'people',
+    tagsZh: ['成人', '手机', '办公休闲', '创作者', '日常'],
+    tagsEn: ['adult', 'phone', 'office casual', 'creator', 'everyday'],
+    facets: {
+      era: 'modern',
+      scene: 'bright office corner',
+      style: 'creator lifestyle portrait',
+      subject: 'adult holding phone',
+      mood: 'approachable',
+      color: 'white blue plant green',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A respectful adult creator in office casual clothing holding a generic smartphone in a bright office corner, realistic creator lifestyle portrait, no logos, no readable screen text.',
+  },
+  {
+    slug: 'concert-neon-crowd-style',
+    title: 'Concert neon crowd style',
+    description: 'Music event atmosphere reference for fashion, lights, and nightlife campaigns.',
+    category: 'lifestyle',
+    tagsZh: ['音乐会', '霓虹', '人群', '夜生活', '氛围'],
+    tagsEn: ['concert', 'neon', 'crowd', 'nightlife', 'atmosphere'],
+    facets: {
+      era: 'modern',
+      scene: 'small concert venue',
+      style: 'event photography',
+      subject: 'adult crowd atmosphere',
+      mood: 'electric',
+      color: 'purple blue amber',
+      region: 'global',
+      aspect_ratio: '16:9',
+    },
+    prompt:
+      'A small concert venue with an adult crowd atmosphere, hands raised, colorful neon stage lights, realistic event photography, no identifiable faces, no logos, no readable text.',
+  },
+  {
+    slug: 'retro-polaroid-adult-friends-table',
+    title: 'Retro polaroid adult friends table',
+    description: 'Casual adult friend group table scene for nostalgic social references.',
+    category: 'people',
+    tagsZh: ['成人朋友', '复古', '拍立得', '餐桌', '聚会'],
+    tagsEn: ['adult friends', 'retro', 'polaroid', 'table', 'gathering'],
+    facets: {
+      era: '1990s',
+      scene: 'dinner table',
+      style: 'analog flash photo',
+      subject: 'adult friend group',
+      mood: 'friendly nostalgic',
+      color: 'warm flash cream',
+      region: 'global',
+      aspect_ratio: '4:5',
+    },
+    prompt:
+      'A casual group of adult friends around a dinner table, retro instant-camera flash look, candid nostalgic atmosphere, generic tableware, no logos, no readable text.',
+  },
+];
+
+const BASE_SEEDS: InspirationSeed[] = [...DEFAULT_SEEDS, ...ADDITIONAL_SEEDS];
+
 const EXPANDED_SEEDS: InspirationSeed[] = [
-  ...DEFAULT_SEEDS,
-  ...DEFAULT_SEEDS.map((seed) => ({
+  ...BASE_SEEDS,
+  ...BASE_SEEDS.map((seed) => ({
     ...seed,
     slug: `${seed.slug}-vertical`,
     title: `${seed.title} vertical`,
@@ -706,13 +1322,42 @@ function makeS3(settings: R2Settings): S3Client {
   });
 }
 
+/** "16:9" → 1.78；解析失败返回 null。 */
+function parseAspectRatio(value: string): number | null {
+  const match = /^(\d+)\s*:\s*(\d+)$/.exec(value.trim());
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!width || !height) return null;
+  return width / height;
+}
+
+/**
+ * 把 seed 声明的 aspect_ratio 映射到 gpt-image-1 支持的最接近尺寸。
+ * 保证真实生成的画幅和写进库的 facets.aspect_ratio 不矛盾。
+ */
+function resolveImageSize(seed: InspirationSeed): string {
+  const ratio = parseAspectRatio(seed.facets.aspect_ratio);
+  if (ratio === null) return FALLBACK_IMAGE_SIZE;
+
+  const candidates = [
+    { size: IMAGE_SIZES.landscape, value: 1536 / 1024 },
+    { size: IMAGE_SIZES.square, value: 1 },
+    { size: IMAGE_SIZES.portrait, value: 1024 / 1536 },
+  ];
+  let best = candidates[0]!;
+  for (const candidate of candidates.slice(1)) {
+    if (Math.abs(ratio - candidate.value) < Math.abs(ratio - best.value)) best = candidate;
+  }
+  return best.size;
+}
+
 async function generateImage(openai: OpenAI, seed: InspirationSeed): Promise<Buffer> {
   const model = process.env.OPENAI_IMAGE_MODEL?.trim() || DEFAULT_IMAGE_MODEL;
-  const size = process.env.OPENAI_IMAGE_SIZE?.trim() || DEFAULT_IMAGE_SIZE;
   const response = await openai.images.generate({
     model,
     prompt: buildPrompt(seed),
-    size,
+    size: resolveImageSize(seed),
     n: 1,
   } as never);
 
@@ -914,7 +1559,7 @@ async function main(): Promise<void> {
             generation_prompt: buildPrompt(seed),
             generation_model: process.env.OPENAI_IMAGE_MODEL?.trim() || DEFAULT_IMAGE_MODEL,
             generation_params: {
-              size: process.env.OPENAI_IMAGE_SIZE?.trim() || DEFAULT_IMAGE_SIZE,
+              size: resolveImageSize(seed),
             },
             batch_id: 'initial-inspiration-v1',
             quality_score: 1,

@@ -21,6 +21,16 @@ const EMBEDDING_DIMS = 1536;
 const DEFAULT_COUNT = 6;
 const MAX_COUNT = 12;
 
+// 相似度地板：Atlas cosine 分数归一化到 [0,1]（0.5≈正交）。
+// 默认设得很低，只挡掉完全不相关的；想更严就调高 INSPIRATION_MIN_SCORE。
+const DEFAULT_MIN_SCORE = 0.5;
+
+function readMinScore(): number {
+  const raw = Number(process.env.INSPIRATION_MIN_SCORE);
+  if (!Number.isFinite(raw) || raw < 0 || raw > 1) return DEFAULT_MIN_SCORE;
+  return raw;
+}
+
 interface InspirationFacets {
   era?: string;
   scene?: string;
@@ -156,7 +166,8 @@ export class InspirationSearchTool extends Tool {
       },
       category: {
         type: 'string',
-        description: '可选分类过滤，例如 automotive、fashion、beauty、food、electronics。',
+        description:
+          '可选分类过滤，例如 automotive、people、accessories、fashion、beauty、food、electronics、lifestyle。',
       },
       era: {
         type: 'string',
@@ -204,6 +215,7 @@ export class InspirationSearchTool extends Tool {
     if (!client) return 'Error: inspiration search is not configured: missing OPENAI_API_KEY';
 
     const count = Math.min(MAX_COUNT, Math.max(1, Number(args.count) || DEFAULT_COUNT));
+    const minScore = readMinScore();
     const started = performance.now();
 
     let queryVector: number[];
@@ -264,16 +276,24 @@ export class InspirationSearchTool extends Tool {
 
       const cursor = this.env.db.collection(INSPIRATION_ASSETS_COLLECTION).aggregate(pipeline);
       const results: InspirationResult[] = [];
+      let droppedLowScore = 0;
       for await (const doc of cursor) {
         const item = toResult(doc);
-        if (item) results.push(item);
+        if (!item) continue;
+        if (item.score < minScore) {
+          droppedLowScore += 1;
+          continue;
+        }
+        results.push(item);
       }
 
       logger.info(
         {
           query,
           count,
+          min_score: minScore,
           returned: results.length,
+          dropped_low_score: droppedLowScore,
           duration_ms: Math.round(performance.now() - started),
         },
         'find_inspiration completed',

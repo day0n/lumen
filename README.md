@@ -91,6 +91,28 @@ pnpm check
 - 配置全部通过 zod 校验，禁止裸读 `process.env`
 - biome 管理 format + lint
 
+## 技术方案
+
+这里记录已经落地或准备持续迭代的核心技术方案，后续新能力可以继续追加小节。
+
+### 找灵感：官方灵感图库 + 标签向量搜索
+
+找灵感不是实时联网搜图，而是先维护一套 Lumen 自己的官方灵感图库。离线脚本会按分类准备素材元数据，用 OpenAI 图片模型生成参考图，上传到 Cloudflare R2，并把 CDN URL、标题、描述、标签、分类、年代、场景、风格、画幅等信息写入 MongoDB。生成时会把声明的画幅映射到图片模型实际支持的尺寸，保证入库的画幅和真实图片一致。
+
+运行时 Agent 调用 `find_inspiration` tool：把用户需求提炼成视觉搜索 query，用 `text-embedding-3-small` 生成 query embedding，然后在 MongoDB Atlas Vector Search 里搜索预先写入的标签向量。低于相似度地板 `INSPIRATION_MIN_SCORE`（默认 0.5，可调）的结果会被丢弃，避免返回不相关的图。返回结果只包含可展示的 CDN URL 和元信息，前端通过 tool event 渲染成右侧 Agent 面板里的灵感图片网格。
+
+关键落点：
+
+| 模块 | 位置 / 名称 | 说明 |
+|---|---|---|
+| 种子脚本 | `apps/lumen-agent/scripts/seed-inspiration-assets.ts` | 生成图片、上传 R2、写入 Mongo、创建向量索引 |
+| Agent tool | `apps/lumen-agent/src/adapters/outbound/tools/inspirationSearch.ts` | 执行 query embedding 和向量检索 |
+| Mongo collection | `lumen_app.inspiration_assets` | 存图库元数据、R2 CDN URL、标签 embedding |
+| 向量索引 | `inspiration_tags_vector_index` | Atlas Vector Search，搜索字段为 `embedding_tags` |
+| 前端展示 | `apps/lumen-studio/src/features/agent-chat/ChatPanel.tsx` | 展示 tool 调用状态、思考状态和灵感图片网格 |
+
+当前图库按 `automotive`、`people`、`accessories`、`fashion`、`beauty`、`food`、`electronics`、`home/lifestyle` 等分类设计。图片本体都在 R2，数据库只保存 CDN URL；搜索只向量化标签和 facet，不向量化图片本体。
+
 ## License
 
 Private.
