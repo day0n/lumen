@@ -23,6 +23,7 @@ const EnvSchema = z.object({
   GOOGLE_CLOUD_LOCATION: z.string().default('global'),
   FISH_AUDIO_API_KEY: z.string().min(1),
   KIE_API_KEY: z.string().optional().default(''),
+  KIE_CALLBACK_URL: z.string().optional().default(''),
   VIDEO_EDIT_FFMPEG_PATH: z.string().default('ffmpeg'),
   VIDEO_EDIT_FFPROBE_PATH: z.string().default('ffprobe'),
   VIDEO_EDIT_MAX_CLIPS: z.coerce.number().int().min(1).max(20).default(8),

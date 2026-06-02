@@ -8,6 +8,9 @@ const SUBMIT_ENDPOINT = '/generate';
 const POLL_ENDPOINT = '/generate/record-info';
 const MAX_POLL_MS = 6 * 60 * 1000; // 音乐生成通常 1-3 分钟，封顶 6 分钟
 const PROMPT_MAX_LEN = 500;
+// KIE 的 /generate 强制要求 callBackUrl 字段存在；我们用轮询拿结果，不依赖回调，
+// 所以这里只需提供一个合法 URL 占位（KIE 回调拿到 404 也无影响）。
+const DEFAULT_CALLBACK_URL = 'https://lumenstudio.tech/api/webhooks/kie';
 
 const SUCCESS_STATUSES = new Set([
   'success',
@@ -73,6 +76,7 @@ async function submitMusicTask(args: {
   model: string;
   instrumental: boolean;
 }): Promise<string> {
+  const callBackUrl = config.KIE_CALLBACK_URL?.trim() || DEFAULT_CALLBACK_URL;
   const response = await fetch(`${KIE_BASE_URL}${SUBMIT_ENDPOINT}`, {
     method: 'POST',
     headers: {
@@ -84,6 +88,7 @@ async function submitMusicTask(args: {
       model: args.model,
       instrumental: args.instrumental,
       customMode: false,
+      callBackUrl,
     }),
   });
 
