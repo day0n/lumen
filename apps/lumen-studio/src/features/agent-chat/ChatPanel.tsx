@@ -14,7 +14,6 @@ import { cn } from '@/lib/cn';
 import { useAuth } from '@clerk/nextjs';
 import {
   IconArrowUp,
-  IconBrain,
   IconChevronDown,
   IconCopy,
   IconExternalLink,
@@ -27,7 +26,6 @@ import {
   IconPlus,
   IconThumbDown,
   IconThumbUp,
-  IconTool,
   IconX,
 } from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -856,6 +854,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
   const liveLabel = getLiveLabel(message, t);
   const richContent = parseRichMessageContent(message.content);
   const hasActivity = hasToolActivity(message.events);
+  const thinkingLabel = thinkingSummaryLabel(message, t);
 
   return (
     <motion.li
@@ -890,9 +889,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
 
         {message.thinking?.trim() && !isStreaming ? (
           <details className="mt-3 max-w-[92%] text-[12px] text-white/38">
-            <summary className="cursor-pointer list-none marker:hidden">
-              {t('chat.thinkingDetails')}
-            </summary>
+            <summary className="cursor-pointer list-none marker:hidden">{thinkingLabel}</summary>
             <div className="mt-1 whitespace-pre-wrap break-words leading-5">
               {message.thinking.trim()}
             </div>
@@ -1173,9 +1170,14 @@ interface ToolActivityRun {
   events: ChatTimelineItem[];
 }
 
+type TimelineTranslator = (
+  key: string,
+  params?: Record<string, string | number | boolean | null | undefined>,
+) => string;
+
 function ToolActivityItem({ run }: { run: ToolActivityRun }) {
   const { t } = useI18n();
-  const title = toolRunTitle(run);
+  const title = toolRunTitle(run, t);
   const detail = toolRunDetail(run);
   const richItems = extractInspirationResults(run.events);
   const visibleEvents = run.events.filter((event) => event.eventName !== 'inspiration_results');
@@ -1185,8 +1187,8 @@ function ToolActivityItem({ run }: { run: ToolActivityRun }) {
 
   return (
     <details open={defaultOpen} className="group text-[12px] leading-5 text-white/46">
-      <summary className="-ml-[21px] flex min-w-0 cursor-pointer list-none items-center gap-2 py-1.5 pr-1 outline-none transition-colors hover:text-white/72 [&::-webkit-details-marker]:hidden">
-        <ToolRunIcon run={run} />
+      <summary className="-ml-[19px] flex min-w-0 cursor-pointer list-none items-center gap-2 py-1.5 pr-1 outline-none transition-colors hover:text-white/72 [&::-webkit-details-marker]:hidden">
+        <TimelineDot status={run.status} />
         <span className="min-w-0 flex-1 truncate font-semibold text-white/64">{title}</span>
         {run.root?.durationMs ? (
           <span className="shrink-0 text-[11px] font-medium text-white/30">
@@ -1268,12 +1270,13 @@ function TimelineStandaloneItem({
 }) {
   const { t } = useI18n();
   const inlineStatus = toolRunInlineStatus(item.status, t);
+  const title = timelineItemTitle(item, t);
 
   return (
-    <div className="-ml-[21px] pb-2">
+    <div className="-ml-[19px] pb-2">
       <div className="flex min-w-0 items-center gap-2 py-1.5 pr-1">
-        <StatusDot status={item.status} />
-        <span className="min-w-0 flex-1 truncate font-semibold text-white/64">{item.title}</span>
+        <TimelineDot status={item.status} />
+        <span className="min-w-0 flex-1 truncate font-semibold text-white/64">{title}</span>
         {inlineStatus ? (
           <span className={cn('shrink-0 text-[11px] font-medium', inlineStatus.className)}>
             {inlineStatus.label}
@@ -1337,11 +1340,50 @@ function deriveToolRunStatus(run: ToolActivityRun): ChatTimelineItem['status'] {
   return run.root?.status ?? run.events.at(-1)?.status ?? 'info';
 }
 
-function toolRunTitle(run: ToolActivityRun): string {
+function toolRunTitle(run: ToolActivityRun, t: TimelineTranslator): string {
+  const toolName = toolRunToolName(run);
+  if (toolName) {
+    const label = formatTimelineToolName(toolName, t);
+    if (run.status === 'success') return t('chat.timeline.toolDone', { tool: label });
+    if (run.status === 'error') return t('chat.timeline.toolFailed', { tool: label });
+    return label;
+  }
+
   if (run.status === 'running' && run.root?.title) return run.root.title;
   const event =
     [...run.events].reverse().find((item) => item.status !== 'info') ?? run.events.at(-1);
   return event?.title ?? run.root?.title ?? run.root?.toolName ?? 'Tool';
+}
+
+function timelineItemTitle(item: ChatTimelineItem, t: TimelineTranslator): string {
+  if (item.kind === 'error') return t('chat.timeline.taskFailed');
+  if (item.kind === 'thinking') {
+    return item.status === 'running'
+      ? t('chat.timeline.thinkingRunning')
+      : t('chat.timeline.thinkingSaved');
+  }
+  return item.title;
+}
+
+function thinkingSummaryLabel(message: ChatMessage, t: TimelineTranslator): string {
+  const durationMs = message.events
+    ?.filter((event) => event.kind === 'step' && event.status === 'success' && event.durationMs)
+    .at(-1)?.durationMs;
+  if (!durationMs) return t('chat.thinkingDetails');
+  return t('chat.timeline.thinkingElapsed', {
+    seconds: Math.max(1, Math.round(durationMs / 1000)),
+  });
+}
+
+function toolRunToolName(run: ToolActivityRun): string | undefined {
+  return run.root?.toolName ?? run.events.find((event) => event.toolName)?.toolName;
+}
+
+function formatTimelineToolName(toolName: string, t: TimelineTranslator): string {
+  const key = `chat.timeline.tools.${toolName}`;
+  const label = t(key);
+  if (label !== key) return label;
+  return toolName.replace(/[_-]+/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function toolRunDetail(run: ToolActivityRun): string | undefined {
@@ -1360,20 +1402,17 @@ function parseToolCallId(item: ChatTimelineItem): string | null {
 
 function toolRunInlineStatus(
   status: ChatTimelineItem['status'],
-  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+  t: TimelineTranslator,
 ): { label: string; className: string } | null {
   if (status === 'running' || status === 'queued') {
     return { label: t('chat.timeline.statusRunning'), className: 'text-[#79e4ff]/72' };
   }
-  if (status === 'error') {
-    return { label: t('chat.timeline.statusError'), className: 'text-[#ff8f9c]/76' };
-  }
   return null;
 }
 
-function StatusDot({ status }: { status: ChatTimelineItem['status'] }) {
+function TimelineDot({ status }: { status: ChatTimelineItem['status'] }) {
   return (
-    <span className="flex h-4 w-4 shrink-0 items-center justify-center bg-[#151515]">
+    <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center bg-[#151515]">
       <span
         className={cn(
           'h-1.5 w-1.5 rounded-full',
@@ -1388,32 +1427,6 @@ function StatusDot({ status }: { status: ChatTimelineItem['status'] }) {
       />
     </span>
   );
-}
-
-function ToolRunIcon({ run }: { run: ToolActivityRun }) {
-  const toolName = run.root?.toolName ?? run.events.find((event) => event.toolName)?.toolName;
-  const status = run.status;
-  const className = cn(
-    'flex h-4 w-4 shrink-0 items-center justify-center bg-[#151515]',
-    status === 'running'
-      ? 'text-[#79e4ff]'
-      : status === 'success'
-        ? 'text-[#7ee787]'
-        : status === 'error'
-          ? 'text-[#ff7b8a]'
-          : 'text-white/34',
-  );
-
-  if (status === 'running') {
-    return <IconLoader2 size={15} className={cn(className, 'animate-spin')} stroke={2.4} />;
-  }
-  if (toolName === 'find_inspiration') {
-    return <IconPhoto size={15} className={className} stroke={2.15} />;
-  }
-  if (toolName === 'search_web' || toolName === 'search_ad_videos') {
-    return <IconTool size={15} className={className} stroke={2.15} />;
-  }
-  return <StatusDot status={status} />;
 }
 
 function MessageActions() {
@@ -1450,9 +1463,8 @@ function ThinkingLine({ label }: { label: string }) {
     <motion.div
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-white/[0.07] bg-white/[0.045] px-2.5 py-1.5 text-[12px] font-semibold text-white/58"
+      className="mt-4 inline-flex items-center gap-2 text-[12px] font-semibold text-white/46"
     >
-      <IconBrain size={14} className="text-white/48" stroke={2.2} />
       <span>{label}</span>
       <IconLoader2 size={13} className="animate-spin text-[#79e4ff]/70" stroke={2.4} />
     </motion.div>
@@ -1887,9 +1899,14 @@ function getLiveLabel(
 ): string {
   const current = message.events?.findLast?.((event) => event.status === 'running');
   if (!current) return t('chat.thinking');
-  if (current.kind === 'tool') return current.title;
+  if (current.kind === 'tool') {
+    return current.toolName
+      ? t('chat.timeline.callTool', { tool: formatTimelineToolName(current.toolName, t) })
+      : current.title;
+  }
   if (current.kind === 'step') return t('chat.thinking');
-  return current.title;
+  if (current.kind === 'thinking') return t('chat.timeline.thinkingRunning');
+  return timelineItemTitle(current, t);
 }
 
 function isBusy(status: AgentChatStatus): boolean {

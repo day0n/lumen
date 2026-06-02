@@ -211,6 +211,7 @@ export function useAgentChat({
       .catch(() => null)
       .then((token) =>
         fetchSessionHistory({
+          locale,
           sessionId,
           signal: controller.signal,
           token,
@@ -226,7 +227,7 @@ export function useAgentChat({
       });
 
     return () => controller.abort();
-  }, [getToken, sessionId]);
+  }, [getToken, locale, sessionId]);
 
   const updateMessage = useCallback(
     (id: string, patch: Partial<ChatMessage> | ((prev: ChatMessage) => Partial<ChatMessage>)) => {
@@ -652,6 +653,7 @@ async function createRun(params: {
 }
 
 async function fetchSessionHistory(params: {
+  locale: Locale;
   sessionId: string;
   signal: AbortSignal;
   token: string | null;
@@ -677,10 +679,10 @@ async function fetchSessionHistory(params: {
 
   const messages =
     payload && 'messages' in payload && Array.isArray(payload.messages) ? payload.messages : [];
-  return projectHistoryMessages(messages);
+  return projectHistoryMessages(messages, params.locale);
 }
 
-function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
+function projectHistoryMessages(stored: StoredHistoryMessage[], locale: Locale): ChatMessage[] {
   const messages: ChatMessage[] = [];
   const assistantByTurn = new Map<string, ChatMessage>();
 
@@ -739,7 +741,9 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
         id: `tool.${toolCallId}`,
         kind: 'tool',
         status: 'running',
-        title: translate('en', 'chat.timeline.callTool', { tool: formatToolName(toolName, 'en') }),
+        title: translate(locale, 'chat.timeline.callTool', {
+          tool: formatToolName(toolName, locale),
+        }),
         detail: summarizeArguments(args),
         toolCallId,
         toolName,
@@ -760,8 +764,12 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
         status,
         title:
           status === 'error'
-            ? translate('en', 'chat.timeline.toolFailed', { tool: formatToolName(toolName, 'en') })
-            : translate('en', 'chat.timeline.toolDone', { tool: formatToolName(toolName, 'en') }),
+            ? translate(locale, 'chat.timeline.toolFailed', {
+                tool: formatToolName(toolName, locale),
+              })
+            : translate(locale, 'chat.timeline.toolDone', {
+                tool: formatToolName(toolName, locale),
+              }),
         detail:
           item.error ??
           formatToolResultDetail(readNumber(item.duration_ms), readNumber(item.output_size_bytes)),
@@ -782,8 +790,8 @@ function projectHistoryMessages(stored: StoredHistoryMessage[]): ChatMessage[] {
         id: workflowTimelineId(item.tool_call_id ?? `history-${index}`, eventName, data),
         kind: 'act_event',
         status: workflowTimelineStatus(eventName, data),
-        title: formatWorkflowEventTitle(eventName, data, 'en'),
-        detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName),
+        title: formatWorkflowEventTitle(eventName, data, locale),
+        detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName, locale),
         toolCallId: item.tool_call_id ?? `history-${index}`,
         toolName,
         eventName,
@@ -899,16 +907,22 @@ function handleEvent(
     case 'turn:leave': {
       const iteration = readNumber(env.data.iteration);
       const id = `step.${iteration ?? 'unknown'}`;
-      updateMessage(assistantId, (prev) => ({
-        events: upsertTimeline(prev.events, {
-          id,
-          kind: 'step',
-          status: 'success',
-          title: tt('chat.timeline.thinkingSaved'),
-          detail: iteration ? tt('chat.timeline.attempt', { count: iteration }) : undefined,
-          createdAt: Date.now(),
-        }),
-      }));
+      updateMessage(assistantId, (prev) => {
+        const now = Date.now();
+        const startedAt = prev.events?.find((event) => event.id === id)?.createdAt;
+        const durationMs = typeof startedAt === 'number' ? Math.max(0, now - startedAt) : undefined;
+        return {
+          events: upsertTimeline(prev.events, {
+            id,
+            kind: 'step',
+            status: 'success',
+            title: tt('chat.timeline.thinkingSaved'),
+            detail: iteration ? tt('chat.timeline.attempt', { count: iteration }) : undefined,
+            durationMs,
+            createdAt: now,
+          }),
+        };
+      });
       return;
     }
 
