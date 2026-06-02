@@ -1166,7 +1166,7 @@ function formatWorkflowEventTitle(
     return translate(locale, 'chat.timeline.workflowCompleted');
   }
   if (eventName === 'inspiration_results') {
-    return locale === 'zh' ? '找到灵感图' : 'Inspiration found';
+    return locale === 'zh' ? '已找到灵感' : 'Inspiration found';
   }
   if (eventName === 'workflow_node_status') {
     const status = readString(data.status);

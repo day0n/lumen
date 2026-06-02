@@ -13,16 +13,11 @@ import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@clerk/nextjs';
 import {
-  IconActivity,
-  IconAlertCircle,
   IconArrowUp,
   IconBrain,
-  IconCheck,
   IconChevronDown,
-  IconCircleDot,
   IconCopy,
   IconExternalLink,
-  IconGitBranch,
   IconLoader2,
   IconMessages,
   IconMicrophone,
@@ -860,6 +855,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
   const isFailed = message.status === 'failed';
   const liveLabel = getLiveLabel(message, t);
   const richContent = parseRichMessageContent(message.content);
+  const hasActivity = hasToolActivity(message.events);
 
   return (
     <motion.li
@@ -870,16 +866,20 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
       className="flex items-start"
     >
       <div className="min-w-0 flex-1">
+        {isStreaming && !hasActivity ? <ThinkingLine label={liveLabel} /> : null}
+        <Timeline items={message.events} />
         {message.content ? (
-          <div className="max-w-[92%] text-[17px] font-semibold leading-[1.55] text-white/92">
+          <div
+            className={cn(
+              'max-w-[92%] text-[17px] font-semibold leading-[1.55] text-white/92',
+              hasActivity ? 'mt-4' : '',
+            )}
+          >
             <RichMessageText blocks={richContent.blocks} />
             {isStreaming ? <StreamingCaret /> : null}
             <MediaPreviewList media={richContent.media} />
           </div>
         ) : null}
-
-        {isStreaming ? <ThinkingLine label={liveLabel} /> : null}
-        <Timeline items={message.events} />
         {message.content && !isStreaming && !isFailed ? <MessageActions /> : null}
 
         {isFailed ? (
@@ -1137,8 +1137,13 @@ function InspirationResultGrid({
   );
 }
 
+function hasToolActivity(items?: ChatTimelineItem[]): boolean {
+  return (items ?? []).some(
+    (item) => item.kind === 'tool' || item.kind === 'act_event' || item.kind === 'error',
+  );
+}
+
 function Timeline({ items }: { items?: ChatTimelineItem[] }) {
-  const { t } = useI18n();
   const runs = buildToolActivityRuns(items).slice(-10);
   const errors = (items ?? [])
     .filter((item) => item.kind === 'error' && !item.toolCallId)
@@ -1147,17 +1152,15 @@ function Timeline({ items }: { items?: ChatTimelineItem[] }) {
   if (runs.length === 0 && errors.length === 0) return null;
 
   return (
-    <div className="mt-4 max-w-[94%] space-y-2">
-      {runs.map((run) => (
-        <ToolActivityItem key={run.id} run={run} />
-      ))}
-      {errors.map((item) => (
-        <TimelineStandaloneItem
-          key={item.id}
-          item={item}
-          statusLabel={timelineStatusLabel(item, t)}
-        />
-      ))}
+    <div className="mt-1 max-w-[94%]">
+      <div className="space-y-2 border-l border-white/[0.095] pl-3">
+        {runs.map((run) => (
+          <ToolActivityItem key={run.id} run={run} />
+        ))}
+        {errors.map((item) => (
+          <TimelineStandaloneItem key={item.id} item={item} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -1175,45 +1178,41 @@ function ToolActivityItem({ run }: { run: ToolActivityRun }) {
   const title = toolRunTitle(run);
   const detail = toolRunDetail(run);
   const richItems = extractInspirationResults(run.events);
-  const hasChildren = Boolean(detail) || run.events.length > 0 || richItems.length > 0;
+  const visibleEvents = run.events.filter((event) => event.eventName !== 'inspiration_results');
+  const hasDetails = Boolean(detail) || visibleEvents.length > 0 || richItems.length > 0;
   const defaultOpen = run.status === 'running' || richItems.length > 0 || run.status === 'error';
+  const inlineStatus = toolRunInlineStatus(run.status, t);
 
   return (
-    <details
-      open={defaultOpen}
-      className="group overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.035] text-[12px] leading-5 text-white/46"
-    >
-      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2.5 px-2.5 py-2 outline-none transition-colors hover:bg-white/[0.035] [&::-webkit-details-marker]:hidden">
-        <ToolRunIcon status={run.status} />
-        <span className="min-w-0 flex-1 truncate font-semibold text-white/76">{title}</span>
+    <details open={defaultOpen} className="group text-[12px] leading-5 text-white/46">
+      <summary className="-ml-[21px] flex min-w-0 cursor-pointer list-none items-center gap-2 py-1.5 pr-1 outline-none transition-colors hover:text-white/72 [&::-webkit-details-marker]:hidden">
+        <ToolRunIcon run={run} />
+        <span className="min-w-0 flex-1 truncate font-semibold text-white/64">{title}</span>
         {run.root?.durationMs ? (
-          <span className="shrink-0 text-[11px] font-medium text-white/32">
+          <span className="shrink-0 text-[11px] font-medium text-white/30">
             {formatDuration(run.root.durationMs)}
           </span>
         ) : null}
-        <span
-          className={cn(
-            'shrink-0 rounded-full border px-1.5 py-0 text-[10px] font-medium leading-[16px]',
-            timelineBadgeClass(run.status),
-          )}
-        >
-          {timelineStatusLabel({ ...(run.root ?? run.events[0]!), status: run.status }, t)}
-        </span>
-        {hasChildren ? (
+        {inlineStatus ? (
+          <span className={cn('shrink-0 text-[11px] font-medium', inlineStatus.className)}>
+            {inlineStatus.label}
+          </span>
+        ) : null}
+        {hasDetails ? (
           <IconChevronDown
             size={14}
             stroke={2.2}
-            className="shrink-0 text-white/30 transition-transform group-open:rotate-180"
+            className="shrink-0 text-white/24 transition-transform group-open:rotate-180"
           />
         ) : null}
       </summary>
 
-      {hasChildren ? (
-        <div className="border-t border-white/[0.055] px-2.5 pb-2.5 pt-2">
-          {detail ? <div className="mb-2 min-w-0 break-words text-white/42">{detail}</div> : null}
-          {run.events.length > 0 ? (
-            <div className="space-y-1.5">
-              {run.events.slice(-5).map((event) => (
+      {hasDetails ? (
+        <div className="pb-2 pl-3">
+          {detail ? <div className="mb-1 min-w-0 break-words text-white/38">{detail}</div> : null}
+          {visibleEvents.length > 0 ? (
+            <div className="space-y-1">
+              {visibleEvents.slice(-5).map((event) => (
                 <ToolEventRow key={event.id} item={event} />
               ))}
             </div>
@@ -1229,7 +1228,7 @@ function ToolEventRow({ item }: { item: ChatTimelineItem }) {
   const progress = readProgress(item.payload?.progress);
 
   return (
-    <div className="rounded-md bg-black/18 px-2 py-1.5">
+    <div className="py-1">
       <div className="flex min-w-0 items-center gap-2">
         <span
           className={cn(
@@ -1243,10 +1242,10 @@ function ToolEventRow({ item }: { item: ChatTimelineItem }) {
                   : 'bg-white/30',
           )}
         />
-        <span className="min-w-0 flex-1 truncate font-medium text-white/58">{item.title}</span>
+        <span className="min-w-0 flex-1 truncate font-medium text-white/48">{item.title}</span>
       </div>
       {item.detail ? (
-        <div className="mt-0.5 min-w-0 truncate pl-3.5 text-[11px] text-white/34">
+        <div className="mt-0.5 min-w-0 truncate pl-3.5 text-[11px] text-white/30">
           {item.detail}
         </div>
       ) : null}
@@ -1264,30 +1263,24 @@ function ToolEventRow({ item }: { item: ChatTimelineItem }) {
 
 function TimelineStandaloneItem({
   item,
-  statusLabel,
 }: {
   item: ChatTimelineItem;
-  statusLabel: string;
 }) {
+  const { t } = useI18n();
+  const inlineStatus = toolRunInlineStatus(item.status, t);
+
   return (
-    <div className="flex min-w-0 items-start gap-2.5 rounded-lg border border-white/[0.07] bg-white/[0.035] px-2.5 py-2 text-[12px] leading-5 text-white/42">
-      <TimelineIcon item={item} />
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate font-semibold text-white/72">{item.title}</span>
-          <span
-            className={cn(
-              'shrink-0 rounded-full border px-1.5 py-0 text-[10px] font-medium leading-[16px]',
-              timelineBadgeClass(item.status),
-            )}
-          >
-            {statusLabel}
+    <div className="-ml-[21px] pb-2">
+      <div className="flex min-w-0 items-center gap-2 py-1.5 pr-1">
+        <StatusDot status={item.status} />
+        <span className="min-w-0 flex-1 truncate font-semibold text-white/64">{item.title}</span>
+        {inlineStatus ? (
+          <span className={cn('shrink-0 text-[11px] font-medium', inlineStatus.className)}>
+            {inlineStatus.label}
           </span>
-        </div>
-        {item.detail ? (
-          <div className="mt-0.5 min-w-0 truncate text-white/38">{item.detail}</div>
         ) : null}
       </div>
+      {item.detail ? <div className="pl-8 text-[12px] text-white/34">{item.detail}</div> : null}
     </div>
   );
 }
@@ -1365,9 +1358,43 @@ function parseToolCallId(item: ChatTimelineItem): string | null {
   return null;
 }
 
-function ToolRunIcon({ status }: { status: ChatTimelineItem['status'] }) {
+function toolRunInlineStatus(
+  status: ChatTimelineItem['status'],
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+): { label: string; className: string } | null {
+  if (status === 'running' || status === 'queued') {
+    return { label: t('chat.timeline.statusRunning'), className: 'text-[#79e4ff]/72' };
+  }
+  if (status === 'error') {
+    return { label: t('chat.timeline.statusError'), className: 'text-[#ff8f9c]/76' };
+  }
+  return null;
+}
+
+function StatusDot({ status }: { status: ChatTimelineItem['status'] }) {
+  return (
+    <span className="flex h-4 w-4 shrink-0 items-center justify-center bg-[#151515]">
+      <span
+        className={cn(
+          'h-1.5 w-1.5 rounded-full',
+          status === 'running' || status === 'queued'
+            ? 'bg-[#79e4ff]'
+            : status === 'error'
+              ? 'bg-[#ff7b8a]'
+              : status === 'success'
+                ? 'bg-[#7ee787]'
+                : 'bg-white/28',
+        )}
+      />
+    </span>
+  );
+}
+
+function ToolRunIcon({ run }: { run: ToolActivityRun }) {
+  const toolName = run.root?.toolName ?? run.events.find((event) => event.toolName)?.toolName;
+  const status = run.status;
   const className = cn(
-    'flex h-4 w-4 shrink-0 items-center justify-center',
+    'flex h-4 w-4 shrink-0 items-center justify-center bg-[#151515]',
     status === 'running'
       ? 'text-[#79e4ff]'
       : status === 'success'
@@ -1380,43 +1407,13 @@ function ToolRunIcon({ status }: { status: ChatTimelineItem['status'] }) {
   if (status === 'running') {
     return <IconLoader2 size={15} className={cn(className, 'animate-spin')} stroke={2.4} />;
   }
-  if (status === 'success') return <IconCheck size={15} className={className} stroke={2.6} />;
-  if (status === 'error') return <IconX size={15} className={className} stroke={2.6} />;
-  return <IconTool size={15} className={className} stroke={2.2} />;
-}
-
-function TimelineIcon({ item }: { item: ChatTimelineItem }) {
-  const className = cn(
-    'mt-[3px] flex h-4 w-4 shrink-0 items-center justify-center',
-    item.status === 'running'
-      ? 'text-[#79e4ff]'
-      : item.status === 'success'
-        ? 'text-[#7ee787]'
-        : item.status === 'error'
-          ? 'text-[#ff7b8a]'
-          : 'text-white/34',
-  );
-
-  if (item.status === 'running') {
-    return <IconLoader2 size={15} className={cn(className, 'animate-spin')} stroke={2.4} />;
+  if (toolName === 'find_inspiration') {
+    return <IconPhoto size={15} className={className} stroke={2.15} />;
   }
-  if (item.status === 'success') return <IconCheck size={15} className={className} stroke={2.6} />;
-  if (item.status === 'error') return <IconX size={15} className={className} stroke={2.6} />;
-
-  switch (item.kind) {
-    case 'thinking':
-      return <IconBrain size={15} className={className} stroke={2.2} />;
-    case 'tool':
-      return <IconTool size={15} className={className} stroke={2.2} />;
-    case 'act_event':
-      return <IconActivity size={15} className={className} stroke={2.2} />;
-    case 'step':
-      return <IconGitBranch size={15} className={className} stroke={2.2} />;
-    case 'error':
-      return <IconAlertCircle size={15} className={className} stroke={2.2} />;
-    default:
-      return <IconCircleDot size={15} className={className} stroke={2.2} />;
+  if (toolName === 'search_web' || toolName === 'search_ad_videos') {
+    return <IconTool size={15} className={className} stroke={2.15} />;
   }
+  return <StatusDot status={status} />;
 }
 
 function MessageActions() {
@@ -1893,49 +1890,6 @@ function getLiveLabel(
   if (current.kind === 'tool') return current.title;
   if (current.kind === 'step') return t('chat.thinking');
   return current.title;
-}
-
-function timelineStatusLabel(
-  item: ChatTimelineItem,
-  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
-) {
-  if (item.kind === 'tool') {
-    if (item.status === 'running') return t('chat.timeline.toolRunning');
-    if (item.status === 'success') return t('chat.timeline.toolSuccess');
-    if (item.status === 'error') return t('chat.timeline.toolError');
-  }
-  if (item.kind === 'thinking') {
-    return item.status === 'running'
-      ? t('chat.timeline.thinkingRunning')
-      : t('chat.timeline.thinkingSaved');
-  }
-  switch (item.status) {
-    case 'queued':
-      return t('chat.timeline.statusQueued');
-    case 'running':
-      return t('chat.timeline.statusRunning');
-    case 'success':
-      return t('chat.timeline.statusSuccess');
-    case 'error':
-      return t('chat.timeline.statusError');
-    default:
-      return t('chat.timeline.statusEvent');
-  }
-}
-
-function timelineBadgeClass(status: ChatTimelineItem['status']) {
-  switch (status) {
-    case 'queued':
-      return 'border-white/12 bg-white/[0.04] text-white/42';
-    case 'running':
-      return 'border-[#79e4ff]/22 bg-[#79e4ff]/10 text-[#9defff]';
-    case 'success':
-      return 'border-[#7ee787]/22 bg-[#7ee787]/10 text-[#a7f3b4]';
-    case 'error':
-      return 'border-[#ff7b8a]/25 bg-[#ff7b8a]/10 text-[#ffadb7]';
-    default:
-      return 'border-white/10 bg-white/[0.03] text-white/34';
-  }
 }
 
 function isBusy(status: AgentChatStatus): boolean {
