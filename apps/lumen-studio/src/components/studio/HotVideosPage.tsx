@@ -587,6 +587,11 @@ function HotVideoCard({
   onPreview: () => void;
 }) {
   const { locale, t } = useI18n();
+  const [playPreview, setPlayPreview] = useState(false);
+  const startPreview = () => {
+    if (video.previewUrl) setPlayPreview(true);
+  };
+  const stopPreview = () => setPlayPreview(false);
   const stop = (event: React.MouseEvent) => {
     event.stopPropagation();
   };
@@ -596,16 +601,21 @@ function HotVideoCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.42, delay: index * 0.035, ease: [0.32, 0.72, 0, 1] }}
+      onMouseEnter={startPreview}
+      onMouseLeave={stopPreview}
       className="group overflow-hidden rounded-[18px] bg-[#1c1e20] ring-1 ring-white/[0.07] transition-colors hover:bg-[#222528]"
     >
       <div className="relative aspect-[3/4] w-full overflow-hidden bg-black text-left">
         <button
           type="button"
-          onClick={onPreview}
+          onClick={() => {
+            stopPreview();
+            onPreview();
+          }}
           aria-label={t('hotVideos.originalPreview')}
           className="absolute inset-0 text-left focus:outline-none"
         >
-          <VideoStill video={video} />
+          <VideoStill video={video} autoPlay={playPreview} muted={playPreview} />
         </button>
 
         <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
@@ -684,6 +694,7 @@ function HotVideoCard({
               onRequireLogin();
               return;
             }
+            stopPreview();
             onUse();
           }}
           title={!signedIn ? t('hotVideos.card.signupTitle') : t('hotVideos.card.remixTitle')}
