@@ -62,9 +62,9 @@ const en = {
     particleSummary:
       'Lumen turns products, viral structures, and creative judgment into an editable video workflow so every project leaves reusable learning behind.',
     heroScenes: [
-      'Set the camera, frame the real action, and keep the movement honest.',
-      'Shape the footage under late-night light, one usable asset at a time.',
-      'Let repeatable work move into the flow while people get their time back.',
+      'Before, one video meant shooting and editing till dawn.',
+      'Now, one link runs from script to final cut in a single pass.',
+      'Leave the repetition to the flow, keep the ideas for yourself.',
     ],
   },
   home: {
@@ -647,9 +647,9 @@ const zh: typeof en = {
     particleSummary:
       'Lumen 把商品、爆款结构和创作判断变成一条可编辑的视频工作流，让每一次创作都留下下一次可复用的经验。',
     heroScenes: [
-      '镜头架好，长焦对准，人先把真实动作拍清楚。',
-      '深夜打灯，在笔记本前把素材一点点剪出来。',
-      '重复制作交给流程，人已经躺在阳光下晒太阳。',
+      '以前，一条视频从拍到剪熬到天亮。',
+      '现在，一个链接从脚本到成片一次跑通。',
+      '重复留给流程，灵感留给你。',
     ],
   },
   home: {
