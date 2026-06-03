@@ -22,6 +22,14 @@ import {
 import { motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
+import type {
+  Group as ThreeGroup,
+  Mesh as ThreeMesh,
+  MeshBasicMaterial as ThreeMeshBasicMaterial,
+  PlaneGeometry as ThreePlaneGeometry,
+  Texture as ThreeTexture,
+  WebGLRenderer as ThreeWebGLRenderer,
+} from 'three';
 
 type MaterialAssetCategory = 'character' | 'scene' | 'item';
 type MaterialAssetKind = 'image' | 'video' | 'audio';
@@ -82,28 +90,57 @@ type UploadPreview = {
 };
 
 const MAX_UPLOAD_IMAGES = 9;
+const SHOWCASE_IMAGE_COUNT = 6;
+
+type MaterialCategoryConfig = {
+  id: MaterialAssetCategory;
+  icon: typeof IconPhoto;
+  accent: string;
+  showcaseImages: readonly string[];
+};
+
+type ShowcaseMotionState = {
+  pointerX: number;
+  pointerY: number;
+  wheelRotation: number;
+};
+
+type MaterialSpiralPanel = {
+  mesh: ThreeMesh<ThreePlaneGeometry, ThreeMeshBasicMaterial>;
+  material: ThreeMeshBasicMaterial;
+  texture: ThreeTexture;
+  baseAngle: number;
+  baseY: number;
+  waveOffset: number;
+};
+
+function buildShowcaseImages(category: MaterialAssetCategory) {
+  return Array.from(
+    { length: SHOWCASE_IMAGE_COUNT },
+    (_, index) => `/material-showcase/${category}-${String(index + 1).padStart(2, '0')}.webp`,
+  );
+}
 
 const materialCategories = [
   {
     id: 'item',
     icon: IconPhoto,
     accent: '#79e4ff',
+    showcaseImages: buildShowcaseImages('item'),
   },
   {
     id: 'character',
     icon: IconSparkles,
     accent: '#ff5fbf',
+    showcaseImages: buildShowcaseImages('character'),
   },
   {
     id: 'scene',
     icon: IconUser,
     accent: '#f5c76a',
+    showcaseImages: buildShowcaseImages('scene'),
   },
-] satisfies Array<{
-  id: MaterialAssetCategory;
-  icon: typeof IconPhoto;
-  accent: string;
-}>;
+] satisfies MaterialCategoryConfig[];
 
 const accentByCategory: Record<MaterialAssetCategory, string> = {
   item: '#79e4ff',
@@ -125,6 +162,12 @@ export function MaterialsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const showcaseRef = useRef<HTMLDivElement | null>(null);
+  const [showcaseMotion, setShowcaseMotion] = useState<ShowcaseMotionState>({
+    pointerX: 0,
+    pointerY: 0,
+    wheelRotation: 0,
+  });
 
   useEffect(() => {
     if (!authLoaded) return;
@@ -175,6 +218,29 @@ export function MaterialsPage() {
     );
   }, [assets]);
 
+  const handleShowcasePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = showcaseRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const pointerX = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
+    const pointerY = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+    setShowcaseMotion((current) => ({
+      ...current,
+      pointerX: Math.max(-1, Math.min(1, pointerX)),
+      pointerY: Math.max(-1, Math.min(1, pointerY)),
+    }));
+  }, []);
+
+  const handleShowcasePointerLeave = useCallback(() => {
+    setShowcaseMotion((current) => ({ ...current, pointerX: 0, pointerY: 0 }));
+  }, []);
+
+  const handleShowcaseWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    setShowcaseMotion((current) => ({
+      ...current,
+      wheelRotation: current.wheelRotation + event.deltaY * 0.18,
+    }));
+  }, []);
+
   const handleDelete = useCallback(
     async (asset: MaterialAssetRecord) => {
       const response = await fetch(`/api/material-assets/${encodeURIComponent(asset.id)}`, {
@@ -200,28 +266,25 @@ export function MaterialsPage() {
       <Topbar />
 
       <main className="relative z-10 mx-auto max-w-[1200px] px-6 pb-24 pt-28">
-        <motion.header
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: [0.32, 0.72, 0, 1] }}
-          className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between"
+        <div
+          ref={showcaseRef}
+          onPointerMove={handleShowcasePointerMove}
+          onPointerLeave={handleShowcasePointerLeave}
+          onWheel={handleShowcaseWheel}
+          className="relative grid min-h-[560px] grid-cols-1 gap-5 overflow-visible md:grid-cols-3"
         >
-          <div className="flex min-w-0 items-center gap-4">
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-white ring-1 ring-white/[0.08]">
-              <IconPhoto size={26} stroke={1.9} />
-            </span>
-            <div className="min-w-0">
-              <h1 className="font-display text-[30px] font-extrabold leading-tight tracking-tight text-white sm:text-[40px]">
-                {t('materials.title')}
-              </h1>
-              <p className="mt-2 max-w-[560px] text-[13px] leading-6 text-white/48 sm:text-[14px]">
-                {t('materials.subtitle')}
-              </p>
-            </div>
-          </div>
-        </motion.header>
-
-        <div className="mt-8 grid grid-cols-1 gap-3.5 md:grid-cols-3">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-x-[-10vw] top-[-46px] z-0 hidden select-none font-display text-[clamp(6.5rem,15vw,13rem)] font-black uppercase leading-[0.78] tracking-normal text-white/[0.075] md:block"
+          >
+            MATERIAL
+            <br />
+            LIBRARY
+          </span>
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-[-84px_-9vw] z-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:72px_72px] opacity-45"
+          />
           {materialCategories.map((category, index) => (
             <CategoryCard
               key={category.id}
@@ -229,6 +292,7 @@ export function MaterialsPage() {
               index={index}
               active={activeCategory === category.id}
               count={counts[category.id] ?? 0}
+              motionState={showcaseMotion}
               title={t(`materials.categories.${category.id}.title`)}
               desc={t(`materials.categories.${category.id}.desc`)}
               onSelect={() => setActiveCategory(category.id)}
@@ -325,14 +389,16 @@ function CategoryCard({
   index,
   active,
   count,
+  motionState,
   title,
   desc,
   onSelect,
 }: {
-  category: { id: MaterialAssetCategory; icon: typeof IconPhoto; accent: string };
+  category: MaterialCategoryConfig;
   index: number;
   active: boolean;
   count: number;
+  motionState: ShowcaseMotionState;
   title: string;
   desc: string;
   onSelect: () => void;
@@ -358,26 +424,24 @@ function CategoryCard({
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, delay: index * 0.06, ease: [0.32, 0.72, 0, 1] }}
+      data-testid={`material-category-${category.id}`}
       className={cn(
-        'group relative min-h-[164px] overflow-hidden rounded-[20px] p-5 text-left transition-[transform,background-color] duration-300 will-change-transform hover:-translate-y-0.5',
-        active ? 'bg-[#1f2225]' : 'bg-[#1a1c1f] ring-1 ring-white/[0.07] hover:ring-white/[0.12]',
+        'group relative z-10 min-h-[560px] overflow-visible border-0 bg-transparent p-0 text-left transition-transform duration-300 will-change-transform hover:-translate-y-1 focus:outline-none',
+        !active && 'opacity-[0.72] hover:opacity-100',
       )}
-      style={
-        active
-          ? { boxShadow: `inset 0 0 0 1.5px ${accent}80, 0 26px 70px -38px ${accent}` }
-          : undefined
-      }
     >
-      {/* accent top band */}
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-px transition-opacity duration-300"
-        style={{
-          background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
-          opacity: active ? 0.9 : 0,
-        }}
+        className="pointer-events-none absolute inset-x-[-40px] top-[40px] h-[430px] opacity-80 blur-3xl transition-opacity duration-500 group-hover:opacity-100"
+        style={{ background: `radial-gradient(circle at 50% 46%, ${accent}3d, transparent 64%)` }}
       />
-      {/* mouse-follow spotlight */}
+      <MaterialSpiralScene
+        images={category.showcaseImages}
+        accent={accent}
+        index={index}
+        active={active}
+        motionState={motionState}
+      />
       <span
         aria-hidden
         className="pointer-events-none absolute -inset-px transition-opacity duration-300"
@@ -388,65 +452,272 @@ function CategoryCard({
             : undefined,
         }}
       />
-      {/* watermark icon */}
-      <Icon
-        aria-hidden
-        size={132}
-        stroke={1}
-        className="pointer-events-none absolute -bottom-7 -right-5 transition-[transform,opacity,color] duration-500 group-hover:scale-105"
-        style={{ color: accent, opacity: active ? 0.12 : 0.05 }}
-      />
 
-      <span className="relative flex items-center justify-between">
-        <span
-          className="font-display text-[13px] font-extrabold tabular-nums tracking-wide"
-          style={{ color: active ? accent : 'rgba(255,255,255,0.28)' }}
-        >
-          {String(index + 1).padStart(2, '0')}
-        </span>
-        <span
-          className={cn(
-            'flex h-7 min-w-[28px] items-center justify-center rounded-full px-2 text-[12px] font-bold tabular-nums ring-1',
-            !active && 'bg-white/[0.04] text-white/55 ring-white/[0.08]',
-          )}
-          style={
-            active
-              ? { backgroundColor: `${accent}1f`, color: accent, boxShadow: `inset 0 0 0 1px ${accent}55` }
-              : undefined
-          }
-        >
-          {count}
-        </span>
-      </span>
-
-      <span className="relative mt-7 flex items-end gap-4">
-        <span
-          className={cn(
-            'flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-colors duration-300',
-            !active && 'bg-white/[0.05] text-white/70 ring-1 ring-white/[0.07] group-hover:text-white',
-          )}
-          style={
-            active
-              ? { backgroundColor: `${accent}1f`, color: accent, boxShadow: `inset 0 0 0 1px ${accent}40` }
-              : undefined
-          }
-        >
-          <Icon size={22} stroke={1.9} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5">
-            <span className="block text-[19px] font-bold leading-none text-white">{title}</span>
-            <IconArrowUpRight
-              size={16}
-              stroke={2.4}
-              className="shrink-0 -translate-x-1 opacity-0 transition-[transform,opacity] duration-300 group-hover:translate-x-0 group-hover:opacity-100"
-              style={{ color: active ? accent : 'rgba(255,255,255,0.5)' }}
-            />
+      <span className="pointer-events-none relative z-10 flex h-full min-h-[560px] flex-col justify-between">
+        <span className="flex items-start justify-between px-4 pt-4">
+          <span
+            className="font-display text-[13px] font-extrabold tabular-nums tracking-wide transition-opacity duration-300"
+            style={{ color: active ? accent : `${accent}c9` }}
+          >
+            {String(index + 1).padStart(2, '0')}
           </span>
-          <span className="mt-2.5 block text-[12.5px] leading-5 text-white/42">{desc}</span>
+          <span
+            className={cn(
+              'flex h-8 min-w-[32px] items-center justify-center rounded-full px-2.5 text-[12px] font-bold tabular-nums shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] ring-1 backdrop-blur-xl',
+              !active && 'ring-white/[0.12]',
+            )}
+            style={
+              active
+                ? {
+                    backgroundColor: `${accent}21`,
+                    color: accent,
+                    boxShadow: `inset 0 0 0 1px ${accent}66, inset 0 1px 0 rgba(255,255,255,0.16)`,
+                  }
+                : {
+                    backgroundColor: `${accent}17`,
+                    color: `${accent}d6`,
+                    boxShadow: `inset 0 0 0 1px ${accent}38, inset 0 1px 0 rgba(255,255,255,0.12)`,
+                  }
+            }
+          >
+            {count}
+          </span>
+        </span>
+
+        <span className="relative z-10 flex items-end gap-3 px-4 pb-5">
+          <span
+            className={cn(
+              'flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_14px_34px_rgba(0,0,0,0.28)] ring-1 backdrop-blur-md transition-colors duration-300',
+              !active && 'ring-white/[0.13]',
+            )}
+            style={
+              active
+                ? {
+                    backgroundColor: `${accent}1f`,
+                    color: accent,
+                    boxShadow: `inset 0 0 0 1px ${accent}4f`,
+                  }
+                : {
+                    backgroundColor: `${accent}16`,
+                    color: `${accent}d8`,
+                    boxShadow: `inset 0 0 0 1px ${accent}35, inset 0 1px 0 rgba(255,255,255,0.12), 0 14px 34px rgba(0,0,0,0.28)`,
+                  }
+            }
+          >
+            <Icon size={22} stroke={1.9} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5">
+              <span className="block text-[20px] font-bold leading-none text-white drop-shadow-[0_1px_18px_rgba(0,0,0,0.66)]">
+                {title}
+              </span>
+              <IconArrowUpRight
+                size={16}
+                stroke={2.4}
+                className="shrink-0 -translate-x-1 opacity-0 transition-[transform,opacity] duration-300 group-hover:translate-x-0 group-hover:opacity-100"
+                style={{ color: active ? accent : 'rgba(255,255,255,0.72)' }}
+              />
+            </span>
+            <span className="mt-2.5 block text-[12.5px] leading-5 text-white/58">{desc}</span>
+          </span>
         </span>
       </span>
     </motion.button>
+  );
+}
+
+function MaterialSpiralScene({
+  images,
+  accent,
+  index,
+  active,
+  motionState,
+}: {
+  images: readonly string[];
+  accent: string;
+  index: number;
+  active: boolean;
+  motionState: ShowcaseMotionState;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activeRef = useRef(active);
+  const motionRef = useRef(motionState);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
+    motionRef.current = motionState;
+  }, [motionState]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || images.length === 0) return;
+
+    let disposed = false;
+    let frameId = 0;
+    let renderer: ThreeWebGLRenderer | null = null;
+    let root: ThreeGroup | null = null;
+    let geometry: ThreePlaneGeometry | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    const panels: MaterialSpiralPanel[] = [];
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const initialize = async () => {
+      const THREE = await import('three');
+      if (disposed) return;
+
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.Fog(0x050708, 3.2, 6.8);
+
+      const localCamera = new THREE.PerspectiveCamera(37, 1, 0.1, 100);
+      localCamera.position.set(0, 0.02, 4.72);
+
+      const localRenderer = new THREE.WebGLRenderer({
+        canvas,
+        alpha: true,
+        antialias: true,
+        powerPreference: 'high-performance',
+      });
+      localRenderer.setClearColor(0x000000, 0);
+      localRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.8));
+      localRenderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer = localRenderer;
+
+      const localRoot = new THREE.Group();
+      localRoot.rotation.set(-0.06, index * 0.52, -0.07);
+      localRoot.scale.setScalar(activeRef.current ? 1.02 : 0.94);
+      root = localRoot;
+      scene.add(localRoot);
+
+      geometry = new THREE.PlaneGeometry(0.68, 0.92, 1, 1);
+      const loader = new THREE.TextureLoader();
+      const anisotropy = Math.min(8, localRenderer.capabilities.getMaxAnisotropy());
+      const panelsPerTurn = 10;
+      const rowCount = 3;
+      const panelCount = panelsPerTurn * rowCount;
+
+      for (let panelIndex = 0; panelIndex < panelCount; panelIndex += 1) {
+        const image = images[panelIndex % images.length];
+        if (!image) continue;
+
+        const row = Math.floor(panelIndex / panelsPerTurn);
+        const slot = panelIndex % panelsPerTurn;
+        const baseAngle = (slot / panelsPerTurn) * Math.PI * 2 + row * 0.42 + index * 0.18;
+        const radius = 1.02 + row * 0.04;
+        const baseY = (1 - row) * 0.76;
+        const texture = loader.load(image);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = anisotropy;
+
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          opacity: 0.92,
+          side: THREE.DoubleSide,
+          fog: true,
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(Math.sin(baseAngle) * radius, baseY, Math.cos(baseAngle) * radius);
+        mesh.rotation.y = baseAngle;
+        mesh.rotation.z = -0.035 + row * 0.025;
+        mesh.renderOrder = panelIndex;
+        localRoot.add(mesh);
+
+        panels.push({
+          mesh,
+          material,
+          texture,
+          baseAngle,
+          baseY,
+          waveOffset: panelIndex * 0.48 + index,
+        });
+      }
+
+      const resize = () => {
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(1, Math.floor(rect.width));
+        const height = Math.max(1, Math.floor(rect.height));
+        localRenderer.setSize(width, height, false);
+        localCamera.aspect = width / height;
+        localCamera.updateProjectionMatrix();
+      };
+
+      resizeObserver = new ResizeObserver(resize);
+      resizeObserver.observe(canvas);
+      resize();
+
+      let autoRotation = index * 0.52;
+      let easedRotation = autoRotation;
+
+      const render = (time: number) => {
+        if (disposed) return;
+
+        const motion = motionRef.current;
+        if (!prefersReducedMotion) {
+          autoRotation += activeRef.current ? 0.0048 : 0.0026;
+        }
+        const targetRotation = autoRotation + motion.wheelRotation * 0.012 + motion.pointerX * 0.46;
+        easedRotation += (targetRotation - easedRotation) * 0.075;
+
+        localRoot.rotation.y = easedRotation;
+        localRoot.rotation.x += (-motion.pointerY * 0.18 - localRoot.rotation.x) * 0.08;
+        localRoot.rotation.z += (-0.07 + motion.pointerX * 0.045 - localRoot.rotation.z) * 0.08;
+
+        const targetScale = activeRef.current ? 1.04 : 0.94;
+        const nextScale = localRoot.scale.x + (targetScale - localRoot.scale.x) * 0.08;
+        localRoot.scale.setScalar(nextScale);
+
+        const baseOpacity = activeRef.current ? 0.98 : 0.68;
+        const waveTime = time * 0.001;
+        for (const panel of panels) {
+          const facing = (Math.cos(panel.baseAngle + easedRotation) + 1) / 2;
+          const panelScale = 0.88 + facing * 0.13;
+          panel.mesh.scale.set(panelScale, panelScale, 1);
+          panel.mesh.position.y = panel.baseY + Math.sin(waveTime * 0.7 + panel.waveOffset) * 0.025;
+          panel.material.opacity = baseOpacity * (0.28 + facing * 0.78);
+        }
+
+        localRenderer.render(scene, localCamera);
+        frameId = window.requestAnimationFrame(render);
+      };
+
+      frameId = window.requestAnimationFrame(render);
+    };
+
+    void initialize();
+
+    return () => {
+      disposed = true;
+      if (frameId) window.cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
+      for (const panel of panels) {
+        panel.material.dispose();
+        panel.texture.dispose();
+      }
+      geometry?.dispose();
+      if (root) root.clear();
+      renderer?.dispose();
+    };
+  }, [images, index]);
+
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-x-[-14px] top-[18px] z-0 h-[500px] overflow-visible"
+    >
+      <span
+        className="absolute inset-x-8 top-[64px] h-[360px] rounded-full opacity-70 blur-3xl"
+        style={{ background: `radial-gradient(circle at 50% 48%, ${accent}35, transparent 68%)` }}
+      />
+      <span className="absolute inset-x-10 top-[46%] h-px bg-gradient-to-r from-transparent via-white/18 to-transparent opacity-70" />
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 h-full w-full"
+        data-testid={`material-spiral-${index}`}
+      />
+    </span>
   );
 }
 
