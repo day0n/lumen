@@ -30,6 +30,7 @@ import {
   IconPlus,
   IconRefresh,
   IconSearch,
+  IconSelector,
   IconSettings,
   IconShoppingBag,
   IconTrendingUp,
@@ -90,6 +91,18 @@ type RemakePreparingState = {
   uploadCurrent: number;
   uploadTotal: number;
 };
+
+const ASPECT_RATIO_OPTIONS = ['9:16', '1:1', '16:9'] as const;
+type AspectRatioOption = (typeof ASPECT_RATIO_OPTIONS)[number];
+
+const DURATION_OPTIONS = ['15s', '30s', '45s'] as const;
+type DurationOption = (typeof DURATION_OPTIONS)[number];
+
+const COPY_LANGUAGE_OPTIONS = ['zh', 'en'] as const;
+type CopyLanguageOption = (typeof COPY_LANGUAGE_OPTIONS)[number];
+
+const RESOLUTION_OPTIONS = ['720p', '1080p'] as const;
+type ResolutionOption = (typeof RESOLUTION_OPTIONS)[number];
 
 interface ListHotVideosApiResponse {
   ok: boolean;
@@ -942,6 +955,40 @@ function RemakePreparingScreen({
   );
 }
 
+function SettingPicker<T extends string>({
+  label,
+  value,
+  options,
+  formatValue,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly T[];
+  formatValue?: (value: T) => string;
+  onChange: (value: T) => void;
+}) {
+  const handleCycle = () => {
+    const currentIndex = options.indexOf(value);
+    const nextIndex = (currentIndex + 1) % options.length;
+    const next = options[nextIndex];
+    if (next !== undefined) onChange(next);
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleCycle}
+      className="flex h-12 items-center justify-between rounded-xl bg-white/[0.045] px-4 text-left ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.075]"
+    >
+      <span className="text-[12px] text-white/38">{label}</span>
+      <span className="flex items-center gap-1.5 text-[13px] font-bold text-white">
+        {formatValue ? formatValue(value) : value}
+        <IconSelector size={13} stroke={2.2} className="text-white/40" />
+      </span>
+    </button>
+  );
+}
+
 function PreparingStep({
   label,
   status,
@@ -1007,6 +1054,10 @@ function ReplicaConfigModal({
   const [prompt, setPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatioOption>('9:16');
+  const [duration, setDuration] = useState<DurationOption>('15s');
+  const [copyLanguage, setCopyLanguage] = useState<CopyLanguageOption>(locale);
+  const [resolution, setResolution] = useState<ResolutionOption>('720p');
   const uploadedImagesRef = useRef(uploadedImages);
   const canGenerate = uploadedImages.length > 0 && !generating;
 
@@ -1107,10 +1158,10 @@ function ReplicaConfigModal({
           productImageUrls,
           prompt,
           settings: {
-            aspectRatio: '9:16',
-            resolution: '720p',
-            language: locale,
-            mode: 'standard',
+            aspectRatio,
+            resolution,
+            language: copyLanguage,
+            duration: Number.parseInt(duration, 10),
           },
         }),
         signal: controller.signal,
@@ -1274,23 +1325,35 @@ function ReplicaConfigModal({
                 {t('hotVideos.videoSettings')}
               </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {[
-                  [t('hotVideos.settings.aspect'), '9:16'],
-                  [t('hotVideos.settings.duration'), '15s'],
-                  [t('hotVideos.settings.copyLanguage'), t('hotVideos.settings.chinese')],
-                  [t('hotVideos.settings.mode'), t('hotVideos.settings.standard')],
-                  [t('hotVideos.settings.quality'), '720p'],
-                  [t('hotVideos.settings.count'), t('hotVideos.settings.one')],
-                ].map(([label, value]) => (
-                  <button
-                    key={label}
-                    type="button"
-                    className="flex h-12 items-center justify-between rounded-xl bg-white/[0.045] px-4 text-left ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.075]"
-                  >
-                    <span className="text-[12px] text-white/38">{label}</span>
-                    <span className="text-[13px] font-bold text-white">{value}</span>
-                  </button>
-                ))}
+                <SettingPicker
+                  label={t('hotVideos.settings.aspect')}
+                  value={aspectRatio}
+                  options={ASPECT_RATIO_OPTIONS}
+                  onChange={setAspectRatio}
+                />
+                <SettingPicker
+                  label={t('hotVideos.settings.duration')}
+                  value={duration}
+                  options={DURATION_OPTIONS}
+                  onChange={setDuration}
+                />
+                <SettingPicker
+                  label={t('hotVideos.settings.copyLanguage')}
+                  value={copyLanguage}
+                  options={COPY_LANGUAGE_OPTIONS}
+                  formatValue={(value) =>
+                    value === 'zh'
+                      ? t('hotVideos.settings.chinese')
+                      : t('hotVideos.settings.english')
+                  }
+                  onChange={setCopyLanguage}
+                />
+                <SettingPicker
+                  label={t('hotVideos.settings.quality')}
+                  value={resolution}
+                  options={RESOLUTION_OPTIONS}
+                  onChange={setResolution}
+                />
               </div>
             </div>
           </section>

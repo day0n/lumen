@@ -42,6 +42,7 @@ export function WorkspacePage() {
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [projects, setProjects] = useState<StudioProject[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (!authLoaded) return;
@@ -77,7 +78,12 @@ export function WorkspacePage() {
     return () => controller.abort();
   }, [authLoaded, isSignedIn, locale, requireLogin, t]);
 
-  const visibleProjects = useMemo(() => projects, [projects]);
+  const trimmedQuery = searchQuery.trim().toLowerCase();
+  const visibleProjects = useMemo(() => {
+    if (!trimmedQuery) return projects;
+    return projects.filter((project) => project.name.toLowerCase().includes(trimmedQuery));
+  }, [projects, trimmedQuery]);
+  const hasNoMatches = trimmedQuery.length > 0 && visibleProjects.length === 0;
 
   return (
     <div className="relative min-h-screen text-white">
@@ -94,11 +100,15 @@ export function WorkspacePage() {
           </div>
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <label className="flex h-10 w-[190px] items-center gap-2 rounded-xl bg-[#171819] px-3 text-white/45 ring-1 ring-white/[0.08]">
+            <label className="flex h-10 w-[190px] items-center gap-2 rounded-xl bg-[#171819] px-3 text-white/45 ring-1 ring-white/[0.08] focus-within:ring-white/20">
               <IconSearch size={16} stroke={2.1} />
               <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
                 className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/35"
-                placeholder={t('common.search')}
+                placeholder={t('workspace.searchPlaceholder')}
+                aria-label={t('workspace.searchPlaceholder')}
               />
             </label>
           </div>
@@ -110,16 +120,22 @@ export function WorkspacePage() {
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-          <NewProjectCard href={localePath('/canvas/new')} />
-          {visibleProjects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              href={localePath(`/canvas/${project.id}`)}
-            />
-          ))}
-        </div>
+        {hasNoMatches ? (
+          <div className="rounded-xl bg-[#171819]/70 px-4 py-10 text-center text-[13px] text-white/55 ring-1 ring-white/[0.06]">
+            {t('workspace.searchEmpty', { query: searchQuery.trim() })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+            {trimmedQuery ? null : <NewProjectCard href={localePath('/canvas/new')} />}
+            {visibleProjects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                href={localePath(`/canvas/${project.id}`)}
+              />
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );

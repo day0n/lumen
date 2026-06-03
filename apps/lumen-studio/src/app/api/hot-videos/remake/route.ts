@@ -31,6 +31,9 @@ const RemakeBodySchema = z
         aspectRatio: z.string().trim().optional(),
         resolution: z.string().trim().optional(),
         language: z.string().trim().optional(),
+        // 用户在前端选择的目标总时长（秒），仅作为 LLM 提示，不强制分镜数量。
+        duration: z.number().int().min(5).max(120).optional(),
+        // 兼容旧版字段，不再使用但保留以免老客户端报错。
         mode: z.string().trim().optional(),
       })
       .strict()
@@ -51,24 +54,35 @@ interface RemakePlan {
 }
 
 export const POST = withApiRouteSpan('POST /api/hot-videos/remake', async (request: Request) => {
-  const locale = resolveRequestLocale(request);
+  const requestLocale = resolveRequestLocale(request);
   try {
     const body = RemakeBodySchema.parse(await readJson(request));
     await requireStudioUser();
-    const video = body.videoId ? await getHotVideo(body.videoId, locale) : null;
+    // 文案语言以用户在配置弹窗中选的为准；没选则回退请求头 locale。
+    const copyLocale: 'en' | 'zh' =
+      body.settings?.language === 'zh' || body.settings?.language === 'en'
+        ? body.settings.language
+        : requestLocale;
+    const video = body.videoId ? await getHotVideo(body.videoId, copyLocale) : null;
 
     if (body.videoId && !video) {
-      return failJson(locale === 'zh' ? '爆款视频不存在' : 'Viral video not found', 404);
+      return failJson(copyLocale === 'zh' ? '爆款视频不存在' : 'Viral video not found', 404);
     }
 
     const reference = body.reference ?? makeReferenceFromVideo(video);
-    const fallbackPlan = buildFallbackPlan({ video, reference, prompt: body.prompt, locale });
+    const fallbackPlan = buildFallbackPlan({
+      video,
+      reference,
+      prompt: body.prompt,
+      locale: copyLocale,
+    });
     const generatedPlan = await tryGenerateRemakePlan({
       video,
       reference,
       prompt: body.prompt,
       productImageCount: body.productImageUrls.length,
-      locale,
+      locale: copyLocale,
+      targetDurationSeconds: body.settings?.duration,
     });
     const plan = normalizePlan(generatedPlan, fallbackPlan);
     const canvas = buildRemakeCanvas({
@@ -82,13 +96,13 @@ export const POST = withApiRouteSpan('POST /api/hot-videos/remake', async (reque
       ...(plan.bgmPrompt ? { bgmPrompt: plan.bgmPrompt } : {}),
       settings: {
         aspectRatio: body.settings?.aspectRatio || '9:16',
-        resolution: '720p',
+        resolution: normalizeResolution(body.settings?.resolution),
       },
     });
     const project = await createStudioProject({
-      title: `${locale === 'zh' ? '爆款复刻' : 'Viral remix'} - ${reference.label}`,
+      title: `${copyLocale === 'zh' ? '爆款复刻' : 'Viral remix'} - ${reference.label}`,
       description:
-        locale === 'zh'
+        copyLocale === 'zh'
           ? '隐藏画布：由爆款复刻页面驱动的后台工作流'
           : 'Hidden canvas: backend workflow driven by the viral remix page',
       ...(video?.thumbnailUrl ? { thumbnail: video.thumbnailUrl } : {}),
@@ -123,11 +137,15 @@ export const POST = withApiRouteSpan('POST /api/hot-videos/remake', async (reque
     });
   } catch (error) {
     if (error instanceof SyntaxError) {
-      return failJson(locale === 'zh' ? '请求 JSON 无效' : 'Invalid JSON', 400);
+      return failJson(requestLocale === 'zh' ? '请求 JSON 无效' : 'Invalid JSON', 400);
     }
-    return routeError(error, locale);
+    return routeError(error, requestLocale);
   }
 });
+
+function normalizeResolution(value: string | undefined): '720p' | '1080p' {
+  return value === '1080p' ? '1080p' : '720p';
+}
 
 function makeReferenceFromVideo(video: HotVideoRecord | null): z.infer<typeof ReferenceSchema> {
   if (video) {
@@ -152,6 +170,7 @@ async function tryGenerateRemakePlan(input: {
   prompt?: string;
   productImageCount: number;
   locale: 'en' | 'zh';
+  targetDurationSeconds?: number;
 }): Promise<Partial<RemakePlan> | null> {
   try {
     const text = await generateGeminiText(buildGeminiPrompt(input));
@@ -170,6 +189,7 @@ function buildGeminiPrompt(input: {
   prompt?: string;
   productImageCount: number;
   locale: 'en' | 'zh';
+  targetDurationSeconds?: number;
 }): string {
   const video = input.video;
   const product = video?.productName ?? input.reference.label;
@@ -198,6 +218,7 @@ Reference:
 - User product/request notes: ${input.prompt ?? ''}
 - Uploaded product image count: ${input.productImageCount}
 - Output language: ${input.locale === 'zh' ? 'Chinese' : 'English'}
+- Target total video length: ${input.targetDurationSeconds ? `~${input.targetDurationSeconds}s (pick scene count and per-scene duration so the sum lands near this)` : 'flexible'}
 
 Return this exact JSON shape, no markdown:
 {

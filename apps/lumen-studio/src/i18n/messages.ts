@@ -194,6 +194,8 @@ const en = {
     editedHours: 'Edited {count}h ago',
     editedDays: 'Edited {count}d ago',
     editedMonths: 'Edited {count}mo ago',
+    searchPlaceholder: 'Search workflows',
+    searchEmpty: 'No workflows match "{query}"',
   },
   canvas: {
     untitled: 'Untitled canvas',
@@ -502,6 +504,7 @@ const en = {
       count: 'Quantity',
       standard: 'Standard remix',
       chinese: 'Chinese',
+      english: 'English',
       one: '1 video',
     },
   },
@@ -808,6 +811,8 @@ const zh: typeof en = {
     editedHours: '编辑于 {count} 小时前',
     editedDays: '编辑于 {count} 天前',
     editedMonths: '编辑于 {count} 个月前',
+    searchPlaceholder: '搜索工作流',
+    searchEmpty: '没有匹配「{query}」的工作流',
   },
   canvas: {
     untitled: '未命名画布',
@@ -1114,6 +1119,7 @@ const zh: typeof en = {
       count: '生成数量',
       standard: '标准复刻',
       chinese: '中文',
+      english: '英文',
       one: '1条',
     },
   },
