@@ -89,7 +89,7 @@ type UploadPreview = {
 };
 
 const MAX_UPLOAD_IMAGES = 9;
-const SHOWCASE_IMAGE_COUNT = 6;
+const SHOWCASE_IMAGE_COUNT = 20;
 
 type MaterialCategoryConfig = {
   id: MaterialAssetCategory;
