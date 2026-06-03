@@ -402,6 +402,27 @@ body::before {
   }
 }
 
+.lumen-node-idle-shimmer {
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  position: relative;
+}
+
+.lumen-node-idle-shimmer::after {
+  animation: lumen-run-progress 2.2s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(121, 228, 255, 0.42),
+    rgba(157, 168, 255, 0.32),
+    transparent
+  );
+  content: "";
+  inset: 0;
+  position: absolute;
+  transform: translateX(-100%);
+}
+
 /* respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *,

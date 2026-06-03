@@ -891,6 +891,8 @@ function NodePreview({
               style={{ width: `${progressPercent}%` }}
             />
           </div>
+        ) : status === 'idle' ? (
+          <div className="lumen-node-idle-shimmer absolute inset-x-0 bottom-0 h-1" />
         ) : null}
       </div>
     </div>
