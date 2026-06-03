@@ -586,6 +586,59 @@ function isWorkflowNodeBusy(status?: LumenNodeData['status']) {
   return status === 'queued' || status === 'running';
 }
 
+function getNodeOutputCount(node: LumenNode | undefined) {
+  const output = node?.data.output?.trim();
+  return output && !isBlobUrl(output) ? 1 : 0;
+}
+
+function withCanvasOutputMetrics(nodes: LumenNode[], edges: LumenEdge[]) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const incomingByTarget = new Map<string, LumenEdge[]>();
+
+  for (const edge of edges) {
+    const incoming = incomingByTarget.get(edge.target) ?? [];
+    incoming.push(edge);
+    incomingByTarget.set(edge.target, incoming);
+  }
+
+  const countUpstreamOutputs = (nodeId: string, visited = new Set<string>()): number => {
+    const incoming = incomingByTarget.get(nodeId) ?? [];
+    let count = 0;
+
+    for (const edge of incoming) {
+      if (visited.has(edge.source)) continue;
+      visited.add(edge.source);
+      const source = nodeById.get(edge.source);
+      count += getNodeOutputCount(source);
+      count += countUpstreamOutputs(edge.source, visited);
+    }
+
+    return count;
+  };
+
+  return {
+    nodes: nodes.map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        outputCount: getNodeOutputCount(node),
+        upstreamOutputCount: countUpstreamOutputs(node.id),
+      },
+    })),
+    edges: edges.map((edge) => {
+      const source = nodeById.get(edge.source);
+      return {
+        ...edge,
+        data: {
+          ...(edge.data ?? {}),
+          sourceKind: source?.data.kind ?? null,
+          sourceOutputCount: getNodeOutputCount(source),
+        },
+      };
+    }),
+  };
+}
+
 function canConnectNodeKinds(sourceKind: NodeKind, targetKind: NodeKind) {
   return compatibleTargetKinds[sourceKind].includes(targetKind);
 }
@@ -832,6 +885,10 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const canRunNode = useCallback(
     (nodeId: string) => runnableNodeIds.has(nodeId),
     [runnableNodeIds],
+  );
+  const { nodes: displayNodes, edges: displayEdges } = useMemo(
+    () => withCanvasOutputMetrics(nodes, edges),
+    [edges, nodes],
   );
   const ungroupedSelectionBounds = useMemo(() => {
     if (selectedNodes.length < 2) return null;
@@ -1554,8 +1611,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         <div className="absolute inset-0 z-10">
           <ReactFlow
             className="lumen-flow"
-            nodes={nodes}
-            edges={edges}
+            nodes={displayNodes}
+            edges={displayEdges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
@@ -3030,6 +3087,8 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
     useContext(CanvasActionsContext);
   const styles = nodeKindStyles[data.kind];
   const status = data.status ?? 'idle';
+  const upstreamOutputCount =
+    typeof data.upstreamOutputCount === 'number' ? data.upstreamOutputCount : 0;
   const modelId = resolveModelId(data);
   const progress = data.progress ?? (status === 'running' ? 0.45 : 0);
   const canRun = canRunNode(id);
@@ -3245,6 +3304,15 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       onMouseDownCapture={handleNodePointerDownCapture}
       onPointerDownCapture={handleNodePointerDownCapture}
     >
+      <div
+        className={`pointer-events-none absolute -top-3 right-4 z-[80] flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[11px] font-black shadow-[0_10px_24px_rgba(0,0,0,0.28)] ring-1 ${
+          upstreamOutputCount > 0
+            ? 'bg-white text-[#111315] ring-white/40'
+            : 'bg-[#2d2e30] text-white/34 ring-white/[0.08]'
+        }`}
+      >
+        {upstreamOutputCount}
+      </div>
       <Handle
         type="target"
         position={Position.Left}
@@ -3628,6 +3696,16 @@ function LumenSmoothEdge(props: EdgeProps<LumenEdge>) {
     props;
   const [isHovered, setIsHovered] = useState(false);
   const { deleteElements } = useReactFlow<LumenNode, LumenEdge>();
+  const sourceOutputCount =
+    typeof props.data?.sourceOutputCount === 'number' ? props.data.sourceOutputCount : 0;
+  const sourceKind =
+    props.data?.sourceKind === 'text' ||
+    props.data?.sourceKind === 'image' ||
+    props.data?.sourceKind === 'video' ||
+    props.data?.sourceKind === 'audio'
+      ? props.data.sourceKind
+      : null;
+  const sourceLabel = sourceKind ? t(`canvas.nodeKinds.${sourceKind}`) : t('canvas.node.output');
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -3666,22 +3744,34 @@ function LumenSmoothEdge(props: EdgeProps<LumenEdge>) {
       />
       <BaseEdge id={id} interactionWidth={20} path={edgePath} style={{ stroke: 'transparent' }} />
       <foreignObject
-        height={28}
+        height={32}
         style={{ overflow: 'visible', pointerEvents: 'all' }}
-        width={28}
-        x={labelX - 14}
-        y={labelY - 14}
+        width={118}
+        x={labelX - 59}
+        y={labelY - 16}
       >
-        <button
-          type="button"
-          aria-label={t('canvas.node.deleteEdge')}
-          className={`nodrag nopan flex h-7 w-7 items-center justify-center rounded-full bg-[#ff5d73] text-white shadow-[0_10px_24px_rgba(255,93,115,0.28)] transition-opacity hover:opacity-100 ${
-            selected || isHovered ? 'opacity-100' : 'opacity-55'
-          }`}
-          onClick={handleDelete}
-        >
-          <IconTrash size={14} stroke={2.2} />
-        </button>
+        <div className="flex h-8 items-center justify-center gap-1">
+          <span
+            className={`nodrag nopan flex h-7 min-w-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-black shadow-[0_10px_24px_rgba(0,0,0,0.28)] ring-1 ${
+              sourceOutputCount > 0
+                ? 'bg-white text-[#111315] ring-white/40'
+                : 'bg-[#2d2e30]/96 text-white/36 ring-white/[0.08]'
+            }`}
+          >
+            <span className="max-w-[54px] truncate">{sourceLabel}</span>
+            <span>x{sourceOutputCount}</span>
+          </span>
+          <button
+            type="button"
+            aria-label={t('canvas.node.deleteEdge')}
+            className={`nodrag nopan flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#ff5d73] text-white shadow-[0_10px_24px_rgba(255,93,115,0.28)] transition-opacity hover:opacity-100 ${
+              selected || isHovered ? 'opacity-100' : 'opacity-0'
+            }`}
+            onClick={handleDelete}
+          >
+            <IconTrash size={14} stroke={2.2} />
+          </button>
+        </div>
       </foreignObject>
     </g>
   );

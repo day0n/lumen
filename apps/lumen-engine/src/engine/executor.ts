@@ -40,7 +40,9 @@ export class WorkflowExecutor {
         const graph = buildGraph(nodes, edges);
 
         const targetIds = nodeIds && nodeIds.length > 0 ? nodeIds : nodes.map((n) => n.id);
-        const sorted = topologicalSort(graph, targetIds);
+        const requestedSet = new Set(targetIds);
+        // Keep dependency ordering, but do not re-run upstream nodes that were not explicitly requested.
+        const sorted = topologicalSort(graph, targetIds).filter((id) => requestedSet.has(id));
         const failedIds = new Set<string>();
         const summary: WorkflowRunSummary = {
           queued: sorted.length,
