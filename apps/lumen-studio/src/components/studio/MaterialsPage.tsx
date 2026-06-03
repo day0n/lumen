@@ -16,7 +16,6 @@ import {
   IconSparkles,
   IconTrash,
   IconUpload,
-  IconUser,
   IconX,
 } from '@tabler/icons-react';
 import { motion } from 'motion/react';
@@ -94,7 +93,6 @@ const SHOWCASE_IMAGE_COUNT = 6;
 
 type MaterialCategoryConfig = {
   id: MaterialAssetCategory;
-  icon: typeof IconPhoto;
   accent: string;
   showcaseImages: readonly string[];
 };
@@ -124,19 +122,16 @@ function buildShowcaseImages(category: MaterialAssetCategory) {
 const materialCategories = [
   {
     id: 'item',
-    icon: IconPhoto,
     accent: '#79e4ff',
     showcaseImages: buildShowcaseImages('item'),
   },
   {
     id: 'character',
-    icon: IconSparkles,
     accent: '#ff5fbf',
     showcaseImages: buildShowcaseImages('character'),
   },
   {
     id: 'scene',
-    icon: IconUser,
     accent: '#f5c76a',
     showcaseImages: buildShowcaseImages('scene'),
   },
@@ -403,7 +398,6 @@ function CategoryCard({
   desc: string;
   onSelect: () => void;
 }) {
-  const Icon = category.icon;
   const accent = category.accent;
   const cardRef = useRef<HTMLButtonElement | null>(null);
   const [spot, setSpot] = useState<{ x: number; y: number } | null>(null);
@@ -485,27 +479,6 @@ function CategoryCard({
         </span>
 
         <span className="relative z-10 flex items-end gap-3 px-4 pb-5">
-          <span
-            className={cn(
-              'flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_14px_34px_rgba(0,0,0,0.28)] ring-1 backdrop-blur-md transition-colors duration-300',
-              !active && 'ring-white/[0.13]',
-            )}
-            style={
-              active
-                ? {
-                    backgroundColor: `${accent}1f`,
-                    color: accent,
-                    boxShadow: `inset 0 0 0 1px ${accent}4f`,
-                  }
-                : {
-                    backgroundColor: `${accent}16`,
-                    color: `${accent}d8`,
-                    boxShadow: `inset 0 0 0 1px ${accent}35, inset 0 1px 0 rgba(255,255,255,0.12), 0 14px 34px rgba(0,0,0,0.28)`,
-                  }
-            }
-          >
-            <Icon size={22} stroke={1.9} />
-          </span>
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               <span className="block text-[20px] font-bold leading-none text-white drop-shadow-[0_1px_18px_rgba(0,0,0,0.66)]">
