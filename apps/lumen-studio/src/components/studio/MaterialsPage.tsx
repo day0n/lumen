@@ -93,13 +93,24 @@ type UploadPreview = {
 };
 
 const MAX_UPLOAD_IMAGES = 9;
-const SHOWCASE_IMAGE_COUNT = 10;
-
 type MaterialCategoryConfig = {
   id: MaterialAssetCategory;
   accent: string;
   showcaseImages: readonly string[];
 };
+
+type ShowcaseImageSet = readonly [
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+];
 
 type ShowcaseMotionState = {
   pointerX: number;
@@ -116,28 +127,58 @@ type MaterialSpiralPanel = {
   waveOffset: number;
 };
 
-function buildShowcaseImages(category: MaterialAssetCategory) {
-  return Array.from(
-    { length: SHOWCASE_IMAGE_COUNT },
-    (_, index) => `/material-showcase/${category}-${String(index + 1).padStart(2, '0')}.webp`,
-  );
+function buildShowcaseImages(images: ShowcaseImageSet) {
+  return images.map((image) => `/material-showcase/${image}.webp`);
 }
 
 const materialCategories = [
   {
     id: 'item',
     accent: '#79e4ff',
-    showcaseImages: buildShowcaseImages('item'),
+    showcaseImages: buildShowcaseImages([
+      'character-01',
+      'character-03',
+      'character-05',
+      'character-07',
+      'character-09',
+      'character-15',
+      'character-19',
+      'item-09',
+      'scene-02',
+      'scene-03',
+    ]),
   },
   {
     id: 'character',
     accent: '#ff5fbf',
-    showcaseImages: buildShowcaseImages('character'),
+    showcaseImages: buildShowcaseImages([
+      'ai-model-01',
+      'ai-model-02',
+      'ai-model-03',
+      'ai-model-04',
+      'ai-model-05',
+      'ai-model-06',
+      'character-02',
+      'item-06',
+      'scene-11',
+      'scene-18',
+    ]),
   },
   {
     id: 'scene',
     accent: '#f5c76a',
-    showcaseImages: buildShowcaseImages('scene'),
+    showcaseImages: buildShowcaseImages([
+      'character-10',
+      'character-11',
+      'character-12',
+      'character-13',
+      'item-02',
+      'item-08',
+      'item-14',
+      'scene-12',
+      'scene-14',
+      'scene-16',
+    ]),
   },
 ] satisfies MaterialCategoryConfig[];
 
