@@ -495,7 +495,7 @@ function CategoryCard({
 
       <span className="pointer-events-none relative z-10 flex h-full min-h-[560px] flex-col justify-end px-4 pb-6">
         <span
-          className="block text-center font-display text-[22px] font-extrabold leading-none text-white drop-shadow-[0_1px_18px_rgba(0,0,0,0.66)] transition-opacity duration-300"
+          className="block text-center font-display text-[32px] font-extrabold leading-none text-white drop-shadow-[0_1px_18px_rgba(0,0,0,0.66)] transition-opacity duration-300 md:text-[42px]"
           style={{ opacity: active ? 1 : 0.82 }}
         >
           {title}
