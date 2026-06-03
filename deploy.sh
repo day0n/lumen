@@ -62,7 +62,7 @@ echo "==> Ensuring nginx upload limit..."
 NGINX_BODY_SIZE_CONF=/etc/nginx/conf.d/lumen-body-size.conf
 if [ "$(id -u)" -eq 0 ] && command -v nginx >/dev/null 2>&1; then
   cat > "$NGINX_BODY_SIZE_CONF" <<'NGINX'
-client_max_body_size 20m;
+client_max_body_size 128m;
 NGINX
   nginx -t
   systemctl reload nginx

@@ -21,6 +21,8 @@ export const NodeInputSchema = z.object({
   lastFrameImage: z.string().nullable().default(null),
   video: z.string().nullable().default(null),
   videos: z.array(z.string().trim().min(1)).default([]),
+  audio: z.string().nullable().default(null),
+  audios: z.array(z.string().trim().min(1)).default([]),
   clips: z.array(VideoClipInputSchema).default([]),
 });
 export type NodeInput = z.infer<typeof NodeInputSchema>;

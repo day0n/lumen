@@ -13,6 +13,8 @@ export interface ResolvedInput {
   lastFrameImage: string | null;
   video: string | null;
   videos: string[];
+  audio: string | null;
+  audios: string[];
   clips: VideoClipInput[];
 }
 
@@ -49,6 +51,8 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
     lastFrameImage: node.input.lastFrameImage,
     video: node.input.video,
     videos: [...node.input.videos],
+    audio: node.input.audio,
+    audios: [...node.input.audios],
     clips: [...node.input.clips],
   };
   const upstreamImages: string[] = [];
@@ -83,6 +87,7 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
         addResolvedVideo(resolved, upstreamOutput);
         break;
       case 'audio':
+        addResolvedAudio(resolved, upstreamOutput);
         break;
     }
   }
@@ -100,4 +105,11 @@ function addResolvedVideo(input: ResolvedInput, url: string) {
   if (!input.video) input.video = trimmed;
   if (!input.videos.includes(trimmed)) input.videos.push(trimmed);
   if (!input.clips.some((clip) => clip.url === trimmed)) input.clips.push({ url: trimmed });
+}
+
+function addResolvedAudio(input: ResolvedInput, url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return;
+  if (!input.audio) input.audio = trimmed;
+  if (!input.audios.includes(trimmed)) input.audios.push(trimmed);
 }

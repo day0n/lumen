@@ -6,14 +6,77 @@ import { uploadBuffer } from '@/server/objectStorage';
 
 export const runtime = 'nodejs';
 
-const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+type CanvasUploadKind = 'image' | 'video' | 'audio';
 
-const IMAGE_EXTENSIONS: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-  'image/avif': 'avif',
+const uploadConfigs: Record<
+  CanvasUploadKind,
+  {
+    maxBytes: number;
+    extensions: Record<string, string>;
+    fallbackContentTypes: Record<string, string>;
+  }
+> = {
+  image: {
+    maxBytes: 12 * 1024 * 1024,
+    extensions: {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+      'image/avif': 'avif',
+    },
+    fallbackContentTypes: {
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      avif: 'image/avif',
+    },
+  },
+  video: {
+    maxBytes: 120 * 1024 * 1024,
+    extensions: {
+      'video/mp4': 'mp4',
+      'video/webm': 'webm',
+      'video/quicktime': 'mov',
+      'video/x-m4v': 'm4v',
+    },
+    fallbackContentTypes: {
+      mp4: 'video/mp4',
+      m4v: 'video/x-m4v',
+      mov: 'video/quicktime',
+      webm: 'video/webm',
+    },
+  },
+  audio: {
+    maxBytes: 50 * 1024 * 1024,
+    extensions: {
+      'audio/mpeg': 'mp3',
+      'audio/mp3': 'mp3',
+      'audio/wav': 'wav',
+      'audio/x-wav': 'wav',
+      'audio/ogg': 'ogg',
+      'audio/aac': 'aac',
+      'audio/mp4': 'm4a',
+      'audio/x-m4a': 'm4a',
+      'audio/flac': 'flac',
+    },
+    fallbackContentTypes: {
+      mp3: 'audio/mpeg',
+      wav: 'audio/wav',
+      ogg: 'audio/ogg',
+      aac: 'audio/aac',
+      m4a: 'audio/mp4',
+      flac: 'audio/flac',
+    },
+  },
+};
+
+const mediaKindLabels: Record<CanvasUploadKind, string> = {
+  image: 'image',
+  video: 'video',
+  audio: 'audio',
 };
 
 export const POST = withApiRouteSpan('POST /api/canvas/uploads', async (request: Request) => {
@@ -22,25 +85,31 @@ export const POST = withApiRouteSpan('POST /api/canvas/uploads', async (request:
     const user = await requireStudioUser();
     const form = await request.formData();
     const file = form.get('file');
+    const kind = readUploadKind(form.get('kind'));
+    const config = uploadConfigs[kind];
 
     if (!(file instanceof File)) {
-      return failJson(translate(locale, 'api.uploadMissingImage'), 400);
+      return failJson(translate(locale, 'api.uploadMissingMedia'), 400);
     }
 
-    const contentType = normalizeContentType(file.type);
-    if (!contentType || !contentType.startsWith('image/')) {
-      return failJson(translate(locale, 'api.uploadImageOnly'), 400);
+    const extension = resolveMediaExtension(kind, file.type, file.name);
+    const contentType = normalizeContentType(file.type) || fallbackContentType(kind, extension);
+    if (!extension || !isSupportedMediaType(kind, contentType)) {
+      return failJson(
+        translate(locale, 'api.uploadMediaOnly', { kind: mediaKindLabels[kind] }),
+        400,
+      );
     }
     if (file.size <= 0) {
-      return failJson(translate(locale, 'api.uploadEmptyImage'), 400);
+      return failJson(translate(locale, 'api.uploadEmptyMedia'), 400);
     }
-    if (file.size > MAX_IMAGE_BYTES) {
-      return failJson(translate(locale, 'api.uploadImageTooLarge'), 400);
-    }
-
-    const extension = resolveImageExtension(contentType, file.name);
-    if (!extension) {
-      return failJson(translate(locale, 'api.uploadUnsupportedImage'), 400);
+    if (file.size > config.maxBytes) {
+      return failJson(
+        translate(locale, 'api.uploadMediaTooLarge', {
+          size: Math.round(config.maxBytes / 1024 / 1024),
+        }),
+        400,
+      );
     }
 
     const workflowId = toPathSegment(form.get('workflowId'));
@@ -50,7 +119,7 @@ export const POST = withApiRouteSpan('POST /api/canvas/uploads', async (request:
       body: bytes,
       contentType,
       extension,
-      prefix: ['canvas', user.id, workflowId, nodeId].filter(Boolean).join('/'),
+      prefix: ['canvas', user.id, kind, workflowId, nodeId].filter(Boolean).join('/'),
     });
 
     return okJson({
@@ -67,21 +136,38 @@ export const POST = withApiRouteSpan('POST /api/canvas/uploads', async (request:
   }
 });
 
+function readUploadKind(value: FormDataEntryValue | null): CanvasUploadKind {
+  if (value === 'video' || value === 'audio' || value === 'image') return value;
+  return 'image';
+}
+
 function normalizeContentType(value: string): string {
   return value.split(';')[0]?.trim().toLowerCase() ?? '';
 }
 
-function resolveImageExtension(contentType: string, fileName: string): string | null {
-  const fromType = IMAGE_EXTENSIONS[contentType];
+function isSupportedMediaType(kind: CanvasUploadKind, contentType: string): boolean {
+  return contentType in uploadConfigs[kind].extensions;
+}
+
+function resolveMediaExtension(
+  kind: CanvasUploadKind,
+  rawContentType: string,
+  fileName: string,
+): string | null {
+  const contentType = normalizeContentType(rawContentType);
+  const fromType = uploadConfigs[kind].extensions[contentType];
   if (fromType) return fromType;
 
   const match = /\.([a-z0-9]+)$/i.exec(fileName.trim());
   const extension = match?.[1]?.toLowerCase();
   if (!extension) return null;
-  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'].includes(extension)) {
-    return extension === 'jpeg' ? 'jpg' : extension;
-  }
+  if (extension in uploadConfigs[kind].fallbackContentTypes) return extension;
   return null;
+}
+
+function fallbackContentType(kind: CanvasUploadKind, extension: string | null): string {
+  if (!extension) return '';
+  return uploadConfigs[kind].fallbackContentTypes[extension] ?? '';
 }
 
 function toPathSegment(value: FormDataEntryValue | null): string | null {

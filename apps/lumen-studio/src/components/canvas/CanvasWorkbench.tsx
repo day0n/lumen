@@ -80,6 +80,7 @@ import type {
   MouseEvent,
   DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
 } from 'react';
 
 import { ChatPanel } from '@/features/agent-chat/ChatPanel';
@@ -128,7 +129,7 @@ type CanvasSaveState = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 interface CanvasActions {
   runSingleNode: (nodeId: string) => void;
   updateNodeData: (nodeId: string, patch: Partial<LumenNodeData>) => void;
-  uploadCanvasImage: (file: File, nodeId?: string) => Promise<string>;
+  uploadCanvasMedia: (file: File, kind: MaterialAssetKind, nodeId?: string) => Promise<string>;
   connectionError: string | null;
   canRunNode: (nodeId: string) => boolean;
 }
@@ -136,7 +137,7 @@ interface CanvasActions {
 const CanvasActionsContext = createContext<CanvasActions>({
   runSingleNode: () => {},
   updateNodeData: () => {},
-  uploadCanvasImage: async () => '',
+  uploadCanvasMedia: async () => '',
   connectionError: null,
   canRunNode: () => false,
 });
@@ -407,7 +408,7 @@ const compatibleTargetKinds: Record<NodeKind, NodeKind[]> = {
   text: ['text', 'image', 'video', 'audio'],
   image: ['text', 'image', 'video'],
   video: ['text', 'video'],
-  audio: ['text', 'audio'],
+  audio: ['text', 'video', 'audio'],
 };
 
 function createNodeData(template: NodeTemplate): LumenNodeData {
@@ -705,6 +706,7 @@ function toWorkflowNodes(nodes: LumenNode[]) {
     const inputImage = getSettingString(node.data.settings, 'inputImage');
     const inputLastFrameImage = getSettingString(node.data.settings, 'inputLastFrameImage');
     const inputVideo = getSettingString(node.data.settings, 'inputVideo');
+    const inputAudio = getSettingString(node.data.settings, 'inputAudio');
 
     return {
       id: node.id,
@@ -718,6 +720,10 @@ function toWorkflowNodes(nodes: LumenNode[]) {
           inputLastFrameImage && !isBlobUrl(inputLastFrameImage) ? inputLastFrameImage : null,
         video: inputVideo && !isBlobUrl(inputVideo) ? inputVideo : null,
         videos: getSettingStringArray(node.data.settings, 'inputVideos').filter(
+          (url) => !isBlobUrl(url),
+        ),
+        audio: inputAudio && !isBlobUrl(inputAudio) ? inputAudio : null,
+        audios: getSettingStringArray(node.data.settings, 'inputAudios').filter(
           (url) => !isBlobUrl(url),
         ),
         clips: getSettingVideoClips(node.data.settings).filter((clip) => !isBlobUrl(clip.url)),
@@ -1004,14 +1010,15 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     [setNodes],
   );
 
-  const uploadCanvasImage = useCallback(
-    async (file: File, nodeId?: string) => {
+  const uploadCanvasMedia = useCallback(
+    async (file: File, kind: MaterialAssetKind, nodeId?: string) => {
       pendingCanvasUploads.current += 1;
       setCanvasMediaUploading(true);
 
       try {
         const form = new FormData();
         form.set('file', file);
+        form.set('kind', kind);
         if (currentProjectId) form.set('workflowId', currentProjectId);
         if (nodeId) form.set('nodeId', nodeId);
 
@@ -1600,8 +1607,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   );
 
   const canvasActions = useMemo<CanvasActions>(
-    () => ({ runSingleNode, updateNodeData, uploadCanvasImage, connectionError, canRunNode }),
-    [runSingleNode, updateNodeData, uploadCanvasImage, connectionError, canRunNode],
+    () => ({ runSingleNode, updateNodeData, uploadCanvasMedia, connectionError, canRunNode }),
+    [runSingleNode, updateNodeData, uploadCanvasMedia, connectionError, canRunNode],
   );
 
   return (
@@ -3083,7 +3090,7 @@ function ParamPills<T extends string | number>({
 function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const { t } = useI18n();
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
-  const { runSingleNode, updateNodeData, uploadCanvasImage, connectionError, canRunNode } =
+  const { runSingleNode, updateNodeData, uploadCanvasMedia, connectionError, canRunNode } =
     useContext(CanvasActionsContext);
   const styles = nodeKindStyles[data.kind];
   const status = data.status ?? 'idle';
@@ -3179,7 +3186,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       const previewUrl = URL.createObjectURL(file);
       updateSettings({ [settingKey]: previewUrl });
       try {
-        const uploadedUrl = await uploadCanvasImage(file, id);
+        const uploadedUrl = await uploadCanvasMedia(file, 'image', id);
         updateSettings({ [settingKey]: uploadedUrl });
       } catch (error) {
         console.error(error);
@@ -3188,16 +3195,16 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
         URL.revokeObjectURL(previewUrl);
       }
     },
-    [data.settings, id, updateSettings, uploadCanvasImage],
+    [data.settings, id, updateSettings, uploadCanvasMedia],
   );
 
-  const handleOutputImageUpload = useCallback(
-    async (file: File) => {
+  const handleOutputMediaUpload = useCallback(
+    async (file: File, kind: MaterialAssetKind) => {
       const previousValue = data.output ?? null;
       const previewUrl = URL.createObjectURL(file);
       updateNodeData(id, { output: previewUrl });
       try {
-        const uploadedUrl = await uploadCanvasImage(file, id);
+        const uploadedUrl = await uploadCanvasMedia(file, kind, id);
         updateNodeData(id, { output: uploadedUrl });
       } catch (error) {
         console.error(error);
@@ -3206,7 +3213,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
         URL.revokeObjectURL(previewUrl);
       }
     },
-    [data.output, id, updateNodeData, uploadCanvasImage],
+    [data.output, id, updateNodeData, uploadCanvasMedia],
   );
 
   const dragSourceRef = useRef<'first' | 'last' | null>(null);
@@ -3344,7 +3351,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
             <NodeOutputEditor
               data={data}
               onChange={(output) => updateNodeData(id, { output: output || null })}
-              onImageUpload={handleOutputImageUpload}
+              onMediaUpload={handleOutputMediaUpload}
             />
             {isNodeBusy ? <div className="lumen-node-running-overlay absolute inset-0" /> : null}
             {isNodeBusy ? (
@@ -3562,35 +3569,40 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
 function NodeOutputEditor({
   data,
   onChange,
-  onImageUpload,
+  onMediaUpload,
 }: {
   data: LumenNodeData;
   onChange: (output: string) => void;
-  onImageUpload: (file: File) => Promise<void>;
+  onMediaUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
 }) {
   const { t } = useI18n();
   const output = data.output ?? '';
   const trimmedOutput = output.trim();
 
+  if (data.kind === 'text') {
+    return <TextOutputEditor onChange={onChange} output={output} />;
+  }
+
   if (data.kind === 'image') {
     if (trimmedOutput && (trimmedOutput.startsWith('data:image') || isHttpUrl(trimmedOutput))) {
       return (
-        <img
-          alt={t('canvas.node.imageAlt')}
-          className="h-full w-full object-cover"
-          decoding="async"
-          draggable={false}
-          loading="lazy"
-          onError={(event) => {
-            event.currentTarget.style.opacity = '0';
-          }}
-          src={trimmedOutput}
-        />
+        <MediaOutputFrame kind="image" onUpload={onMediaUpload}>
+          <img
+            alt={t('canvas.node.imageAlt')}
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+            decoding="async"
+            draggable={false}
+            loading="lazy"
+            onError={(event) => {
+              event.currentTarget.style.opacity = '0';
+            }}
+            src={trimmedOutput}
+          />
+        </MediaOutputFrame>
       );
     }
 
-    // 图片节点的输出会传给下游节点，只能是图片：无结果时提供点击上传占位
-    return <ImageOutputUpload onUpload={onImageUpload} />;
+    return <MediaOutputUpload kind="image" onUpload={onMediaUpload} />;
   }
 
   if (
@@ -3599,18 +3611,19 @@ function NodeOutputEditor({
     (trimmedOutput.startsWith('data:video') || isHttpUrl(trimmedOutput))
   ) {
     return (
-      <video
-        // transform-gpu + contain:paint 把视频提升到独立合成层，播放重绘不再波及整个节点/画布
-        className="h-full w-full transform-gpu object-cover"
-        style={{ contain: 'paint' }}
-        controls
-        muted
-        playsInline
-        preload="metadata"
-        src={trimmedOutput}
-      >
-        <track kind="captions" />
-      </video>
+      <MediaOutputFrame kind="video" onUpload={onMediaUpload}>
+        <video
+          // transform-gpu + contain:paint 把视频提升到独立合成层，播放重绘不再波及整个节点/画布
+          className="pointer-events-none absolute inset-0 h-full w-full transform-gpu object-cover"
+          style={{ contain: 'paint' }}
+          muted
+          playsInline
+          preload="metadata"
+          src={trimmedOutput}
+        >
+          <track kind="captions" />
+        </video>
+      </MediaOutputFrame>
     );
   }
 
@@ -3620,53 +3633,105 @@ function NodeOutputEditor({
     (trimmedOutput.startsWith('data:audio') || isHttpUrl(trimmedOutput))
   ) {
     return (
-      <div className="flex h-[104px] w-full flex-col justify-center gap-3 px-3">
-        <div className="flex items-center gap-1.5">
-          {waveformBars.map((bar) => (
-            <span
-              key={bar.id}
-              className="w-1.5 rounded-full bg-white/28"
-              style={{ height: bar.height }}
-            />
-          ))}
+      <MediaOutputFrame kind="audio" onUpload={onMediaUpload}>
+        <div className="pointer-events-none flex min-h-[104px] w-full flex-col justify-center gap-3 px-3">
+          <div className="flex items-center gap-1.5">
+            {waveformBars.map((bar) => (
+              <span
+                key={bar.id}
+                className="w-1.5 rounded-full bg-white/28"
+                style={{ height: bar.height }}
+              />
+            ))}
+          </div>
         </div>
-        <audio className="h-8 w-full" controls src={trimmedOutput}>
+        <audio
+          className="nodrag nopan absolute inset-x-3 bottom-3 h-8"
+          controls
+          src={trimmedOutput}
+        >
           <track kind="captions" />
         </audio>
-      </div>
+      </MediaOutputFrame>
+    );
+  }
+
+  return <MediaOutputUpload kind={data.kind} onUpload={onMediaUpload} />;
+}
+
+function TextOutputEditor({
+  onChange,
+  output,
+}: {
+  onChange: (output: string) => void;
+  output: string;
+}) {
+  const { t } = useI18n();
+  const [editing, setEditing] = useState(false);
+  const hasOutput = output.trim().length > 0;
+
+  if (editing) {
+    return (
+      <ImeTextarea
+        aria-label={t('canvas.node.output')}
+        autoFocus
+        className="nodrag nowheel block min-h-[104px] w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/26"
+        onBlur={() => setEditing(false)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+        onValueChange={onChange}
+        placeholder={t('canvas.node.output')}
+        value={output}
+      />
     );
   }
 
   return (
-    <ImeTextarea
-      aria-label={t('canvas.node.output')}
-      className="nodrag nowheel block min-h-[104px] w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/26"
-      onValueChange={onChange}
-      placeholder={t('canvas.node.output')}
-      value={output}
-    />
+    <div
+      className="min-h-[104px] w-full cursor-grab whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none transition-colors hover:text-white/86 active:cursor-grabbing"
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        setEditing(true);
+      }}
+    >
+      <span className={hasOutput ? undefined : 'text-white/28'}>
+        {hasOutput ? output : t('canvas.node.output')}
+      </span>
+    </div>
   );
 }
 
-function ImageOutputUpload({ onUpload }: { onUpload: (file: File) => Promise<void> }) {
+function MediaOutputFrame({
+  children,
+  kind,
+  onUpload,
+}: {
+  children: ReactNode;
+  kind: MaterialAssetKind;
+  onUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
+}) {
+  return (
+    <div className="group/output relative min-h-[104px] w-full cursor-grab overflow-hidden active:cursor-grabbing">
+      {children}
+      <MediaOutputUploadButton kind={kind} onUpload={onUpload} />
+    </div>
+  );
+}
+
+function MediaOutputUpload({
+  kind,
+  onUpload,
+}: {
+  kind: MaterialAssetKind;
+  onUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
+}) {
   const { t } = useI18n();
   const [uploading, setUploading] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleUpload = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      event.target.value = '';
-      if (!file) return;
-      setUploading(true);
-      try {
-        await onUpload(file);
-      } finally {
-        setUploading(false);
-      }
-    },
-    [onUpload],
-  );
+  const Icon = mediaOutputIcon(kind);
 
   return (
     <div className="group/output relative flex min-h-[104px] w-full cursor-grab flex-col items-center justify-center gap-2 px-3 py-2.5 text-white/30 transition-colors hover:text-white/64 active:cursor-grabbing">
@@ -3674,16 +3739,59 @@ function ImageOutputUpload({ onUpload }: { onUpload: (file: File) => Promise<voi
         {uploading ? (
           <IconLoader2 size={26} stroke={1.8} className="animate-spin opacity-70" />
         ) : (
-          <IconPhoto size={30} stroke={1.6} className="opacity-70" />
+          <Icon size={30} stroke={1.6} className="opacity-70" />
         )}
         <span className="text-[12px] font-bold">
-          {uploading ? t('materials.uploading') : t('canvas.node.textUpload')}
+          {uploading ? t('materials.uploading') : t('canvas.node.upload')}
         </span>
       </div>
+      <MediaOutputUploadButton kind={kind} onUpload={onUpload} onUploadingChange={setUploading} />
+    </div>
+  );
+}
+
+function MediaOutputUploadButton({
+  kind,
+  onUpload,
+  onUploadingChange,
+}: {
+  kind: MaterialAssetKind;
+  onUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
+  onUploadingChange?: (uploading: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const setUploadState = useCallback(
+    (nextUploading: boolean) => {
+      setUploading(nextUploading);
+      onUploadingChange?.(nextUploading);
+    },
+    [onUploadingChange],
+  );
+
+  const handleUpload = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+      setUploadState(true);
+      try {
+        await onUpload(file, kind);
+      } finally {
+        setUploadState(false);
+      }
+    },
+    [kind, onUpload, setUploadState],
+  );
+
+  return (
+    <>
       <button
         type="button"
-        className="nodrag nopan absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/45 text-white/68 ring-1 ring-white/[0.12] transition-colors hover:bg-black/62 hover:text-white"
-        aria-label={t('canvas.node.textUpload')}
+        className="nodrag nopan absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/45 text-white/68 ring-1 ring-white/[0.12] transition-colors hover:bg-black/62 hover:text-white"
+        aria-label={t('canvas.node.upload')}
         disabled={uploading}
         onClick={(event) => {
           event.stopPropagation();
@@ -3701,12 +3809,34 @@ function ImageOutputUpload({ onUpload }: { onUpload: (file: File) => Promise<voi
         ref={inputRef}
         className="sr-only"
         type="file"
-        accept="image/*"
+        accept={mediaAccept(kind)}
         disabled={uploading}
         onChange={handleUpload}
       />
-    </div>
+    </>
   );
+}
+
+function mediaAccept(kind: MaterialAssetKind): string {
+  switch (kind) {
+    case 'image':
+      return 'image/*';
+    case 'video':
+      return 'video/*';
+    case 'audio':
+      return 'audio/*';
+  }
+}
+
+function mediaOutputIcon(kind: MaterialAssetKind): typeof IconPlus {
+  switch (kind) {
+    case 'image':
+      return IconPhoto;
+    case 'video':
+      return IconVideo;
+    case 'audio':
+      return IconMusic;
+  }
 }
 
 function isHttpUrl(value: string): boolean {

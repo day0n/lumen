@@ -190,6 +190,8 @@ export function canvasNodeToWorkflowNode(node: LumenCanvasNode) {
       lastFrameImage: getSettingString(settings, 'inputLastFrameImage') || null,
       video: getSettingString(settings, 'inputVideo') || null,
       videos: getSettingStringArray(settings, 'inputVideos'),
+      audio: getSettingString(settings, 'inputAudio') || null,
+      audios: getSettingStringArray(settings, 'inputAudios'),
       clips: getSettingVideoClips(settings),
     },
     model: { id: resolveCanvasNodeModelId(node), settings },
@@ -279,6 +281,7 @@ export function computeSingleNodeInput(canvas: LumenCanvas, nodeId: string) {
         addResolvedVideo(resolved, output);
         break;
       case 'audio':
+        addResolvedAudio(resolved, output);
         break;
     }
   }
@@ -292,6 +295,13 @@ function addResolvedVideo(input: z.infer<typeof NodeInputSchema>, url: string) {
   if (!input.video) input.video = trimmed;
   if (!input.videos.includes(trimmed)) input.videos.push(trimmed);
   if (!input.clips.some((clip) => clip.url === trimmed)) input.clips.push({ url: trimmed });
+}
+
+function addResolvedAudio(input: z.infer<typeof NodeInputSchema>, url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return;
+  if (!input.audio) input.audio = trimmed;
+  if (!input.audios.includes(trimmed)) input.audios.push(trimmed);
 }
 
 function truncateTextContext(value: string, limit: number): string {
