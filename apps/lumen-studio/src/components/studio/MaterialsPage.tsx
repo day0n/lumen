@@ -7,7 +7,6 @@ import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import {
   IconAlertTriangle,
-  IconArrowUpRight,
   IconCheck,
   IconChevronDown,
   IconLoader2,
@@ -257,16 +256,6 @@ export function MaterialsPage() {
     [activeCategory, assetsByCategory],
   );
 
-  const counts = useMemo(() => {
-    return materialCategories.reduce(
-      (result, category) => {
-        result[category.id] = assetsByCategory[category.id]?.length ?? 0;
-        return result;
-      },
-      {} as Record<MaterialAssetCategory, number>,
-    );
-  }, [assetsByCategory]);
-
   const handleShowcasePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const rect = showcaseRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -343,10 +332,8 @@ export function MaterialsPage() {
               category={category}
               index={index}
               active={activeCategory === category.id}
-              count={counts[category.id] ?? 0}
               motionState={showcaseMotion}
               title={t(`materials.categories.${category.id}.title`)}
-              desc={t(`materials.categories.${category.id}.desc`)}
               onSelect={() => setActiveCategory(category.id)}
             />
           ))}
@@ -446,19 +433,15 @@ function CategoryCard({
   category,
   index,
   active,
-  count,
   motionState,
   title,
-  desc,
   onSelect,
 }: {
   category: MaterialCategoryConfig;
   index: number;
   active: boolean;
-  count: number;
   motionState: ShowcaseMotionState;
   title: string;
-  desc: string;
   onSelect: () => void;
 }) {
   const accent = category.accent;
@@ -510,54 +493,12 @@ function CategoryCard({
         }}
       />
 
-      <span className="pointer-events-none relative z-10 flex h-full min-h-[560px] flex-col justify-between">
-        <span className="flex items-start justify-between px-4 pt-4">
-          <span
-            className="font-display text-[13px] font-extrabold tabular-nums tracking-wide transition-opacity duration-300"
-            style={{ color: active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)' }}
-          >
-            {String(index + 1).padStart(2, '0')}
-          </span>
-          <span
-            className={cn(
-              'flex h-8 min-w-[32px] items-center justify-center rounded-full px-2.5 text-[12px] font-bold tabular-nums shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] ring-1 backdrop-blur-xl',
-              !active && 'ring-white/[0.12]',
-            )}
-            style={
-              active
-                ? {
-                    backgroundColor: 'rgba(255,255,255,0.13)',
-                    color: 'rgba(255,255,255,0.95)',
-                    boxShadow:
-                      'inset 0 0 0 1px rgba(255,255,255,0.28), inset 0 1px 0 rgba(255,255,255,0.16)',
-                  }
-                : {
-                    backgroundColor: 'rgba(255,255,255,0.08)',
-                    color: 'rgba(255,255,255,0.78)',
-                    boxShadow:
-                      'inset 0 0 0 1px rgba(255,255,255,0.16), inset 0 1px 0 rgba(255,255,255,0.12)',
-                  }
-            }
-          >
-            {count}
-          </span>
-        </span>
-
-        <span className="relative z-10 flex items-end gap-3 px-4 pb-5">
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1.5">
-              <span className="block text-[20px] font-bold leading-none text-white drop-shadow-[0_1px_18px_rgba(0,0,0,0.66)]">
-                {title}
-              </span>
-              <IconArrowUpRight
-                size={16}
-                stroke={2.4}
-                className="shrink-0 -translate-x-1 opacity-0 transition-[transform,opacity] duration-300 group-hover:translate-x-0 group-hover:opacity-100"
-                style={{ color: active ? accent : 'rgba(255,255,255,0.72)' }}
-              />
-            </span>
-            <span className="mt-2.5 block text-[12.5px] leading-5 text-white/58">{desc}</span>
-          </span>
+      <span className="pointer-events-none relative z-10 flex h-full min-h-[560px] flex-col justify-end px-4 pb-6">
+        <span
+          className="block text-center font-display text-[22px] font-extrabold leading-none text-white drop-shadow-[0_1px_18px_rgba(0,0,0,0.66)] transition-opacity duration-300"
+          style={{ opacity: active ? 1 : 0.82 }}
+        >
+          {title}
         </span>
       </span>
     </motion.button>
