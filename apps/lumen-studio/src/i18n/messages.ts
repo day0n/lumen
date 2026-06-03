@@ -591,6 +591,19 @@ const en = {
   auth: {
     signInPath: '/sign-in',
     signUpPath: '/sign-up',
+    loading: 'Loading sign-in…',
+    troubleshoot: {
+      title: 'Sign-in is taking longer than expected',
+      networkHint:
+        'We could not reach Clerk (clerk.lumenstudio.tech). This usually means a VPN, proxy, or DNS rule is blocking it.',
+      tips: [
+        'Try turning off your VPN or proxy and reload the page.',
+        'If you must use a proxy, make sure clerk.lumenstudio.tech and *.clerk.services are routed the same way as the main site.',
+        'Open Safari Private Browsing or another browser to rule out cached state.',
+      ],
+      retry: 'Reload page',
+      backHome: 'Back to home',
+    },
   },
 };
 
@@ -757,7 +770,7 @@ const zh: typeof en = {
     uploadFailed: '上传失败',
     categories: {
       item: {
-        title: '商品图集',
+        title: '商品图',
         desc: '商品主图、细节图和多角度图片',
       },
       character: {
@@ -869,7 +882,7 @@ const zh: typeof en = {
       my_assets: '画布结果',
       character: 'AI模特',
       scene: '真人模特',
-      item: '商品图集',
+      item: '商品图',
       image: '图片',
       video: '视频',
       audio: '音乐',
@@ -1178,6 +1191,19 @@ const zh: typeof en = {
   auth: {
     signInPath: '/sign-in',
     signUpPath: '/sign-up',
+    loading: '正在加载登录组件…',
+    troubleshoot: {
+      title: '登录加载得有点慢',
+      networkHint:
+        '当前无法连接 Clerk 鉴权服务（clerk.lumenstudio.tech）。通常是 VPN、代理或 DNS 把它拦住了。',
+      tips: [
+        '先关掉 VPN / 代理（ClashX、Surge、Quantumult X 等）刷新页面试一下。',
+        '一定要走代理的话，请把 clerk.lumenstudio.tech 和 *.clerk.services 跟主站规则保持一致，别 reject 也别 fake-ip。',
+        '可以用 Safari 无痕模式或换个浏览器打开，排除本地缓存问题。',
+      ],
+      retry: '重新加载',
+      backHome: '回到首页',
+    },
   },
 };
 

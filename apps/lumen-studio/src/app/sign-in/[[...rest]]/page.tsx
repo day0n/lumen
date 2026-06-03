@@ -1,3 +1,4 @@
+import { ClerkAuthShell } from '@/components/auth/ClerkAuthShell';
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { LumenMark } from '@/components/ui/LumenMark';
 import { localePath } from '@/i18n/routing';
@@ -17,11 +18,13 @@ export default async function SignInPage() {
             Lumen
           </span>
         </a>
-        <SignIn
-          routing="path"
-          path={localePath('/sign-in', locale)}
-          signUpUrl={localePath('/sign-up', locale)}
-        />
+        <ClerkAuthShell>
+          <SignIn
+            routing="path"
+            path={localePath('/sign-in', locale)}
+            signUpUrl={localePath('/sign-up', locale)}
+          />
+        </ClerkAuthShell>
       </div>
     </main>
   );
