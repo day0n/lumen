@@ -128,6 +128,7 @@ type CanvasSaveState = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 interface CanvasActions {
   runSingleNode: (nodeId: string) => void;
   updateNodeData: (nodeId: string, patch: Partial<LumenNodeData>) => void;
+  uploadCanvasImage: (file: File, nodeId?: string) => Promise<string>;
   connectionError: string | null;
   canRunNode: (nodeId: string) => boolean;
 }
@@ -135,6 +136,7 @@ interface CanvasActions {
 const CanvasActionsContext = createContext<CanvasActions>({
   runSingleNode: () => {},
   updateNodeData: () => {},
+  uploadCanvasImage: async () => '',
   connectionError: null,
   canRunNode: () => false,
 });
@@ -252,6 +254,22 @@ type ProjectHistoryApiResponse =
       ok: true;
       data: {
         history: ProjectHistoryRecord[];
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        message: string;
+      };
+    };
+
+type CanvasUploadApiResponse =
+  | {
+      ok: true;
+      data: {
+        asset: {
+          url: string;
+        };
       };
     }
   | {
@@ -452,6 +470,25 @@ function getSettingString(settings: Record<string, unknown>, key: string) {
   return typeof value === 'string' ? value : '';
 }
 
+function isBlobUrl(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith('blob:');
+}
+
+function stripTransientCanvasValue(value: unknown): unknown {
+  if (isBlobUrl(value)) return '';
+  if (Array.isArray(value)) {
+    return value.map(stripTransientCanvasValue).filter((item) => item !== '');
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([key, item]) => [key, stripTransientCanvasValue(item)] as const)
+        .filter(([, item]) => item !== ''),
+    );
+  }
+  return value;
+}
+
 function getSettingStringArray(settings: Record<string, unknown>, key: string) {
   const value = settings[key];
   if (!Array.isArray(value)) return [];
@@ -610,22 +647,6 @@ function readMaterialAssetDragPayload(dataTransfer: DataTransfer): MaterialAsset
   }
 }
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result);
-        return;
-      }
-
-      reject(new Error('文件读取失败'));
-    };
-    reader.onerror = () => reject(reader.error ?? new Error('文件读取失败'));
-    reader.readAsDataURL(file);
-  });
-}
-
 function toWorkflowNodes(nodes: LumenNode[]) {
   return nodes.map((node) => {
     const inputImage = getSettingString(node.data.settings, 'inputImage');
@@ -636,14 +657,17 @@ function toWorkflowNodes(nodes: LumenNode[]) {
       id: node.id,
       type: node.data.kind,
       position: node.position,
-      output: node.data.output?.trim() ? node.data.output : null,
+      output: node.data.output?.trim() && !isBlobUrl(node.data.output) ? node.data.output : null,
       input: {
         prompt: node.data.prompt,
-        image: inputImage || null,
-        lastFrameImage: inputLastFrameImage || null,
-        video: inputVideo || null,
-        videos: getSettingStringArray(node.data.settings, 'inputVideos'),
-        clips: getSettingVideoClips(node.data.settings),
+        image: inputImage && !isBlobUrl(inputImage) ? inputImage : null,
+        lastFrameImage:
+          inputLastFrameImage && !isBlobUrl(inputLastFrameImage) ? inputLastFrameImage : null,
+        video: inputVideo && !isBlobUrl(inputVideo) ? inputVideo : null,
+        videos: getSettingStringArray(node.data.settings, 'inputVideos').filter(
+          (url) => !isBlobUrl(url),
+        ),
+        clips: getSettingVideoClips(node.data.settings).filter((clip) => !isBlobUrl(clip.url)),
       },
       model: { id: resolveModelId(node.data), settings: node.data.settings },
     };
@@ -763,6 +787,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const hasRequestedCreate = useRef(false);
   const hasHydratedProject = useRef(!projectId && !createOnMount);
   const lastSavedCanvas = useRef('');
+  const pendingCanvasUploads = useRef(0);
+  const [canvasMediaUploading, setCanvasMediaUploading] = useState(false);
   const selectedElementCount = useMemo(
     () =>
       nodes.filter((node) => node.selected).length + edges.filter((edge) => edge.selected).length,
@@ -921,6 +947,35 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     [setNodes],
   );
 
+  const uploadCanvasImage = useCallback(
+    async (file: File, nodeId?: string) => {
+      pendingCanvasUploads.current += 1;
+      setCanvasMediaUploading(true);
+
+      try {
+        const form = new FormData();
+        form.set('file', file);
+        if (currentProjectId) form.set('workflowId', currentProjectId);
+        if (nodeId) form.set('nodeId', nodeId);
+
+        const response = await fetch('/api/canvas/uploads', {
+          method: 'POST',
+          headers: { 'x-lumen-locale': locale },
+          body: form,
+        });
+        const payload = (await response.json()) as CanvasUploadApiResponse;
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.ok ? t('materials.uploadFailed') : payload.error.message);
+        }
+        return payload.data.asset.url;
+      } finally {
+        pendingCanvasUploads.current = Math.max(0, pendingCanvasUploads.current - 1);
+        if (pendingCanvasUploads.current === 0) setCanvasMediaUploading(false);
+      }
+    },
+    [currentProjectId, locale, t],
+  );
+
   useEffect(() => {
     if (!authReady || isSignedIn) return;
     requireLogin();
@@ -1077,7 +1132,13 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   }, [authReady, currentProjectId, isSignedIn, refreshProject]);
 
   useEffect(() => {
-    if (!currentProjectId || !hasHydratedProject.current || !authReady || !isSignedIn) {
+    if (
+      !currentProjectId ||
+      !hasHydratedProject.current ||
+      !authReady ||
+      !isSignedIn ||
+      canvasMediaUploading
+    ) {
       return;
     }
 
@@ -1112,7 +1173,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [authReady, currentProjectId, edges, isSignedIn, locale, nodes, t]);
+  }, [authReady, canvasMediaUploading, currentProjectId, edges, isSignedIn, locale, nodes, t]);
 
   const addCanvasNode = useCallback(
     (template = getTemplate(activeKind), position?: XYPosition) => {
@@ -1482,8 +1543,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   );
 
   const canvasActions = useMemo<CanvasActions>(
-    () => ({ runSingleNode, updateNodeData, connectionError, canRunNode }),
-    [runSingleNode, updateNodeData, connectionError, canRunNode],
+    () => ({ runSingleNode, updateNodeData, uploadCanvasImage, connectionError, canRunNode }),
+    [runSingleNode, updateNodeData, uploadCanvasImage, connectionError, canRunNode],
   );
 
   return (
@@ -1536,6 +1597,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             minZoom={0.35}
             maxZoom={1.75}
             nodeOrigin={[0, 0]}
+            onlyRenderVisibleElements
             panOnScroll
             snapToGrid
             snapGrid={[24, 24]}
@@ -1626,12 +1688,20 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
 function serializeCanvas(nodes: LumenNode[], edges: LumenEdge[]) {
   return {
-    nodes: nodes.map((node) => ({
-      ...node,
-      dragging: undefined,
-      selected: undefined,
-      zIndex: undefined,
-    })),
+    nodes: nodes.map((node) => {
+      const settings = stripTransientCanvasValue(node.data.settings) as Record<string, unknown>;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          settings,
+          output: isBlobUrl(node.data.output) ? null : node.data.output,
+        },
+        dragging: undefined,
+        selected: undefined,
+        zIndex: undefined,
+      };
+    }),
     edges: edges.map((edge) => ({
       ...edge,
       selected: undefined,
@@ -2052,17 +2122,28 @@ function MaterialLibraryPanel({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!projectId) {
+    const workflowId = projectId;
+    const category = activeCategory;
+    if (!workflowId || !category) {
       setAssets([]);
+      setLoading(false);
       return;
     }
+    const workflowIdParam: string = workflowId;
+    const categoryParam: MaterialAssetCategory = category;
 
     const controller = new AbortController();
     setLoading(true);
 
     async function loadAssets() {
       try {
-        const response = await fetch(`/api/material-assets?workflowId=${projectId}`, {
+        const params = new URLSearchParams({
+          workflowId: workflowIdParam,
+          category: categoryParam,
+          limit: '80',
+        });
+        if (categoryParam === 'my_assets') params.set('kind', activeKind);
+        const response = await fetch(`/api/material-assets?${params.toString()}`, {
           signal: controller.signal,
           headers: { 'x-lumen-locale': locale },
         });
@@ -2087,7 +2168,7 @@ function MaterialLibraryPanel({
 
     void loadAssets();
     return () => controller.abort();
-  }, [locale, projectId, t]);
+  }, [activeCategory, activeKind, locale, projectId, t]);
 
   const visibleAssets = useMemo(() => {
     if (!activeCategory) return [];
@@ -2391,6 +2472,8 @@ function MaterialAssetCard({ asset }: { asset: MaterialAssetRecord }) {
           <img
             alt=""
             className="h-full w-full object-cover"
+            decoding="async"
+            loading="lazy"
             src={asset.thumbnailUrl ?? asset.url}
           />
         ) : (
@@ -2868,7 +2951,9 @@ function FrameImageSlot({
         {image ? (
           <img
             alt={label}
+            decoding="async"
             draggable={false}
+            loading="lazy"
             className="absolute inset-0 h-full w-full object-cover opacity-75 transition-opacity group-hover/upload:opacity-55"
             src={image}
           />
@@ -2941,7 +3026,7 @@ function ParamPills<T extends string | number>({
 function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const { t } = useI18n();
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
-  const { runSingleNode, updateNodeData, connectionError, canRunNode } =
+  const { runSingleNode, updateNodeData, uploadCanvasImage, connectionError, canRunNode } =
     useContext(CanvasActionsContext);
   const styles = nodeKindStyles[data.kind];
   const status = data.status ?? 'idle';
@@ -3031,10 +3116,38 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       event.target.value = '';
       if (!file) return;
 
-      const dataUrl = await readFileAsDataUrl(file);
-      updateSettings({ [settingKey]: dataUrl });
+      const previousValue = getSettingString(data.settings, settingKey);
+      const previewUrl = URL.createObjectURL(file);
+      updateSettings({ [settingKey]: previewUrl });
+      try {
+        const uploadedUrl = await uploadCanvasImage(file, id);
+        updateSettings({ [settingKey]: uploadedUrl });
+      } catch (error) {
+        console.error(error);
+        updateSettings({ [settingKey]: previousValue });
+      } finally {
+        URL.revokeObjectURL(previewUrl);
+      }
     },
-    [updateSettings],
+    [data.settings, id, updateSettings, uploadCanvasImage],
+  );
+
+  const handleOutputImageUpload = useCallback(
+    async (file: File) => {
+      const previousValue = data.output ?? null;
+      const previewUrl = URL.createObjectURL(file);
+      updateNodeData(id, { output: previewUrl });
+      try {
+        const uploadedUrl = await uploadCanvasImage(file, id);
+        updateNodeData(id, { output: uploadedUrl });
+      } catch (error) {
+        console.error(error);
+        updateNodeData(id, { output: previousValue });
+      } finally {
+        URL.revokeObjectURL(previewUrl);
+      }
+    },
+    [data.output, id, updateNodeData, uploadCanvasImage],
   );
 
   const dragSourceRef = useRef<'first' | 'last' | null>(null);
@@ -3163,6 +3276,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
             <NodeOutputEditor
               data={data}
               onChange={(output) => updateNodeData(id, { output: output || null })}
+              onImageUpload={handleOutputImageUpload}
             />
             {isNodeBusy ? <div className="lumen-node-running-overlay absolute inset-0" /> : null}
             {isNodeBusy ? (
@@ -3380,9 +3494,11 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
 function NodeOutputEditor({
   data,
   onChange,
+  onImageUpload,
 }: {
   data: LumenNodeData;
   onChange: (output: string) => void;
+  onImageUpload: (file: File) => Promise<void>;
 }) {
   const { t } = useI18n();
   const output = data.output ?? '';
@@ -3394,6 +3510,8 @@ function NodeOutputEditor({
         <img
           alt={t('canvas.node.imageAlt')}
           className="h-full w-full object-cover"
+          decoding="async"
+          loading="lazy"
           onError={(event) => {
             event.currentTarget.style.opacity = '0';
           }}
@@ -3403,7 +3521,7 @@ function NodeOutputEditor({
     }
 
     // 图片节点的输出会传给下游节点，只能是图片：无结果时提供点击上传占位
-    return <ImageOutputUpload onChange={onChange} />;
+    return <ImageOutputUpload onUpload={onImageUpload} />;
   }
 
   if (
@@ -3461,24 +3579,41 @@ function NodeOutputEditor({
   );
 }
 
-function ImageOutputUpload({ onChange }: { onChange: (output: string) => void }) {
+function ImageOutputUpload({ onUpload }: { onUpload: (file: File) => Promise<void> }) {
   const { t } = useI18n();
+  const [uploading, setUploading] = useState(false);
   const handleUpload = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       event.target.value = '';
       if (!file) return;
-      const dataUrl = await readFileAsDataUrl(file);
-      onChange(dataUrl);
+      setUploading(true);
+      try {
+        await onUpload(file);
+      } finally {
+        setUploading(false);
+      }
     },
-    [onChange],
+    [onUpload],
   );
 
   return (
     <label className="nodrag group/output flex min-h-[104px] w-full cursor-pointer flex-col items-center justify-center gap-2 px-3 py-2.5 text-white/30 transition-colors hover:text-white/64">
-      <IconPhoto size={30} stroke={1.6} className="opacity-70" />
-      <span className="text-[12px] font-bold">{t('canvas.node.textUpload')}</span>
-      <input className="sr-only" type="file" accept="image/*" onChange={handleUpload} />
+      {uploading ? (
+        <IconLoader2 size={26} stroke={1.8} className="animate-spin opacity-70" />
+      ) : (
+        <IconPhoto size={30} stroke={1.6} className="opacity-70" />
+      )}
+      <span className="text-[12px] font-bold">
+        {uploading ? t('materials.uploading') : t('canvas.node.textUpload')}
+      </span>
+      <input
+        className="sr-only"
+        type="file"
+        accept="image/*"
+        disabled={uploading}
+        onChange={handleUpload}
+      />
     </label>
   );
 }

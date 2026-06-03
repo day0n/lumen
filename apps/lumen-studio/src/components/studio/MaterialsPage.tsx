@@ -54,6 +54,10 @@ type MaterialAssetRecord = {
   updatedAt: string;
 };
 
+type LibraryMaterialAsset = MaterialAssetRecord & {
+  category: MaterialAssetCategory;
+};
+
 type MaterialAssetsApiResponse =
   | {
       ok: true;
@@ -89,7 +93,7 @@ type UploadPreview = {
 };
 
 const MAX_UPLOAD_IMAGES = 9;
-const SHOWCASE_IMAGE_COUNT = 20;
+const SHOWCASE_IMAGE_COUNT = 10;
 
 type MaterialCategoryConfig = {
   id: MaterialAssetCategory;
@@ -153,7 +157,9 @@ export function MaterialsPage() {
   const { locale, t } = useI18n();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [activeCategory, setActiveCategory] = useState<MaterialAssetCategory>('item');
-  const [assets, setAssets] = useState<MaterialAssetRecord[]>([]);
+  const [assetsByCategory, setAssetsByCategory] = useState<
+    Partial<Record<MaterialAssetCategory, LibraryMaterialAsset[]>>
+  >({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -175,7 +181,11 @@ export function MaterialsPage() {
     async function loadAssets() {
       setLoading(true);
       try {
-        const response = await fetch('/api/material-assets?limit=300', {
+        const params = new URLSearchParams({
+          category: activeCategory,
+          limit: '80',
+        });
+        const response = await fetch(`/api/material-assets?${params.toString()}`, {
           signal: controller.signal,
           headers: { 'x-lumen-locale': locale },
         });
@@ -183,7 +193,10 @@ export function MaterialsPage() {
         if (!response.ok || !payload.ok) {
           throw new Error(payload.ok ? t('materials.readFailed') : payload.error.message);
         }
-        setAssets(payload.data.assets.filter(isLibraryAsset));
+        const libraryAssets = payload.data.assets
+          .filter(isLibraryAsset)
+          .filter((asset) => asset.category === activeCategory);
+        setAssetsByCategory((current) => ({ ...current, [activeCategory]: libraryAssets }));
         setLoadError(null);
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -196,22 +209,22 @@ export function MaterialsPage() {
 
     void loadAssets();
     return () => controller.abort();
-  }, [authLoaded, isSignedIn, locale, requireLogin, t]);
+  }, [activeCategory, authLoaded, isSignedIn, locale, requireLogin, t]);
 
   const visibleAssets = useMemo(
-    () => assets.filter((asset) => asset.category === activeCategory),
-    [activeCategory, assets],
+    () => assetsByCategory[activeCategory] ?? [],
+    [activeCategory, assetsByCategory],
   );
 
   const counts = useMemo(() => {
     return materialCategories.reduce(
       (result, category) => {
-        result[category.id] = assets.filter((asset) => asset.category === category.id).length;
+        result[category.id] = assetsByCategory[category.id]?.length ?? 0;
         return result;
       },
       {} as Record<MaterialAssetCategory, number>,
     );
-  }, [assets]);
+  }, [assetsByCategory]);
 
   const handleShowcasePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const rect = showcaseRef.current?.getBoundingClientRect();
@@ -237,7 +250,7 @@ export function MaterialsPage() {
   }, []);
 
   const handleDelete = useCallback(
-    async (asset: MaterialAssetRecord) => {
+    async (asset: LibraryMaterialAsset) => {
       const response = await fetch(`/api/material-assets/${encodeURIComponent(asset.id)}`, {
         method: 'DELETE',
         headers: { 'x-lumen-locale': locale },
@@ -248,7 +261,10 @@ export function MaterialsPage() {
       if (!response.ok || !payload.ok) {
         throw new Error(payload.ok ? t('materials.deleteFailed') : payload.error.message);
       }
-      setAssets((current) => current.filter((item) => item.id !== asset.id));
+      setAssetsByCategory((current) => ({
+        ...current,
+        [asset.category]: (current[asset.category] ?? []).filter((item) => item.id !== asset.id),
+      }));
     },
     [locale, t],
   );
@@ -368,7 +384,13 @@ export function MaterialsPage() {
           activeCategory={activeCategory}
           onClose={() => setUploadOpen(false)}
           onUploaded={(uploaded) => {
-            setAssets((current) => [...uploaded.filter(isLibraryAsset), ...current]);
+            setAssetsByCategory((current) => {
+              const next = { ...current };
+              for (const asset of uploaded.filter(isLibraryAsset)) {
+                next[asset.category] = [asset, ...(next[asset.category] ?? [])];
+              }
+              return next;
+            });
             if (uploaded[0] && isLibraryAsset(uploaded[0])) {
               setActiveCategory(uploaded[0].category);
             }
@@ -569,8 +591,8 @@ function MaterialSpiralScene({
       geometry = new THREE.PlaneGeometry(0.68, 0.92, 1, 1);
       const loader = new THREE.TextureLoader();
       const anisotropy = Math.min(8, localRenderer.capabilities.getMaxAnisotropy());
-      const panelsPerTurn = 10;
-      const rowCount = 3;
+      const panelsPerTurn = 8;
+      const rowCount = 2;
       const panelCount = panelsPerTurn * rowCount;
 
       for (let panelIndex = 0; panelIndex < panelCount; panelIndex += 1) {
@@ -701,7 +723,7 @@ function MaterialCard({
   index,
   onDelete,
 }: {
-  asset: MaterialAssetRecord;
+  asset: LibraryMaterialAsset;
   index: number;
   onDelete: () => Promise<void>;
 }) {
@@ -724,6 +746,8 @@ function MaterialCard({
           <img
             src={asset.thumbnailUrl ?? asset.url}
             alt={asset.title}
+            decoding="async"
+            loading="lazy"
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
           />
         ) : (
@@ -1162,9 +1186,7 @@ function uploadMaterialAssets(
   });
 }
 
-function isLibraryAsset(asset: MaterialAssetRecord): asset is MaterialAssetRecord & {
-  category: MaterialAssetCategory;
-} {
+function isLibraryAsset(asset: MaterialAssetRecord): asset is LibraryMaterialAsset {
   return asset.category === 'item' || asset.category === 'character' || asset.category === 'scene';
 }
 
