@@ -410,11 +410,7 @@ export function HotVideosPage() {
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_12%,rgba(121,228,255,0.12),transparent_34%),radial-gradient(circle_at_88%_10%,rgba(245,199,106,0.12),transparent_28%)]" />
 
           <div className="relative text-center">
-            <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-white/[0.055] px-3 py-1.5 text-[12px] font-semibold text-white/68 ring-1 ring-white/[0.07]">
-              <IconFlame size={14} stroke={2.4} />
-              {t('hotVideos.badge')}
-            </div>
-            <h1 className="font-display mx-auto mt-5 max-w-[820px] text-[34px] font-extrabold leading-tight tracking-tight text-white md:text-[46px]">
+            <h1 className="font-display mx-auto max-w-[820px] text-[34px] font-extrabold leading-tight tracking-tight text-white md:text-[46px]">
               {t('hotVideos.title')}
             </h1>
             <p className="mx-auto mt-3 max-w-[760px] text-[14px] leading-7 text-white/52">
