@@ -281,6 +281,13 @@ export function HotVideosPage() {
   const [previewVideo, setPreviewVideo] = useState<HotVideoView | null>(null);
   const [remakeSession, setRemakeSession] = useState<HotVideoRemakeSession | null>(null);
   const [remakePreparing, setRemakePreparing] = useState<RemakePreparingState | null>(null);
+  const generateAbortRef = useRef<AbortController | null>(null);
+
+  const handleCancelPreparing = () => {
+    generateAbortRef.current?.abort();
+    generateAbortRef.current = null;
+    setRemakePreparing(null);
+  };
 
   // Debounce the local search input → appliedQuery (server param)
   useEffect(() => {
@@ -590,6 +597,7 @@ export function HotVideosPage() {
           <ReplicaConfigModal
             target={replicaTarget}
             video={replicaVideo}
+            generateAbortRef={generateAbortRef}
             onGenerateStart={(uploadTotal) =>
               setRemakePreparing({ phase: 'upload', uploadCurrent: 0, uploadTotal })
             }
@@ -607,7 +615,9 @@ export function HotVideosPage() {
         </div>
       ) : null}
 
-      {remakePreparing ? <RemakePreparingScreen state={remakePreparing} /> : null}
+      {remakePreparing ? (
+        <RemakePreparingScreen state={remakePreparing} onCancel={handleCancelPreparing} />
+      ) : null}
 
       {previewVideo ? (
         <VideoPreviewModal video={previewVideo} onClose={() => setPreviewVideo(null)} />
@@ -870,7 +880,13 @@ function VideoPreviewModal({
   );
 }
 
-function RemakePreparingScreen({ state }: { state: RemakePreparingState }) {
+function RemakePreparingScreen({
+  state,
+  onCancel,
+}: {
+  state: RemakePreparingState;
+  onCancel: () => void;
+}) {
   const { t } = useI18n();
   const uploadActive = state.phase === 'upload';
   const uploadLabel =
@@ -893,6 +909,15 @@ function RemakePreparingScreen({ state }: { state: RemakePreparingState }) {
           aria-hidden
           className="pointer-events-none absolute inset-x-0 top-0 h-[220px] bg-[radial-gradient(circle_at_50%_0%,rgba(157,168,255,0.22),transparent_64%)]"
         />
+
+        <button
+          type="button"
+          onClick={onCancel}
+          aria-label={t('common.close')}
+          className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1] hover:text-white"
+        >
+          <IconX size={16} stroke={2.2} />
+        </button>
 
         <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-[#9da8ff]/16 text-[#9da8ff] ring-1 ring-[#9da8ff]/22">
           <IconLoader2 size={28} className="animate-spin" stroke={2.4} />
@@ -957,6 +982,7 @@ function PreparingStep({
 function ReplicaConfigModal({
   target,
   video,
+  generateAbortRef,
   onGenerateStart,
   onGenerateProgress,
   onGenerateError,
@@ -965,6 +991,7 @@ function ReplicaConfigModal({
 }: {
   target: ReferenceItem;
   video?: HotVideoView;
+  generateAbortRef: React.MutableRefObject<AbortController | null>;
   onGenerateStart: (uploadTotal: number) => void;
   onGenerateProgress: (update: {
     phase: 'upload' | 'remake';
@@ -1020,7 +1047,11 @@ function ReplicaConfigModal({
     });
   };
 
-  const uploadProductImage = async (image: UploadedProductImage, index: number) => {
+  const uploadProductImage = async (
+    image: UploadedProductImage,
+    index: number,
+    signal?: AbortSignal,
+  ) => {
     if (image.uploadedUrl) return image.uploadedUrl;
     const form = new FormData();
     form.set('file', image.file);
@@ -1031,6 +1062,7 @@ function ReplicaConfigModal({
       method: 'POST',
       headers: { 'x-lumen-locale': locale },
       body: form,
+      signal,
     });
     const payload = (await response.json()) as CanvasUploadApiResponse;
     if (!response.ok || !payload.ok || !payload.data) {
@@ -1045,15 +1077,19 @@ function ReplicaConfigModal({
 
   const handleGenerate = async () => {
     if (!canGenerate) return;
+    const controller = new AbortController();
+    generateAbortRef.current = controller;
     setGenerating(true);
     setGenerateError(null);
     onGenerateStart(uploadedImages.length);
     try {
       const productImageUrls: string[] = [];
       for (const [index, image] of uploadedImages.entries()) {
+        if (controller.signal.aborted) return;
         onGenerateProgress({ phase: 'upload', uploadCurrent: index });
-        productImageUrls.push(await uploadProductImage(image, index));
+        productImageUrls.push(await uploadProductImage(image, index, controller.signal));
       }
+      if (controller.signal.aborted) return;
       onGenerateProgress({
         phase: 'remake',
         uploadCurrent: uploadedImages.length,
@@ -1077,17 +1113,28 @@ function ReplicaConfigModal({
             mode: 'standard',
           },
         }),
+        signal: controller.signal,
       });
       const payload = (await response.json()) as HotVideoRemakeApiResponse;
+      if (controller.signal.aborted) return;
       if (!response.ok || !payload.ok || !payload.data) {
         throw new Error(payload.error?.message ?? t('hotVideos.parseFailed'));
       }
       onStart(payload.data);
     } catch (error) {
+      if (
+        controller.signal.aborted ||
+        (error instanceof DOMException && error.name === 'AbortError')
+      ) {
+        return;
+      }
       const message = error instanceof Error ? error.message : t('hotVideos.parseFailed');
       setGenerateError(message);
       onGenerateError(message);
     } finally {
+      if (generateAbortRef.current === controller) {
+        generateAbortRef.current = null;
+      }
       setGenerating(false);
     }
   };
