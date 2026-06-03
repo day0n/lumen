@@ -28,9 +28,20 @@ export async function execute(
     readStringSetting(settings, 'aspectRatio') ??
     '16:9';
 
+  // Reference images (image-to-image). The resolver fills input.image /
+  // input.lastFrameImage from upstream image nodes or settings.inputImage,
+  // but historically this handler ignored them and only did text-to-image.
+  // Feed every available reference as an inline part so the model can edit
+  // from them — required for product-swap and character consistency.
+  const referenceParts: ImagePart[] = [];
+  for (const ref of [input.image, input.lastFrameImage]) {
+    const part = await toImagePart(ref);
+    if (part) referenceParts.push(part);
+  }
+
   const response = await client.models.generateContent({
     model: 'gemini-3-pro-image-preview',
-    contents: [{ role: 'user', parts: [{ text: input.prompt }] }],
+    contents: [{ role: 'user', parts: [...referenceParts, { text: input.prompt }] }],
     config: {
       responseModalities: ['IMAGE'],
       imageConfig: { aspectRatio },
@@ -85,4 +96,57 @@ function normalizeGeneratedMediaUri(value: string): string {
 function readStringSetting(settings: Record<string, unknown>, key: string): string | null {
   const value = settings[key];
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+async function toImagePart(value: string | null): Promise<ImagePart | null> {
+  if (!value?.trim()) return null;
+  const source = value.trim();
+
+  if (source.startsWith('gs://')) {
+    return { fileData: { fileUri: source, mimeType: guessImageMimeType(source) } };
+  }
+
+  const inline = parseImageDataUrl(source);
+  if (inline) return { inlineData: inline };
+
+  if (isHttpUrl(source)) {
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(`failed to fetch image reference: HTTP ${response.status}`);
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    const mimeType = contentType.split(';')[0]?.trim() || guessImageMimeType(source);
+    if (!mimeType.startsWith('image/')) {
+      throw new Error(`image reference URL is not an image: ${mimeType || 'unknown content-type'}`);
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return { inlineData: { data: bytes.toString('base64'), mimeType } };
+  }
+
+  throw new Error('unsupported image reference format');
+}
+
+function parseImageDataUrl(value: string): { data: string; mimeType: string } | null {
+  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s.exec(value);
+  if (!match) return null;
+  const mimeType = match[1];
+  const data = match[2];
+  if (!mimeType || !data) return null;
+  return { mimeType, data: data.replace(/\s/g, '') };
+}
+
+function isHttpUrl(value: string): boolean {
+  return value.startsWith('http://') || value.startsWith('https://');
+}
+
+function guessImageMimeType(value: string): string {
+  try {
+    const pathname = new URL(value).pathname.toLowerCase();
+    if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg';
+    if (pathname.endsWith('.webp')) return 'image/webp';
+    if (pathname.endsWith('.gif')) return 'image/gif';
+  } catch {
+    // fall through
+  }
+  return 'image/png';
 }
