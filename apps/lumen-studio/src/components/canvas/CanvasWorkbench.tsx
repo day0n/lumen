@@ -1637,11 +1637,11 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             elevateNodesOnSelect
             multiSelectionKeyCode={['Meta', 'Control']}
             panActivationKeyCode="Space"
-            panOnDrag={[1]}
+            panOnDrag={[1, 2]}
             selectionKeyCode="Shift"
             selectionMode={SelectionMode.Partial}
             selectionOnDrag
-            selectNodesOnDrag={false}
+            selectNodesOnDrag
             zoomActivationKeyCode={['Meta', 'Control']}
             defaultEdgeOptions={{
               type: 'lumenSmooth',
@@ -3579,6 +3579,7 @@ function NodeOutputEditor({
           alt={t('canvas.node.imageAlt')}
           className="h-full w-full object-cover"
           decoding="async"
+          draggable={false}
           loading="lazy"
           onError={(event) => {
             event.currentTarget.style.opacity = '0';
@@ -3650,6 +3651,8 @@ function NodeOutputEditor({
 function ImageOutputUpload({ onUpload }: { onUpload: (file: File) => Promise<void> }) {
   const { t } = useI18n();
   const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const handleUpload = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -3666,23 +3669,43 @@ function ImageOutputUpload({ onUpload }: { onUpload: (file: File) => Promise<voi
   );
 
   return (
-    <label className="nodrag group/output flex min-h-[104px] w-full cursor-pointer flex-col items-center justify-center gap-2 px-3 py-2.5 text-white/30 transition-colors hover:text-white/64">
-      {uploading ? (
-        <IconLoader2 size={26} stroke={1.8} className="animate-spin opacity-70" />
-      ) : (
-        <IconPhoto size={30} stroke={1.6} className="opacity-70" />
-      )}
-      <span className="text-[12px] font-bold">
-        {uploading ? t('materials.uploading') : t('canvas.node.textUpload')}
-      </span>
+    <div className="group/output relative flex min-h-[104px] w-full cursor-grab flex-col items-center justify-center gap-2 px-3 py-2.5 text-white/30 transition-colors hover:text-white/64 active:cursor-grabbing">
+      <div className="pointer-events-none flex flex-col items-center justify-center gap-2">
+        {uploading ? (
+          <IconLoader2 size={26} stroke={1.8} className="animate-spin opacity-70" />
+        ) : (
+          <IconPhoto size={30} stroke={1.6} className="opacity-70" />
+        )}
+        <span className="text-[12px] font-bold">
+          {uploading ? t('materials.uploading') : t('canvas.node.textUpload')}
+        </span>
+      </div>
+      <button
+        type="button"
+        className="nodrag nopan absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/45 text-white/68 ring-1 ring-white/[0.12] transition-colors hover:bg-black/62 hover:text-white"
+        aria-label={t('canvas.node.textUpload')}
+        disabled={uploading}
+        onClick={(event) => {
+          event.stopPropagation();
+          inputRef.current?.click();
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {uploading ? (
+          <IconLoader2 size={15} stroke={2.2} className="animate-spin" />
+        ) : (
+          <IconUpload size={15} stroke={2.2} />
+        )}
+      </button>
       <input
+        ref={inputRef}
         className="sr-only"
         type="file"
         accept="image/*"
         disabled={uploading}
         onChange={handleUpload}
       />
-    </label>
+    </div>
   );
 }
 

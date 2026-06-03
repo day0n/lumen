@@ -218,6 +218,14 @@ body::before {
   color: #fff;
 }
 
+.lumen-flow .react-flow__node.draggable {
+  cursor: grab;
+}
+
+.lumen-flow .react-flow__node.draggable.dragging {
+  cursor: grabbing;
+}
+
 .lumen-flow .react-flow__edge-path,
 .lumen-flow .react-flow__connection-path {
   filter: drop-shadow(0 0 10px rgba(121, 228, 255, 0.28));
