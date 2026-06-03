@@ -1575,7 +1575,6 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
         <CanvasTopbar projectId={currentProjectId} saveState={saveState} title={projectTitle} />
         <LeftToolbar
-          activeKind={activeKind}
           historyPanelOpen={historyPanelOpen}
           materialPanelOpen={materialPanelOpen}
           menuOpen={nodeMenuOpen}
@@ -1944,7 +1943,6 @@ function getSaveLabel(
 }
 
 function LeftToolbar({
-  activeKind,
   historyPanelOpen,
   materialPanelOpen,
   menuOpen,
@@ -1953,7 +1951,6 @@ function LeftToolbar({
   onToggleMaterialPanel,
   onToggleMenu,
 }: {
-  activeKind: NodeKind;
   historyPanelOpen: boolean;
   materialPanelOpen: boolean;
   menuOpen: boolean;
@@ -2001,7 +1998,7 @@ function LeftToolbar({
           <LumenMark size={28} />
         </div>
       </div>
-      {menuOpen ? <NodeAddMenu activeKind={activeKind} onPickTemplate={onPickTemplate} /> : null}
+      {menuOpen ? <NodeAddMenu onPickTemplate={onPickTemplate} /> : null}
     </aside>
   );
 }
@@ -2540,10 +2537,8 @@ function formatMaterialDate(
 }
 
 function NodeAddMenu({
-  activeKind,
   onPickTemplate,
 }: {
-  activeKind: NodeKind;
   onPickTemplate: (template: NodeTemplate) => void;
 }) {
   const { t } = useI18n();
@@ -2556,15 +2551,12 @@ function NodeAddMenu({
       <div className="space-y-1">
         {nodeCatalog.map((template) => {
           const Icon = template.icon;
-          const active = template.kind === activeKind;
 
           return (
             <button
               key={template.kind}
               type="button"
-              className={`flex w-full items-center gap-2.5 rounded-[14px] px-2 py-2 text-left transition-colors ${
-                active ? 'bg-white/[0.12]' : 'hover:bg-white/[0.08]'
-              }`}
+              className="flex w-full items-center gap-2.5 rounded-[14px] px-2 py-2 text-left transition-colors hover:bg-white/[0.08]"
               onClick={() => onPickTemplate(template)}
             >
               <span
