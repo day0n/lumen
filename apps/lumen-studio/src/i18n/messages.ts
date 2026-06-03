@@ -441,6 +441,18 @@ const en = {
       'Generation stays on this page with script and storyboard confirmations before final output.',
     generate: 'Generate',
     generating: 'Generating...',
+    preparing: {
+      title: 'Preparing your viral remix...',
+      subtitle:
+        'AI is uploading your product images and rebuilding the script. This usually takes 20-60 seconds — keep this tab open.',
+      stepUpload: 'Uploading product images',
+      stepUploadProgress: 'Uploading {current}/{total}',
+      stepRemake: 'Parsing source video & building canvas',
+      stepReady: 'Opening editor',
+      retry: 'Retry',
+      back: 'Back to settings',
+      errorTitle: 'Generation failed',
+    },
     filters: {
       owner: 'Downloaded',
       region: 'Region',
@@ -1042,6 +1054,17 @@ const zh: typeof en = {
     generationTime: '生成会停留在本页，脚本和分镜两步确认后再出最终成片',
     generate: '生成',
     generating: '生成中...',
+    preparing: {
+      title: '正在为你准备爆款复刻...',
+      subtitle: 'AI 正在上传商品图并重建脚本，通常需要 20-60 秒，请保持本页打开。',
+      stepUpload: '上传商品图',
+      stepUploadProgress: '正在上传 {current}/{total}',
+      stepRemake: '解析原视频并搭建画布',
+      stepReady: '即将打开编辑器',
+      retry: '重试',
+      back: '返回设置',
+      errorTitle: '生成失败',
+    },
     filters: {
       owner: '已下载',
       region: '地区',

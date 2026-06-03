@@ -21,7 +21,6 @@ import {
   IconMusic,
   IconPlayerPlay,
   IconRefresh,
-  IconSparkles,
 } from '@tabler/icons-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -763,9 +762,6 @@ function StageHeader({
 }) {
   return (
     <div className="flex flex-wrap items-start gap-3">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#9da8ff]/16 text-[#9da8ff] ring-1 ring-[#9da8ff]/18">
-        <IconSparkles size={19} stroke={2.3} />
-      </span>
       <div className="min-w-0 flex-1">
         <h2 className="text-[20px] font-bold text-white">{title}</h2>
         <p className="mt-1 text-[13px] leading-6 text-white/42">{description}</p>
@@ -827,6 +823,11 @@ function NodePreview({
 }) {
   const status = node.data.status ?? 'idle';
   const output = readNodeOutput(node);
+  const isBusy = status === 'queued' || status === 'running';
+  const rawProgress = node.data.progress;
+  const hasKnownProgress = typeof rawProgress === 'number' && rawProgress > 0;
+  const progressValue = rawProgress ?? (status === 'running' ? 0.45 : 0);
+  const progressPercent = Math.max(isBusy ? 14 : 0, Math.round(progressValue * 100));
   return (
     <div
       className={cn(
@@ -864,10 +865,17 @@ function NodePreview({
               {output}
             </pre>
           )
-        ) : status === 'queued' || status === 'running' ? (
+        ) : isBusy ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-[12px] text-white/52">
             <IconLoader2 size={22} className="animate-spin" />
-            {copy.generating}
+            <div className="text-center text-white/72">
+              {copy.generating}
+              {hasKnownProgress ? (
+                <span className="ml-1 font-bold text-white/88">
+                  {Math.min(99, Math.round(progressValue * 100))}%
+                </span>
+              ) : null}
+            </div>
           </div>
         ) : status === 'error' ? (
           <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-[12px] leading-5 text-[#f5c76a]">
@@ -876,6 +884,14 @@ function NodePreview({
         ) : (
           <EmptyPreview copy={copy} />
         )}
+        {isBusy ? (
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-white/[0.06]">
+            <div
+              className="lumen-node-progress-bar h-full rounded-r-full transition-all duration-300"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

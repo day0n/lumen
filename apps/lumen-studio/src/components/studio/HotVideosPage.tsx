@@ -32,7 +32,6 @@ import {
   IconSearch,
   IconSettings,
   IconShoppingBag,
-  IconSparkles,
   IconTrendingUp,
   IconUpload,
   IconX,
@@ -85,6 +84,12 @@ interface UploadedProductImage {
   previewUrl: string;
   uploadedUrl?: string;
 }
+
+type RemakePreparingState = {
+  phase: 'upload' | 'remake';
+  uploadCurrent: number;
+  uploadTotal: number;
+};
 
 interface ListHotVideosApiResponse {
   ok: boolean;
@@ -275,6 +280,7 @@ export function HotVideosPage() {
   const [configOpen, setConfigOpen] = useState(false);
   const [previewVideo, setPreviewVideo] = useState<HotVideoView | null>(null);
   const [remakeSession, setRemakeSession] = useState<HotVideoRemakeSession | null>(null);
+  const [remakePreparing, setRemakePreparing] = useState<RemakePreparingState | null>(null);
 
   // Debounce the local search input → appliedQuery (server param)
   useEffect(() => {
@@ -580,16 +586,28 @@ export function HotVideosPage() {
       </main>
 
       {configOpen && replicaTarget ? (
-        <ReplicaConfigModal
-          target={replicaTarget}
-          video={replicaVideo}
-          onStart={(session) => {
-            setRemakeSession(session);
-            setConfigOpen(false);
-          }}
-          onClose={() => setConfigOpen(false)}
-        />
+        <div className={cn(remakePreparing && 'hidden')}>
+          <ReplicaConfigModal
+            target={replicaTarget}
+            video={replicaVideo}
+            onGenerateStart={(uploadTotal) =>
+              setRemakePreparing({ phase: 'upload', uploadCurrent: 0, uploadTotal })
+            }
+            onGenerateProgress={(update) =>
+              setRemakePreparing((prev) => (prev ? { ...prev, ...update } : prev))
+            }
+            onGenerateError={() => setRemakePreparing(null)}
+            onStart={(session) => {
+              setRemakePreparing(null);
+              setRemakeSession(session);
+              setConfigOpen(false);
+            }}
+            onClose={() => setConfigOpen(false)}
+          />
+        </div>
       ) : null}
+
+      {remakePreparing ? <RemakePreparingScreen state={remakePreparing} /> : null}
 
       {previewVideo ? (
         <VideoPreviewModal video={previewVideo} onClose={() => setPreviewVideo(null)} />
@@ -852,14 +870,107 @@ function VideoPreviewModal({
   );
 }
 
+function RemakePreparingScreen({ state }: { state: RemakePreparingState }) {
+  const { t } = useI18n();
+  const uploadActive = state.phase === 'upload';
+  const uploadLabel =
+    uploadActive && state.uploadTotal > 1
+      ? t('hotVideos.preparing.stepUploadProgress', {
+          current: Math.min(state.uploadCurrent + 1, state.uploadTotal),
+          total: state.uploadTotal,
+        })
+      : t('hotVideos.preparing.stepUpload');
+
+  return (
+    <div className="fixed inset-0 z-[75] flex items-center justify-center bg-[#0a0b0c]/96 px-5 py-8 backdrop-blur-2xl">
+      <motion.div
+        initial={{ opacity: 0, y: 14, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}
+        className="relative flex w-full max-w-[520px] flex-col items-center overflow-hidden rounded-[22px] bg-[#111315] p-10 text-center shadow-[0_34px_110px_-42px_rgba(0,0,0,0.95)] ring-1 ring-white/[0.08]"
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-[220px] bg-[radial-gradient(circle_at_50%_0%,rgba(157,168,255,0.22),transparent_64%)]"
+        />
+
+        <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-[#9da8ff]/16 text-[#9da8ff] ring-1 ring-[#9da8ff]/22">
+          <IconLoader2 size={28} className="animate-spin" stroke={2.4} />
+        </div>
+
+        <h2 className="relative mt-6 text-[20px] font-bold text-white">
+          {t('hotVideos.preparing.title')}
+        </h2>
+        <p className="relative mt-3 max-w-[420px] text-[13px] leading-6 text-white/52">
+          {t('hotVideos.preparing.subtitle')}
+        </p>
+
+        <div className="relative mt-7 w-full space-y-2.5 text-left">
+          <PreparingStep label={uploadLabel} status={uploadActive ? 'active' : 'done'} />
+          <PreparingStep
+            label={t('hotVideos.preparing.stepRemake')}
+            status={state.phase === 'remake' ? 'active' : 'pending'}
+          />
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function PreparingStep({
+  label,
+  status,
+}: {
+  label: string;
+  status: 'pending' | 'active' | 'done';
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13px] ring-1 transition-colors',
+        status === 'active' && 'bg-white/[0.05] text-white ring-white/[0.1]',
+        status === 'done' && 'text-white/55 ring-white/[0.06]',
+        status === 'pending' && 'text-white/35 ring-white/[0.05]',
+      )}
+    >
+      <span
+        className={cn(
+          'flex h-6 w-6 items-center justify-center rounded-full',
+          status === 'active' && 'bg-[#9da8ff]/22 text-[#9da8ff]',
+          status === 'done' && 'bg-[#3ae08a]/16 text-[#3ae08a]',
+          status === 'pending' && 'bg-white/[0.05] text-white/40',
+        )}
+      >
+        {status === 'active' ? (
+          <IconLoader2 size={13} className="animate-spin" stroke={2.4} />
+        ) : status === 'done' ? (
+          <IconCheck size={13} stroke={2.6} />
+        ) : (
+          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+        )}
+      </span>
+      <span className="font-medium">{label}</span>
+    </div>
+  );
+}
+
 function ReplicaConfigModal({
   target,
   video,
+  onGenerateStart,
+  onGenerateProgress,
+  onGenerateError,
   onStart,
   onClose,
 }: {
   target: ReferenceItem;
   video?: HotVideoView;
+  onGenerateStart: (uploadTotal: number) => void;
+  onGenerateProgress: (update: {
+    phase: 'upload' | 'remake';
+    uploadCurrent: number;
+  }) => void;
+  onGenerateError: (message: string) => void;
   onStart: (session: HotVideoRemakeSession) => void;
   onClose: () => void;
 }) {
@@ -936,11 +1047,17 @@ function ReplicaConfigModal({
     if (!canGenerate) return;
     setGenerating(true);
     setGenerateError(null);
+    onGenerateStart(uploadedImages.length);
     try {
       const productImageUrls: string[] = [];
       for (const [index, image] of uploadedImages.entries()) {
+        onGenerateProgress({ phase: 'upload', uploadCurrent: index });
         productImageUrls.push(await uploadProductImage(image, index));
       }
+      onGenerateProgress({
+        phase: 'remake',
+        uploadCurrent: uploadedImages.length,
+      });
 
       const response = await fetch('/api/hot-videos/remake', {
         method: 'POST',
@@ -967,7 +1084,9 @@ function ReplicaConfigModal({
       }
       onStart(payload.data);
     } catch (error) {
-      setGenerateError(error instanceof Error ? error.message : t('hotVideos.parseFailed'));
+      const message = error instanceof Error ? error.message : t('hotVideos.parseFailed');
+      setGenerateError(message);
+      onGenerateError(message);
     } finally {
       setGenerating(false);
     }
@@ -1024,9 +1143,6 @@ function ReplicaConfigModal({
 
           <section className="p-6 pr-14">
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#9da8ff]/16 text-[#9da8ff] ring-1 ring-[#9da8ff]/18">
-                <IconSparkles size={19} stroke={2.3} />
-              </span>
               <div>
                 <h2 className="text-[20px] font-bold text-white">{t('hotVideos.configTitle')}</h2>
                 <p className="mt-1 text-[13px] text-white/42">{t('hotVideos.configSubtitle')}</p>
