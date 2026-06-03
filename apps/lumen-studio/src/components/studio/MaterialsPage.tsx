@@ -451,7 +451,7 @@ function CategoryCard({
         <span className="flex items-start justify-between px-4 pt-4">
           <span
             className="font-display text-[13px] font-extrabold tabular-nums tracking-wide transition-opacity duration-300"
-            style={{ color: active ? accent : `${accent}c9` }}
+            style={{ color: active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)' }}
           >
             {String(index + 1).padStart(2, '0')}
           </span>
@@ -463,14 +463,16 @@ function CategoryCard({
             style={
               active
                 ? {
-                    backgroundColor: `${accent}21`,
-                    color: accent,
-                    boxShadow: `inset 0 0 0 1px ${accent}66, inset 0 1px 0 rgba(255,255,255,0.16)`,
+                    backgroundColor: 'rgba(255,255,255,0.13)',
+                    color: 'rgba(255,255,255,0.95)',
+                    boxShadow:
+                      'inset 0 0 0 1px rgba(255,255,255,0.28), inset 0 1px 0 rgba(255,255,255,0.16)',
                   }
                 : {
-                    backgroundColor: `${accent}17`,
-                    color: `${accent}d6`,
-                    boxShadow: `inset 0 0 0 1px ${accent}38, inset 0 1px 0 rgba(255,255,255,0.12)`,
+                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    color: 'rgba(255,255,255,0.78)',
+                    boxShadow:
+                      'inset 0 0 0 1px rgba(255,255,255,0.16), inset 0 1px 0 rgba(255,255,255,0.12)',
                   }
             }
           >
