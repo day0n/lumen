@@ -99,7 +99,7 @@ pnpm check
 
 找灵感不是实时联网搜图，而是先维护一套 Lumen 自己的官方灵感图库。离线脚本会按分类准备素材元数据，用 OpenAI 图片模型生成参考图，上传到 Cloudflare R2，并把 CDN URL、标题、描述、标签、分类、年代、场景、风格、画幅等信息写入 MongoDB。生成时会把声明的画幅映射到图片模型实际支持的尺寸，保证入库的画幅和真实图片一致。
 
-运行时 Agent 调用 `find_inspiration` tool：把用户需求提炼成视觉搜索 query，用 `text-embedding-3-small` 生成 query embedding，然后在 MongoDB Atlas Vector Search 里搜索预先写入的标签向量。低于相似度地板 `INSPIRATION_MIN_SCORE`（默认 0.5，可调）的结果会被丢弃，避免返回不相关的图。返回结果只包含可展示的 CDN URL 和元信息，前端通过 tool event 渲染成右侧 Agent 面板里的灵感图片网格。
+运行时 Agent 调用 `find_inspiration` tool：把用户需求提炼成视觉搜索 query，用 `text-embedding-3-small` 生成 query embedding，然后在 MongoDB Atlas Vector Search 里搜索预先写入的标签向量。低于相似度地板 `INSPIRATION_MIN_SCORE`（默认 0.3，可调）的结果会被丢弃，避免返回不相关的图。返回结果只包含可展示的 CDN URL 和元信息，前端通过 tool event 渲染成右侧 Agent 面板里的灵感图片网格。
 
 关键落点：
 

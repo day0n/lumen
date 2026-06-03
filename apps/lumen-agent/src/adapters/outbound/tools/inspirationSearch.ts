@@ -22,8 +22,8 @@ const DEFAULT_COUNT = 6;
 const MAX_COUNT = 12;
 
 // 相似度地板：Atlas cosine 分数归一化到 [0,1]（0.5≈正交）。
-// 默认设得很低，只挡掉完全不相关的；想更严就调高 INSPIRATION_MIN_SCORE。
-const DEFAULT_MIN_SCORE = 0.5;
+// 默认设得很宽松，只挡掉明显不相关的；想更严就调高 INSPIRATION_MIN_SCORE。
+const DEFAULT_MIN_SCORE = 0.3;
 
 function readMinScore(): number {
   const raw = Number(process.env.INSPIRATION_MIN_SCORE);
