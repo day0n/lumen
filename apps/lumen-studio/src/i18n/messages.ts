@@ -438,9 +438,9 @@ const en = {
       'Enter product info, selling points, price, and changes you want from the source video.',
     videoSettings: 'Video settings',
     generationTime:
-      'Generation takes about 2-5 minutes. Progress is visible in project management.',
+      'Generation stays on this page with script and storyboard confirmations before final output.',
     generate: 'Generate',
-    credits: '75 credits',
+    generating: 'Generating...',
     filters: {
       owner: 'Downloaded',
       region: 'Region',
@@ -1039,9 +1039,9 @@ const zh: typeof en = {
     promptPlaceholder:
       '请输入产品信息、卖点、价格及原视频修改需求，AI 将基于原爆款结构生成新的带货内容',
     videoSettings: '视频设置',
-    generationTime: '生成时间约 2-5 分钟，可在项目管理中查看进度',
+    generationTime: '生成会停留在本页，脚本和分镜两步确认后再出最终成片',
     generate: '生成',
-    credits: '75 积分',
+    generating: '生成中...',
     filters: {
       owner: '已下载',
       region: '地区',

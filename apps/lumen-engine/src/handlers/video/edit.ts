@@ -1,8 +1,8 @@
+import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { spawn } from 'node:child_process';
 import type { VideoClipInput } from '@lumen/shared/domain';
 import { config } from '../../config.js';
 import type { ResolvedInput } from '../../engine/resolver.js';
@@ -16,6 +16,7 @@ interface PreparedClip {
   start: number;
   duration: number;
   volume: number;
+  title?: string;
   hasAudio: boolean;
 }
 
@@ -49,6 +50,8 @@ export async function execute(
 
   const workdir = await mkdtemp(join(tmpdir(), 'lumen-video-edit-'));
   const prepared: PreparedClip[] = [];
+  const trimHeadSeconds = readNumberSetting(settings, 'trimHeadSeconds') ?? 0;
+  const clipTitles = readStringArraySetting(settings, 'clipTitles');
 
   logger.info({ clipCount: clips.length, workdir }, 'starting lumen video edit');
 
@@ -56,7 +59,7 @@ export async function execute(
     const inputPath = await downloadClip(clip.url, workdir, index);
     const metadata = await probeClip(inputPath);
     const sourceDuration = readDuration(metadata);
-    const start = clampNumber(clip.start ?? 0, 0, Math.max(sourceDuration - 0.1, 0));
+    const start = clampNumber(clip.start ?? trimHeadSeconds, 0, Math.max(sourceDuration - 0.1, 0));
     const requestedDuration = clip.duration;
     const duration = clampNumber(
       requestedDuration ?? sourceDuration - start,
@@ -70,6 +73,7 @@ export async function execute(
       start,
       duration,
       volume: clampNumber(clip.volume ?? 1, 0, 1),
+      ...resolveOptionalTitle(clip.title ?? clipTitles[index]),
       hasAudio: Boolean(metadata.streams?.some((stream) => stream.codec_type === 'audio')),
     });
   }
@@ -84,6 +88,7 @@ export async function execute(
   const outputPath = join(workdir, 'final.mp4');
   const dimensions = resolveOutputDimensions(settings);
   const fps = resolveFps(settings);
+  const bgmPath = await downloadFirstAudio(input, workdir);
 
   await renderConcat({
     clips: prepared,
@@ -91,6 +96,8 @@ export async function execute(
     width: dimensions.width,
     height: dimensions.height,
     fps,
+    bgmPath,
+    settings,
   });
 
   logger.info(
@@ -101,6 +108,7 @@ export async function execute(
       width: dimensions.width,
       height: dimensions.height,
       fps,
+      hasBgm: Boolean(bgmPath),
     },
     'lumen video edit rendered',
   );
@@ -124,6 +132,12 @@ function collectClips(input: ResolvedInput): VideoClipInput[] {
   if (input.video) add({ url: input.video });
 
   return result;
+}
+
+async function downloadFirstAudio(input: ResolvedInput, workdir: string): Promise<string | null> {
+  const audioUrl = input.audio ?? input.audios[0];
+  if (!audioUrl) return null;
+  return downloadAudio(audioUrl, workdir);
 }
 
 async function downloadClip(url: string, workdir: string, index: number): Promise<string> {
@@ -166,6 +180,46 @@ async function downloadClip(url: string, workdir: string, index: number): Promis
   return path;
 }
 
+async function downloadAudio(url: string, workdir: string): Promise<string> {
+  if (url.startsWith('data:audio/')) {
+    const parsed = parseAudioDataUrl(url);
+    const path = join(workdir, `bgm.${parsed.extension}`);
+    await writeFile(path, parsed.body);
+    return path;
+  }
+
+  if (!isHttpUrl(url)) {
+    throw new Error('unsupported audio input URL for background music');
+  }
+
+  const response = await fetch(url, {
+    redirect: 'follow',
+    headers: {
+      'user-agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+      accept: 'audio/*,*/*',
+    },
+    signal: AbortSignal.timeout(300_000),
+  });
+  if (!response.ok) {
+    throw new Error(`failed to download background music: HTTP ${response.status}`);
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const maxBytes = config.VIDEO_EDIT_MAX_INPUT_MB * 1024 * 1024;
+  if (bytes.byteLength > maxBytes) {
+    throw new Error(
+      `background music is too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB > ${config.VIDEO_EDIT_MAX_INPUT_MB}MB)`,
+    );
+  }
+
+  const contentType = response.headers.get('content-type')?.split(';')[0]?.trim() ?? '';
+  const extension = audioExtensionFor(contentType, url);
+  const path = join(workdir, `bgm.${extension}`);
+  await writeFile(path, bytes);
+  return path;
+}
+
 function parseVideoDataUrl(value: string): { body: Buffer; extension: string } {
   const match = /^data:(video\/[a-zA-Z0-9.+-]+);base64,(.+)$/s.exec(value);
   if (!match) throw new Error('invalid video data URL');
@@ -174,6 +228,17 @@ function parseVideoDataUrl(value: string): { body: Buffer; extension: string } {
   return {
     body: Buffer.from(payload.replace(/\s/g, ''), 'base64'),
     extension: extensionFor(mimeType, ''),
+  };
+}
+
+function parseAudioDataUrl(value: string): { body: Buffer; extension: string } {
+  const match = /^data:(audio\/[a-zA-Z0-9.+-]+);base64,(.+)$/s.exec(value);
+  if (!match) throw new Error('invalid audio data URL');
+  const mimeType = match[1] ?? 'audio/mpeg';
+  const payload = match[2] ?? '';
+  return {
+    body: Buffer.from(payload.replace(/\s/g, ''), 'base64'),
+    extension: audioExtensionFor(mimeType, ''),
   };
 }
 
@@ -198,7 +263,7 @@ function readDuration(metadata: ProbeResult): number {
   const videoStream = metadata.streams?.find((stream) => stream.codec_type === 'video');
   const values = [videoStream?.duration, metadata.format?.duration];
   for (const value of values) {
-    const parsed = typeof value === 'string' ? Number(value) : NaN;
+    const parsed = typeof value === 'string' ? Number(value) : Number.NaN;
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
   throw new Error('input video duration is unknown');
@@ -210,16 +275,29 @@ async function renderConcat(input: {
   width: number;
   height: number;
   fps: number;
+  bgmPath: string | null;
+  settings: Record<string, unknown>;
 }) {
   await mkdir(join(input.outputPath, '..'), { recursive: true }).catch(() => undefined);
   const args = ['-y', '-hide_banner'];
   for (const clip of input.clips) {
     args.push('-i', clip.inputPath);
   }
+  const bgmInputIndex = input.bgmPath ? input.clips.length : null;
+  if (input.bgmPath) {
+    args.push('-i', input.bgmPath);
+  }
 
   args.push(
     '-filter_complex',
-    buildFilterComplex(input.clips, input.width, input.height, input.fps),
+    buildFilterComplex({
+      clips: input.clips,
+      width: input.width,
+      height: input.height,
+      fps: input.fps,
+      bgmInputIndex,
+      settings: input.settings,
+    }),
     '-map',
     '[v]',
     '-map',
@@ -244,18 +322,50 @@ async function renderConcat(input: {
   await runCommand(config.VIDEO_EDIT_FFMPEG_PATH, args, 20 * 60 * 1000);
 }
 
-function buildFilterComplex(
-  clips: PreparedClip[],
-  width: number,
-  height: number,
-  fps: number,
-): string {
+function buildFilterComplex(input: {
+  clips: PreparedClip[];
+  width: number;
+  height: number;
+  fps: number;
+  bgmInputIndex: number | null;
+  settings: Record<string, unknown>;
+}): string {
   const chains: string[] = [];
-  for (const clip of clips) {
+  const renderSubtitles = readBooleanSetting(input.settings, 'renderSubtitles');
+  const flashTransition = readBooleanSetting(input.settings, 'flashTransition');
+  const bgmVolume = readNumberSetting(input.settings, 'bgmVolume') ?? 0.28;
+
+  for (const clip of input.clips) {
     const trim = `start=${formatSeconds(clip.start)}:duration=${formatSeconds(clip.duration)}`;
-    chains.push(
-      `[${clip.index}:v]trim=${trim},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p[v${clip.index}]`,
-    );
+    const videoFilters = [
+      `trim=${trim}`,
+      'setpts=PTS-STARTPTS',
+      `scale=${input.width}:${input.height}:force_original_aspect_ratio=decrease`,
+      `pad=${input.width}:${input.height}:(ow-iw)/2:(oh-ih)/2`,
+      'setsar=1',
+      `fps=${input.fps}`,
+    ];
+
+    if (flashTransition) {
+      const fadeDuration = Math.min(0.12, Math.max(0.04, clip.duration / 5));
+      videoFilters.push(`fade=t=in:st=0:d=${formatSeconds(fadeDuration)}:color=white`);
+      if (clip.duration > fadeDuration * 2) {
+        videoFilters.push(
+          `fade=t=out:st=${formatSeconds(clip.duration - fadeDuration)}:d=${formatSeconds(fadeDuration)}:color=white`,
+        );
+      }
+    }
+
+    if (renderSubtitles && clip.title?.trim()) {
+      const fontSize = Math.max(24, Math.round(input.height * 0.032));
+      const bottomOffset = Math.max(96, Math.round(input.height * 0.145));
+      videoFilters.push(
+        `drawtext=text='${escapeDrawtextText(clip.title)}':x=(w-text_w)/2:y=h-${bottomOffset}:fontsize=${fontSize}:fontcolor=white:box=1:boxcolor=black@0.42:boxborderw=18`,
+      );
+    }
+
+    videoFilters.push('format=yuv420p');
+    chains.push(`[${clip.index}:v]${videoFilters.join(',')}[v${clip.index}]`);
 
     if (clip.hasAudio) {
       chains.push(
@@ -268,8 +378,18 @@ function buildFilterComplex(
     }
   }
 
-  const concatInputs = clips.map((clip) => `[v${clip.index}][a${clip.index}]`).join('');
-  chains.push(`${concatInputs}concat=n=${clips.length}:v=1:a=1[v][a]`);
+  const concatInputs = input.clips.map((clip) => `[v${clip.index}][a${clip.index}]`).join('');
+  if (input.bgmInputIndex === null) {
+    chains.push(`${concatInputs}concat=n=${input.clips.length}:v=1:a=1[v][a]`);
+    return chains.join(';');
+  }
+
+  const totalDuration = input.clips.reduce((sum, clip) => sum + clip.duration, 0);
+  chains.push(`${concatInputs}concat=n=${input.clips.length}:v=1:a=1[v][acat]`);
+  chains.push(
+    `[${input.bgmInputIndex}:a]aresample=48000,volume=${formatVolume(bgmVolume)},atrim=duration=${formatSeconds(totalDuration)},asetpts=PTS-STARTPTS[bgm]`,
+  );
+  chains.push('[acat][bgm]amix=inputs=2:duration=first:dropout_transition=0[a]');
   return chains.join(';');
 }
 
@@ -289,7 +409,6 @@ function resolveOutputDimensions(settings: Record<string, unknown>): {
       return { width: longEdge, height: longEdge };
     case '4:5':
       return { width: Math.round((longEdge * 4) / 5), height: longEdge };
-    case '9:16':
     default:
       return { width: Math.round((longEdge * 9) / 16), height: longEdge };
   }
@@ -297,7 +416,7 @@ function resolveOutputDimensions(settings: Record<string, unknown>): {
 
 function resolveFps(settings: Record<string, unknown>): number {
   const raw = settings.fps;
-  const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+  const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : Number.NaN;
   if (!Number.isFinite(value)) return 30;
   return Math.max(15, Math.min(30, Math.round(value)));
 }
@@ -305,6 +424,36 @@ function resolveFps(settings: Record<string, unknown>): number {
 function readStringSetting(settings: Record<string, unknown>, key: string): string | null {
   const value = settings[key];
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readNumberSetting(settings: Record<string, unknown>, key: string): number | null {
+  const value = settings[key];
+  const parsed =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readBooleanSetting(settings: Record<string, unknown>, key: string): boolean {
+  const value = settings[key];
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return false;
+  const lowered = value.trim().toLowerCase();
+  return lowered === 'true' || lowered === '1' || lowered === 'yes';
+}
+
+function readStringArraySetting(settings: Record<string, unknown>, key: string): string[] {
+  const value = settings[key];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => item.trim());
+}
+
+function resolveOptionalTitle(
+  value: string | undefined,
+): Pick<PreparedClip, 'title'> | Record<string, never> {
+  const title = value?.trim();
+  return title ? { title } : {};
 }
 
 function extensionFor(contentType: string, url: string): string {
@@ -324,6 +473,34 @@ function extensionFor(contentType: string, url: string): string {
     // Fall through to mp4.
   }
   return 'mp4';
+}
+
+function audioExtensionFor(contentType: string, url: string): string {
+  switch (contentType.toLowerCase()) {
+    case 'audio/mpeg':
+    case 'audio/mp3':
+      return 'mp3';
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return 'wav';
+    case 'audio/ogg':
+      return 'ogg';
+    case 'audio/aac':
+      return 'aac';
+    case 'audio/mp4':
+    case 'audio/x-m4a':
+      return 'm4a';
+    case 'audio/flac':
+      return 'flac';
+  }
+
+  try {
+    const ext = new URL(url).pathname.split('.').pop()?.toLowerCase();
+    if (ext && ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'].includes(ext)) return ext;
+  } catch {
+    // Fall through to mp3.
+  }
+  return 'mp3';
 }
 
 function isHttpUrl(value: string): boolean {
@@ -350,6 +527,16 @@ function formatVolume(value: number): string {
   return clampNumber(value, 0, 1)
     .toFixed(3)
     .replace(/\.?0+$/, '');
+}
+
+function escapeDrawtextText(value: string): string {
+  return value
+    .slice(0, 120)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/:/g, '\\:')
+    .replace(/%/g, '\\%')
+    .replace(/\r?\n/g, ' ');
 }
 
 function runCommand(

@@ -54,6 +54,8 @@ export interface BuildRemakeCanvasInput {
   creatorPrompt?: string;
   /** 锁定产品多视图的 i2i prompt（缺省走通用产品参考图） */
   productPrompt?: string;
+  /** 全片 BGM 生成 prompt（缺省走轻奢带货氛围音乐） */
+  bgmPrompt?: string;
   settings: RemakeSettings;
 }
 
@@ -64,12 +66,14 @@ export const RemakeNodeIds = {
   productLock: 'image-product-lock',
   sceneImage: (index: number) => `image-scene-${index}`,
   sceneVideo: (index: number) => `video-scene-${index}`,
+  bgm: 'audio-bgm',
   finalCut: 'video-final-cut',
 } as const;
 
 const TEXT_MODEL = getDefaultWorkflowModelId('text'); // gemini-3.5-flash
 const IMAGE_MODEL = getDefaultWorkflowModelId('image'); // nano-banana2
 const VIDEO_MODEL = 'veo-3.1';
+const AUDIO_MODEL = 'suno-music';
 const EDIT_MODEL = 'lumen-video-edit';
 
 // 画布布局：左→右分带，y 按场次堆叠。
@@ -129,6 +133,9 @@ export function buildRemakeCanvas(input: BuildRemakeCanvasInput): LumenCanvas {
       modelId: TEXT_MODEL,
     }),
   );
+  nodes[0]!.data.output = input.scriptText;
+  nodes[0]!.data.status = 'success';
+  nodes[0]!.data.progress = 1;
 
   // 2. 创作者形象锁定（文生图，全片同一个人）
   nodes.push(
@@ -197,12 +204,33 @@ export function buildRemakeCanvas(input: BuildRemakeCanvasInput): LumenCanvas {
     edges.push(edge(vidId, RemakeNodeIds.finalCut));
   }
 
-  // 5. 成片（lumen-video-edit：按场次顺序拼接，确定性，0 AI）
+  // 5. 全片 BGM（Suno，给最终剪辑混音；不是 Agent）
+  nodes.push(
+    node(RemakeNodeIds.bgm, 'audio', '全片 BGM', COL.sceneVideo, scenes.length * ROW_H, {
+      prompt:
+        input.bgmPrompt ??
+        'Instrumental luxury UGC product ad background music, modern, clean, upbeat but not distracting, no vocals, suitable for a vertical TikTok Shop product video.',
+      modelId: AUDIO_MODEL,
+      settings: { instrumental: true, suno_model: 'V5' },
+    }),
+  );
+  edges.push(edge(RemakeNodeIds.script, RemakeNodeIds.bgm));
+  edges.push(edge(RemakeNodeIds.bgm, RemakeNodeIds.finalCut));
+
+  // 6. 成片（lumen-video-edit：按场次顺序拼接，确定性，0 Agent）
   const finalY = ((scenes.length - 1) * ROW_H) / 2;
   nodes.push(
     node(RemakeNodeIds.finalCut, 'video', '最终成片', COL.final, finalY, {
       modelId: EDIT_MODEL,
-      settings: { aspectRatio, resolution: finalResolution },
+      settings: {
+        aspectRatio,
+        resolution: finalResolution,
+        trimHeadSeconds: 0.2,
+        flashTransition: true,
+        renderSubtitles: true,
+        bgmVolume: 0.28,
+        clipTitles: scenes.map((scene) => scene.dialogue).filter(Boolean),
+      },
     }),
   );
 
@@ -213,6 +241,7 @@ export interface RemakeRunBoundaries {
   lockNodes: string[];
   storyboardNodes: string[];
   videoNodes: string[];
+  bgmNode: string;
   finalNode: string;
 }
 
@@ -222,6 +251,7 @@ export function remakeRunBoundaries(scenes: RemakeScene[]): RemakeRunBoundaries 
     lockNodes: [RemakeNodeIds.creatorLock, RemakeNodeIds.productLock],
     storyboardNodes: scenes.map((s) => RemakeNodeIds.sceneImage(s.index)),
     videoNodes: scenes.map((s) => RemakeNodeIds.sceneVideo(s.index)),
+    bgmNode: RemakeNodeIds.bgm,
     finalNode: RemakeNodeIds.finalCut,
   };
 }

@@ -2,6 +2,10 @@
 
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
+import {
+  HotVideoRemakePipeline,
+  type HotVideoRemakeSession,
+} from '@/components/studio/HotVideoRemakePipeline';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
 import { useLoginRedirect } from '@/lib/auth-redirect';
@@ -22,7 +26,6 @@ import {
   IconLink,
   IconLoader2,
   IconLock,
-  IconPhotoPlus,
   IconPlayerPlay,
   IconPlus,
   IconRefresh,
@@ -78,11 +81,26 @@ interface ReferenceItem {
 interface UploadedProductImage {
   id: string;
   name: string;
+  file: File;
+  previewUrl: string;
+  uploadedUrl?: string;
 }
 
 interface ListHotVideosApiResponse {
   ok: boolean;
   data?: { items: HotVideoRecord[]; total: number };
+  error?: { message: string };
+}
+
+interface CanvasUploadApiResponse {
+  ok: boolean;
+  data?: { asset: { url: string } };
+  error?: { message: string };
+}
+
+interface HotVideoRemakeApiResponse {
+  ok: boolean;
+  data?: HotVideoRemakeSession;
   error?: { message: string };
 }
 
@@ -256,6 +274,7 @@ export function HotVideosPage() {
   const [replicaPreview, setReplicaPreview] = useState<HotVideoView | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [previewVideo, setPreviewVideo] = useState<HotVideoView | null>(null);
+  const [remakeSession, setRemakeSession] = useState<HotVideoRemakeSession | null>(null);
 
   // Debounce the local search input → appliedQuery (server param)
   useEffect(() => {
@@ -394,6 +413,16 @@ export function HotVideosPage() {
     setReferenceInput('');
     setInputError(null);
   };
+
+  if (remakeSession) {
+    return (
+      <div className="relative min-h-screen text-white">
+        <AuroraBackdrop />
+        <Topbar />
+        <HotVideoRemakePipeline session={remakeSession} onBack={() => setRemakeSession(null)} />
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen text-white">
@@ -554,6 +583,10 @@ export function HotVideosPage() {
         <ReplicaConfigModal
           target={replicaTarget}
           video={replicaVideo}
+          onStart={(session) => {
+            setRemakeSession(session);
+            setConfigOpen(false);
+          }}
           onClose={() => setConfigOpen(false)}
         />
       ) : null}
@@ -822,17 +855,34 @@ function VideoPreviewModal({
 function ReplicaConfigModal({
   target,
   video,
+  onStart,
   onClose,
 }: {
   target: ReferenceItem;
   video?: HotVideoView;
+  onStart: (session: HotVideoRemakeSession) => void;
   onClose: () => void;
 }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const fileInputId = useId();
   const [uploadedImages, setUploadedImages] = useState<UploadedProductImage[]>([]);
   const [prompt, setPrompt] = useState('');
-  const canGenerate = uploadedImages.length > 0;
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const uploadedImagesRef = useRef(uploadedImages);
+  const canGenerate = uploadedImages.length > 0 && !generating;
+
+  useEffect(() => {
+    uploadedImagesRef.current = uploadedImages;
+  }, [uploadedImages]);
+
+  useEffect(() => {
+    return () => {
+      for (const image of uploadedImagesRef.current) {
+        URL.revokeObjectURL(image.previewUrl);
+      }
+    };
+  }, []);
 
   const handleUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
@@ -840,6 +890,8 @@ function ReplicaConfigModal({
     const nextImages = files.slice(0, availableSlots).map((file, index) => ({
       id: `${file.name}-${file.size}-${file.lastModified}-${Date.now()}-${index}`,
       name: file.name,
+      file,
+      previewUrl: URL.createObjectURL(file),
     }));
 
     if (nextImages.length) {
@@ -850,7 +902,75 @@ function ReplicaConfigModal({
   };
 
   const removeImage = (imageId: string) => {
-    setUploadedImages((current) => current.filter((image) => image.id !== imageId));
+    setUploadedImages((current) => {
+      const targetImage = current.find((image) => image.id === imageId);
+      if (targetImage) URL.revokeObjectURL(targetImage.previewUrl);
+      return current.filter((image) => image.id !== imageId);
+    });
+  };
+
+  const uploadProductImage = async (image: UploadedProductImage, index: number) => {
+    if (image.uploadedUrl) return image.uploadedUrl;
+    const form = new FormData();
+    form.set('file', image.file);
+    form.set('kind', 'image');
+    form.set('nodeId', `hot-remake-product-${index + 1}`);
+
+    const response = await fetch('/api/canvas/uploads', {
+      method: 'POST',
+      headers: { 'x-lumen-locale': locale },
+      body: form,
+    });
+    const payload = (await response.json()) as CanvasUploadApiResponse;
+    if (!response.ok || !payload.ok || !payload.data) {
+      throw new Error(payload.error?.message ?? t('materials.uploadFailed'));
+    }
+    const uploadedUrl = payload.data.asset.url;
+    setUploadedImages((current) =>
+      current.map((item) => (item.id === image.id ? { ...item, uploadedUrl } : item)),
+    );
+    return uploadedUrl;
+  };
+
+  const handleGenerate = async () => {
+    if (!canGenerate) return;
+    setGenerating(true);
+    setGenerateError(null);
+    try {
+      const productImageUrls: string[] = [];
+      for (const [index, image] of uploadedImages.entries()) {
+        productImageUrls.push(await uploadProductImage(image, index));
+      }
+
+      const response = await fetch('/api/hot-videos/remake', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-lumen-locale': locale,
+        },
+        body: JSON.stringify({
+          videoId: video?.id ?? (target.source === 'video' ? target.id : undefined),
+          reference: target,
+          productImageUrls,
+          prompt,
+          settings: {
+            aspectRatio: '9:16',
+            resolution: '720p',
+            language: locale,
+            mode: 'standard',
+          },
+        }),
+      });
+      const payload = (await response.json()) as HotVideoRemakeApiResponse;
+      if (!response.ok || !payload.ok || !payload.data) {
+        throw new Error(payload.error?.message ?? t('hotVideos.parseFailed'));
+      }
+      onStart(payload.data);
+    } catch (error) {
+      setGenerateError(error instanceof Error ? error.message : t('hotVideos.parseFailed'));
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
@@ -944,17 +1064,22 @@ function ReplicaConfigModal({
                 {uploadedImages.map((image) => (
                   <div
                     key={image.id}
-                    className="relative flex h-[88px] w-[88px] flex-col items-center justify-center rounded-xl bg-white/[0.06] px-2 text-center ring-1 ring-white/[0.08]"
+                    className="relative h-[88px] w-[88px] overflow-hidden rounded-xl bg-white/[0.06] ring-1 ring-white/[0.08]"
                   >
-                    <IconPhotoPlus size={22} className="text-white/48" stroke={2.1} />
-                    <div className="mt-2 line-clamp-2 text-[10px] leading-4 text-white/58">
+                    <img
+                      src={image.previewUrl}
+                      alt={image.name}
+                      className="h-full w-full object-cover"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 line-clamp-2 bg-black/58 px-1.5 py-1 text-center text-[9px] leading-3 text-white/78 backdrop-blur">
                       {image.name}
                     </div>
                     <button
                       type="button"
                       onClick={() => removeImage(image.id)}
+                      disabled={generating}
                       aria-label={`${t('common.remove')} ${image.name}`}
-                      className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#24272a] text-white/55 ring-1 ring-white/[0.12] hover:text-white"
+                      className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/62 text-white/68 ring-1 ring-white/[0.12] hover:text-white disabled:opacity-40"
                     >
                       <IconX size={13} stroke={2.2} />
                     </button>
@@ -1008,10 +1133,17 @@ function ReplicaConfigModal({
           </section>
         </div>
 
+        {generateError ? (
+          <div className="border-t border-white/[0.08] px-6 py-3 text-[12px] leading-5 text-[#f5c76a]">
+            {generateError}
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.08] px-6 py-4">
           <div className="text-[12px] text-white/38">{t('hotVideos.generationTime')}</div>
           <button
             type="button"
+            onClick={handleGenerate}
             disabled={!canGenerate}
             className={cn(
               'ml-auto flex h-11 items-center justify-center gap-2 rounded-xl px-5 text-[13px] font-bold transition-transform active:scale-[0.98]',
@@ -1020,11 +1152,12 @@ function ReplicaConfigModal({
                 : 'bg-white/[0.08] text-white/42 ring-1 ring-white/[0.07]',
             )}
           >
-            <IconUpload size={15} stroke={2.3} />
-            {t('hotVideos.generate')}
-            <span className="rounded-full bg-black/10 px-2 py-0.5 text-[11px]">
-              {t('hotVideos.credits')}
-            </span>
+            {generating ? (
+              <IconLoader2 size={15} className="animate-spin" stroke={2.3} />
+            ) : (
+              <IconUpload size={15} stroke={2.3} />
+            )}
+            {generating ? t('hotVideos.generating') : t('hotVideos.generate')}
           </button>
         </div>
       </motion.div>
