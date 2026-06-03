@@ -208,7 +208,7 @@ Return this exact JSON shape, no markdown:
   "productPrompt": "product multi-view lock prompt using uploaded product images",
   "bgmPrompt": "instrumental Suno music prompt, no vocals",
   "scenes": [
-    {"index": 1, "action": "shot action", "dialogue": "subtitle or voice line", "durationSeconds": 3, "camera": "camera / framing"}
+    {"index": 1, "action": "shot action", "dialogue": "subtitle or voice line", "durationSeconds": 4, "camera": "camera / framing (durationSeconds must be one of 4, 6, 8)"}
   ],
   "sceneImagePrompts": ["one image prompt per scene, matching scenes order"],
   "sceneVideoPrompts": ["one video prompt per scene, matching scenes order"]
@@ -246,7 +246,7 @@ function buildFallbackPlan(input: {
       dialogue: zh
         ? fallbackChineseLine(sceneNumber, product, hook, angle)
         : fallbackEnglishLine(sceneNumber, product, hook, angle),
-      durationSeconds: durations[index] ?? 3,
+      durationSeconds: durations[index] ?? 4,
       camera: cameraForIndex(index),
     };
   });
@@ -332,15 +332,18 @@ function normalizeScenes(value: unknown, fallback: RemakeScene[]): RemakeScene[]
       const dialogue = readString(record.dialogue);
       const camera = readString(record.camera);
       if (!action || !dialogue || !camera) return null;
-      const duration =
+      const rawDuration =
         typeof record.durationSeconds === 'number' && Number.isFinite(record.durationSeconds)
           ? record.durationSeconds
-          : 3;
+          : 4;
+      // veo-3.1 仅支持 [4, 6, 8] 秒，吸附到最近的合法值。
+      const supportedDurations = [4, 6, 8];
+      const durationSeconds = supportedDurations.find((value) => value >= rawDuration) ?? 8;
       return {
         index: index + 1,
         action,
         dialogue,
-        durationSeconds: duration === 6 ? 6 : 3,
+        durationSeconds,
         camera,
       };
     })
@@ -367,9 +370,10 @@ function normalizeStructure(value: string[] | undefined, locale: 'en' | 'zh'): s
 }
 
 function durationPattern(count: number): number[] {
-  if (count <= 3) return [3, 6, 6].slice(0, count);
-  if (count === 4) return [3, 3, 3, 6];
-  return Array.from({ length: count }, () => 3);
+  // veo-3.1 仅支持 [4, 6, 8] 秒，骨架尽量用 4s 短切镜 + 6s 重点镜的节奏。
+  if (count <= 3) return [4, 6, 6].slice(0, count);
+  if (count === 4) return [4, 4, 4, 6];
+  return Array.from({ length: count }, () => 4);
 }
 
 function cameraForIndex(index: number): string {

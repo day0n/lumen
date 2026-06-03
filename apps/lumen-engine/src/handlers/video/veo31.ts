@@ -39,9 +39,12 @@ export async function execute(
     readStringSetting(settings, 'aspectRatio') ??
     '16:9';
   const resolution = readStringSetting(settings, 'resolution');
-  // 1080p / 4k 仅支持 8s（Veo 约束），其余尊重用户选择，默认 8s。
+  // veo-3.1 text_to_video 仅支持 [4, 6, 8] 秒，向上吸附到最近的合法值；
+  // 1080p / 4k 仅支持 8s（Veo 额外约束），其余尊重用户选择并 clamp。
   const requestedDuration = readNumberSetting(settings, 'duration') ?? 8;
-  const durationSeconds = resolution === '1080p' || resolution === '4k' ? 8 : requestedDuration;
+  const supportedDurations = [4, 6, 8] as const;
+  const clampedDuration = supportedDurations.find((value) => value >= requestedDuration) ?? 8;
+  const durationSeconds = resolution === '1080p' || resolution === '4k' ? 8 : clampedDuration;
   const image = await toVeoImage(input.image);
   const lastFrame = image ? await toVeoImage(input.lastFrameImage) : null;
 
