@@ -30,7 +30,9 @@ export class EventSubscriber {
       }
     });
 
-    this.subscriber.psubscribe('flow:events:*');
+    this.subscriber.psubscribe('flow:events:*').catch((err) => {
+      logger.error({ err }, 'event subscriber psubscribe failed');
+    });
   }
 
   async stop(): Promise<void> {

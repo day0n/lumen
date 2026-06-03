@@ -34,6 +34,12 @@ export function getRedisClient(options: RedisConnectionOptions): Redis | null {
     maxRetriesPerRequest: 3,
   });
 
+  // ioredis 要求必须监听 'error'，否则连接出错时 EventEmitter 会抛
+  // uncaughtException 直接杀进程。这里吞掉并记录，让 ioredis 自行重连。
+  client.on('error', (err) => {
+    console.error('[redis] client error', err);
+  });
+
   cache.set(key, client);
   client.on('end', () => cache.delete(key));
   return client;
@@ -93,7 +99,7 @@ export class JsonCache {
       if (keys.length === 0) return 0;
       // ioredis with keyPrefix re-prefixes on .del, strip prefix back to bare keys.
       const bare = keyPrefix ? keys.map((k) => k.replace(keyPrefix, '')) : keys;
-      return this.redis.del(...bare);
+      return await this.redis.del(...bare);
     } catch {
       return 0;
     }

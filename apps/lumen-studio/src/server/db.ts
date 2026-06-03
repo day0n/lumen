@@ -15,13 +15,24 @@ import {
 
 import { getStudioServerConfig } from './config';
 
-let projectRepositoryPromise: Promise<ProjectRepository> | null = null;
-let userRepositoryPromise: Promise<UserRepository> | null = null;
-let homeFeaturedRepositoryPromise: Promise<HomeFeaturedRepository> | null = null;
-let hotVideoRepositoryPromise: Promise<HotVideoRepository> | null = null;
-let notificationRepositoryPromise: Promise<NotificationRepository> | null = null;
-let materialAssetRepositoryPromise: Promise<MaterialAssetRepository> | null = null;
-let projectHistoryRepositoryPromise: Promise<ProjectHistoryRepository> | null = null;
+/**
+ * Memoize an async repository loader. The resolved promise is cached so the
+ * client connect + ensureIndexes only runs once per process. If the loader
+ * rejects, the cache is reset so the next call retries instead of returning a
+ * permanently-rejected promise.
+ */
+function createRepositoryLoader<T>(factory: () => Promise<T>): () => Promise<T> {
+  let promise: Promise<T> | null = null;
+  return () => {
+    if (promise) return promise;
+    promise = factory().catch((error) => {
+      promise = null;
+      throw error;
+    });
+    return promise;
+  };
+}
+
 let cache: JsonCache | null = null;
 
 async function getDb() {
@@ -42,95 +53,71 @@ async function getWorkflowDb() {
   });
 }
 
-export async function getProjectRepository(): Promise<ProjectRepository> {
-  if (projectRepositoryPromise) return projectRepositoryPromise;
+export const getProjectRepository = createRepositoryLoader(async () => {
+  const db = await getDb();
+  const repository = new ProjectRepository(db);
+  await repository.ensureIndexes();
+  return repository;
+});
 
-  projectRepositoryPromise = (async () => {
-    const db = await getDb();
-    const repository = new ProjectRepository(db);
-    await repository.ensureIndexes();
-    return repository;
-  })();
+export const getUserRepository = createRepositoryLoader(async () => {
+  const db = await getDb();
+  const repository = new UserRepository(db);
+  await repository.ensureIndexes();
+  return repository;
+});
 
-  return projectRepositoryPromise;
-}
+export const getHomeFeaturedRepository = createRepositoryLoader(async () => {
+  const db = await getDb();
+  const repository = new HomeFeaturedRepository(db);
+  await repository.ensureIndexes();
+  return repository;
+});
 
-export async function getUserRepository(): Promise<UserRepository> {
-  if (userRepositoryPromise) return userRepositoryPromise;
+export const getHotVideoRepository = createRepositoryLoader(async () => {
+  const db = await getDb();
+  const repository = new HotVideoRepository(db);
+  await repository.ensureIndexes();
+  return repository;
+});
 
-  userRepositoryPromise = (async () => {
-    const db = await getDb();
-    const repository = new UserRepository(db);
-    await repository.ensureIndexes();
-    return repository;
-  })();
+export const getNotificationRepository = createRepositoryLoader(async () => {
+  const db = await getDb();
+  const repository = new NotificationRepository(db);
+  await repository.ensureIndexes();
+  return repository;
+});
 
-  return userRepositoryPromise;
-}
+export const getMaterialAssetRepository = createRepositoryLoader(async () => {
+  const db = await getWorkflowDb();
+  const repository = new MaterialAssetRepository(db);
+  await repository.ensureIndexes();
+  return repository;
+});
 
-export async function getHomeFeaturedRepository(): Promise<HomeFeaturedRepository> {
-  if (homeFeaturedRepositoryPromise) return homeFeaturedRepositoryPromise;
+export const getProjectHistoryRepository = createRepositoryLoader(async () => {
+  const db = await getDb();
+  const repository = new ProjectHistoryRepository(db);
+  await repository.ensureIndexes();
+  return repository;
+});
 
-  homeFeaturedRepositoryPromise = (async () => {
-    const db = await getDb();
-    const repository = new HomeFeaturedRepository(db);
-    await repository.ensureIndexes();
-    return repository;
-  })();
-
-  return homeFeaturedRepositoryPromise;
-}
-
-export async function getHotVideoRepository(): Promise<HotVideoRepository> {
-  if (hotVideoRepositoryPromise) return hotVideoRepositoryPromise;
-
-  hotVideoRepositoryPromise = (async () => {
-    const db = await getDb();
-    const repository = new HotVideoRepository(db);
-    await repository.ensureIndexes();
-    return repository;
-  })();
-
-  return hotVideoRepositoryPromise;
-}
-
-export async function getNotificationRepository(): Promise<NotificationRepository> {
-  if (notificationRepositoryPromise) return notificationRepositoryPromise;
-
-  notificationRepositoryPromise = (async () => {
-    const db = await getDb();
-    const repository = new NotificationRepository(db);
-    await repository.ensureIndexes();
-    return repository;
-  })();
-
-  return notificationRepositoryPromise;
-}
-
-export async function getMaterialAssetRepository(): Promise<MaterialAssetRepository> {
-  if (materialAssetRepositoryPromise) return materialAssetRepositoryPromise;
-
-  materialAssetRepositoryPromise = (async () => {
-    const db = await getWorkflowDb();
-    const repository = new MaterialAssetRepository(db);
-    await repository.ensureIndexes();
-    return repository;
-  })();
-
-  return materialAssetRepositoryPromise;
-}
-
-export async function getProjectHistoryRepository(): Promise<ProjectHistoryRepository> {
-  if (projectHistoryRepositoryPromise) return projectHistoryRepositoryPromise;
-
-  projectHistoryRepositoryPromise = (async () => {
-    const db = await getDb();
-    const repository = new ProjectHistoryRepository(db);
-    await repository.ensureIndexes();
-    return repository;
-  })();
-
-  return projectHistoryRepositoryPromise;
+/**
+ * Eagerly initialize all repositories (Mongo connect + ensureIndexes) so the
+ * cold-start cost is paid at boot instead of by the first user request after a
+ * deploy/restart. Failures are logged but non-fatal — the lazy getters will
+ * retry on demand.
+ */
+export async function warmupRepositories(): Promise<void> {
+  await Promise.allSettled([
+    getUserRepository(),
+    getProjectRepository(),
+    getProjectHistoryRepository(),
+    getHomeFeaturedRepository(),
+    getHotVideoRepository(),
+    getNotificationRepository(),
+    getMaterialAssetRepository(),
+  ]);
 }
 
 export function getStudioCache(): JsonCache {
