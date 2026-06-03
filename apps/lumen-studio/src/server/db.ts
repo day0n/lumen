@@ -1,5 +1,6 @@
-import 'server-only';
-
+// 注意：不要在此文件加 `import 'server-only'`。生产用 `tsx server.ts` 裸 Node
+// 启动，server.ts 会 import 本模块做连接预热；server-only 包在非 react-server
+// 条件下解析为一个直接 throw 的模块，会导致启动崩溃。本模块本就只在服务端用。
 import {
   HomeFeaturedRepository,
   HotVideoRepository,
