@@ -47,6 +47,8 @@ export interface InferenceHooks {
     args: Record<string, unknown>,
     status: 'success' | 'error',
     durationMs: number,
+    output: string,
+    truncated: boolean,
   ) => Promise<void> | void;
   onToolEvent?: (
     toolName: string,
@@ -259,9 +261,12 @@ export class InferenceLoop {
       toolError = msg;
     }
 
+    const rawResultText = resultText;
+    let truncated = false;
     if (resultText.length > this.toolResultMaxChars) {
-      const truncated = resultText.length - this.toolResultMaxChars;
-      resultText = `${resultText.slice(0, this.toolResultMaxChars)}\n\n[...truncated ${truncated} chars]`;
+      const truncatedChars = resultText.length - this.toolResultMaxChars;
+      resultText = `${resultText.slice(0, this.toolResultMaxChars)}\n\n[...truncated ${truncatedChars} chars]`;
+      truncated = true;
     }
 
     addToolResult(messages, toolCallId, toolName, resultText);
@@ -276,11 +281,13 @@ export class InferenceLoop {
     await this.hooks.onToolEnd?.(
       toolName,
       toolCallId,
-      Buffer.byteLength(resultText, 'utf8'),
+      Buffer.byteLength(rawResultText, 'utf8'),
       toolError,
       args,
       status,
       durationMs,
+      rawResultText,
+      truncated,
     );
   }
 }

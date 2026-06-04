@@ -36,6 +36,8 @@ Sentry.init({
   dsn: env.SENTRY_DSN || undefined,
   environment: env.SENTRY_ENVIRONMENT || env.NODE_ENV,
   enableLogs: true,
+  sendDefaultPii: true,
+  streamGenAiSpans: true,
   tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
   integrations: [Sentry.pinoIntegration()],
 });
