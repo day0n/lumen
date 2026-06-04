@@ -66,6 +66,7 @@ const RemakeShotItemSchema = z
     startSec: z.number().nonnegative(),
     endSec: z.number().nonnegative(),
     action: z.string().trim().max(400),
+    actionPattern: z.string().trim().max(280).optional(),
     camera: z.string().trim().max(280),
     visual: z.string().trim().max(400),
     dialogue: z.string().trim().max(400).optional(),
