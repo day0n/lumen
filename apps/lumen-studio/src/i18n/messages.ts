@@ -244,6 +244,10 @@ const en = {
       error: 'Save failed',
       autosave: 'Autosaved',
     },
+    hydration: {
+      preparing: 'Lighting up canvas',
+      hint: 'Loading workflow nodes…',
+    },
     toolbar: {
       addNode: 'Add node',
       materials: 'Assets',
@@ -897,6 +901,10 @@ const zh: typeof en = {
       saving: '保存中',
       error: '保存失败',
       autosave: '自动保存',
+    },
+    hydration: {
+      preparing: '正在唤醒画布',
+      hint: '正在把工作流节点装载到画布…',
     },
     toolbar: {
       addNode: '添加节点',

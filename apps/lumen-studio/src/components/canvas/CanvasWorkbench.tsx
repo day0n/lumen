@@ -66,6 +66,7 @@ import type {
   OnConnectStart,
   XYPosition,
 } from '@xyflow/react';
+import { AnimatePresence } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -85,6 +86,7 @@ import type {
   ReactNode,
 } from 'react';
 
+import { CanvasHydrationOverlay } from '@/components/canvas/CanvasHydrationOverlay';
 import { ChatPanel } from '@/features/agent-chat/ChatPanel';
 import { useWorkflowWs } from '@/features/workflow/use-workflow-ws';
 import type { NodeState } from '@/features/workflow/use-workflow-ws';
@@ -908,6 +910,21 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const reactFlow = useReactFlow<LumenNode, LumenEdge>();
   const hasRequestedCreate = useRef(false);
   const hasHydratedProject = useRef(!projectId && !createOnMount);
+  // 初次进入存量画布或新画布时，先盖一层全屏加载动画，等节点真正落到 ReactFlow 上之后再淡出，
+  // 避免出现「点进去先看到空白画布，几百毫秒后节点才跳出来」的割裂感。
+  const [isCanvasHydrated, setIsCanvasHydrated] = useState(!projectId && !createOnMount);
+  // 等 React 把节点 commit、ReactFlow 完成 fitView 后再揭示画布。两层 rAF 经验上够覆盖绝大多数情况。
+  const markCanvasHydrated = useCallback(() => {
+    if (typeof window === 'undefined') {
+      setIsCanvasHydrated(true);
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setIsCanvasHydrated(true);
+      });
+    });
+  }, []);
   const lastSavedCanvas = useRef('');
   const pendingCanvasUploads = useRef(0);
   const [canvasMediaUploading, setCanvasMediaUploading] = useState(false);
@@ -1207,6 +1224,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         lastSavedCanvas.current = JSON.stringify(project.canvas);
         hasHydratedProject.current = true;
         setSaveState('saved');
+        markCanvasHydrated();
         const queryParams = new URLSearchParams();
         if (initialPrompt) queryParams.set('prompt', initialPrompt);
         if (shouldOpenAgentChat) queryParams.set('agent', 'chat');
@@ -1218,6 +1236,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         }
         console.error(error);
         setSaveState('error');
+        setIsCanvasHydrated(true);
       }
     }
 
@@ -1234,6 +1253,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     initialPrompt,
     locale,
     localePath,
+    markCanvasHydrated,
     nodes,
     projectTitle,
     router,
@@ -1256,17 +1276,22 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     async function loadProject() {
       try {
         await refreshProject({ signal: controller.signal });
+        if (!controller.signal.aborted) {
+          markCanvasHydrated();
+        }
       } catch (error) {
         if (!controller.signal.aborted) {
           console.error(error);
           setSaveState('error');
+          // 即使出错也要把 overlay 关掉，否则用户被困在加载动画里看不到错误提示。
+          setIsCanvasHydrated(true);
         }
       }
     }
 
     void loadProject();
     return () => controller.abort();
-  }, [authReady, currentProjectId, isSignedIn, refreshProject]);
+  }, [authReady, currentProjectId, isSignedIn, markCanvasHydrated, refreshProject]);
 
   useEffect(() => {
     if (
@@ -1827,6 +1852,15 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           />
         ) : null}
       </CanvasActionsContext.Provider>
+      <AnimatePresence>
+        {isCanvasHydrated ? null : (
+          <CanvasHydrationOverlay
+            key="canvas-hydration"
+            label={t('canvas.hydration.preparing')}
+            hint={t('canvas.hydration.hint')}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }
