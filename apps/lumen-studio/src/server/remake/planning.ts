@@ -4,7 +4,11 @@ import type { HotVideoRecord } from '@lumen/db';
 
 import type { Locale } from '@/i18n/routing';
 import { getHotVideo } from '@/server/hotVideos';
-import { type RemakeBreakdown, analyzeRemakeReference } from '@/server/remakeAnalysis';
+import {
+  type RemakeBreakdown,
+  analyzeProductImages,
+  analyzeRemakeReference,
+} from '@/server/remakeAnalysis';
 import {
   type RemakePlan,
   type RemakeReference,
@@ -23,7 +27,7 @@ export interface BuildPlanForJobInput {
   reference: RemakeReference;
   /** 源爆款视频（如果是从爆款库点进来的）；用于多模态拆解。 */
   video: HotVideoRecord | null;
-  productImageCount: number;
+  productImageUrls: string[];
   creatorImageCount: number;
   locale: Locale;
   userPrompt?: string;
@@ -44,7 +48,11 @@ export interface BuildPlanForJobOutput {
 export async function buildPlanForJob(input: BuildPlanForJobInput): Promise<BuildPlanForJobOutput> {
   const locale: 'en' | 'zh' = input.locale === 'zh' ? 'zh' : 'en';
 
-  const breakdown = await analyzeRemakeReference({ video: input.video, locale });
+  // 并行跑：参考视频多模态拆解 + 商品图结构化分析
+  const [breakdown, productAnalysis] = await Promise.all([
+    analyzeRemakeReference({ video: input.video, locale }),
+    analyzeProductImages(input.productImageUrls, locale),
+  ]);
 
   const fallback = buildFallbackPlan({
     video: input.video,
@@ -58,11 +66,12 @@ export async function buildPlanForJob(input: BuildPlanForJobInput): Promise<Buil
     video: input.video,
     reference: input.reference,
     prompt: input.userPrompt,
-    productImageCount: input.productImageCount,
+    productImageCount: input.productImageUrls.length,
     creatorImageCount: input.creatorImageCount,
     locale,
     targetDurationSeconds: input.targetDurationSeconds,
     breakdown,
+    productAnalysis,
     userScriptText: input.gateOverrides?.scriptText,
     userSellingPoints: input.gateOverrides?.sellingPoints,
     userAudienceTags: input.gateOverrides?.audienceTags,

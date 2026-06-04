@@ -5,7 +5,12 @@ import type { RemakeScene } from '@lumen/shared/domain';
 import { z } from 'zod';
 
 import { GeminiNotConfiguredError, generateGeminiText } from './gemini';
-import { type RemakeBreakdown, summarizeBreakdownForPlan } from './remakeAnalysis';
+import {
+  type ProductAnalysis,
+  type RemakeBreakdown,
+  summarizeBreakdownForPlan,
+  summarizeProductAnalysis,
+} from './remakeAnalysis';
 
 /**
  * 爆款复刻 —— 计划生成层。
@@ -48,6 +53,8 @@ export interface BuildPlanInput {
   locale: 'en' | 'zh';
   targetDurationSeconds?: number;
   breakdown: RemakeBreakdown | null;
+  /** Structured product info extracted from uploaded product images. */
+  productAnalysis?: ProductAnalysis | null;
   /** Gate 1 重算时由用户提供的"已确认脚本"，作为强约束传给 LLM。 */
   userScriptText?: string;
   userSellingPoints?: string[];
@@ -183,6 +190,10 @@ function buildGeminiPrompt(input: BuildPlanInput): string {
     ? `\nREPLICATION SKELETON — derived from real multimodal analysis of the original video. This is authoritative.\n${breakdownText}\n`
     : '';
 
+  const productAnalysisBlock = input.productAnalysis
+    ? `\n${summarizeProductAnalysis(input.productAnalysis)}\n`
+    : '';
+
   const replicationRules = breakdownText
     ? `
 REPLICATION MODE HARD RULES (violation = invalid output):
@@ -232,7 +243,7 @@ Reference:
   }
 - Output language for scriptText / dialogue / voiceLine / sellingPoints / audienceTags: ${input.locale === 'zh' ? 'Chinese' : 'English'}
 - Target total video length: ${input.targetDurationSeconds ? `~${input.targetDurationSeconds}s (pick scene count and per-scene duration so the sum lands near this)` : 'flexible'}
-${breakdownBlock}${replicationRules}${userScriptBlock}${userSellingBlock}${userAudienceBlock}
+${breakdownBlock}${productAnalysisBlock}${replicationRules}${userScriptBlock}${userSellingBlock}${userAudienceBlock}
 Return this exact JSON shape, no markdown:
 {
   "scriptText": "full script users can review at Gate 1",

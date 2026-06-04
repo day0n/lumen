@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import type { Locale } from '@/i18n/routing';
 import { getStudioCache } from './db';
-import { GeminiNotConfiguredError, generateGeminiMultimodalText } from './gemini';
+import { GeminiNotConfiguredError, generateGeminiMultimodalText, getStudioGoogleClient } from './gemini';
 
 /**
  * 爆款复刻 —— 真拆解。
@@ -210,4 +210,128 @@ export function summarizeBreakdownForPlan(breakdown: RemakeBreakdown | null): st
   }
 
   return lines.join('\n');
+}
+
+// ============================================================
+// 商品图分析：从上传的商品图中提取结构化卖点信息
+// ============================================================
+
+export const ProductAnalysisSchema = z
+  .object({
+    name: z.string().trim().max(120),
+    category: z.string().trim().max(80),
+    sellingPoints: z.array(z.string().trim().max(200)).min(1).max(5),
+    appearance: z.string().trim().max(300),
+    useCase: z.string().trim().max(200),
+    targetAudience: z.string().trim().max(200),
+  })
+  .strict();
+
+export type ProductAnalysis = z.infer<typeof ProductAnalysisSchema>;
+
+/**
+ * 用 Gemini 多模态分析最多两张商品图，返回结构化卖点。
+ * 失败时静默返回 null，调用方降级为仅用商品名。
+ */
+export async function analyzeProductImages(
+  imageUrls: string[],
+  locale: 'en' | 'zh',
+): Promise<ProductAnalysis | null> {
+  if (!imageUrls.length) return null;
+
+  let client: ReturnType<typeof getStudioGoogleClient>;
+  try {
+    client = getStudioGoogleClient();
+  } catch (error) {
+    if (error instanceof GeminiNotConfiguredError) return null;
+    throw error;
+  }
+
+  // 最多取前两张，下载并转 base64
+  const imageParts: Array<Record<string, unknown>> = [];
+  for (const url of imageUrls.slice(0, 2)) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(30_000), redirect: 'follow' });
+      if (!res.ok) continue;
+      const mimeType =
+        res.headers.get('content-type')?.split(';')[0]?.trim() ?? guessImageMimeFromUrl(url);
+      if (!mimeType.startsWith('image/')) continue;
+      const bytes = Buffer.from(await res.arrayBuffer());
+      imageParts.push({ inlineData: { data: bytes.toString('base64'), mimeType } });
+    } catch {
+      // 单张图下载失败不影响整体
+    }
+  }
+
+  if (!imageParts.length) return null;
+
+  const wantZh = locale === 'zh';
+  const prompt = `You are analyzing uploaded product images for a short-video UGC ad scriptwriter.
+Extract structured product information that will help write specific, compelling voiceover lines.
+
+Output language: ${wantZh ? 'Chinese (Simplified)' : 'English'}.
+
+Return ONE JSON object, no markdown:
+{
+  "name": "product name as shown or inferred",
+  "category": "product category (skincare / electronics / food / apparel / etc.)",
+  "sellingPoints": ["3 to 5 specific selling points visible or clearly inferable from the images — be concrete, not generic"],
+  "appearance": "brief visual description: color, material, form factor, packaging",
+  "useCase": "primary use scenario in one sentence",
+  "targetAudience": "inferred target audience in one phrase"
+}
+
+Rules:
+- sellingPoints must be SPECIFIC (e.g. "含烟酰胺提亮成分" not "效果好")
+- If text/labels are visible in the image, extract them
+- If unsure about a field, make a reasonable inference from visual cues`;
+
+  try {
+    const response = await client.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: [{ role: 'user', parts: [...imageParts, { text: prompt }] }],
+      config: { temperature: 0.2, maxOutputTokens: 1024 },
+    });
+
+    const text = (response.text ?? '').trim();
+    if (!text) return null;
+
+    const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
+    const parsed = JSON.parse(fenced?.[1] ?? text) as unknown;
+    const result = ProductAnalysisSchema.safeParse(parsed);
+    if (!result.success) {
+      console.warn('[remake] product analysis schema mismatch', result.error.flatten());
+      return null;
+    }
+    return result.data;
+  } catch (error) {
+    console.warn('[remake] product image analysis failed', error);
+    return null;
+  }
+}
+
+export function summarizeProductAnalysis(analysis: ProductAnalysis | null): string {
+  if (!analysis) return '';
+  const lines: string[] = [];
+  lines.push('=== PRODUCT ANALYSIS (from uploaded product images) ===');
+  lines.push(`Name: ${analysis.name}`);
+  lines.push(`Category: ${analysis.category}`);
+  lines.push(`Appearance: ${analysis.appearance}`);
+  lines.push(`Use case: ${analysis.useCase}`);
+  lines.push(`Target audience: ${analysis.targetAudience}`);
+  lines.push('Selling points (use these in voiceLine — be specific, not generic):');
+  for (const point of analysis.sellingPoints) {
+    lines.push(`  - ${point}`);
+  }
+  lines.push('=== END PRODUCT ANALYSIS ===');
+  return lines.join('\n');
+}
+
+function guessImageMimeFromUrl(url: string): string {
+  const path = url.split(/[?#]/)[0] ?? '';
+  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  return 'image/png';
 }

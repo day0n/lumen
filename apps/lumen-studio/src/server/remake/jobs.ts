@@ -66,7 +66,7 @@ export async function createRemakeJob(options: CreateRemakeJobOptions): Promise<
   const { plan, breakdown } = await buildPlanForJob({
     reference: options.reference,
     video,
-    productImageCount: options.productImageUrls.length,
+    productImageUrls: options.productImageUrls,
     creatorImageCount: options.creatorImageUrls?.length ?? 0,
     locale: options.locale,
     userPrompt: options.userPrompt,
@@ -144,7 +144,7 @@ export async function confirmGate1(input: {
   const { plan, breakdown } = await buildPlanForJob({
     reference: job.reference,
     video,
-    productImageCount: job.productImageUrls.length,
+    productImageUrls: job.productImageUrls,
     creatorImageCount: job.creatorImageUrls.length,
     locale: input.locale,
     userPrompt: job.userPrompt,
