@@ -67,6 +67,7 @@ interface UseAgentChatOptions {
   profile?: string;
   context?: Record<string, unknown>;
   locale?: Locale;
+  loadHistory?: boolean;
   onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
   onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
 }
@@ -173,6 +174,7 @@ export function useAgentChat({
   profile = 'main',
   context,
   locale = 'en',
+  loadHistory = true,
   onWorkflowUpdate,
   onWorkflowNodeStatus,
 }: UseAgentChatOptions = {}) {
@@ -204,7 +206,7 @@ export function useAgentChat({
     setStatus('idle');
     setErrorText(null);
 
-    if (!sessionId) return;
+    if (!sessionId || !loadHistory) return;
 
     const controller = new AbortController();
     void getToken()
@@ -227,7 +229,7 @@ export function useAgentChat({
       });
 
     return () => controller.abort();
-  }, [getToken, locale, sessionId]);
+  }, [getToken, loadHistory, locale, sessionId]);
 
   const updateMessage = useCallback(
     (id: string, patch: Partial<ChatMessage> | ((prev: ChatMessage) => Partial<ChatMessage>)) => {

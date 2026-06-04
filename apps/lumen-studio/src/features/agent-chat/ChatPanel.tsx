@@ -32,7 +32,7 @@ import {
 } from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { nanoid } from 'nanoid';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   type ChangeEvent,
   type FormEvent,
@@ -118,10 +118,17 @@ export function ChatPanel({
     () => (projectId ? { project_id: projectId, workflow_id: projectId } : undefined),
     [projectId],
   );
+  const shouldLoadActiveSessionHistory = useMemo(
+    () =>
+      Boolean(sessionId && sessionId === activeSessionId) ||
+      sessions.some((item) => item.session_id === activeSessionId),
+    [activeSessionId, sessionId, sessions],
+  );
   const { messages, status, errorText, send, stop } = useAgentChat({
     sessionId: activeSessionId,
     context: agentContext,
     locale,
+    loadHistory: shouldLoadActiveSessionHistory,
     onWorkflowUpdate,
     onWorkflowNodeStatus,
   });
@@ -137,7 +144,6 @@ export function ChatPanel({
   const autoSentRef = useRef(false);
   const initialPromptRef = useRef(initialPrompt);
   initialPromptRef.current = initialPrompt;
-  const router = useRouter();
   const pathname = usePathname();
   const busy = isBusy(status);
 
@@ -285,8 +291,8 @@ export function ChatPanel({
     void send(trimmed).finally(() => {
       void loadSessions();
     });
-    router.replace(pathname, { scroll: false });
-  }, [initialPrompt, send, router, pathname, authReady, isSignedIn, requireLogin, loadSessions]);
+    window.history.replaceState(window.history.state, '', pathname);
+  }, [initialPrompt, send, pathname, authReady, isSignedIn, requireLogin, loadSessions]);
 
   const streamKey = useMemo(
     () =>
