@@ -28,6 +28,7 @@ export {
 } from './channels';
 
 import {
+  REMAKE_CANCEL_CHANNEL,
   REMAKE_CANCEL_KEY_PREFIX,
   REMAKE_CANCEL_TTL_SECONDS,
   REMAKE_TASKS_STREAM,
