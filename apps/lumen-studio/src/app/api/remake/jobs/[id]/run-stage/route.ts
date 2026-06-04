@@ -10,6 +10,8 @@ export const maxDuration = 60;
 const Body = z
   .object({
     stage: z.enum(['lock', 'storyboard', 'video', 'final']),
+    /** 可选：仅重跑这几个 slice（如 ["scene-image-3"]）。不传则跑整个 stage。 */
+    sliceKeys: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
   })
   .strict();
 
@@ -21,7 +23,12 @@ export const POST = withApiRouteSpan(
       const { id } = await context.params;
       const body = Body.parse(await readJson(request));
       const user = await requireStudioUser();
-      const view = await runStage({ jobId: id, ownerId: user.id, stage: body.stage });
+      const view = await runStage({
+        jobId: id,
+        ownerId: user.id,
+        stage: body.stage,
+        ...(body.sliceKeys ? { sliceKeys: body.sliceKeys } : {}),
+      });
       if (!view) {
         return failJson(locale === 'zh' ? '复刻任务不存在' : 'Remake job not found', 404);
       }

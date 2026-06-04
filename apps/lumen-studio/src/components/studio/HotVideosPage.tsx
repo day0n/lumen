@@ -2,10 +2,7 @@
 
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
-import {
-  HotVideoRemakePipeline,
-  type HotVideoRemakeSession,
-} from '@/components/studio/HotVideoRemakePipeline';
+import { HotVideoRemakePipeline } from '@/components/studio/HotVideoRemakePipeline';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
 import { useLoginRedirect } from '@/lib/auth-redirect';
@@ -116,9 +113,9 @@ interface CanvasUploadApiResponse {
   error?: { message: string };
 }
 
-interface HotVideoRemakeApiResponse {
+interface CreateRemakeJobResponse {
   ok: boolean;
-  data?: HotVideoRemakeSession;
+  data?: { job: { id: string } };
   error?: { message: string };
 }
 
@@ -292,7 +289,7 @@ export function HotVideosPage() {
   const [replicaPreview, setReplicaPreview] = useState<HotVideoView | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [previewVideo, setPreviewVideo] = useState<HotVideoView | null>(null);
-  const [remakeSession, setRemakeSession] = useState<HotVideoRemakeSession | null>(null);
+  const [remakeJobId, setRemakeJobId] = useState<string | null>(null);
   const [remakePreparing, setRemakePreparing] = useState<RemakePreparingState | null>(null);
   const generateAbortRef = useRef<AbortController | null>(null);
 
@@ -440,12 +437,12 @@ export function HotVideosPage() {
     setInputError(null);
   };
 
-  if (remakeSession) {
+  if (remakeJobId) {
     return (
       <div className="relative min-h-screen text-white">
         <AuroraBackdrop />
         <Topbar />
-        <HotVideoRemakePipeline session={remakeSession} onBack={() => setRemakeSession(null)} />
+        <HotVideoRemakePipeline jobId={remakeJobId} onBack={() => setRemakeJobId(null)} />
       </div>
     );
   }
@@ -620,9 +617,9 @@ export function HotVideosPage() {
               setRemakePreparing((prev) => (prev ? { ...prev, ...update } : prev))
             }
             onGenerateError={() => setRemakePreparing(null)}
-            onStart={(session) => {
+            onStart={(jobId) => {
               setRemakePreparing(null);
-              setRemakeSession(session);
+              setRemakeJobId(jobId);
               setConfigOpen(false);
             }}
             onClose={() => setConfigOpen(false)}
@@ -1137,7 +1134,7 @@ function ReplicaConfigModal({
     uploadCurrent: number;
   }) => void;
   onGenerateError: (message: string) => void;
-  onStart: (session: HotVideoRemakeSession) => void;
+  onStart: (jobId: string) => void;
   onClose: () => void;
 }) {
   const { locale, t } = useI18n();
@@ -1302,7 +1299,9 @@ function ReplicaConfigModal({
         uploadCurrent: totalToUpload,
       });
 
-      const response = await fetch('/api/hot-videos/remake', {
+      // 新 API：/api/remake/jobs 创建 Job（含同步拆解 + plan）。
+      // 返回 RemakeJobView = { job, tasks, stageStatuses }；只取 job.id 给 Pipeline 用。
+      const response = await fetch('/api/remake/jobs', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -1313,32 +1312,22 @@ function ReplicaConfigModal({
           reference: target,
           productImageUrls,
           ...(creatorImageUrls.length ? { creatorImageUrls } : {}),
-          prompt,
+          userPrompt: prompt || undefined,
           settings: {
             aspectRatio,
             resolution,
             language: copyLanguage,
-            duration: Number.parseInt(duration, 10),
+            durationSeconds: Number.parseInt(duration, 10),
           },
         }),
         signal: controller.signal,
       });
-      const payload = (await response.json()) as HotVideoRemakeApiResponse;
+      const payload = (await response.json()) as CreateRemakeJobResponse;
       if (controller.signal.aborted) return;
-      if (!response.ok || !payload.ok || !payload.data) {
+      if (!response.ok || !payload.ok || !payload.data?.job?.id) {
         throw new Error(payload.error?.message ?? t('hotVideos.parseFailed'));
       }
-      // 把用户在配置弹窗里选的参数也带进 session，Pipeline 里 Gate 1 replan 时可以原样回传。
-      onStart({
-        ...payload.data,
-        settings: {
-          aspectRatio,
-          resolution,
-          language: copyLanguage,
-          duration: Number.parseInt(duration, 10),
-        },
-        prompt: prompt || undefined,
-      });
+      onStart(payload.data.job.id);
     } catch (error) {
       if (
         controller.signal.aborted ||

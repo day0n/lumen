@@ -227,6 +227,8 @@ export async function runStage(input: {
   jobId: string;
   ownerId: string;
   stage: RemakeStageName;
+  /** 若给出则只跑这几个 slice（单张分镜重跑 / 单场视频重跑 / etc.）。 */
+  sliceKeys?: string[];
 }): Promise<RemakeJobView | null> {
   const repository = await getRemakeJobRepository();
   const job = await repository.getJob(input.jobId, input.ownerId);
@@ -254,6 +256,11 @@ export async function runStage(input: {
     planned = [final];
   } else {
     throw new Error(`Stage "${input.stage}" is not directly runnable.`);
+  }
+
+  if (input.sliceKeys && input.sliceKeys.length > 0) {
+    const wanted = new Set(input.sliceKeys);
+    planned = planned.filter((task) => wanted.has(task.sliceKey));
   }
 
   if (planned.length === 0) return composeView(job, tasks);
