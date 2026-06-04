@@ -38,6 +38,90 @@ Frontend ──── SSE ──────────► lumen-agent  :3001  
 
 工作流通信走 studio 自己的 WebSocket（`/ws/flow`），agent 只负责 SSE 对话，两条管道完全解耦。
 
+## 工作流运行方式
+
+系统有三条独立的工作流执行链路，共用同一套 Engine handler，但任务派发、编排模型和结果回推各不相同。
+
+### 1. 画布（Canvas）
+
+用户在前端画布点击运行，走 WebSocket 全双工通信。
+
+```
+浏览器
+  │  WebSocket 发送 run 消息
+  ▼
+lumen-studio /ws/flow  (flow-gateway.ts)
+  │  StreamPublisher.publish()
+  ▼
+Redis Stream  lumen:flow:tasks  ← XADD
+  │
+  ▼  XREADGROUP（Engine 阻塞轮询）
+lumen-engine  →  WorkflowExecutor 按 DAG 跑节点
+  │  PUBLISH flow:events:{connId}
+  ▼
+Redis PubSub
+  │  EventSubscriber 订阅
+  ▼
+lumen-studio  →  WebSocket push  →  浏览器实时更新
+```
+
+编排模型：**DAG**，一次提交整个 workflow，Engine 按节点依赖顺序执行。
+
+---
+
+### 2. Agent
+
+用户在 Agent 对话框里请求生成，Agent AI 自主决定调用哪些节点、以什么顺序执行。
+
+```
+浏览器
+  │  POST /api/agent/runs
+  ▼
+lumen-studio  →  HTTP 转发
+  ▼
+lumen-agent  （AI 推理循环）
+  │  决定调用 run_canvas_node tool
+  │  1. SUBSCRIBE flow:events:agent:{runId}  ← 先订阅
+  │  2. XADD lumen:flow:tasks               ← 与画布共享同一条 Stream
+  │  3. await 阻塞等待（最长 10 分钟）
+  ▼
+lumen-engine  →  执行节点  →  PUBLISH 到上面那个 channel
+  │
+  └─► Agent 收到 node:done → tool result 返回 → 继续 AI 推理
+          │
+          ▼
+      浏览器  ←  SSE  ←  lumen-agent 流式推送对话事件
+```
+
+编排模型：**AI 逐节点调用**，每次 tool call 只跑一个节点，AI 根据结果决定下一步。
+
+---
+
+### 3. 爆款复刻（Remake）
+
+独立于画布和 Agent，有自己的 Redis Stream 和状态机编排。
+
+```
+浏览器
+  │  POST /api/remake/jobs
+  ▼
+lumen-studio
+  │  Gemini 分析参考视频 + 生成复刻计划
+  │  XADD lumen:remake:tasks  ← 独立 Stream，每个 task 单独派发
+  ▼
+lumen-engine（独立 Redis 连接，RemakeStreamConsumer）
+  │  执行 handler（与画布共用同一套 executeNode）
+  │  PUBLISH lumen:remake:task-results
+  ▼
+lumen-studio  eventMirror.ts  （常驻订阅）
+  │  更新 MongoDB
+  │  PUBLISH lumen:remake:events:{jobId}
+  ▼
+浏览器  ←  SSE  ←  GET /api/remake/jobs/:id/stream
+```
+
+编排模型：**状态机**，拓扑写死在 `stages.ts`，Gate 1/2 让用户在关键节点确认后再触发下游。
+
 ## 基础设施
 
 | 服务 | DB 名 | 用途 |
