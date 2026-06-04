@@ -1,7 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 
-import { verifyToken } from '@clerk/nextjs/server';
+import { verifyToken } from '@clerk/backend';
 
 import { getUserRepository } from '../db';
 import { logger } from '../logger';
