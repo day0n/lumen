@@ -20,14 +20,40 @@ import {
   IconLoader2,
   IconMusic,
   IconPlayerPlay,
-  IconRefresh,
 } from '@tabler/icons-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
+export interface RemakeShotInfo {
+  startSec: number;
+  endSec: number;
+  action: string;
+  camera: string;
+  visual: string;
+  dialogue?: string;
+}
+
+export interface RemakeTranscriptItem {
+  startSec: number;
+  endSec: number;
+  text: string;
+}
+
+export interface RemakeBreakdownInfo {
+  durationSec: number;
+  hook: string;
+  angle: string;
+  summary: string;
+  transcript: RemakeTranscriptItem[];
+  shots: RemakeShotInfo[];
+  language: string;
+}
+
 export interface HotVideoRemakeSession {
   projectId: string;
   ownerId: string;
+  /** 源爆款视频 id（如有），用于 Gate 1 replan 时回查拆解缓存 */
+  videoId?: string;
   reference: {
     id: string;
     label: string;
@@ -50,10 +76,20 @@ export interface HotVideoRemakeSession {
   audienceTags: string[];
   boundaries: RemakeRunBoundaries;
   productImageUrls: string[];
+  creatorImageUrls?: string[];
+  breakdown?: RemakeBreakdownInfo | null;
+  /** Gate 1 replan 时回传给后端，这样配置弹窗里的参数能保留 */
+  settings?: {
+    aspectRatio?: string;
+    resolution?: string;
+    language?: 'zh' | 'en';
+    duration?: number;
+  };
+  prompt?: string;
 }
 
 export function HotVideoRemakePipeline({
-  session,
+  session: initialSession,
   onBack,
 }: {
   session: HotVideoRemakeSession;
@@ -61,27 +97,52 @@ export function HotVideoRemakePipeline({
 }) {
   const { locale } = useI18n();
   const copy = getCopy(locale);
+  // 会话状态：Gate 1 重算后由后端回传新会话整体替换。
+  const [session, setSession] = useState<HotVideoRemakeSession>(initialSession);
   const [activeStep, setActiveStep] = useState(0);
-  const [canvas, setCanvas] = useState<LumenCanvas>(session.canvas);
+  const [canvas, setCanvas] = useState<LumenCanvas>(initialSession.canvas);
   const [canvasToSave, setCanvasToSave] = useState<LumenCanvas | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [scriptText, setScriptText] = useState(session.scriptText);
-  const [sellingPointsText, setSellingPointsText] = useState(session.sellingPoints.join('\n'));
-  const [audienceTagsText, setAudienceTagsText] = useState(session.audienceTags.join('\n'));
-  const [voiceLanguage, setVoiceLanguage] = useState(locale === 'zh' ? '中文' : 'English');
-  const lastSavedCanvas = useRef(JSON.stringify(session.canvas));
+  const [scriptText, setScriptText] = useState(initialSession.scriptText);
+  const [sellingPointsText, setSellingPointsText] = useState(
+    initialSession.sellingPoints.join('\n'),
+  );
+  const [audienceTagsText, setAudienceTagsText] = useState(initialSession.audienceTags.join('\n'));
+  const [voiceLanguage, setVoiceLanguage] = useState(
+    initialSession.settings?.language === 'zh'
+      ? '中文'
+      : initialSession.settings?.language === 'en'
+        ? 'English'
+        : locale === 'zh'
+          ? '中文'
+          : 'English',
+  );
+  const [replanLoading, setReplanLoading] = useState(false);
+  const [replanError, setReplanError] = useState<string | null>(null);
+  const lastSavedCanvas = useRef(JSON.stringify(initialSession.canvas));
 
+  // 入口 session prop 切换时（用户从复刻页换了一条爆款），整盘重置。
   useEffect(() => {
+    setSession(initialSession);
     setActiveStep(0);
-    setCanvas(session.canvas);
+    setCanvas(initialSession.canvas);
     setCanvasToSave(null);
     setSaveError(null);
-    setScriptText(session.scriptText);
-    setSellingPointsText(session.sellingPoints.join('\n'));
-    setAudienceTagsText(session.audienceTags.join('\n'));
-    setVoiceLanguage(locale === 'zh' ? '中文' : 'English');
-    lastSavedCanvas.current = JSON.stringify(session.canvas);
-  }, [locale, session]);
+    setScriptText(initialSession.scriptText);
+    setSellingPointsText(initialSession.sellingPoints.join('\n'));
+    setAudienceTagsText(initialSession.audienceTags.join('\n'));
+    setVoiceLanguage(
+      initialSession.settings?.language === 'zh'
+        ? '中文'
+        : initialSession.settings?.language === 'en'
+          ? 'English'
+          : locale === 'zh'
+            ? '中文'
+            : 'English',
+    );
+    setReplanError(null);
+    lastSavedCanvas.current = JSON.stringify(initialSession.canvas);
+  }, [locale, initialSession]);
 
   const wsUrl = useMemo(() => {
     if (typeof window === 'undefined') return '';
@@ -209,7 +270,12 @@ export function HotVideoRemakePipeline({
     [updateCanvas],
   );
 
-  const regenerateScript = useCallback(() => {
+  /** Gate 1 真门控：调后端 replan，用户编辑过的 script/sellingPoints/audience/language 作为强约束，
+   *  Gemini 重写所有下游 prompt，画布整体替换；下游节点状态自然回到 idle，等待用户重新跑。 */
+  const handleGate1Confirm = useCallback(async () => {
+    if (replanLoading) return;
+    setReplanLoading(true);
+    setReplanError(null);
     const points = sellingPointsText
       .split('\n')
       .map((item) => item.trim())
@@ -218,39 +284,146 @@ export function HotVideoRemakePipeline({
       .split('\n')
       .map((item) => item.trim())
       .filter(Boolean);
-    const nextScript = [
-      `${copy.reference}: ${session.reference.title ?? session.reference.label}`,
-      `${copy.language}: ${voiceLanguage}`,
-      points.length ? `${copy.sellingPoints}: ${points.join(' / ')}` : '',
-      audiences.length ? `${copy.audienceTags}: ${audiences.join(' / ')}` : '',
-      session.reference.hook ? `${copy.hook}: ${session.reference.hook}` : '',
-      session.reference.angle ? `${copy.angle}: ${session.reference.angle}` : '',
-      '',
-      ...session.scenes.map(
-        (scene) =>
-          `${scene.index}. ${scene.action}\n${copy.line}: ${scene.dialogue}\n${copy.camera}: ${scene.camera}`,
-      ),
-    ]
-      .filter(Boolean)
-      .join('\n');
-    setScriptText(nextScript);
-    applyScriptToCanvas(nextScript);
+    const language: 'zh' | 'en' = voiceLanguage === '中文' ? 'zh' : 'en';
+    try {
+      const response = await fetch('/api/hot-videos/remake/replan', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-lumen-locale': locale,
+        },
+        body: JSON.stringify({
+          projectId: session.projectId,
+          ...(session.videoId ? { videoId: session.videoId } : {}),
+          reference: {
+            id: session.reference.id,
+            label: session.reference.label,
+            value: session.reference.value,
+            source: session.reference.source,
+          },
+          productImageUrls: session.productImageUrls,
+          ...(session.creatorImageUrls?.length
+            ? { creatorImageUrls: session.creatorImageUrls }
+            : {}),
+          ...(session.prompt ? { prompt: session.prompt } : {}),
+          scriptText,
+          sellingPoints: points,
+          audienceTags: audiences,
+          settings: {
+            ...(session.settings?.aspectRatio ? { aspectRatio: session.settings.aspectRatio } : {}),
+            ...(session.settings?.resolution ? { resolution: session.settings.resolution } : {}),
+            ...(session.settings?.duration ? { duration: session.settings.duration } : {}),
+            language,
+          },
+        }),
+      });
+      const payload = (await response.json()) as {
+        ok: boolean;
+        data?: HotVideoRemakeSession;
+        error?: { message?: string };
+      };
+      if (!response.ok || !payload.ok || !payload.data) {
+        throw new Error(payload.error?.message ?? copy.replanFailed);
+      }
+      const next = payload.data;
+      setSession(next);
+      setCanvas(next.canvas);
+      setCanvasToSave(null);
+      setScriptText(next.scriptText);
+      setSellingPointsText(next.sellingPoints.join('\n'));
+      setAudienceTagsText(next.audienceTags.join('\n'));
+      lastSavedCanvas.current = JSON.stringify(next.canvas);
+      setActiveStep(2); // 直接跳到"形象锁定"，因为下游已经被重新规划。
+    } catch (error) {
+      setReplanError(error instanceof Error ? error.message : copy.replanFailed);
+    } finally {
+      setReplanLoading(false);
+    }
   }, [
-    applyScriptToCanvas,
     audienceTagsText,
-    copy,
+    copy.replanFailed,
+    locale,
+    replanLoading,
+    scriptText,
     sellingPointsText,
+    session.creatorImageUrls,
+    session.productImageUrls,
+    session.projectId,
+    session.prompt,
     session.reference,
-    session.scenes,
+    session.settings,
+    session.videoId,
     voiceLanguage,
   ]);
 
+  /** 把一组节点强制重置为 idle，并清空 output —— Gate 2 / 重跑分镜后调，让用户能再触发下游。 */
+  const resetNodes = useCallback(
+    (nodeIds: string[]) => {
+      if (nodeIds.length === 0) return;
+      const ids = new Set(nodeIds);
+      updateCanvas(
+        (current) => ({
+          ...current,
+          nodes: current.nodes.map((node) => {
+            if (!ids.has(node.id)) return node;
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                output: null,
+                status: 'idle',
+                error: null,
+                progress: 0,
+              },
+            };
+          }),
+        }),
+        true,
+      );
+    },
+    [updateCanvas],
+  );
+
+  /** Gate 2：分镜确认后，把下游的视频+口播+混音+成片全部重置回 idle，等待用户进入视频阶段时再跑。 */
+  const handleGate2Confirm = useCallback(() => {
+    const downstream = [
+      ...session.boundaries.videoNodes,
+      ...session.boundaries.voiceNodes,
+      ...session.boundaries.sceneMixNodes,
+      session.boundaries.bgmNode,
+      session.boundaries.finalNode,
+    ];
+    resetNodes(downstream);
+    setActiveStep(4);
+  }, [
+    resetNodes,
+    session.boundaries.bgmNode,
+    session.boundaries.finalNode,
+    session.boundaries.sceneMixNodes,
+    session.boundaries.videoNodes,
+    session.boundaries.voiceNodes,
+  ]);
+
+  /** 视频阶段一并跑：scene 视频 + 场景口播 + 场景混音 + 全片 BGM。
+   *  engine 按拓扑顺序处理，mix 等 video+voice 完成后自动启动。 */
+  const videoStageNodeIds = useMemo(
+    () => [
+      ...session.boundaries.videoNodes,
+      ...session.boundaries.voiceNodes,
+      ...session.boundaries.sceneMixNodes,
+      session.boundaries.bgmNode,
+    ],
+    [
+      session.boundaries.bgmNode,
+      session.boundaries.sceneMixNodes,
+      session.boundaries.videoNodes,
+      session.boundaries.voiceNodes,
+    ],
+  );
+
   const lockStatus = aggregateStatus(session.boundaries.lockNodes, nodeById);
   const storyboardStatus = aggregateStatus(session.boundaries.storyboardNodes, nodeById);
-  const videoStatus = aggregateStatus(
-    [...session.boundaries.videoNodes, session.boundaries.bgmNode],
-    nodeById,
-  );
+  const videoStatus = aggregateStatus(videoStageNodeIds, nodeById);
   const finalStatus = aggregateStatus([session.boundaries.finalNode], nodeById);
   const finalNode = nodeById.get(session.boundaries.finalNode);
 
@@ -336,13 +509,16 @@ export function HotVideoRemakePipeline({
               sellingPointsText={sellingPointsText}
               audienceTagsText={audienceTagsText}
               voiceLanguage={voiceLanguage}
+              replanLoading={replanLoading}
+              replanError={replanError}
               onScriptChange={setScriptText}
               onSellingPointsChange={setSellingPointsText}
               onAudienceTagsChange={setAudienceTagsText}
               onLanguageChange={setVoiceLanguage}
               onApply={() => applyScriptToCanvas(scriptText)}
-              onRegenerate={regenerateScript}
-              onConfirm={() => setActiveStep(2)}
+              onConfirm={() => {
+                void handleGate1Confirm();
+              }}
             />
           )}
 
@@ -370,8 +546,22 @@ export function HotVideoRemakePipeline({
               nodeById={nodeById}
               nodeIds={session.boundaries.storyboardNodes}
               onRunAll={() => runNodeIds(session.boundaries.storyboardNodes, 3)}
-              onRunOne={(nodeId) => runNodeIds([nodeId], 3)}
-              onNext={() => setActiveStep(4)}
+              onRunOne={(nodeId) => {
+                // 单张重跑分镜后，下游的视频/口播/混音/成片会拿到新分镜首帧，
+                // 直接重置那一场对应的下游节点 + 全片成片，强制用户重新走视频阶段。
+                const sceneIndex = session.boundaries.storyboardNodes.indexOf(nodeId);
+                if (sceneIndex >= 0) {
+                  const downstream = [
+                    session.boundaries.videoNodes[sceneIndex],
+                    session.boundaries.voiceNodes[sceneIndex],
+                    session.boundaries.sceneMixNodes[sceneIndex],
+                    session.boundaries.finalNode,
+                  ].filter((id): id is string => Boolean(id));
+                  resetNodes(downstream);
+                }
+                runNodeIds([nodeId], 3);
+              }}
+              onNext={handleGate2Confirm}
             />
           )}
 
@@ -382,10 +572,14 @@ export function HotVideoRemakePipeline({
               videoNodes={session.boundaries.videoNodes
                 .map((nodeId) => nodeById.get(nodeId))
                 .filter((node): node is LumenCanvasNode => Boolean(node))}
+              voiceNodes={session.boundaries.voiceNodes
+                .map((nodeId) => nodeById.get(nodeId))
+                .filter((node): node is LumenCanvasNode => Boolean(node))}
+              mixNodes={session.boundaries.sceneMixNodes
+                .map((nodeId) => nodeById.get(nodeId))
+                .filter((node): node is LumenCanvasNode => Boolean(node))}
               bgmNode={nodeById.get(session.boundaries.bgmNode)}
-              onRun={() =>
-                runNodeIds([...session.boundaries.videoNodes, session.boundaries.bgmNode], 4)
-              }
+              onRun={() => runNodeIds(videoStageNodeIds, 4)}
               onNext={() => setActiveStep(5)}
             />
           )}
@@ -414,9 +608,25 @@ function BreakdownStage({
   session: HotVideoRemakeSession;
   onNext: () => void;
 }) {
+  const breakdown = session.breakdown ?? null;
   return (
     <div>
       <StageHeader title={copy.breakdownTitle} description={copy.breakdownDesc} />
+
+      {breakdown ? (
+        <div className="mt-5 rounded-[16px] bg-[#9da8ff]/8 px-4 py-3 text-[12px] leading-5 text-white/70 ring-1 ring-[#9da8ff]/18">
+          <div className="mb-1 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-[#9da8ff]">
+            <IconCheck size={13} stroke={2.4} />
+            {copy.breakdownReal}
+          </div>
+          {breakdown.summary}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-[16px] bg-[#f5c76a]/8 px-4 py-3 text-[12px] leading-5 text-[#f5c76a] ring-1 ring-[#f5c76a]/18">
+          {copy.breakdownTextOnly}
+        </div>
+      )}
+
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <InfoBlock title={copy.referenceSignals}>
           <InfoLine label={copy.hook} value={session.reference.hook ?? '-'} />
@@ -436,7 +646,7 @@ function BreakdownStage({
             <tr>
               <th className="px-4 py-3 font-semibold">{copy.scene}</th>
               <th className="px-4 py-3 font-semibold">{copy.action}</th>
-              <th className="px-4 py-3 font-semibold">{copy.line}</th>
+              <th className="px-4 py-3 font-semibold">{copy.voiceLine}</th>
               <th className="px-4 py-3 font-semibold">{copy.duration}</th>
             </tr>
           </thead>
@@ -445,13 +655,64 @@ function BreakdownStage({
               <tr key={scene.index} className="border-t border-white/[0.06] text-white/72">
                 <td className="px-4 py-3 font-bold text-white">{scene.index}</td>
                 <td className="px-4 py-3 leading-5">{scene.action}</td>
-                <td className="px-4 py-3 leading-5">{scene.dialogue}</td>
+                <td className="px-4 py-3 leading-5">{scene.voiceLine ?? scene.dialogue}</td>
                 <td className="px-4 py-3">{scene.durationSeconds}s</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {breakdown && breakdown.transcript.length > 0 ? (
+        <details className="mt-5 group rounded-[16px] bg-white/[0.045] ring-1 ring-white/[0.06]">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[12px] font-bold text-white/72 hover:text-white">
+            <span>{copy.originalTranscript}</span>
+            <span className="text-white/38 group-open:rotate-180 transition-transform">▾</span>
+          </summary>
+          <div className="border-t border-white/[0.06] px-4 py-3 space-y-1.5">
+            {breakdown.transcript.map((item, idx) => (
+              <div
+                key={`${item.startSec}-${idx}`}
+                className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 text-[12px] leading-5"
+              >
+                <div className="text-white/36">
+                  {item.startSec.toFixed(1)}-{item.endSec.toFixed(1)}s
+                </div>
+                <div className="text-white/72">{item.text}</div>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
+      {breakdown && breakdown.shots.length > 0 ? (
+        <details className="mt-3 group rounded-[16px] bg-white/[0.045] ring-1 ring-white/[0.06]">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[12px] font-bold text-white/72 hover:text-white">
+            <span>{copy.originalShots}</span>
+            <span className="text-white/38 group-open:rotate-180 transition-transform">▾</span>
+          </summary>
+          <div className="border-t border-white/[0.06] px-4 py-3 space-y-2.5">
+            {breakdown.shots.map((shot, idx) => (
+              <div
+                key={`${shot.startSec}-${idx}`}
+                className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 text-[12px] leading-5"
+              >
+                <div className="text-white/36">
+                  {shot.startSec.toFixed(1)}-{shot.endSec.toFixed(1)}s
+                </div>
+                <div className="text-white/72">
+                  <div className="font-semibold text-white/88">{shot.action}</div>
+                  <div className="text-white/48 text-[11px]">{shot.camera}</div>
+                  <div className="text-white/56 text-[11px]">{shot.visual}</div>
+                  {shot.dialogue ? (
+                    <div className="text-[#9da8ff] text-[11px] mt-0.5">「{shot.dialogue}」</div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
 
       <div className="mt-5 flex justify-end">
         <PrimaryButton onClick={onNext}>{copy.reviewScript}</PrimaryButton>
@@ -466,12 +727,13 @@ function ScriptStage({
   sellingPointsText,
   audienceTagsText,
   voiceLanguage,
+  replanLoading,
+  replanError,
   onScriptChange,
   onSellingPointsChange,
   onAudienceTagsChange,
   onLanguageChange,
   onApply,
-  onRegenerate,
   onConfirm,
 }: {
   copy: ReturnType<typeof getCopy>;
@@ -479,12 +741,13 @@ function ScriptStage({
   sellingPointsText: string;
   audienceTagsText: string;
   voiceLanguage: string;
+  replanLoading: boolean;
+  replanError: string | null;
   onScriptChange: (value: string) => void;
   onSellingPointsChange: (value: string) => void;
   onAudienceTagsChange: (value: string) => void;
   onLanguageChange: (value: string) => void;
   onApply: () => void;
-  onRegenerate: () => void;
   onConfirm: () => void;
 }) {
   return (
@@ -519,18 +782,25 @@ function ScriptStage({
               <option className="bg-[#111315] text-white">English</option>
             </select>
           </label>
-          <button
-            type="button"
-            onClick={onRegenerate}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-white/[0.07] text-[12px] font-bold text-white/70 ring-1 ring-white/[0.08] hover:bg-white/[0.1] hover:text-white"
-          >
-            <IconRefresh size={14} stroke={2.2} />
-            {copy.regenerateScript}
-          </button>
+          <div className="rounded-xl bg-[#9da8ff]/8 px-3 py-2.5 text-[11px] leading-5 text-white/62 ring-1 ring-[#9da8ff]/16">
+            {copy.gate1Hint}
+          </div>
         </div>
       </div>
+      {replanError ? (
+        <div className="mt-4 rounded-xl bg-[#f5c76a]/10 px-4 py-3 text-[12px] leading-5 text-[#f5c76a] ring-1 ring-[#f5c76a]/20">
+          {replanError}
+        </div>
+      ) : null}
       <div className="mt-5 flex justify-end">
-        <PrimaryButton onClick={onConfirm}>{copy.confirmGate1}</PrimaryButton>
+        <PrimaryButton onClick={onConfirm} disabled={replanLoading}>
+          {replanLoading ? (
+            <IconLoader2 size={15} className="animate-spin" />
+          ) : (
+            <IconCheck size={15} />
+          )}
+          {replanLoading ? copy.gate1Loading : copy.confirmGate1}
+        </PrimaryButton>
       </div>
     </div>
   );
@@ -635,6 +905,8 @@ function VideoStage({
   copy,
   status,
   videoNodes,
+  voiceNodes,
+  mixNodes,
   bgmNode,
   onRun,
   onNext,
@@ -642,6 +914,8 @@ function VideoStage({
   copy: ReturnType<typeof getCopy>;
   status: NodeStatus;
   videoNodes: LumenCanvasNode[];
+  voiceNodes: LumenCanvasNode[];
+  mixNodes: LumenCanvasNode[];
   bgmNode?: LumenCanvasNode;
   onRun: () => void;
   onNext: () => void;
@@ -649,12 +923,52 @@ function VideoStage({
   return (
     <div>
       <StageHeader title={copy.videoTitle} description={copy.videoDesc} status={status} />
-      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {videoNodes.map((node) => (
-          <NodePreview key={node.id} node={node} copy={copy} />
-        ))}
-        {bgmNode ? <NodePreview node={bgmNode} copy={copy} icon={<IconMusic size={18} />} /> : null}
-      </div>
+      {videoNodes.length > 0 ? (
+        <div className="mt-5">
+          <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-white/40">
+            {copy.sectionScene}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {videoNodes.map((node) => (
+              <NodePreview key={node.id} node={node} copy={copy} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {voiceNodes.length > 0 ? (
+        <div className="mt-5">
+          <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-white/40">
+            {copy.sectionVoice}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {voiceNodes.map((node) => (
+              <NodePreview key={node.id} node={node} copy={copy} icon={<IconMusic size={16} />} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {mixNodes.length > 0 ? (
+        <div className="mt-5">
+          <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-white/40">
+            {copy.sectionMix}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {mixNodes.map((node) => (
+              <NodePreview key={node.id} node={node} copy={copy} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {bgmNode ? (
+        <div className="mt-5">
+          <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-white/40">
+            {copy.sectionBgm}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <NodePreview node={bgmNode} copy={copy} icon={<IconMusic size={18} />} />
+          </div>
+        </div>
+      ) : null}
       <StageActions
         status={status}
         runLabel={copy.runVideos}
@@ -1029,11 +1343,15 @@ function getCopy(locale: 'en' | 'zh') {
       back: '返回爆款库',
       inPageWorkflow: '页面内复刻工作流',
       hiddenCanvas: '画布仅后台承载',
-      steps: ['拆解', '脚本（门1）', '形象锁定', '分镜图（门2）', '视频', '成片'],
+      steps: ['拆解', '脚本（门1）', '形象锁定', '分镜图（门2）', '视频+口播', '成片'],
       reference: '参考视频',
       productImages: '商品图',
       breakdownTitle: '参考拆解',
-      breakdownDesc: '先把原爆款拆成 3-6 个可执行场次，后续所有生成都跟着这个骨架走。',
+      breakdownDesc:
+        '把原爆款拆成 3-6 个可执行场次，包括镜头时间戳、台词和动作；下游生成全部跟着这个骨架走。',
+      breakdownReal: '已基于原片视频+音频做多模态拆解',
+      breakdownTextOnly:
+        '未识别到原片视频文件，下面只是基于标题/标签的文本拆解，建议先在爆款库刷新解析。',
       referenceSignals: '爆款信号',
       remixTargets: '复刻目标',
       hook: '爆点',
@@ -1044,30 +1362,40 @@ function getCopy(locale: 'en' | 'zh') {
       audienceTags: '目标受众',
       scene: '场次',
       action: '画面动作',
-      line: '台词',
+      line: '字幕',
+      voiceLine: '口播台词',
       duration: '时长',
       camera: '运镜',
       language: '口播语言',
+      originalTranscript: '原片口播时间轴',
+      originalShots: '原片镜头时间轴',
       reviewScript: '查看脚本',
       scriptTitle: '脚本确认（门1）',
-      scriptDesc: '这里可以改商品卖点、目标受众和口播语言；确认后再生成锁定图。',
-      regenerateScript: '按当前设置重写脚本',
-      confirmGate1: '确认脚本，生成形象锁定',
+      scriptDesc:
+        '改脚本/卖点/受众/口播语言；确认后 AI 会按这份脚本重写所有下游分镜、视频、口播 prompt。',
+      gate1Hint: '点击下方按钮会让 AI 按你的修改重新规划下游；下游已生成内容会被重置。',
+      gate1Loading: '重写下游中...',
+      replanFailed: '脚本重算失败，请重试',
+      confirmGate1: '确认脚本，重算下游',
       creatorLock: '形象锁定',
       creatorLockDesc: '锁定同一个创作者和同一件产品，后续每一帧都引用这两张锁定图。',
       runCreatorLock: '生成形象锁定',
       nextStoryboard: '进入分镜图',
       storyboardTitle: '分镜图确认（门2）',
-      storyboardDesc: '每个场次先出首帧分镜图。这里可以单张重跑，确认后才进入视频生成。',
+      storyboardDesc: '每个场次先出首帧分镜图。单张重跑会自动重置该场次的视频/口播/混音。',
       runStoryboard: '生成全部分镜图',
       rerunOne: '重跑这一张',
-      confirmGate2: '确认分镜，生成视频',
-      videoTitle: '逐场视频 + BGM',
-      videoDesc: '按 3s/6s 场次生成视频，同时生成全片 Suno BGM。',
-      runVideos: '生成视频和 BGM',
+      confirmGate2: '确认分镜，进入视频阶段',
+      videoTitle: '视频 + 口播 + 混音 + BGM',
+      videoDesc: '逐场出 veo 视频、按场次跑 TTS 口播、单片混音把口播盖在视频上，同时生成全片 BGM。',
+      sectionScene: '场景视频',
+      sectionVoice: '场景口播',
+      sectionMix: '场景混音',
+      sectionBgm: '全片 BGM',
+      runVideos: '生成视频/口播/混音/BGM',
       nextFinal: '进入成片',
       finalTitle: '最终成片',
-      finalDesc: '确定性剪辑：全片 BGM、统一裁头 0.2s、段间快闪、统一字幕。',
+      finalDesc: '把各场混音串接，叠全片 BGM，统一裁头 0.2s、段间快闪、字幕。',
       runFinal: '生成成片',
       download: '下载',
       generating: '生成中',
@@ -1085,14 +1413,17 @@ function getCopy(locale: 'en' | 'zh') {
       'Script (Gate 1)',
       'Identity Lock',
       'Storyboards (Gate 2)',
-      'Videos',
+      'Video + Voice',
       'Final Cut',
     ],
     reference: 'Reference',
     productImages: 'Product images',
     breakdownTitle: 'Reference breakdown',
     breakdownDesc:
-      'The reference is split into 3-6 executable scenes; generation follows this structure.',
+      'The reference is split into 3-6 executable scenes (timestamps + dialogue + actions); generation follows this structure.',
+    breakdownReal: 'Multimodal breakdown of the actual video (frames + audio)',
+    breakdownTextOnly:
+      'No original video file detected — breakdown below is text-only (title/tags). Refresh the source video in the library for a real breakdown.',
     referenceSignals: 'Viral signals',
     remixTargets: 'Remix targets',
     hook: 'Hook',
@@ -1103,15 +1434,22 @@ function getCopy(locale: 'en' | 'zh') {
     audienceTags: 'Audience tags',
     scene: 'Scene',
     action: 'Action',
-    line: 'Line',
+    line: 'Caption',
+    voiceLine: 'Voiceover line',
     duration: 'Duration',
     camera: 'Camera',
     language: 'Voice language',
+    originalTranscript: 'Original transcript timeline',
+    originalShots: 'Original shots timeline',
     reviewScript: 'Review script',
     scriptTitle: 'Script confirmation (Gate 1)',
-    scriptDesc: 'Edit selling points, audience tags, and language before generating lock images.',
-    regenerateScript: 'Rewrite script from settings',
-    confirmGate1: 'Confirm script, generate locks',
+    scriptDesc:
+      'Edit script / selling points / audience / voice language. AI will rewrite all downstream storyboard + video + voice prompts from your version.',
+    gate1Hint:
+      'Confirming will re-plan everything downstream; any already-generated downstream nodes will be reset.',
+    gate1Loading: 'Rewriting downstream...',
+    replanFailed: 'Replan failed, please retry',
+    confirmGate1: 'Confirm script, replan downstream',
     creatorLock: 'Identity lock',
     creatorLockDesc:
       'Lock one creator and one product so every later frame references the same identities.',
@@ -1119,16 +1457,22 @@ function getCopy(locale: 'en' | 'zh') {
     nextStoryboard: 'Go to storyboards',
     storyboardTitle: 'Storyboard confirmation (Gate 2)',
     storyboardDesc:
-      'Generate one first-frame storyboard per scene. Rerun individual frames before video.',
+      "Generate one first-frame storyboard per scene. Rerunning a frame auto-resets that scene's video / voice / mix.",
     runStoryboard: 'Generate storyboards',
     rerunOne: 'Rerun this frame',
-    confirmGate2: 'Confirm storyboards, generate video',
-    videoTitle: 'Scene videos + BGM',
-    videoDesc: 'Generate 3s/6s scene clips and the full-film Suno BGM.',
-    runVideos: 'Generate videos and BGM',
+    confirmGate2: 'Confirm storyboards, go to video stage',
+    videoTitle: 'Video + Voice + Mix + BGM',
+    videoDesc:
+      'Generate per-scene veo videos, per-scene TTS voiceover, per-scene mix (voice baked over video), and the full-film BGM.',
+    sectionScene: 'Scene videos',
+    sectionVoice: 'Scene voiceover',
+    sectionMix: 'Scene mix',
+    sectionBgm: 'Full-film BGM',
+    runVideos: 'Generate videos / voice / mix / BGM',
     nextFinal: 'Go to final cut',
     finalTitle: 'Final cut',
-    finalDesc: 'Deterministic edit: BGM, 0.2s trim, flash transitions, and unified subtitles.',
+    finalDesc:
+      'Concat the per-scene mixes, overlay BGM, unified 0.2s trim + flash transitions + subtitles.',
     runFinal: 'Generate final cut',
     download: 'Download',
     generating: 'Generating',

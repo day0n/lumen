@@ -468,6 +468,10 @@ const en = {
     uploadProduct: 'Upload product images (required, up to 9)',
     uploadTip: 'Upload clean product images. More angles improve video consistency.',
     uploaded: '{count}/9 uploaded',
+    uploadCreator: 'Upload creator reference photos (optional, up to 2)',
+    uploadCreatorTip:
+      'When provided, the locked creator preserves the same face/body across every scene. Leave empty to let AI imagine a UGC creator.',
+    uploadedCreator: '{count}/2 uploaded',
     promptLabel: 'Remix prompt (optional)',
     promptPlaceholder:
       'Enter product info, selling points, price, and changes you want from the source video.',
@@ -1117,6 +1121,10 @@ const zh: typeof en = {
     uploadProduct: '上传商品图片（必填，最多9张）',
     uploadTip: '请上传白底商品图，更多角度产品图可以让视频一致性更强。',
     uploaded: '已上传 {count}/9',
+    uploadCreator: '上传创作者参考图（选填，最多2张）',
+    uploadCreatorTip:
+      '提供后，画面里的创作者会沿用上传的人像贯穿所有场次；留空则由 AI 生成通用 UGC 创作者形象。',
+    uploadedCreator: '已上传 {count}/2',
     promptLabel: '复刻提示词（选填）',
     promptPlaceholder:
       '请输入产品信息、卖点、价格及原视频修改需求，AI 将基于原爆款结构生成新的带货内容',

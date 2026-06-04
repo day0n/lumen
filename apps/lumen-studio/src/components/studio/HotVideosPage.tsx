@@ -1107,7 +1107,9 @@ function ReplicaConfigModal({
 }) {
   const { locale, t } = useI18n();
   const fileInputId = useId();
+  const creatorFileInputId = useId();
   const [uploadedImages, setUploadedImages] = useState<UploadedProductImage[]>([]);
+  const [creatorImages, setCreatorImages] = useState<UploadedProductImage[]>([]);
   const [prompt, setPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -1116,6 +1118,7 @@ function ReplicaConfigModal({
   const [copyLanguage, setCopyLanguage] = useState<CopyLanguageOption>(locale);
   const [resolution, setResolution] = useState<ResolutionOption>('720p');
   const uploadedImagesRef = useRef(uploadedImages);
+  const creatorImagesRef = useRef(creatorImages);
   const canGenerate = uploadedImages.length > 0 && !generating;
 
   useEffect(() => {
@@ -1123,8 +1126,15 @@ function ReplicaConfigModal({
   }, [uploadedImages]);
 
   useEffect(() => {
+    creatorImagesRef.current = creatorImages;
+  }, [creatorImages]);
+
+  useEffect(() => {
     return () => {
       for (const image of uploadedImagesRef.current) {
+        URL.revokeObjectURL(image.previewUrl);
+      }
+      for (const image of creatorImagesRef.current) {
         URL.revokeObjectURL(image.previewUrl);
       }
     };
@@ -1147,6 +1157,23 @@ function ReplicaConfigModal({
     event.currentTarget.value = '';
   };
 
+  const handleCreatorUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    const availableSlots = 2 - creatorImages.length;
+    const nextImages = files.slice(0, availableSlots).map((file, index) => ({
+      id: `creator-${file.name}-${file.size}-${file.lastModified}-${Date.now()}-${index}`,
+      name: file.name,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+
+    if (nextImages.length) {
+      setCreatorImages((current) => [...current, ...nextImages]);
+    }
+
+    event.currentTarget.value = '';
+  };
+
   const removeImage = (imageId: string) => {
     setUploadedImages((current) => {
       const targetImage = current.find((image) => image.id === imageId);
@@ -1155,16 +1182,25 @@ function ReplicaConfigModal({
     });
   };
 
-  const uploadProductImage = async (
+  const removeCreatorImage = (imageId: string) => {
+    setCreatorImages((current) => {
+      const targetImage = current.find((image) => image.id === imageId);
+      if (targetImage) URL.revokeObjectURL(targetImage.previewUrl);
+      return current.filter((image) => image.id !== imageId);
+    });
+  };
+
+  const uploadOneImage = async (
     image: UploadedProductImage,
-    index: number,
+    nodeId: string,
+    setter: (id: string, url: string) => void,
     signal?: AbortSignal,
   ) => {
     if (image.uploadedUrl) return image.uploadedUrl;
     const form = new FormData();
     form.set('file', image.file);
     form.set('kind', 'image');
-    form.set('nodeId', `hot-remake-product-${index + 1}`);
+    form.set('nodeId', nodeId);
 
     const response = await fetch('/api/canvas/uploads', {
       method: 'POST',
@@ -1177,9 +1213,7 @@ function ReplicaConfigModal({
       throw new Error(payload.error?.message ?? t('materials.uploadFailed'));
     }
     const uploadedUrl = payload.data.asset.url;
-    setUploadedImages((current) =>
-      current.map((item) => (item.id === image.id ? { ...item, uploadedUrl } : item)),
-    );
+    setter(image.id, uploadedUrl);
     return uploadedUrl;
   };
 
@@ -1189,18 +1223,48 @@ function ReplicaConfigModal({
     generateAbortRef.current = controller;
     setGenerating(true);
     setGenerateError(null);
-    onGenerateStart(uploadedImages.length);
+    const totalToUpload = uploadedImages.length + creatorImages.length;
+    onGenerateStart(totalToUpload);
     try {
       const productImageUrls: string[] = [];
       for (const [index, image] of uploadedImages.entries()) {
         if (controller.signal.aborted) return;
         onGenerateProgress({ phase: 'upload', uploadCurrent: index });
-        productImageUrls.push(await uploadProductImage(image, index, controller.signal));
+        productImageUrls.push(
+          await uploadOneImage(
+            image,
+            `hot-remake-product-${index + 1}`,
+            (id, url) =>
+              setUploadedImages((cur) =>
+                cur.map((item) => (item.id === id ? { ...item, uploadedUrl: url } : item)),
+              ),
+            controller.signal,
+          ),
+        );
+      }
+      const creatorImageUrls: string[] = [];
+      for (const [index, image] of creatorImages.entries()) {
+        if (controller.signal.aborted) return;
+        onGenerateProgress({
+          phase: 'upload',
+          uploadCurrent: uploadedImages.length + index,
+        });
+        creatorImageUrls.push(
+          await uploadOneImage(
+            image,
+            `hot-remake-creator-${index + 1}`,
+            (id, url) =>
+              setCreatorImages((cur) =>
+                cur.map((item) => (item.id === id ? { ...item, uploadedUrl: url } : item)),
+              ),
+            controller.signal,
+          ),
+        );
       }
       if (controller.signal.aborted) return;
       onGenerateProgress({
         phase: 'remake',
-        uploadCurrent: uploadedImages.length,
+        uploadCurrent: totalToUpload,
       });
 
       const response = await fetch('/api/hot-videos/remake', {
@@ -1213,6 +1277,7 @@ function ReplicaConfigModal({
           videoId: video?.id ?? (target.source === 'video' ? target.id : undefined),
           reference: target,
           productImageUrls,
+          ...(creatorImageUrls.length ? { creatorImageUrls } : {}),
           prompt,
           settings: {
             aspectRatio,
@@ -1228,7 +1293,17 @@ function ReplicaConfigModal({
       if (!response.ok || !payload.ok || !payload.data) {
         throw new Error(payload.error?.message ?? t('hotVideos.parseFailed'));
       }
-      onStart(payload.data);
+      // 把用户在配置弹窗里选的参数也带进 session，Pipeline 里 Gate 1 replan 时可以原样回传。
+      onStart({
+        ...payload.data,
+        settings: {
+          aspectRatio,
+          resolution,
+          language: copyLanguage,
+          duration: Number.parseInt(duration, 10),
+        },
+        prompt: prompt || undefined,
+      });
     } catch (error) {
       if (
         controller.signal.aborted ||
@@ -1360,6 +1435,64 @@ function ReplicaConfigModal({
 
               <div className="mt-3 text-[12px] text-white/36">
                 {t('hotVideos.uploaded', { count: uploadedImages.length })}
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <div className="text-[14px] font-bold text-white">{t('hotVideos.uploadCreator')}</div>
+              <p className="mt-2 text-[12px] leading-5 text-white/38">
+                {t('hotVideos.uploadCreatorTip')}
+              </p>
+
+              <input
+                id={creatorFileInputId}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleCreatorUpload}
+                className="sr-only"
+              />
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <label
+                  htmlFor={creatorFileInputId}
+                  className={cn(
+                    'flex h-[88px] w-[88px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/16 bg-white/[0.045] text-[11px] font-semibold text-white/46 transition-colors hover:border-[#9da8ff]/48 hover:bg-[#9da8ff]/8 hover:text-white',
+                    creatorImages.length >= 2 && 'pointer-events-none opacity-45',
+                  )}
+                >
+                  <IconPlus size={22} stroke={2.2} />
+                  {t('common.upload')}
+                </label>
+
+                {creatorImages.map((image) => (
+                  <div
+                    key={image.id}
+                    className="relative h-[88px] w-[88px] overflow-hidden rounded-xl bg-white/[0.06] ring-1 ring-[#9da8ff]/22"
+                  >
+                    <img
+                      src={image.previewUrl}
+                      alt={image.name}
+                      className="h-full w-full object-cover"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 line-clamp-2 bg-black/58 px-1.5 py-1 text-center text-[9px] leading-3 text-white/78 backdrop-blur">
+                      {image.name}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeCreatorImage(image.id)}
+                      disabled={generating}
+                      aria-label={`${t('common.remove')} ${image.name}`}
+                      className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/62 text-white/68 ring-1 ring-white/[0.12] hover:text-white disabled:opacity-40"
+                    >
+                      <IconX size={13} stroke={2.2} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 text-[12px] text-white/36">
+                {t('hotVideos.uploadedCreator', { count: creatorImages.length })}
               </div>
             </div>
 

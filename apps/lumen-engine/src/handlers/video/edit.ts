@@ -60,6 +60,9 @@ export async function execute(
   const prepared: PreparedClip[] = [];
   const trimHeadSeconds = readNumberSetting(settings, 'trimHeadSeconds') ?? 0;
   const clipTitles = readStringArraySetting(settings, 'clipTitles');
+  // 复刻场景混音节点会用 defaultClipVolume=0 静音 veo 源音，让 TTS 主导。
+  // 普通拼接默认 1.0 不影响老画布。
+  const defaultClipVolume = readNumberSetting(settings, 'defaultClipVolume') ?? 1;
 
   logger.info({ clipCount: clips.length, workdir }, 'starting lumen video edit');
 
@@ -81,7 +84,7 @@ export async function execute(
       sourceUrl: clip.url,
       start,
       duration,
-      volume: clampNumber(clip.volume ?? 1, 0, 1),
+      volume: clampNumber(clip.volume ?? defaultClipVolume, 0, 1),
       ...resolveOptionalTitle(clip.title ?? clipTitles[index]),
       hasAudio: Boolean(metadata.streams?.some((stream) => stream.codec_type === 'audio')),
     });
