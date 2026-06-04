@@ -38,7 +38,7 @@ export function Topbar() {
   return (
     <header className="fixed inset-x-0 top-0 z-40">
       <div className="border-b border-white/[0.06] bg-[#111315]/95 backdrop-blur-xl">
-        <div className="relative flex h-20 w-full items-center gap-6 px-6">
+        <div className="relative flex h-16 w-full items-center gap-3 px-4 sm:h-20 sm:gap-6 sm:px-6">
           <Link href={localePath('/home')} className="flex items-center gap-3">
             <LumenMark size={34} />
             <span className="font-display text-[17px] font-bold tracking-tight text-white">
@@ -84,16 +84,16 @@ export function Topbar() {
             <LanguageToggle compact />
 
             {(!authLoaded || !isSignedIn) && (
-              <div className="hidden items-center gap-2 sm:flex">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <Link
                   href={localePath(`/sign-in?redirect_url=${authRedirect}`)}
-                  className="rounded-full px-3.5 py-1.5 text-[13px] font-medium text-white/70 transition-colors hover:text-white"
+                  className="flex min-h-11 items-center rounded-full px-3 text-[12px] font-medium text-white/70 transition-colors hover:text-white sm:px-3.5 sm:text-[13px]"
                 >
                   {t('common.login')}
                 </Link>
                 <Link
                   href={localePath(`/sign-up?redirect_url=${authRedirect}`)}
-                  className="rounded-full bg-white px-3.5 py-1.5 text-[13px] font-semibold text-black transition-opacity hover:opacity-90"
+                  className="flex min-h-11 items-center rounded-full bg-white px-3 text-[12px] font-semibold text-black transition-opacity hover:opacity-90 sm:px-3.5 sm:text-[13px]"
                 >
                   {t('common.signup')}
                 </Link>
@@ -113,7 +113,7 @@ export function Topbar() {
         </div>
       </div>
 
-      <nav className="fixed inset-x-4 bottom-4 z-50 grid grid-cols-5 gap-1 rounded-2xl bg-[#111315]/92 p-1 ring-1 ring-white/[0.08] backdrop-blur-xl lg:hidden">
+      <nav className="fixed inset-x-4 bottom-4 z-50 grid grid-cols-5 gap-1 rounded-2xl bg-[#111315]/92 p-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] ring-1 ring-white/[0.08] backdrop-blur-xl lg:hidden">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active =
@@ -129,7 +129,7 @@ export function Topbar() {
               aria-label={label}
               onClick={(event) => handleProtectedNavClick(event, item.href)}
               className={cn(
-                'relative flex h-11 items-center justify-center rounded-xl transition-colors',
+                'relative flex min-h-11 min-w-11 items-center justify-center rounded-xl transition-colors',
                 active ? 'text-[#111315]' : 'text-white/58 hover:text-white',
               )}
             >

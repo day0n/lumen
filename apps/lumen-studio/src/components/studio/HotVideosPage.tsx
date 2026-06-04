@@ -470,7 +470,7 @@ export function HotVideosPage() {
       <AuroraBackdrop />
       <Topbar />
 
-      <main className="relative z-10 mx-auto max-w-[1260px] px-6 pb-20 pt-28">
+      <main className="relative z-10 mx-auto max-w-[1260px] px-4 pb-nav-mobile pt-24 sm:px-6 sm:pt-28">
         <motion.section
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}

@@ -1,5 +1,7 @@
 'use client';
 
+import { MobileSheet } from '@/components/mobile';
+import { useIsMobile } from '@/hooks/use-is-mobile';
 import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
@@ -37,6 +39,7 @@ type NotificationsApiResponse =
     };
 
 export function NotificationsPopover({ triggerClassName }: { triggerClassName?: string } = {}) {
+  const isMobile = useIsMobile();
   const { locale, t } = useI18n();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [open, setOpen] = useState(false);
@@ -131,7 +134,7 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
           setOpen(true);
         }}
         className={cn(
-          'relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.06] text-white/65 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.1] hover:text-white',
+          'relative flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white/[0.06] text-white/65 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.1] hover:text-white',
           triggerClassName,
         )}
       >

@@ -39,7 +39,7 @@ export function LandingNav({ onHomeIntent }: LandingNavProps) {
           scrolled ? 'opacity-100' : 'opacity-0',
         )}
       />
-      <div className="pointer-events-auto relative mx-auto flex h-[50px] max-w-[1280px] items-center justify-between gap-4 px-[26px] sm:px-10 lg:px-[52px]">
+      <div className="pointer-events-auto relative mx-auto flex min-h-[50px] max-w-[1280px] items-center justify-between gap-3 px-4 pt-[max(0px,env(safe-area-inset-top))] sm:gap-4 sm:px-10 lg:px-[52px]">
         <Link href={localePath('/')} aria-label={t('landing.homeAria')}>
           <LumenWordmark markSize={20} wordClassName="text-[22px]" />
         </Link>
@@ -52,7 +52,7 @@ export function LandingNav({ onHomeIntent }: LandingNavProps) {
             onFocus={() => onHomeIntent?.()}
             onPointerEnter={() => onHomeIntent?.()}
             onTouchStart={() => onHomeIntent?.()}
-            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-white px-4 text-[12.5px] font-bold tracking-normal text-[#0b0d0e] shadow-[0_10px_26px_rgba(0,0,0,0.22)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
+            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-white px-4 text-[12.5px] font-bold tracking-normal text-[#0b0d0e] shadow-[0_10px_26px_rgba(0,0,0,0.22)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
           >
             {t('landing.cta')}
             <IconArrowRight size={13} stroke={2.4} />

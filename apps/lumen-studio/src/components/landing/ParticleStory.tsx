@@ -122,7 +122,7 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
       const rect = canvas.getBoundingClientRect();
       width = Math.max(1, Math.round(rect.width));
       height = Math.max(1, Math.round(rect.height));
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, width < 768 ? 1.25 : 2);
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -421,8 +421,8 @@ function RevealText({ text, reveal }: { text: string; reveal: number }) {
 }
 
 function particleTarget(width: number) {
-  if (width < 640) return 15000;
-  if (width < 1024) return 28000;
+  if (width < 640) return 7200;
+  if (width < 1024) return 14000;
   return 48000;
 }
 

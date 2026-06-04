@@ -372,8 +372,8 @@ export function WorkspacePage() {
       <AuroraBackdrop />
       <Topbar />
 
-      <main className="relative z-10 mx-auto max-w-[1320px] px-6 pb-16 pt-28">
-        <div className="mb-5 flex flex-wrap items-center gap-3">
+      <main className="relative z-10 mx-auto max-w-[1320px] px-4 pb-nav-mobile pt-24 sm:px-6 sm:pt-28">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div>
             <h1 className="text-[22px] font-bold tracking-tight text-white">
               {t('workspace.title')}
@@ -381,8 +381,8 @@ export function WorkspacePage() {
             <p className="mt-1 text-[12px] text-white/35">{t('workspace.subtitle')}</p>
           </div>
 
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <label className="flex h-10 w-[190px] items-center gap-2 rounded-xl bg-[#171819] px-3 text-white/45 ring-1 ring-white/[0.08] focus-within:ring-white/20">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+            <label className="flex h-11 min-h-11 w-full items-center gap-2 rounded-xl bg-[#171819] px-3 text-white/45 ring-1 ring-white/[0.08] focus-within:ring-white/20 sm:h-10 sm:w-[190px]">
               <IconSearch size={16} stroke={2.1} />
               <input
                 type="search"

@@ -306,7 +306,7 @@ export function MaterialsPage() {
       <AuroraBackdrop />
       <Topbar />
 
-      <main className="relative z-10 mx-auto max-w-[1200px] px-6 pb-24 pt-28">
+      <main className="relative z-10 mx-auto max-w-[1200px] px-4 pb-nav-mobile pt-24 sm:px-6 sm:pt-28">
         <div
           ref={showcaseRef}
           onPointerMove={handleShowcasePointerMove}

@@ -12,11 +12,10 @@ export default function StudioHomePage() {
       <AuroraBackdrop />
       <Topbar />
 
-      <main className="relative z-10 pt-28">
+      <main className="relative z-10 pb-nav-mobile pt-24 sm:pt-28">
         <FeaturedCarousel />
         <Hero />
         <TemplateRail />
-        <div className="h-24" />
       </main>
     </div>
   );
