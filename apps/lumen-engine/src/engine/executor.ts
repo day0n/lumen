@@ -6,8 +6,8 @@ import type { WorkflowRunSummary, WorkflowStore } from '../database/workflow-sto
 import { executeNode } from '../handlers/base.js';
 import type { EventPublisher } from '../publisher.js';
 import {
-  isSnapshotOutputType,
   type SnapshotCandidate,
+  isSnapshotOutputType,
   updateProjectSnapshotFromRun,
 } from '../storage/project-snapshot.js';
 import { persistNodeOutput } from '../storage/r2.js';
@@ -275,6 +275,7 @@ export class WorkflowExecutor {
           try {
             await updateProjectSnapshotFromRun({
               projectId,
+              userId,
               candidate: latestSnapshot,
               signal,
             });

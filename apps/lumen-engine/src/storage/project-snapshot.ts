@@ -1,8 +1,9 @@
-import type { NodeType } from '@lumen/shared/domain';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import type { NodeType } from '@lumen/shared/domain';
 
 import { config } from '../config.js';
 import { getMongo } from '../database/mongo.js';
@@ -11,6 +12,7 @@ import { uploadProjectSnapshotBuffer } from './r2.js';
 
 interface StudioProjectDocument {
   _id: string;
+  owner_id: string;
   thumbnail?: string;
   deleted_at?: Date;
 }
@@ -24,9 +26,18 @@ export interface SnapshotCandidate {
 
 export async function updateProjectSnapshotFromRun(args: {
   projectId: string;
+  userId: string | null;
   candidate: SnapshotCandidate;
   signal?: AbortSignal;
 }): Promise<void> {
+  if (!args.userId) {
+    logger.warn(
+      { projectId: args.projectId },
+      'project snapshot update skipped: missing project owner',
+    );
+    return;
+  }
+
   const snapshotUrl = await resolveProjectSnapshotUrl(args.candidate, args.projectId, args.signal);
   if (!snapshotUrl) return;
 
@@ -34,6 +45,7 @@ export async function updateProjectSnapshotFromRun(args: {
   const result = await db.collection<StudioProjectDocument>(STUDIO_PROJECTS_COLLECTION).updateOne(
     {
       _id: args.projectId,
+      owner_id: args.userId,
       deleted_at: { $exists: false },
     },
     {
@@ -42,12 +54,20 @@ export async function updateProjectSnapshotFromRun(args: {
   );
 
   if (result.matchedCount === 0) {
-    logger.warn({ projectId: args.projectId }, 'project snapshot update skipped: project not found');
+    logger.warn(
+      { projectId: args.projectId, userId: args.userId },
+      'project snapshot update skipped: project not found for owner',
+    );
     return;
   }
 
   logger.info(
-    { projectId: args.projectId, snapshotUrl, outputType: args.candidate.type },
+    {
+      projectId: args.projectId,
+      userId: args.userId,
+      snapshotUrl,
+      outputType: args.candidate.type,
+    },
     'project snapshot updated',
   );
 }

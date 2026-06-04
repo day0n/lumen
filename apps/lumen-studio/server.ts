@@ -12,6 +12,7 @@ import { WebSocketServer } from 'ws';
 import { warmupRepositories } from './src/server/db';
 import { logger } from './src/server/logger';
 import { initRemakeEventMirror, stopRemakeEventMirror } from './src/server/remake/eventMirror';
+import { authenticateFlowUpgrade, rejectUnauthorizedUpgrade } from './src/server/ws/auth';
 import {
   handleFlowConnection,
   initFlowGateway,
@@ -49,15 +50,29 @@ async function main() {
   initFlowGateway();
   initRemakeEventMirror();
 
-  const wss = new WebSocketServer({ noServer: true });
-  wss.on('connection', (ws) => handleFlowConnection(ws));
+  const wss = new WebSocketServer({
+    noServer: true,
+    handleProtocols: (protocols) => (protocols.has('lumen-flow-v1') ? 'lumen-flow-v1' : false),
+  });
 
   server.on('upgrade', (req, socket, head) => {
     const { pathname } = parse(req.url ?? '');
     if (pathname === '/ws/flow') {
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit('connection', ws, req);
-      });
+      void authenticateFlowUpgrade(req)
+        .then((auth) => {
+          if (!auth) {
+            rejectUnauthorizedUpgrade(socket);
+            return;
+          }
+          wss.handleUpgrade(req, socket, head, (ws) => {
+            handleFlowConnection(ws, auth);
+          });
+        })
+        .catch((err) => {
+          Sentry.captureException(err);
+          logger.warn({ err }, 'ws/flow upgrade auth failed');
+          rejectUnauthorizedUpgrade(socket);
+        });
       return;
     }
     upgradeHandler(req, socket, head);

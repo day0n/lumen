@@ -2,6 +2,7 @@
 
 import { translate } from '@/i18n/messages';
 import type { Locale } from '@/i18n/routing';
+import { useAuth } from '@clerk/nextjs';
 import type { NodeStatus } from '@lumen/shared/domain';
 import type { ClientRunMessage, ServerEvent } from '@lumen/shared/protocols';
 import * as Sentry from '@sentry/nextjs';
@@ -79,6 +80,7 @@ export function useWorkflowWs({
   const nodeRunIndexRef = useRef<Map<string, Set<string>>>(new Map());
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [nodeStates, setNodeStates] = useState<Record<string, NodeState>>({});
+  const { getToken } = useAuth();
 
   const removeRun = useCallback((run: ActiveRun) => {
     activeRunsRef.current.delete(run.runId);
@@ -265,74 +267,90 @@ export function useWorkflowWs({
           : undefined,
       };
 
-      const ws = new WebSocket(url);
-      socketsRef.current.add(ws);
-      const run: ActiveRun = {
-        runId,
-        ws,
-        nodeIds: targetNodeIds,
-        flowSpan,
-        opened: false,
-        flowDone: false,
-        cancelled: false,
-      };
-      activeRunsRef.current.set(runId, run);
-      for (const nodeId of targetNodeIds) {
-        const runIds = nodeRunIndexRef.current.get(nodeId) ?? new Set<string>();
-        runIds.add(runId);
-        nodeRunIndexRef.current.set(nodeId, runIds);
-      }
-
-      const closeSocket = () => {
-        removeRun(run);
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-          ws.close();
-        }
-      };
-
-      ws.onopen = () => {
-        run.opened = true;
-        setConnectionError(null);
-        ws.send(JSON.stringify(message));
-      };
-
-      ws.onmessage = (evt) => {
-        try {
-          const event = JSON.parse(evt.data) as ServerEvent;
-          handleEvent(event);
-          if (event.event === 'flow:done') {
-            run.flowDone = true;
-            closeSocket();
-          } else if (event.event === 'flow:cancel') {
-            run.cancelled = true;
-            closeSocket();
+      void getToken()
+        .then((token) => {
+          if (!token) {
+            throw new Error('missing auth token');
           }
-        } catch {
-          // ignore malformed messages
-        }
-      };
 
-      ws.onerror = () => {
-        const error = run.opened
-          ? translate(locale, 'canvas.connectionError')
-          : translate(locale, 'canvas.engineConnectionFailed');
-        if (!run.cancelled) setConnectionError(error);
-      };
+          const ws = new WebSocket(toWebSocketUrl(url), buildAuthProtocols(token));
+          socketsRef.current.add(ws);
+          const run: ActiveRun = {
+            runId,
+            ws,
+            nodeIds: targetNodeIds,
+            flowSpan,
+            opened: false,
+            flowDone: false,
+            cancelled: false,
+          };
+          activeRunsRef.current.set(runId, run);
+          for (const nodeId of targetNodeIds) {
+            const runIds = nodeRunIndexRef.current.get(nodeId) ?? new Set<string>();
+            runIds.add(runId);
+            nodeRunIndexRef.current.set(nodeId, runIds);
+          }
 
-      ws.onclose = () => {
-        removeRun(run);
-        // 收尾 ws.flow.run span：flowDone/cancelled=正常收尾，否则标记异常。
-        run.flowSpan?.setStatus({ code: run.flowDone || run.cancelled ? 1 : 2 });
-        run.flowSpan?.end();
-        if (run.flowDone || run.cancelled) return;
-        const error = run.opened
-          ? translate(locale, 'canvas.connectionClosed')
-          : translate(locale, 'canvas.engineConnectionFailed');
-        setConnectionError(error);
-        markRunConnectionFailed(targetNodeIds, error);
-      };
+          const closeSocket = () => {
+            removeRun(run);
+            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+              ws.close();
+            }
+          };
+
+          ws.onopen = () => {
+            run.opened = true;
+            setConnectionError(null);
+            ws.send(JSON.stringify(message));
+          };
+
+          ws.onmessage = (evt) => {
+            try {
+              const event = JSON.parse(evt.data) as ServerEvent;
+              handleEvent(event);
+              if (event.event === 'flow:done') {
+                run.flowDone = true;
+                closeSocket();
+              } else if (event.event === 'flow:cancel') {
+                run.cancelled = true;
+                closeSocket();
+              }
+            } catch {
+              // ignore malformed messages
+            }
+          };
+
+          ws.onerror = () => {
+            const error = run.opened
+              ? translate(locale, 'canvas.connectionError')
+              : translate(locale, 'canvas.engineConnectionFailed');
+            if (!run.cancelled) setConnectionError(error);
+          };
+
+          ws.onclose = () => {
+            removeRun(run);
+            // 收尾 ws.flow.run span：flowDone/cancelled=正常收尾，否则标记异常。
+            run.flowSpan?.setStatus({ code: run.flowDone || run.cancelled ? 1 : 2 });
+            run.flowSpan?.end();
+            if (run.flowDone || run.cancelled) return;
+            const error = run.opened
+              ? translate(locale, 'canvas.connectionClosed')
+              : translate(locale, 'canvas.engineConnectionFailed');
+            setConnectionError(error);
+            markRunConnectionFailed(targetNodeIds, error);
+          };
+        })
+        .catch((err) => {
+          Sentry.captureException(err);
+          const error = translate(locale, 'canvas.engineConnectionFailed');
+          setConnectionError(error);
+          markRunConnectionFailed(targetNodeIds, error);
+          flowSpan?.setStatus({ code: 2 });
+          flowSpan?.end();
+        });
     },
     [
+      getToken,
       handleEvent,
       locale,
       markRunConnectionFailed,
@@ -374,4 +392,15 @@ export function useWorkflowWs({
   );
 
   return { cancelNodes, connectionError, nodeStates, runNodes };
+}
+
+function toWebSocketUrl(url: string): string {
+  const parsed = new URL(url, window.location.href);
+  if (parsed.protocol === 'http:') parsed.protocol = 'ws:';
+  if (parsed.protocol === 'https:') parsed.protocol = 'wss:';
+  return parsed.toString();
+}
+
+function buildAuthProtocols(token: string): string[] {
+  return ['lumen-flow-v1', `clerk.${token}`];
 }
