@@ -14,11 +14,11 @@ interface CanvasHydrationOverlayProps {
  * 画布点开后的过渡 / 等待动画。
  * 设计要点：
  *  - 整屏覆盖深色磨砂背景，避免出现"先看到空白画布、再看到节点跳出来"的割裂感。
- *  - 单层轨道 + 中央光束 mark，避免旋转内圈贴近 logo 时看起来像重复图标。
+ *  - 视觉上只保留一个彩色有机 bloom，不再渲染任何可见文案。
  *  - 退场由父级 AnimatePresence 控制，整体 0.32s 淡出。
  */
 export function CanvasHydrationOverlay({ label, hint }: CanvasHydrationOverlayProps) {
-  const outerGradientId = `lumen-hydration-outer-${useId().replace(/:/g, '')}`;
+  const ariaLabel = hint ? `${label}. ${hint}` : label;
 
   return (
     <motion.div
@@ -33,168 +33,234 @@ export function CanvasHydrationOverlay({ label, hint }: CanvasHydrationOverlayPr
         backdropFilter: 'blur(10px)',
         WebkitBackdropFilter: 'blur(10px)',
       }}
-      // biome-ignore lint/a11y/useSemanticElements: 这是一个进度遮罩，需要 motion.div 才能驱动入退场动画，
-      // 用 <output> 元素会失去 framer-motion 的能力，因此显式声明 role="status"。
+      // biome-ignore lint/a11y/useSemanticElements: 这是一个进度遮罩，需要 motion.div 才能驱动入退场动画。
       role="status"
       aria-busy="true"
+      aria-label={ariaLabel}
       aria-live="polite"
     >
-      <div className="relative h-[112px] w-[112px]">
+      <div className="relative h-[214px] w-[214px] sm:h-[260px] sm:w-[260px]">
         <motion.div
-          className="absolute inset-[-30px] rounded-full"
+          className="absolute inset-4 rounded-full"
           style={{
             background:
-              'radial-gradient(circle, rgba(121,228,255,0.18) 0%, rgba(245,199,106,0.1) 32%, transparent 70%)',
-            filter: 'blur(14px)',
+              'radial-gradient(circle, rgba(121,228,255,0.18) 0%, rgba(255,117,68,0.14) 38%, transparent 72%)',
+            filter: 'blur(32px)',
           }}
-          animate={{ scale: [0.96, 1.08, 0.96], opacity: [0.48, 0.82, 0.48] }}
-          transition={{ duration: 2.8, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
+          animate={{ scale: [0.88, 1.08, 0.88], opacity: [0.45, 0.78, 0.45] }}
+          transition={{ duration: 3.4, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
         />
-
-        <svg
-          className="pointer-events-none absolute inset-0"
-          viewBox="0 0 100 100"
-          aria-hidden="true"
-          role="presentation"
-        >
-          <title>Hydration ring track</title>
-          <circle
-            cx="50"
-            cy="50"
-            r="44"
-            fill="none"
-            stroke="rgba(255,255,255,0.06)"
-            strokeWidth="1.6"
-          />
-        </svg>
-
-        <motion.svg
-          className="absolute inset-0"
-          viewBox="0 0 100 100"
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1.8, ease: 'linear', repeat: Number.POSITIVE_INFINITY }}
-          aria-hidden="true"
-          role="presentation"
-        >
-          <title>Hydration outer arc</title>
-          <defs>
-            <linearGradient id={outerGradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="rgba(121,228,255,0)" />
-              <stop offset="46%" stopColor="rgba(121,228,255,0.9)" />
-              <stop offset="100%" stopColor="rgba(245,199,106,0.95)" />
-            </linearGradient>
-          </defs>
-          <circle
-            cx="50"
-            cy="50"
-            r="44"
-            fill="none"
-            stroke={`url(#${outerGradientId})`}
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            strokeDasharray="118 278"
-          />
-        </motion.svg>
-
-        <motion.div
-          className="absolute inset-0 flex items-center justify-center"
-          animate={{ scale: [1, 1.045, 1] }}
-          transition={{
-            duration: 2,
-            repeat: Number.POSITIVE_INFINITY,
-            ease: 'easeInOut',
-          }}
-        >
-          <HydrationMark />
-        </motion.div>
+        <HydrationBloomMark className="relative h-full w-full" />
       </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.12, duration: 0.32, ease: [0.32, 0.72, 0, 1] }}
-        className="mt-8 text-[12px] font-bold uppercase tracking-[0.34em] text-white/55"
-      >
-        {label}
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 0.5 }}
-        transition={{ delay: 0.22, duration: 0.45 }}
-        className="mt-2.5 h-px w-[140px] bg-gradient-to-r from-transparent via-white/35 to-transparent"
-      />
-
-      {hint ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.28, duration: 0.4 }}
-          className="mt-3 text-[12px] font-medium text-white/38"
-        >
-          {hint}
-        </motion.div>
-      ) : null}
     </motion.div>
   );
 }
 
-function HydrationMark() {
-  const idPrefix = `lumen-loading-mark-${useId().replace(/:/g, '')}`;
-  const glowId = `${idPrefix}-glow`;
-  const tileId = `${idPrefix}-tile`;
-  const beamId = `${idPrefix}-beam`;
+export function HydrationBloomMark({ className = 'h-[240px] w-[240px]' }: { className?: string }) {
+  const idPrefix = `lumen-loading-bloom-${useId().replace(/:/g, '')}`;
+  const clipId = `${idPrefix}-clip`;
+  const shellId = `${idPrefix}-shell`;
+  const cyanId = `${idPrefix}-cyan`;
+  const blueId = `${idPrefix}-blue`;
+  const goldId = `${idPrefix}-gold`;
+  const coralId = `${idPrefix}-coral`;
+  const violetId = `${idPrefix}-violet`;
+  const mintId = `${idPrefix}-mint`;
+  const centerId = `${idPrefix}-center`;
+  const highlightId = `${idPrefix}-highlight`;
+  const shadowId = `${idPrefix}-shadow`;
+  const softGlowId = `${idPrefix}-soft-glow`;
+  const shellPath =
+    'M117 17C143 13 154 43 172 58C191 73 224 72 225 101C226 125 197 133 189 149C205 171 188 200 160 190C141 183 139 222 112 220C88 218 92 184 75 177C52 190 26 169 38 142C44 128 18 111 28 88C38 65 65 74 80 61C88 42 96 20 117 17Z';
 
   return (
-    <svg
-      className="h-[52px] w-[52px] drop-shadow-[0_16px_34px_rgba(0,0,0,0.34)]"
-      viewBox="0 0 52 52"
+    <motion.svg
+      className={className}
+      viewBox="0 0 240 240"
       aria-hidden="true"
       role="presentation"
+      animate={{ rotate: [0, -2.8, 2.2, 0], scale: [1, 1.03, 0.995, 1] }}
+      transition={{ duration: 5.2, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
+      style={{
+        filter: 'drop-shadow(0 22px 48px rgba(0,0,0,0.42)) saturate(1.12)',
+      }}
     >
-      <title>Lumen loading mark</title>
       <defs>
-        <radialGradient id={glowId} cx="36%" cy="28%" r="72%">
-          <stop offset="0%" stopColor="#fff0a8" />
-          <stop offset="34%" stopColor="#79e4ff" />
-          <stop offset="70%" stopColor="#5067ff" />
-          <stop offset="100%" stopColor="#171b24" />
+        <clipPath id={clipId}>
+          <path d={shellPath} />
+        </clipPath>
+        <radialGradient id={shellId} cx="44%" cy="38%" r="72%">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.78)" />
+          <stop offset="38%" stopColor="rgba(121,228,255,0.4)" />
+          <stop offset="72%" stopColor="rgba(255,126,54,0.32)" />
+          <stop offset="100%" stopColor="rgba(32,20,58,0.55)" />
         </radialGradient>
-        <linearGradient id={tileId} x1="8" x2="44" y1="6" y2="46">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.9)" />
-          <stop offset="100%" stopColor="rgba(255,255,255,0.2)" />
-        </linearGradient>
-        <linearGradient id={beamId} x1="15" x2="38" y1="14" y2="39">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.95)" />
-          <stop offset="48%" stopColor="rgba(255,255,255,0.32)" />
+        <radialGradient id={cyanId} cx="35%" cy="26%" r="76%">
+          <stop offset="0%" stopColor="#ecfff1" />
+          <stop offset="38%" stopColor="#55f0ff" />
+          <stop offset="72%" stopColor="#1472ff" />
+          <stop offset="100%" stopColor="#1730a4" />
+        </radialGradient>
+        <radialGradient id={blueId} cx="44%" cy="28%" r="82%">
+          <stop offset="0%" stopColor="#c9fbff" />
+          <stop offset="42%" stopColor="#48a9ff" />
+          <stop offset="78%" stopColor="#2147ff" />
+          <stop offset="100%" stopColor="#18206e" />
+        </radialGradient>
+        <radialGradient id={goldId} cx="48%" cy="30%" r="78%">
+          <stop offset="0%" stopColor="#fff1bd" />
+          <stop offset="42%" stopColor="#ffc75c" />
+          <stop offset="76%" stopColor="#ff8a00" />
+          <stop offset="100%" stopColor="#854402" />
+        </radialGradient>
+        <radialGradient id={coralId} cx="46%" cy="34%" r="82%">
+          <stop offset="0%" stopColor="#ffd1cb" />
+          <stop offset="42%" stopColor="#ff6e61" />
+          <stop offset="72%" stopColor="#ff2d86" />
+          <stop offset="100%" stopColor="#5b1549" />
+        </radialGradient>
+        <radialGradient id={violetId} cx="43%" cy="28%" r="82%">
+          <stop offset="0%" stopColor="#f2d7ff" />
+          <stop offset="42%" stopColor="#b77bff" />
+          <stop offset="72%" stopColor="#6138ff" />
+          <stop offset="100%" stopColor="#231369" />
+        </radialGradient>
+        <radialGradient id={mintId} cx="38%" cy="32%" r="78%">
+          <stop offset="0%" stopColor="#f5ffd8" />
+          <stop offset="36%" stopColor="#8cffc7" />
+          <stop offset="72%" stopColor="#25c9ff" />
+          <stop offset="100%" stopColor="#075c81" />
+        </radialGradient>
+        <radialGradient id={centerId} cx="36%" cy="32%" r="76%">
+          <stop offset="0%" stopColor="#f8fff0" />
+          <stop offset="34%" stopColor="#93fff5" />
+          <stop offset="66%" stopColor="#1556ff" />
+          <stop offset="100%" stopColor="#251066" />
+        </radialGradient>
+        <radialGradient id={highlightId} cx="40%" cy="35%" r="68%">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.92)" />
+          <stop offset="48%" stopColor="rgba(255,255,255,0.26)" />
           <stop offset="100%" stopColor="rgba(255,255,255,0)" />
-        </linearGradient>
+        </radialGradient>
+        <radialGradient id={shadowId} cx="52%" cy="60%" r="64%">
+          <stop offset="0%" stopColor="rgba(14,8,56,0.64)" />
+          <stop offset="58%" stopColor="rgba(14,8,56,0.2)" />
+          <stop offset="100%" stopColor="rgba(14,8,56,0)" />
+        </radialGradient>
+        <filter id={softGlowId} x="-35%" y="-35%" width="170%" height="170%">
+          <feGaussianBlur in="SourceGraphic" result="blur" stdDeviation="5" />
+          <feColorMatrix
+            in="blur"
+            result="glow"
+            type="matrix"
+            values="1.08 0 0 0 0 0 1.05 0 0 0 0 0 1.2 0 0 0 0 0 .42 0"
+          />
+          <feMerge>
+            <feMergeNode in="glow" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
-      <rect
-        x="7"
-        y="7"
-        width="38"
-        height="38"
-        rx="14"
-        fill={`url(#${glowId})`}
-        stroke={`url(#${tileId})`}
-        strokeWidth="1.2"
-      />
+
+      <path d={shellPath} fill={`url(#${shellId})`} opacity="0.72" />
+      <g clipPath={`url(#${clipId})`} filter={`url(#${softGlowId})`}>
+        <ellipse cx="119" cy="69" rx="37" ry="76" fill={`url(#${blueId})`} opacity="0.76" />
+        <ellipse
+          cx="166"
+          cy="82"
+          rx="36"
+          ry="76"
+          fill={`url(#${goldId})`}
+          opacity="0.78"
+          transform="rotate(48 120 120)"
+        />
+        <ellipse
+          cx="179"
+          cy="125"
+          rx="38"
+          ry="78"
+          fill={`url(#${coralId})`}
+          opacity="0.78"
+          transform="rotate(88 120 120)"
+        />
+        <ellipse
+          cx="155"
+          cy="169"
+          rx="38"
+          ry="78"
+          fill={`url(#${violetId})`}
+          opacity="0.76"
+          transform="rotate(136 120 120)"
+        />
+        <ellipse
+          cx="112"
+          cy="179"
+          rx="38"
+          ry="76"
+          fill={`url(#${cyanId})`}
+          opacity="0.72"
+          transform="rotate(178 120 120)"
+        />
+        <ellipse
+          cx="74"
+          cy="157"
+          rx="39"
+          ry="78"
+          fill={`url(#${mintId})`}
+          opacity="0.76"
+          transform="rotate(225 120 120)"
+        />
+        <ellipse
+          cx="62"
+          cy="113"
+          rx="38"
+          ry="78"
+          fill={`url(#${goldId})`}
+          opacity="0.72"
+          transform="rotate(272 120 120)"
+        />
+        <ellipse
+          cx="83"
+          cy="78"
+          rx="38"
+          ry="76"
+          fill={`url(#${mintId})`}
+          opacity="0.72"
+          transform="rotate(316 120 120)"
+        />
+        <path
+          d="M64 117C82 91 104 86 123 101C139 114 134 142 114 153C89 166 56 150 64 117Z"
+          fill={`url(#${cyanId})`}
+          opacity="0.82"
+        />
+        <path
+          d="M127 89C151 75 182 87 188 116C194 145 163 157 141 144C118 131 108 101 127 89Z"
+          fill={`url(#${coralId})`}
+          opacity="0.72"
+        />
+        <path
+          d="M91 140C106 119 137 121 153 139C170 159 154 185 128 187C100 190 76 164 91 140Z"
+          fill={`url(#${violetId})`}
+          opacity="0.68"
+        />
+        <ellipse cx="120" cy="121" rx="45" ry="40" fill={`url(#${centerId})`} opacity="0.94" />
+        <ellipse
+          cx="96"
+          cy="125"
+          rx="39"
+          ry="35"
+          fill={`url(#${highlightId})`}
+          opacity="0.78"
+          transform="rotate(-19 96 125)"
+        />
+        <ellipse cx="133" cy="121" rx="36" ry="34" fill={`url(#${shadowId})`} opacity="0.74" />
+      </g>
       <path
-        d="M16 33.5V18.8c0-1.7 1.9-2.8 3.4-1.9l13 7.3c1.5.9 1.5 3 0 3.9l-13 7.4c-1.5.8-3.4-.3-3.4-2z"
-        fill="rgba(4,10,16,0.42)"
-      />
-      <path
-        d="M17.8 31.2V21.1c0-1.1 1.2-1.8 2.1-1.2l8.8 5c.9.5.9 1.9 0 2.4l-8.8 5c-.9.6-2.1-.1-2.1-1.3z"
-        fill={`url(#${beamId})`}
-      />
-      <path
-        d="M13.4 12.6h13.8c5.1 0 9.1 1.4 11.7 4.6"
+        d={shellPath}
         fill="none"
-        stroke="rgba(255,255,255,0.48)"
-        strokeLinecap="round"
-        strokeWidth="1.35"
+        stroke="rgba(255,255,255,0.16)"
+        strokeWidth="1.4"
       />
-    </svg>
+    </motion.svg>
   );
 }
