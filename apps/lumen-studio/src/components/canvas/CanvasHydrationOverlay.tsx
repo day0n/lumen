@@ -1,8 +1,7 @@
 'use client';
 
 import { motion } from 'motion/react';
-
-import { LumenMark } from '@/components/ui/LumenMark';
+import { useId } from 'react';
 
 interface CanvasHydrationOverlayProps {
   /** 主提示文案，例如「正在唤醒工作流」 */
@@ -15,11 +14,12 @@ interface CanvasHydrationOverlayProps {
  * 画布点开后的过渡 / 等待动画。
  * 设计要点：
  *  - 整屏覆盖深色磨砂背景，避免出现"先看到空白画布、再看到节点跳出来"的割裂感。
- *  - 双层 conic 光环以不同速度反向旋转，配合中央 LumenMark 的呼吸缩放，传达
- *    「光在汇聚」的品牌感受。
+ *  - 单层轨道 + 中央光束 mark，避免旋转内圈贴近 logo 时看起来像重复图标。
  *  - 退场由父级 AnimatePresence 控制，整体 0.32s 淡出。
  */
 export function CanvasHydrationOverlay({ label, hint }: CanvasHydrationOverlayProps) {
+  const outerGradientId = `lumen-hydration-outer-${useId().replace(/:/g, '')}`;
+
   return (
     <motion.div
       initial={{ opacity: 1 }}
@@ -39,16 +39,16 @@ export function CanvasHydrationOverlay({ label, hint }: CanvasHydrationOverlayPr
       aria-busy="true"
       aria-live="polite"
     >
-      <div className="relative h-[108px] w-[108px]">
+      <div className="relative h-[112px] w-[112px]">
         <motion.div
-          className="absolute inset-[-26px] rounded-full"
+          className="absolute inset-[-30px] rounded-full"
           style={{
             background:
-              'radial-gradient(circle, rgba(121,228,255,0.22) 0%, rgba(80,103,255,0.12) 38%, transparent 72%)',
-            filter: 'blur(10px)',
+              'radial-gradient(circle, rgba(121,228,255,0.18) 0%, rgba(245,199,106,0.1) 32%, transparent 70%)',
+            filter: 'blur(14px)',
           }}
-          animate={{ scale: [0.92, 1.06, 0.92], opacity: [0.55, 0.9, 0.55] }}
-          transition={{ duration: 2.4, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
+          animate={{ scale: [0.96, 1.08, 0.96], opacity: [0.48, 0.82, 0.48] }}
+          transition={{ duration: 2.8, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
         />
 
         <svg
@@ -72,16 +72,16 @@ export function CanvasHydrationOverlay({ label, hint }: CanvasHydrationOverlayPr
           className="absolute inset-0"
           viewBox="0 0 100 100"
           animate={{ rotate: 360 }}
-          transition={{ duration: 1.5, ease: 'linear', repeat: Number.POSITIVE_INFINITY }}
+          transition={{ duration: 1.8, ease: 'linear', repeat: Number.POSITIVE_INFINITY }}
           aria-hidden="true"
           role="presentation"
         >
           <title>Hydration outer arc</title>
           <defs>
-            <linearGradient id="lumen-hydration-outer" x1="0%" y1="0%" x2="100%" y2="0%">
+            <linearGradient id={outerGradientId} x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="rgba(121,228,255,0)" />
-              <stop offset="55%" stopColor="rgba(121,228,255,0.85)" />
-              <stop offset="100%" stopColor="rgba(245,199,106,1)" />
+              <stop offset="46%" stopColor="rgba(121,228,255,0.9)" />
+              <stop offset="100%" stopColor="rgba(245,199,106,0.95)" />
             </linearGradient>
           </defs>
           <circle
@@ -89,50 +89,23 @@ export function CanvasHydrationOverlay({ label, hint }: CanvasHydrationOverlayPr
             cy="50"
             r="44"
             fill="none"
-            stroke="url(#lumen-hydration-outer)"
-            strokeWidth="2.4"
+            stroke={`url(#${outerGradientId})`}
+            strokeWidth="2.6"
             strokeLinecap="round"
-            strokeDasharray="130 270"
-          />
-        </motion.svg>
-
-        <motion.svg
-          className="absolute inset-[16px]"
-          viewBox="0 0 100 100"
-          animate={{ rotate: -360 }}
-          transition={{ duration: 2.2, ease: 'linear', repeat: Number.POSITIVE_INFINITY }}
-          aria-hidden="true"
-          role="presentation"
-        >
-          <title>Hydration inner arc</title>
-          <defs>
-            <linearGradient id="lumen-hydration-inner" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="rgba(80,103,255,0)" />
-              <stop offset="100%" stopColor="rgba(157,168,255,0.85)" />
-            </linearGradient>
-          </defs>
-          <circle
-            cx="50"
-            cy="50"
-            r="36"
-            fill="none"
-            stroke="url(#lumen-hydration-inner)"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeDasharray="76 230"
+            strokeDasharray="118 278"
           />
         </motion.svg>
 
         <motion.div
           className="absolute inset-0 flex items-center justify-center"
-          animate={{ scale: [1, 1.07, 1] }}
+          animate={{ scale: [1, 1.045, 1] }}
           transition={{
-            duration: 1.8,
+            duration: 2,
             repeat: Number.POSITIVE_INFINITY,
             ease: 'easeInOut',
           }}
         >
-          <LumenMark size={40} />
+          <HydrationMark />
         </motion.div>
       </div>
 
@@ -163,5 +136,65 @@ export function CanvasHydrationOverlay({ label, hint }: CanvasHydrationOverlayPr
         </motion.div>
       ) : null}
     </motion.div>
+  );
+}
+
+function HydrationMark() {
+  const idPrefix = `lumen-loading-mark-${useId().replace(/:/g, '')}`;
+  const glowId = `${idPrefix}-glow`;
+  const tileId = `${idPrefix}-tile`;
+  const beamId = `${idPrefix}-beam`;
+
+  return (
+    <svg
+      className="h-[52px] w-[52px] drop-shadow-[0_16px_34px_rgba(0,0,0,0.34)]"
+      viewBox="0 0 52 52"
+      aria-hidden="true"
+      role="presentation"
+    >
+      <title>Lumen loading mark</title>
+      <defs>
+        <radialGradient id={glowId} cx="36%" cy="28%" r="72%">
+          <stop offset="0%" stopColor="#fff0a8" />
+          <stop offset="34%" stopColor="#79e4ff" />
+          <stop offset="70%" stopColor="#5067ff" />
+          <stop offset="100%" stopColor="#171b24" />
+        </radialGradient>
+        <linearGradient id={tileId} x1="8" x2="44" y1="6" y2="46">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.9)" />
+          <stop offset="100%" stopColor="rgba(255,255,255,0.2)" />
+        </linearGradient>
+        <linearGradient id={beamId} x1="15" x2="38" y1="14" y2="39">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.95)" />
+          <stop offset="48%" stopColor="rgba(255,255,255,0.32)" />
+          <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+        </linearGradient>
+      </defs>
+      <rect
+        x="7"
+        y="7"
+        width="38"
+        height="38"
+        rx="14"
+        fill={`url(#${glowId})`}
+        stroke={`url(#${tileId})`}
+        strokeWidth="1.2"
+      />
+      <path
+        d="M16 33.5V18.8c0-1.7 1.9-2.8 3.4-1.9l13 7.3c1.5.9 1.5 3 0 3.9l-13 7.4c-1.5.8-3.4-.3-3.4-2z"
+        fill="rgba(4,10,16,0.42)"
+      />
+      <path
+        d="M17.8 31.2V21.1c0-1.1 1.2-1.8 2.1-1.2l8.8 5c.9.5.9 1.9 0 2.4l-8.8 5c-.9.6-2.1-.1-2.1-1.3z"
+        fill={`url(#${beamId})`}
+      />
+      <path
+        d="M13.4 12.6h13.8c5.1 0 9.1 1.4 11.7 4.6"
+        fill="none"
+        stroke="rgba(255,255,255,0.48)"
+        strokeLinecap="round"
+        strokeWidth="1.35"
+      />
+    </svg>
   );
 }
