@@ -1,42 +1,65 @@
-// ⚠ 必须第一行：在 next() / WS gateway 之前 init Sentry（自定义 server 不经
-// instrumentation.ts register 钩子，WS gateway 也不在 Next 请求链里）。
-import './src/sentry.server.config';
-
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createServer } from 'node:http';
 import { parse } from 'node:url';
 
-import * as Sentry from '@sentry/nextjs';
-import next from 'next';
 import { WebSocketServer } from 'ws';
 
-import { warmupRepositories } from './src/server/db';
-import { logger } from './src/server/logger';
-import { initRemakeEventMirror, stopRemakeEventMirror } from './src/server/remake/eventMirror';
-import { authenticateFlowUpgrade, rejectUnauthorizedUpgrade } from './src/server/ws/auth';
-import {
-  handleFlowConnection,
-  initFlowGateway,
-  stopFlowGateway,
-} from './src/server/ws/flow-gateway';
+type Runtime = {
+  Sentry: typeof import('@sentry/nextjs');
+  next: typeof import('next').default;
+  warmupRepositories: typeof import('./src/server/db').warmupRepositories;
+  logger: typeof import('./src/server/logger').logger;
+  initRemakeEventMirror: typeof import('./src/server/remake/eventMirror').initRemakeEventMirror;
+  stopRemakeEventMirror: typeof import('./src/server/remake/eventMirror').stopRemakeEventMirror;
+  authenticateFlowUpgrade: typeof import('./src/server/ws/auth').authenticateFlowUpgrade;
+  rejectUnauthorizedUpgrade: typeof import('./src/server/ws/auth').rejectUnauthorizedUpgrade;
+  handleFlowConnection: typeof import('./src/server/ws/flow-gateway').handleFlowConnection;
+  initFlowGateway: typeof import('./src/server/ws/flow-gateway').initFlowGateway;
+  stopFlowGateway: typeof import('./src/server/ws/flow-gateway').stopFlowGateway;
+};
+
+type GlobalWithAsyncLocalStorage = typeof globalThis & {
+  AsyncLocalStorage?: typeof AsyncLocalStorage;
+};
+
+(globalThis as GlobalWithAsyncLocalStorage).AsyncLocalStorage ??= AsyncLocalStorage;
 
 const dev = process.env.NODE_ENV !== 'production';
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const hostname = process.env.HOSTNAME ?? '0.0.0.0';
+
+let captureException = (_err: unknown) => {};
+let logProcessError = (err: unknown, message: string) => {
+  console.error(message, err);
+};
 
 // 进程级兜底：Redis/ioredis 在连接断开时会把在途命令以 "Connection is closed"
 // 拒绝，若该命令是 fire-and-forget 就成为 unhandledRejection。Node 默认会因此
 // 退出进程，触发 PM2 重启 + 冷启动延迟尖刺。这里捕获并上报，但保持进程存活——
 // 这类错误不破坏进程状态，重启的代价远高于继续运行。
 process.on('unhandledRejection', (reason) => {
-  Sentry.captureException(reason);
-  logger.error({ err: reason }, 'unhandledRejection (已兜底，进程继续)');
+  captureException(reason);
+  logProcessError(reason, 'unhandledRejection (已兜底，进程继续)');
 });
 process.on('uncaughtException', (err) => {
-  Sentry.captureException(err);
-  logger.error({ err }, 'uncaughtException (已兜底，进程继续)');
+  captureException(err);
+  logProcessError(err, 'uncaughtException (已兜底，进程继续)');
 });
 
 async function main() {
+  const {
+    Sentry,
+    next,
+    warmupRepositories,
+    logger,
+    initRemakeEventMirror,
+    stopRemakeEventMirror,
+    authenticateFlowUpgrade,
+    rejectUnauthorizedUpgrade,
+    handleFlowConnection,
+    initFlowGateway,
+    stopFlowGateway,
+  } = await loadRuntime();
   const app = next({ dev, hostname, port });
   const handle = app.getRequestHandler();
   await app.prepare();
@@ -103,6 +126,47 @@ async function main() {
 }
 
 main().catch((err) => {
-  logger.error({ err }, 'fatal: lumen-studio 启动失败');
+  logProcessError(err, 'fatal: lumen-studio 启动失败');
   process.exit(1);
 });
+
+async function loadRuntime(): Promise<Runtime> {
+  // 自定义 server 不经 instrumentation.ts register 钩子；先补齐 Next/Sentry
+  // 需要的 AsyncLocalStorage runtime，再加载 @sentry/nextjs 和 next。
+  await import('./src/sentry.server.config');
+
+  const [
+    Sentry,
+    nextModule,
+    dbModule,
+    loggerModule,
+    eventMirrorModule,
+    wsAuthModule,
+    flowGatewayModule,
+  ] = await Promise.all([
+    import('@sentry/nextjs'),
+    import('next'),
+    import('./src/server/db'),
+    import('./src/server/logger'),
+    import('./src/server/remake/eventMirror'),
+    import('./src/server/ws/auth'),
+    import('./src/server/ws/flow-gateway'),
+  ]);
+
+  captureException = Sentry.captureException;
+  logProcessError = (err, message) => loggerModule.logger.error({ err }, message);
+
+  return {
+    Sentry,
+    next: nextModule.default,
+    warmupRepositories: dbModule.warmupRepositories,
+    logger: loggerModule.logger,
+    initRemakeEventMirror: eventMirrorModule.initRemakeEventMirror,
+    stopRemakeEventMirror: eventMirrorModule.stopRemakeEventMirror,
+    authenticateFlowUpgrade: wsAuthModule.authenticateFlowUpgrade,
+    rejectUnauthorizedUpgrade: wsAuthModule.rejectUnauthorizedUpgrade,
+    handleFlowConnection: flowGatewayModule.handleFlowConnection,
+    initFlowGateway: flowGatewayModule.initFlowGateway,
+    stopFlowGateway: flowGatewayModule.stopFlowGateway,
+  };
+}
