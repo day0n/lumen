@@ -216,6 +216,9 @@ const en = {
       renameFailed: 'Failed to rename folder',
       deleteFailed: 'Failed to delete folder',
       countSuffix: '{count}',
+      deleteWorkflow: 'Delete workflow',
+      confirmDeleteWorkflow: 'Delete "{name}"? This cannot be undone.',
+      deleteWorkflowFailed: 'Failed to delete workflow',
     },
   },
   canvas: {
@@ -859,6 +862,9 @@ const zh: typeof en = {
       renameFailed: '重命名失败',
       deleteFailed: '删除文件夹失败',
       countSuffix: '{count}',
+      deleteWorkflow: '删除工作流',
+      confirmDeleteWorkflow: '确定删除「{name}」？此操作无法撤销。',
+      deleteWorkflowFailed: '删除工作流失败',
     },
   },
   canvas: {

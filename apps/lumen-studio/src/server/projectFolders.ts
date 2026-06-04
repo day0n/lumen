@@ -24,6 +24,12 @@ export async function listStudioFolders(): Promise<FolderListWithCounts> {
   const user = await requireStudioUser();
   const folderRepo = await getProjectFolderRepository();
   const projectRepo = await getProjectRepository();
+
+  // 首次访问时按需把系统文件夹（如爆款复刻）补齐，让侧栏第一眼就能看到它们，
+  // 不必等到用户真的在爆款复刻页生成第一条工作流才出现。ensureSystemFolder 是 idempotent，
+  // 已存在则直接返回，所以这里每次列表请求都跑也只多一次轻量 findOne。
+  await folderRepo.ensureSystemFolder(user.id, 'viral_remix', SYSTEM_FOLDER_DEFAULTS.viral_remix);
+
   const [folders, counts] = await Promise.all([
     folderRepo.list({ ownerId: user.id }),
     projectRepo.countByFolder(user.id),

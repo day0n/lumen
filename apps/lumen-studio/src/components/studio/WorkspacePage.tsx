@@ -14,6 +14,8 @@ import {
   IconFolderOpen,
   IconFolderPlus,
   IconLayoutGrid,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
   IconPencil,
   IconPhoto,
   IconPlus,
@@ -96,6 +98,18 @@ export function WorkspacePage() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [folderActionError, setFolderActionError] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // 折叠状态用 localStorage 持久化，刷新后保持
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem('workspace.sidebar.collapsed');
+    if (stored === '1') setSidebarCollapsed(true);
+  }, []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('workspace.sidebar.collapsed', sidebarCollapsed ? '1' : '0');
+  }, [sidebarCollapsed]);
 
   const loadFolders = useCallback(
     async (signal?: AbortSignal) => {
@@ -195,7 +209,44 @@ export function WorkspacePage() {
         void loadFolders();
       } catch (moveError) {
         setProjects(previous);
-        setError(moveError instanceof Error ? moveError.message : t('workspace.folders.moveFailed'));
+        setError(
+          moveError instanceof Error ? moveError.message : t('workspace.folders.moveFailed'),
+        );
+      }
+    },
+    [projects, locale, t, loadFolders],
+  );
+
+  const deleteProject = useCallback(
+    async (project: StudioProject) => {
+      const ok = window.confirm(
+        t('workspace.folders.confirmDeleteWorkflow', { name: project.name }),
+      );
+      if (!ok) return;
+
+      const previous = projects;
+      setProjects((current) => current.filter((item) => item.id !== project.id));
+
+      try {
+        const response = await fetch(`/api/projects/${project.id}`, {
+          method: 'DELETE',
+          headers: { 'x-lumen-locale': locale },
+        });
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as {
+            ok: false;
+            error?: { message?: string };
+          } | null;
+          throw new Error(payload?.error?.message ?? t('workspace.folders.deleteWorkflowFailed'));
+        }
+        void loadFolders();
+      } catch (deleteError) {
+        setProjects(previous);
+        setError(
+          deleteError instanceof Error
+            ? deleteError.message
+            : t('workspace.folders.deleteWorkflowFailed'),
+        );
       }
     },
     [projects, locale, t, loadFolders],
@@ -333,101 +384,135 @@ export function WorkspacePage() {
           </div>
         ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="space-y-1">
-            <div className="mb-2 flex items-center justify-between px-1">
-              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/35">
-                {t('workspace.folders.heading')}
-              </span>
+        <div
+          className={cn(
+            'grid gap-6',
+            sidebarCollapsed
+              ? 'lg:grid-cols-[44px_minmax(0,1fr)]'
+              : 'lg:grid-cols-[220px_minmax(0,1fr)]',
+          )}
+        >
+          <aside
+            className={cn('space-y-1', sidebarCollapsed && 'lg:sticky lg:top-28 lg:self-start')}
+          >
+            {sidebarCollapsed ? (
               <button
                 type="button"
-                onClick={() => {
-                  setCreatingFolder(true);
-                  setFolderActionError(null);
-                }}
-                title={t('workspace.folders.newFolder')}
-                aria-label={t('workspace.folders.newFolder')}
-                className="flex h-6 w-6 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white"
+                onClick={() => setSidebarCollapsed(false)}
+                title={t('common.expand')}
+                aria-label={t('common.expand')}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#171819] text-white/52 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.06] hover:text-white"
               >
-                <IconFolderPlus size={15} stroke={2.2} />
+                <IconLayoutSidebarLeftExpand size={17} stroke={2.1} />
               </button>
-            </div>
-
-            <FolderSidebarItem
-              icon={<IconLayoutGrid size={15} stroke={2.2} />}
-              label={t('workspace.folders.all')}
-              count={projects.length}
-              active={selectedScope === null}
-              onClick={() => setSelectedScope(null)}
-            />
-            <FolderSidebarItem
-              icon={<IconFolder size={15} stroke={2.2} />}
-              label={t('workspace.folders.uncategorized')}
-              count={counts.uncategorized ?? 0}
-              active={selectedScope === 'uncategorized'}
-              onClick={() => setSelectedScope('uncategorized')}
-            />
-
-            {sortedFolders.map((folder) => (
-              <FolderSidebarItem
-                key={folder.id}
-                icon={
-                  folder.systemKey === 'viral_remix' ? (
-                    <IconFlame size={15} stroke={2.2} />
-                  ) : selectedScope === folder.id ? (
-                    <IconFolderOpen size={15} stroke={2.2} />
-                  ) : (
-                    <IconFolder size={15} stroke={2.2} />
-                  )
-                }
-                label={folderDisplayName(folder, t)}
-                count={counts[folder.id] ?? 0}
-                active={selectedScope === folder.id}
-                onClick={() => setSelectedScope(folder.id)}
-                onRename={folder.systemKey ? undefined : () => handleRenameFolder(folder)}
-                onDelete={folder.systemKey ? undefined : () => handleDeleteFolder(folder)}
-              />
-            ))}
-
-            {creatingFolder ? (
-              <form
-                onSubmit={handleCreateFolder}
-                className="mt-2 rounded-lg bg-white/[0.04] p-2 ring-1 ring-white/[0.08]"
-              >
-                <input
-                  // biome-ignore lint/a11y/noAutofocus: input only mounts on user request, focusing is the expected behavior.
-                  autoFocus
-                  type="text"
-                  value={newFolderName}
-                  onChange={(event) => setNewFolderName(event.target.value)}
-                  placeholder={t('workspace.folders.newFolderPlaceholder')}
-                  className="w-full bg-transparent text-[13px] text-white outline-none placeholder:text-white/30"
-                />
-                {folderActionError ? (
-                  <div className="mt-1 text-[11px] text-[#ffabb6]">{folderActionError}</div>
-                ) : null}
-                <div className="mt-2 flex items-center justify-end gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCreatingFolder(false);
-                      setNewFolderName('');
-                      setFolderActionError(null);
-                    }}
-                    className="rounded-md px-2 py-1 text-[11px] text-white/55 hover:bg-white/[0.05] hover:text-white"
-                  >
-                    {t('workspace.folders.cancel')}
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={newFolderName.trim().length === 0}
-                    className="rounded-md bg-white px-2.5 py-1 text-[11px] font-bold text-[#111315] transition-opacity disabled:opacity-40"
-                  >
-                    {t('workspace.folders.create')}
-                  </button>
+            ) : (
+              <>
+                <div className="mb-2 flex items-center justify-between px-1">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/35">
+                    {t('workspace.folders.heading')}
+                  </span>
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreatingFolder(true);
+                        setFolderActionError(null);
+                      }}
+                      title={t('workspace.folders.newFolder')}
+                      aria-label={t('workspace.folders.newFolder')}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white"
+                    >
+                      <IconFolderPlus size={15} stroke={2.2} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSidebarCollapsed(true)}
+                      title={t('common.collapse')}
+                      aria-label={t('common.collapse')}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white"
+                    >
+                      <IconLayoutSidebarLeftCollapse size={15} stroke={2.2} />
+                    </button>
+                  </div>
                 </div>
-              </form>
-            ) : null}
+
+                <FolderSidebarItem
+                  icon={<IconLayoutGrid size={15} stroke={2.2} />}
+                  label={t('workspace.folders.all')}
+                  count={projects.length}
+                  active={selectedScope === null}
+                  onClick={() => setSelectedScope(null)}
+                />
+                <FolderSidebarItem
+                  icon={<IconFolder size={15} stroke={2.2} />}
+                  label={t('workspace.folders.uncategorized')}
+                  count={counts.uncategorized ?? 0}
+                  active={selectedScope === 'uncategorized'}
+                  onClick={() => setSelectedScope('uncategorized')}
+                />
+
+                {sortedFolders.map((folder) => (
+                  <FolderSidebarItem
+                    key={folder.id}
+                    icon={
+                      folder.systemKey === 'viral_remix' ? (
+                        <IconFlame size={15} stroke={2.2} />
+                      ) : selectedScope === folder.id ? (
+                        <IconFolderOpen size={15} stroke={2.2} />
+                      ) : (
+                        <IconFolder size={15} stroke={2.2} />
+                      )
+                    }
+                    label={folderDisplayName(folder, t)}
+                    count={counts[folder.id] ?? 0}
+                    active={selectedScope === folder.id}
+                    onClick={() => setSelectedScope(folder.id)}
+                    onRename={folder.systemKey ? undefined : () => handleRenameFolder(folder)}
+                    onDelete={folder.systemKey ? undefined : () => handleDeleteFolder(folder)}
+                  />
+                ))}
+
+                {creatingFolder ? (
+                  <form
+                    onSubmit={handleCreateFolder}
+                    className="mt-2 rounded-lg bg-white/[0.04] p-2 ring-1 ring-white/[0.08]"
+                  >
+                    <input
+                      // biome-ignore lint/a11y/noAutofocus: input only mounts on user request, focusing is the expected behavior.
+                      autoFocus
+                      type="text"
+                      value={newFolderName}
+                      onChange={(event) => setNewFolderName(event.target.value)}
+                      placeholder={t('workspace.folders.newFolderPlaceholder')}
+                      className="w-full bg-transparent text-[13px] text-white outline-none placeholder:text-white/30"
+                    />
+                    {folderActionError ? (
+                      <div className="mt-1 text-[11px] text-[#ffabb6]">{folderActionError}</div>
+                    ) : null}
+                    <div className="mt-2 flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreatingFolder(false);
+                          setNewFolderName('');
+                          setFolderActionError(null);
+                        }}
+                        className="rounded-md px-2 py-1 text-[11px] text-white/55 hover:bg-white/[0.05] hover:text-white"
+                      >
+                        {t('workspace.folders.cancel')}
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={newFolderName.trim().length === 0}
+                        className="rounded-md bg-white px-2.5 py-1 text-[11px] font-bold text-[#111315] transition-opacity disabled:opacity-40"
+                      >
+                        {t('workspace.folders.create')}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+              </>
+            )}
           </aside>
 
           <div className="min-w-0">
@@ -447,9 +532,11 @@ export function WorkspacePage() {
                     href={localePath(`/canvas/${project.id}`)}
                     folders={sortedFolders}
                     onMove={(folderId) => moveProject(project.id, folderId)}
+                    onDelete={() => deleteProject(project)}
                     folderDisplayName={(folder) => folderDisplayName(folder, t)}
                     moveToLabel={t('workspace.folders.moveTo')}
                     moveToRootLabel={t('workspace.folders.moveToRoot')}
+                    deleteLabel={t('workspace.folders.deleteWorkflow')}
                   />
                 ))}
               </div>
@@ -504,7 +591,9 @@ function FolderSidebarItem({
         onClick={onClick}
         className={cn(
           'group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors',
-          active ? 'bg-white/[0.08] text-white' : 'text-white/65 hover:bg-white/[0.05] hover:text-white',
+          active
+            ? 'bg-white/[0.08] text-white'
+            : 'text-white/65 hover:bg-white/[0.05] hover:text-white',
         )}
       >
         <span className={cn('shrink-0', active ? 'text-white' : 'text-white/52')}>{icon}</span>
@@ -609,17 +698,21 @@ function ProjectCard({
   href,
   folders,
   onMove,
+  onDelete,
   folderDisplayName,
   moveToLabel,
   moveToRootLabel,
+  deleteLabel,
 }: {
   project: StudioProject;
   href: string;
   folders: FolderRecord[];
   onMove: (folderId: string | null) => void;
+  onDelete: () => void;
   folderDisplayName: (folder: FolderRecord) => string;
   moveToLabel: string;
   moveToRootLabel: string;
+  deleteLabel: string;
 }) {
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -730,6 +823,18 @@ function ProjectCard({
               }}
             />
           ))}
+          <div className="my-1 h-px bg-white/[0.06]" />
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false);
+              onDelete();
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-[#ffabb6] transition-colors hover:bg-[#ff5d73]/16 hover:text-[#ffc6cd]"
+          >
+            <IconTrash size={14} stroke={2.2} />
+            <span className="truncate">{deleteLabel}</span>
+          </button>
         </motion.div>
       ) : null}
     </div>
