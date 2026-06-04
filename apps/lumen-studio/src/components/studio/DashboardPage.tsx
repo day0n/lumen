@@ -2,6 +2,8 @@
 
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
+import { MobileSheet } from '@/components/mobile';
+import { useIsMobile } from '@/hooks/use-is-mobile';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
 import { cn } from '@/lib/cn';
@@ -113,7 +115,9 @@ const SORT_LABEL_KEYS: Record<CampaignSortKey, string> = {
 };
 
 export function DashboardPage() {
+  const isMobile = useIsMobile();
   const { locale, t } = useI18n();
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [range, setRange] = useState<TiktokDashboardRange>('30d');
   const [region, setRegion] = useState<TiktokDashboardRegion>('global');
   const [channel, setChannel] = useState<TiktokDashboardChannel>('all');
@@ -345,7 +349,7 @@ export function DashboardPage() {
       <AuroraBackdrop />
       <Topbar />
 
-      <main className="relative z-10 mx-auto max-w-[1440px] px-4 pb-28 pt-24 sm:px-6 lg:pt-28">
+      <main className="relative z-10 mx-auto max-w-[1440px] px-4 pb-nav-mobile pt-24 sm:px-6 lg:pt-28">
         <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-[760px]">
             <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -366,49 +370,56 @@ export function DashboardPage() {
             </p>
           </div>
 
-          <div className="flex flex-col gap-2 rounded-xl bg-[#151719]/82 p-2.5 ring-1 ring-white/[0.08] lg:flex-row lg:items-center">
-            <SegmentedControl
-              options={RANGE_OPTIONS}
-              value={range}
-              onChange={setRange}
-              ariaLabel={t('dashboard.range')}
-            />
-            <SelectControl
-              icon={IconWorld}
-              value={region}
-              options={regionOptions}
-              onChange={(value) => setRegion(value as TiktokDashboardRegion)}
-              ariaLabel={t('dashboard.region')}
-            />
-            <SelectControl
-              icon={IconFilter}
-              value={channel}
-              options={channelOptions}
-              onChange={(value) => setChannel(value as TiktokDashboardChannel)}
-              ariaLabel={t('dashboard.channel')}
-            />
-            <button
-              type="button"
-              onClick={() => setRefreshNonce((current) => current + 1)}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-white/[0.06] px-3 text-[12px] font-semibold text-white/78 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1]"
-            >
-              <IconRefresh
-                size={15}
-                stroke={2.2}
-                className={status === 'loading' ? 'animate-spin' : ''}
+          <div className="flex flex-col gap-2">
+            {isMobile ? (
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(true)}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#151719]/82 px-4 text-[13px] font-semibold text-white/78 ring-1 ring-white/[0.08] lg:hidden"
+              >
+                <IconFilter size={16} stroke={2.2} />
+                {t('dashboard.channel')}
+              </button>
+            ) : null}
+            <div className="hidden flex-col gap-2 rounded-xl bg-[#151719]/82 p-2.5 ring-1 ring-white/[0.08] lg:flex lg:flex-row lg:items-center">
+              <DashboardFilterControls
+                range={range}
+                region={region}
+                channel={channel}
+                regionOptions={regionOptions}
+                channelOptions={channelOptions}
+                status={status}
+                data={data}
+                onRangeChange={setRange}
+                onRegionChange={setRegion}
+                onChannelChange={setChannel}
+                onRefresh={() => setRefreshNonce((current) => current + 1)}
+                onExport={handleExport}
+                t={t}
               />
-              {t('common.refresh')}
-            </button>
-            <button
-              type="button"
-              onClick={handleExport}
-              disabled={!data}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-white px-3 text-[12px] font-bold text-[#111315] transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              <IconDownload size={15} stroke={2.4} />
-              {t('common.export')}
-            </button>
+            </div>
           </div>
+          <MobileSheet open={filtersOpen} onClose={() => setFiltersOpen(false)} title={t('dashboard.range')}>
+            <DashboardFilterControls
+              range={range}
+              region={region}
+              channel={channel}
+              regionOptions={regionOptions}
+              channelOptions={channelOptions}
+              status={status}
+              data={data}
+              onRangeChange={setRange}
+              onRegionChange={setRegion}
+              onChannelChange={setChannel}
+              onRefresh={() => {
+                setRefreshNonce((current) => current + 1);
+                setFiltersOpen(false);
+              }}
+              onExport={handleExport}
+              t={t}
+              stacked
+            />
+          </MobileSheet>
         </div>
 
         <div className="mb-4 grid grid-cols-1 gap-2 lg:grid-cols-[1fr_auto] lg:items-center">
@@ -451,7 +462,7 @@ export function DashboardPage() {
 
         {data ? (
           <>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-5">
               <MetricCard
                 icon={IconShoppingBag}
                 label={t('dashboard.controls.revenue')}
@@ -593,17 +604,30 @@ export function DashboardPage() {
                       </button>
                     </div>
                   </div>
-                  <CampaignTable
-                    campaigns={campaigns}
-                    sort={sort}
-                    selectedCampaignId={selectedCampaign?.id ?? null}
-                    onSort={handleSort}
-                    onSelect={(campaign) => setSelectedCampaignId(campaign.id)}
-                    onToggle={handleToggleCampaign}
-                    onBoost={handleBoostCampaign}
-                    locale={locale}
-                    t={t}
-                  />
+                  <div className="lg:hidden">
+                    <CampaignCards
+                      campaigns={campaigns}
+                      selectedCampaignId={selectedCampaign?.id ?? null}
+                      onSelect={(campaign) => setSelectedCampaignId(campaign.id)}
+                      onToggle={handleToggleCampaign}
+                      onBoost={handleBoostCampaign}
+                      locale={locale}
+                      t={t}
+                    />
+                  </div>
+                  <div className="hidden lg:block">
+                    <CampaignTable
+                      campaigns={campaigns}
+                      sort={sort}
+                      selectedCampaignId={selectedCampaign?.id ?? null}
+                      onSort={handleSort}
+                      onSelect={(campaign) => setSelectedCampaignId(campaign.id)}
+                      onToggle={handleToggleCampaign}
+                      onBoost={handleBoostCampaign}
+                      locale={locale}
+                      t={t}
+                    />
+                  </div>
                 </section>
               </div>
 
@@ -1124,6 +1148,172 @@ function HeatCell({ value }: { value: number }) {
     >
       {value > 0 ? '+' : ''}
       {value.toFixed(1)}%
+    </div>
+  );
+}
+
+function DashboardFilterControls({
+  range,
+  region,
+  channel,
+  regionOptions,
+  channelOptions,
+  status,
+  data,
+  onRangeChange,
+  onRegionChange,
+  onChannelChange,
+  onRefresh,
+  onExport,
+  t,
+  stacked = false,
+}: {
+  range: TiktokDashboardRange;
+  region: TiktokDashboardRegion;
+  channel: TiktokDashboardChannel;
+  regionOptions: { label: string; value: TiktokDashboardRegion }[];
+  channelOptions: { label: string; value: TiktokDashboardChannel }[];
+  status: DashboardStatus;
+  data: TiktokDashboardPayload | null;
+  onRangeChange: (value: TiktokDashboardRange) => void;
+  onRegionChange: (value: TiktokDashboardRegion) => void;
+  onChannelChange: (value: TiktokDashboardChannel) => void;
+  onRefresh: () => void;
+  onExport: () => void;
+  t: TFunction;
+  stacked?: boolean;
+}) {
+  const wrap = stacked ? 'flex flex-col gap-3' : 'flex flex-col gap-2 lg:flex-row lg:items-center';
+
+  return (
+    <div className={wrap}>
+      <SegmentedControl
+        options={RANGE_OPTIONS}
+        value={range}
+        onChange={onRangeChange}
+        ariaLabel={t('dashboard.range')}
+        spacious={stacked}
+      />
+      <SelectControl
+        icon={IconWorld}
+        value={region}
+        options={regionOptions}
+        onChange={(value) => onRegionChange(value as TiktokDashboardRegion)}
+        ariaLabel={t('dashboard.region')}
+      />
+      <SelectControl
+        icon={IconFilter}
+        value={channel}
+        options={channelOptions}
+        onChange={(value) => onChannelChange(value as TiktokDashboardChannel)}
+        ariaLabel={t('dashboard.channel')}
+      />
+      <button
+        type="button"
+        onClick={onRefresh}
+        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-white/[0.06] px-3 text-[12px] font-semibold text-white/78 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1]"
+      >
+        <IconRefresh size={15} stroke={2.2} className={status === 'loading' ? 'animate-spin' : ''} />
+        {t('common.refresh')}
+      </button>
+      <button
+        type="button"
+        onClick={onExport}
+        disabled={!data}
+        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-white px-3 text-[12px] font-bold text-[#111315] transition-opacity hover:opacity-90 disabled:opacity-40"
+      >
+        <IconDownload size={15} stroke={2.4} />
+        {t('common.export')}
+      </button>
+    </div>
+  );
+}
+
+function CampaignCards({
+  campaigns,
+  selectedCampaignId,
+  onSelect,
+  onToggle,
+  onBoost,
+  locale,
+  t,
+}: {
+  campaigns: TiktokCampaign[];
+  selectedCampaignId: string | null;
+  onSelect: (campaign: TiktokCampaign) => void;
+  onToggle: (campaign: TiktokCampaign) => void;
+  onBoost: (campaign: TiktokCampaign) => void;
+  locale: Locale;
+  t: TFunction;
+}) {
+  if (campaigns.length === 0) return <EmptyState text={t('dashboard.noCampaigns')} />;
+
+  return (
+    <div className="space-y-3">
+      {campaigns.map((campaign) => {
+        const selected = selectedCampaignId === campaign.id;
+        return (
+          <article
+            key={campaign.id}
+            className={cn(
+              'rounded-xl p-4 ring-1 transition-colors',
+              selected
+                ? 'bg-[#14313a] ring-[#79e4ff]/24'
+                : 'bg-white/[0.035] ring-white/[0.08]',
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => onSelect(campaign)}
+              className="flex w-full items-start gap-3 text-left"
+            >
+              <span
+                className="h-12 w-12 shrink-0 rounded-lg ring-1 ring-white/[0.08]"
+                style={{ background: campaign.thumbnail }}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-bold text-white/88">
+                  {campaign.name}
+                </span>
+                <span className="mt-1 block text-[11px] text-white/38">
+                  {campaign.product} · {campaign.regionLabel}
+                </span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <StatusBadge status={campaign.status} t={t} />
+                  <span className="text-[11px] font-semibold text-[#79e4ff]">
+                    ROAS {campaign.metrics.roas.toFixed(2)}x
+                  </span>
+                  <span className="text-[11px] text-white/48">
+                    {formatCurrency(campaign.metrics.revenue, locale)}
+                  </span>
+                </div>
+              </span>
+            </button>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => onBoost(campaign)}
+                className="inline-flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg bg-white/[0.06] text-[12px] font-semibold text-white/72"
+              >
+                <IconBolt size={14} />
+                {t('dashboard.boost')}
+              </button>
+              <button
+                type="button"
+                onClick={() => onToggle(campaign)}
+                className="inline-flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg bg-white/[0.06] text-[12px] font-semibold text-white/72"
+              >
+                {campaign.status === 'paused' ? (
+                  <IconPlayerPlay size={14} />
+                ) : (
+                  <IconPlayerPause size={14} />
+                )}
+                {campaign.status === 'paused' ? t('dashboard.enable') : t('dashboard.pause')}
+              </button>
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
