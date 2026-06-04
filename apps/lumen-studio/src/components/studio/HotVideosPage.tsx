@@ -95,7 +95,7 @@ type RemakePreparingState = {
 const ASPECT_RATIO_OPTIONS = ['9:16', '1:1', '16:9'] as const;
 type AspectRatioOption = (typeof ASPECT_RATIO_OPTIONS)[number];
 
-const DURATION_OPTIONS = ['15s', '30s', '45s'] as const;
+const DURATION_OPTIONS = ['9s', '12s', '15s'] as const;
 type DurationOption = (typeof DURATION_OPTIONS)[number];
 
 const COPY_LANGUAGE_OPTIONS = ['zh', 'en'] as const;
@@ -968,24 +968,81 @@ function SettingPicker<T extends string>({
   formatValue?: (value: T) => string;
   onChange: (value: T) => void;
 }) {
-  const handleCycle = () => {
-    const currentIndex = options.indexOf(value);
-    const nextIndex = (currentIndex + 1) % options.length;
-    const next = options[nextIndex];
-    if (next !== undefined) onChange(next);
-  };
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  const display = formatValue ? formatValue(value) : value;
+
   return (
-    <button
-      type="button"
-      onClick={handleCycle}
-      className="flex h-12 items-center justify-between rounded-xl bg-white/[0.045] px-4 text-left ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.075]"
-    >
-      <span className="text-[12px] text-white/38">{label}</span>
-      <span className="flex items-center gap-1.5 text-[13px] font-bold text-white">
-        {formatValue ? formatValue(value) : value}
-        <IconSelector size={13} stroke={2.2} className="text-white/40" />
-      </span>
-    </button>
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={cn(
+          'flex h-12 w-full items-center justify-between rounded-xl bg-white/[0.045] px-4 text-left ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.075]',
+          open && 'bg-white/[0.075] ring-white/[0.16]',
+        )}
+      >
+        <span className="text-[12px] text-white/38">{label}</span>
+        <span className="flex items-center gap-1.5 text-[13px] font-bold text-white">
+          {display}
+          <IconSelector size={13} stroke={2.2} className="text-white/40" />
+        </span>
+      </button>
+      {open ? (
+        <motion.div
+          initial={{ opacity: 0, y: -4, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
+          className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 flex flex-col gap-0.5 overflow-hidden rounded-xl bg-[#1c1d1f] p-1 shadow-[0_24px_70px_-30px_rgba(0,0,0,0.92)] ring-1 ring-white/[0.08]"
+        >
+          {options.map((option) => {
+            const isSelected = option === value;
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => {
+                  onChange(option);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] transition-colors',
+                  isSelected
+                    ? 'bg-white/[0.08] text-white'
+                    : 'text-white/72 hover:bg-white/[0.05] hover:text-white',
+                )}
+              >
+                <span className="font-medium">{formatValue ? formatValue(option) : option}</span>
+                {isSelected ? (
+                  <IconCheck size={14} stroke={2.6} className="text-[#9da8ff]" />
+                ) : null}
+              </button>
+            );
+          })}
+        </motion.div>
+      ) : null}
+    </div>
   );
 }
 
