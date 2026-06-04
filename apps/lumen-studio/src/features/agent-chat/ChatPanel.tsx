@@ -7,7 +7,9 @@
  * 详细 SSE event 仍在 hook 内维护，必要时再扩展为调试面板。
  */
 
+import { MobileSheet } from '@/components/mobile';
 import { LumenMark } from '@/components/ui/LumenMark';
+import { useIsMobile } from '@/hooks/use-is-mobile';
 import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
@@ -101,6 +103,7 @@ export function ChatPanel({
   onWorkflowUpdate,
   onWorkflowNodeStatus,
 }: ChatPanelProps) {
+  const isMobile = useIsMobile();
   const { locale, t } = useI18n();
   const { getToken } = useAuth();
   const [activeSessionId, setActiveSessionId] = useState(() => sessionId ?? createDraftSessionId());
@@ -405,54 +408,19 @@ export function ChatPanel({
     }
   };
 
-  if (!open) {
-    return (
-      <div className="absolute bottom-5 right-5 z-40">
-        <motion.button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label={t('chat.openAgent')}
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.96 }}
-          transition={{ type: 'spring', stiffness: 360, damping: 24 }}
-          className="flex h-12 w-12 items-center justify-center"
-        >
-          <LumenOrb active={busy} />
-        </motion.button>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="absolute inset-y-0 right-0 z-40 max-w-[calc(100vw_-_24px)]"
-      style={{ width: panelWidth }}
+  const chatAside = (
+    <motion.aside
+      initial={isMobile ? { opacity: 0, y: 24 } : { opacity: 0, x: 34, filter: 'blur(6px)' }}
+      animate={isMobile ? { opacity: 1, y: 0 } : { opacity: 1, x: 0, filter: 'blur(0px)' }}
+      transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 260, damping: 30 }}
+      className={cn(
+        'relative flex h-full w-full flex-col overflow-hidden bg-[#151515] text-white',
+        isMobile
+          ? 'shadow-none'
+          : 'border-l border-white/[0.08] shadow-[0_30px_100px_-52px_rgba(0,0,0,0.98)]',
+      )}
     >
-      <button
-        type="button"
-        aria-label={t('chat.resizePanel')}
-        title={t('chat.resizePanel')}
-        onPointerDown={startResize}
-        onDoubleClick={() => setPanelWidth(clampPanelWidth(PANEL_DEFAULT_WIDTH))}
-        className={cn(
-          'group absolute inset-y-0 left-0 z-50 flex w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center',
-          resizing ? '' : 'transition-opacity',
-        )}
-      >
-        <span
-          className={cn(
-            'h-full w-[2px] rounded-full transition-colors',
-            resizing ? 'bg-[#8ee7ff]' : 'bg-transparent group-hover:bg-[#8ee7ff]/55',
-          )}
-        />
-      </button>
-      <motion.aside
-        initial={{ opacity: 0, x: 34, filter: 'blur(6px)' }}
-        animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-        transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 260, damping: 30 }}
-        className="relative flex h-full w-full flex-col overflow-hidden border-l border-white/[0.08] bg-[#151515] text-white shadow-[0_30px_100px_-52px_rgba(0,0,0,0.98)]"
-      >
-        <header className="relative z-10 flex h-[56px] shrink-0 items-center justify-between border-b border-white/[0.07] px-5">
+        <header className="relative z-10 flex min-h-[56px] shrink-0 items-center justify-between border-b border-white/[0.07] px-4 pt-[max(0px,env(safe-area-inset-top))] sm:px-5">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="min-w-0 truncate text-[14px] font-semibold leading-5 text-white/88">
               {title}
@@ -468,7 +436,7 @@ export function ChatPanel({
               aria-label={t('chat.newChat')}
               title={t('chat.newChat')}
               className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
+                'flex min-h-11 min-w-11 items-center justify-center rounded-lg transition-colors',
                 busy
                   ? 'cursor-not-allowed text-white/24'
                   : 'text-white/68 hover:bg-white/[0.07] hover:text-white',
@@ -482,7 +450,7 @@ export function ChatPanel({
               aria-label={t('chat.history')}
               title={t('chat.history')}
               className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
+                'flex min-h-11 min-w-11 items-center justify-center rounded-lg transition-colors',
                 sessionsOpen
                   ? 'bg-white/[0.08] text-white'
                   : 'hover:bg-white/[0.07] hover:text-white',
@@ -495,7 +463,7 @@ export function ChatPanel({
               onClick={() => setOpen(false)}
               aria-label={t('common.close')}
               title={t('common.close')}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/68 transition-colors hover:bg-white/[0.07] hover:text-white"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-white/68 transition-colors hover:bg-white/[0.07] hover:text-white"
             >
               <IconX size={18} stroke={2.2} />
             </button>
@@ -503,7 +471,7 @@ export function ChatPanel({
         </header>
 
         <AnimatePresence>
-          {sessionsOpen ? (
+          {sessionsOpen && !isMobile ? (
             <SessionMenu
               activeSessionId={activeSessionId}
               busy={busy}
@@ -541,6 +509,7 @@ export function ChatPanel({
           busy={busy}
           draft={draft}
           fileInputRef={fileInputRef}
+          mobile={isMobile}
           textareaRef={textareaRef}
           uploadError={uploadError}
           uploading={uploading}
@@ -552,6 +521,87 @@ export function ChatPanel({
           onStop={stop}
         />
       </motion.aside>
+  );
+
+  if (!open) {
+    return (
+      <div
+        className={cn(
+          'absolute z-40',
+          isMobile
+            ? 'bottom-[calc(5.75rem+env(safe-area-inset-bottom))] right-4'
+            : 'bottom-5 right-5',
+        )}
+      >
+        <motion.button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label={t('chat.openAgent')}
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.96 }}
+          transition={{ type: 'spring', stiffness: 360, damping: 24 }}
+          className="flex min-h-12 min-w-12 items-center justify-center"
+        >
+          <LumenOrb active={busy} />
+        </motion.button>
+      </div>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <>
+        <div className="fixed inset-0 z-[70] flex flex-col bg-[#151515] lg:hidden">
+          {chatAside}
+        </div>
+        <MobileSheet
+          open={sessionsOpen}
+          onClose={() => setSessionsOpen(false)}
+          title={t('chat.history')}
+        >
+          <SessionMenuList
+            activeSessionId={activeSessionId}
+            busy={busy}
+            loading={sessionsLoading}
+            sessions={sessions}
+            onNewSession={() => {
+              startNewSession();
+              setSessionsOpen(false);
+            }}
+            onSelectSession={(id) => {
+              selectSession(id);
+              setSessionsOpen(false);
+            }}
+          />
+        </MobileSheet>
+      </>
+    );
+  }
+
+  return (
+    <div
+      className="absolute inset-y-0 right-0 z-40 max-w-[calc(100vw_-_24px)]"
+      style={{ width: panelWidth }}
+    >
+      <button
+        type="button"
+        aria-label={t('chat.resizePanel')}
+        title={t('chat.resizePanel')}
+        onPointerDown={startResize}
+        onDoubleClick={() => setPanelWidth(clampPanelWidth(PANEL_DEFAULT_WIDTH))}
+        className={cn(
+          'group absolute inset-y-0 left-0 z-50 flex w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center',
+          resizing ? '' : 'transition-opacity',
+        )}
+      >
+        <span
+          className={cn(
+            'h-full w-[2px] rounded-full transition-colors',
+            resizing ? 'bg-[#8ee7ff]' : 'bg-transparent group-hover:bg-[#8ee7ff]/55',
+          )}
+        />
+      </button>
+      {chatAside}
     </div>
   );
 }
@@ -571,7 +621,6 @@ function SessionMenu({
   onNewSession: () => void;
   onSelectSession: (sessionId: string) => void;
 }) {
-  const { locale, t } = useI18n();
   return (
     <motion.div
       initial={{ opacity: 0, y: -6, scale: 0.985 }}
@@ -580,6 +629,36 @@ function SessionMenu({
       transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
       className="absolute left-4 right-4 top-[56px] z-30 overflow-hidden rounded-[18px] border border-white/[0.14] bg-[#191a1c]/98 shadow-[0_24px_72px_-36px_rgba(0,0,0,0.92)] backdrop-blur-2xl"
     >
+      <SessionMenuList
+        activeSessionId={activeSessionId}
+        busy={busy}
+        loading={loading}
+        sessions={sessions}
+        onNewSession={onNewSession}
+        onSelectSession={onSelectSession}
+      />
+    </motion.div>
+  );
+}
+
+function SessionMenuList({
+  activeSessionId,
+  busy,
+  loading,
+  sessions,
+  onNewSession,
+  onSelectSession,
+}: {
+  activeSessionId: string;
+  busy: boolean;
+  loading: boolean;
+  sessions: AgentSessionSummary[];
+  onNewSession: () => void;
+  onSelectSession: (sessionId: string) => void;
+}) {
+  const { locale, t } = useI18n();
+  return (
+    <>
       <div className="border-b border-white/[0.08] p-2">
         <button
           type="button"
@@ -645,7 +724,7 @@ function SessionMenu({
           );
         })}
       </div>
-    </motion.div>
+    </>
   );
 }
 
@@ -1525,6 +1604,7 @@ function Composer({
   busy,
   draft,
   fileInputRef,
+  mobile = false,
   textareaRef,
   uploadError,
   uploading,
@@ -1539,6 +1619,7 @@ function Composer({
   busy: boolean;
   draft: string;
   fileInputRef: RefObject<HTMLInputElement | null>;
+  mobile?: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   uploadError: string | null;
   uploading: boolean;
@@ -1553,7 +1634,13 @@ function Composer({
   const canSend = Boolean(draft.trim()) || attachments.length > 0;
 
   return (
-    <form onSubmit={onSubmit} className="relative z-10 shrink-0 px-2.5 pb-3 pt-2">
+    <form
+      onSubmit={onSubmit}
+      className={cn(
+        'relative z-10 shrink-0 px-2.5 pt-2',
+        mobile ? 'pb-[max(12px,env(safe-area-inset-bottom))]' : 'pb-3',
+      )}
+    >
       <div className="rounded-[18px] border border-white/[0.08] bg-[#202020] px-3 py-3 shadow-[0_18px_60px_-46px_rgba(0,0,0,0.92)] transition-colors focus-within:border-white/[0.16]">
         {attachments.length > 0 ? (
           <AttachmentStrip attachments={attachments} onRemoveAttachment={onRemoveAttachment} />
@@ -1573,7 +1660,7 @@ function Composer({
             aria-label={uploading ? t('chat.uploading') : t('chat.uploadImages')}
             title={uploading ? t('chat.uploading') : t('chat.uploadImages')}
             className={cn(
-              'flex h-9 w-9 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.045] transition-colors',
+              'flex min-h-11 min-w-11 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.045] transition-colors',
               busy || uploading
                 ? 'cursor-not-allowed text-white/24'
                 : 'text-white/56 hover:bg-white/[0.08] hover:text-white',
@@ -1592,7 +1679,7 @@ function Composer({
             aria-label={t('chat.uploadImages')}
             title={t('chat.uploadImages')}
             className={cn(
-              'flex h-9 w-9 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.045] transition-colors',
+              'flex min-h-11 min-w-11 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.045] transition-colors',
               busy || uploading
                 ? 'cursor-not-allowed text-white/24'
                 : 'text-white/56 hover:bg-white/[0.08] hover:text-white',
@@ -1664,11 +1751,11 @@ function AttachmentStrip({
 }) {
   const { t } = useI18n();
   return (
-    <div className="mb-3 flex flex-wrap gap-2">
+    <div className="mb-3 flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
       {attachments.map((item) => (
         <div
           key={item.id}
-          className="group relative flex h-14 min-w-0 max-w-[210px] items-center gap-2 rounded-[12px] border border-white/[0.12] bg-white/[0.045] p-1.5 pr-7"
+          className="group relative flex h-14 min-w-[160px] max-w-[210px] shrink-0 items-center gap-2 rounded-[12px] border border-white/[0.12] bg-white/[0.045] p-1.5 pr-7"
         >
           <img
             src={item.url}
@@ -1718,7 +1805,7 @@ function SendOrStopButton({
         onClick={onStop}
         aria-label={t('chat.stop')}
         title={t('chat.stop')}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_12px_30px_-18px_rgba(255,255,255,0.82)] transition-transform active:scale-[0.96]"
+        className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_12px_30px_-18px_rgba(255,255,255,0.82)] transition-transform active:scale-[0.96]"
       >
         <IconPlayerStopFilled size={14} />
       </button>
@@ -1732,7 +1819,7 @@ function SendOrStopButton({
       aria-label={t('chat.send')}
       title={t('chat.send')}
       className={cn(
-        'flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all',
+        'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-all',
         canSend && !disabled
           ? 'bg-white text-[#111315] shadow-[0_12px_30px_-18px_rgba(255,255,255,0.82)] hover:brightness-95 active:scale-[0.96]'
           : 'bg-white/[0.07] text-white/28 ring-1 ring-white/[0.06]',
