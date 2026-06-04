@@ -3727,11 +3727,9 @@ function NodeOutputEditor({
       >
         <video
           // transform-gpu + contain:paint 把视频提升到独立合成层，播放重绘不再波及整个节点/画布
-          className="nodrag nopan absolute inset-0 h-full w-full transform-gpu object-cover"
+          className="absolute inset-0 h-full w-full transform-gpu cursor-grab object-cover active:cursor-grabbing"
           style={{ contain: 'paint' }}
           controls
-          data-skip-node-select="true"
-          onPointerDown={(event) => event.stopPropagation()}
           playsInline
           preload="metadata"
           src={trimmedOutput}
