@@ -1,7 +1,15 @@
 'use client';
 
 import { NotificationsPopover } from '@/components/home/NotificationsPopover';
+import { MobileSheet } from '@/components/mobile';
 import { LumenMark } from '@/components/ui/LumenMark';
+import { useIsMobileCanvas } from '@/hooks/use-is-mobile';
+import { cn } from '@/lib/cn';
+import {
+  MobileCanvasBottomControls,
+  MobileCanvasBottomToolbar,
+  MobileCanvasFitView,
+} from '@/components/canvas/canvas-mobile';
 import {
   IconAlertTriangle,
   IconArrowLeft,
@@ -891,6 +899,7 @@ export function CanvasWorkbench({ projectId, createOnMount = false }: CanvasWork
 }
 
 function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps) {
+  const isMobileCanvas = useIsMobileCanvas();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { locale, t, localePath } = useI18n();
@@ -1717,10 +1726,16 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   );
 
   return (
-    <main className="relative h-screen overflow-hidden bg-[#050607] text-white">
+    <main
+      className={cn(
+        'relative overflow-hidden bg-[#050607] text-white',
+        isMobileCanvas ? 'h-dvh' : 'h-screen',
+      )}
+    >
       <CanvasGrid />
       <CanvasActionsContext.Provider value={canvasActions}>
         <div className="absolute inset-0 z-10">
+          {isMobileCanvas ? <MobileCanvasFitView enabled /> : null}
           <ReactFlow
             className="lumen-flow"
             nodes={displayNodes}
@@ -1741,7 +1756,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             reconnectRadius={14}
             onPaneClick={onPaneClick}
             connectionLineComponent={LumenConnectionLine}
-            connectionRadius={42}
+            connectionRadius={isMobileCanvas ? 58 : 42}
             deleteKeyCode={['Backspace', 'Delete']}
             disableKeyboardA11y={false}
             elementsSelectable
@@ -1767,7 +1782,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             maxZoom={1.75}
             nodeOrigin={[0, 0]}
             onlyRenderVisibleElements
-            panOnScroll
+            panOnScroll={!isMobileCanvas}
             snapToGrid
             snapGrid={[24, 24]}
             proOptions={{ hideAttribution: true }}
@@ -1805,36 +1820,90 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           </ReactFlow>
         </div>
 
-        <CanvasTopbar projectId={currentProjectId} saveState={saveState} title={projectTitle} />
-        <LeftToolbar
-          historyPanelOpen={historyPanelOpen}
-          materialPanelOpen={materialPanelOpen}
-          menuOpen={nodeMenuOpen}
-          onPickTemplate={onPickTemplate}
-          onToggleHistoryPanel={toggleHistoryPanel}
-          onToggleMaterialPanel={toggleMaterialPanel}
-          onToggleMenu={toggleNodeMenu}
+        <CanvasTopbar
+          compact={isMobileCanvas}
+          projectId={currentProjectId}
+          saveState={saveState}
+          title={projectTitle}
         />
-        {materialPanelOpen ? (
+        {isMobileCanvas ? (
+          <MobileCanvasBottomToolbar
+            historyPanelOpen={historyPanelOpen}
+            materialPanelOpen={materialPanelOpen}
+            menuOpen={nodeMenuOpen}
+            onToggleHistoryPanel={toggleHistoryPanel}
+            onToggleMaterialPanel={toggleMaterialPanel}
+            onToggleMenu={toggleNodeMenu}
+            nodeMenu={nodeMenuOpen ? <NodeAddMenu onPickTemplate={onPickTemplate} /> : null}
+          />
+        ) : (
+          <LeftToolbar
+            historyPanelOpen={historyPanelOpen}
+            materialPanelOpen={materialPanelOpen}
+            menuOpen={nodeMenuOpen}
+            onPickTemplate={onPickTemplate}
+            onToggleHistoryPanel={toggleHistoryPanel}
+            onToggleMaterialPanel={toggleMaterialPanel}
+            onToggleMenu={toggleNodeMenu}
+          />
+        )}
+        {materialPanelOpen && isMobileCanvas ? (
+          <MobileSheet
+            open
+            onClose={() => setMaterialPanelOpen(false)}
+            size="full"
+            title={t('canvas.toolbar.materials')}
+          >
+            <MaterialLibraryPanel
+              embedded
+              projectId={currentProjectId}
+              onClose={() => setMaterialPanelOpen(false)}
+            />
+          </MobileSheet>
+        ) : materialPanelOpen ? (
           <MaterialLibraryPanel
             projectId={currentProjectId}
             onClose={() => setMaterialPanelOpen(false)}
           />
         ) : null}
-        {historyPanelOpen ? (
+        {historyPanelOpen && isMobileCanvas ? (
+          <MobileSheet
+            open
+            onClose={() => setHistoryPanelOpen(false)}
+            size="full"
+            title={t('canvas.history.title')}
+          >
+            <ProjectHistoryPanel
+              embedded
+              projectId={currentProjectId}
+              onClose={() => setHistoryPanelOpen(false)}
+              onRestore={restoreHistoryRecord}
+            />
+          </MobileSheet>
+        ) : historyPanelOpen ? (
           <ProjectHistoryPanel
             projectId={currentProjectId}
             onClose={() => setHistoryPanelOpen(false)}
             onRestore={restoreHistoryRecord}
           />
         ) : null}
-        <BottomControls
-          canArrange={nodes.length > 1}
-          onArrange={arrangeCanvas}
-          onDeleteSelected={deleteSelectedElements}
-          onSelectAll={selectAllElements}
-          selectedElementCount={selectedElementCount}
-        />
+        {isMobileCanvas ? (
+          <MobileCanvasBottomControls
+            canArrange={nodes.length > 1}
+            onArrange={arrangeCanvas}
+            onDeleteSelected={deleteSelectedElements}
+            onSelectAll={selectAllElements}
+            selectedElementCount={selectedElementCount}
+          />
+        ) : (
+          <BottomControls
+            canArrange={nodes.length > 1}
+            onArrange={arrangeCanvas}
+            onDeleteSelected={deleteSelectedElements}
+            onSelectAll={selectAllElements}
+            selectedElementCount={selectedElementCount}
+          />
+        )}
         <ChatPanel
           projectId={currentProjectId ?? undefined}
           initialPrompt={currentProjectId ? initialPrompt : null}
@@ -2083,10 +2152,12 @@ function SelectionGroupToolbar({
 }
 
 function CanvasTopbar({
+  compact = false,
   projectId,
   saveState,
   title,
 }: {
+  compact?: boolean;
   projectId: string | null;
   saveState: CanvasSaveState;
   title: string;
@@ -2121,21 +2192,28 @@ function CanvasTopbar({
   }, [locale, projectId, shareState, t]);
 
   return (
-    <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex h-20 items-center justify-between px-5">
-      <div className="pointer-events-auto flex items-center gap-3">
+    <header
+      className={cn(
+        'pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center justify-between px-4 pt-[max(0px,env(safe-area-inset-top))] sm:px-5',
+        compact ? 'h-14' : 'h-20',
+      )}
+    >
+      <div className="pointer-events-auto flex min-w-0 items-center gap-2 sm:gap-3">
         <Link
           href={localePath('/canvas/projects')}
           aria-label={t('canvas.back')}
-          className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.07] text-white/70 ring-1 ring-white/[0.09] transition-colors hover:bg-white/[0.12] hover:text-white"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-2xl bg-white/[0.07] text-white/70 ring-1 ring-white/[0.09] transition-colors hover:bg-white/[0.12] hover:text-white"
         >
           <IconArrowLeft size={18} stroke={2.2} />
         </Link>
-        <LumenMark size={32} />
-        <div>
+        {!compact ? <LumenMark size={32} /> : null}
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="font-display text-[16px] font-bold leading-none text-white">{title}</h1>
+            <h1 className="truncate font-display text-[15px] font-bold leading-none text-white sm:text-[16px]">
+              {title}
+            </h1>
             <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 sm:text-[11px] ${
                 saveState === 'error'
                   ? 'bg-[#ff5d73]/15 text-[#ff9daa] ring-[#ff5d73]/18'
                   : 'bg-white/[0.07] text-white/52 ring-white/[0.08]'
@@ -2144,12 +2222,14 @@ function CanvasTopbar({
               {saveLabel}
             </span>
           </div>
-          <p className="mt-1 text-[12px] text-white/42">{t('canvas.studioPath')}</p>
+          {!compact ? (
+            <p className="mt-1 hidden text-[12px] text-white/42 sm:block">{t('canvas.studioPath')}</p>
+          ) : null}
         </div>
       </div>
 
-      <div className="pointer-events-auto flex items-center gap-2">
-        <NotificationsPopover triggerClassName="h-10 w-10 rounded-2xl bg-white/[0.07] text-white/66 ring-white/[0.08] hover:bg-white/[0.12]" />
+      <div className="pointer-events-auto flex shrink-0 items-center gap-2">
+        <NotificationsPopover triggerClassName="min-h-11 min-w-11 rounded-2xl bg-white/[0.07] text-white/66 ring-white/[0.08] hover:bg-white/[0.12]" />
         <button
           type="button"
           aria-label={
@@ -2157,7 +2237,10 @@ function CanvasTopbar({
           }
           disabled={!projectId || shareState === 'copying'}
           onClick={shareProject}
-          className="flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-[13px] font-bold text-[#111315] shadow-[0_16px_40px_rgba(0,0,0,0.28)] transition-transform hover:scale-[1.02]"
+          className={cn(
+            'flex min-h-11 items-center justify-center rounded-2xl bg-white font-bold text-[#111315] shadow-[0_16px_40px_rgba(0,0,0,0.28)] transition-transform hover:scale-[1.02]',
+            compact ? 'min-w-11 px-0' : 'gap-2 px-4 text-[13px]',
+          )}
         >
           {shareState === 'copying' ? (
             <IconLoader2 size={16} className="animate-spin" stroke={2.3} />
@@ -2166,11 +2249,13 @@ function CanvasTopbar({
           ) : (
             <IconShare3 size={16} stroke={2.3} />
           )}
-          {shareState === 'copied'
-            ? t('canvas.shareCopied')
-            : shareState === 'error'
-              ? t('canvas.shareFailed')
-              : t('canvas.shareProject')}
+          {!compact ? (
+            shareState === 'copied'
+              ? t('canvas.shareCopied')
+              : shareState === 'error'
+                ? t('canvas.shareFailed')
+                : t('canvas.shareProject')
+          ) : null}
         </button>
       </div>
     </header>
@@ -2288,10 +2373,17 @@ function ToolbarButton({
   );
 }
 
+const PANEL_DOCK_CLASS =
+  'absolute left-24 top-[92px] bottom-24 z-30 flex w-[calc(100vw-116px)] max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-[#111315]/94 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.09] backdrop-blur-2xl sm:w-[340px]';
+const PANEL_EMBEDDED_CLASS =
+  'relative flex w-full flex-col overflow-hidden rounded-[18px] bg-[#111315]/94 text-white ring-1 ring-white/[0.09]';
+
 function MaterialLibraryPanel({
+  embedded = false,
   onClose,
   projectId,
 }: {
+  embedded?: boolean;
   onClose: () => void;
   projectId: string | null;
 }) {
@@ -2383,7 +2475,7 @@ function MaterialLibraryPanel({
   }, [assets]);
 
   return (
-    <section className="absolute left-24 top-[92px] bottom-24 z-30 flex w-[calc(100vw-116px)] max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-[#111315]/94 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.09] backdrop-blur-2xl sm:w-[340px]">
+    <section className={cn(embedded ? PANEL_EMBEDDED_CLASS : PANEL_DOCK_CLASS)}>
       <div className="flex items-center gap-2 px-4 pt-4">
         <button
           type="button"
@@ -2502,10 +2594,12 @@ function MaterialLibraryPanel({
 }
 
 function ProjectHistoryPanel({
+  embedded = false,
   onClose,
   onRestore,
   projectId,
 }: {
+  embedded?: boolean;
   onClose: () => void;
   onRestore: (record: ProjectHistoryRecord) => Promise<void> | void;
   projectId: string | null;
@@ -2567,7 +2661,7 @@ function ProjectHistoryPanel({
   };
 
   return (
-    <section className="absolute left-24 top-[92px] bottom-24 z-30 flex w-[calc(100vw-116px)] max-w-[340px] flex-col overflow-hidden rounded-[24px] bg-[#111315]/94 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.09] backdrop-blur-2xl sm:w-[340px]">
+    <section className={cn(embedded ? PANEL_EMBEDDED_CLASS : PANEL_DOCK_CLASS)}>
       <div className="flex items-center gap-2 px-4 pt-4">
         <button
           type="button"
