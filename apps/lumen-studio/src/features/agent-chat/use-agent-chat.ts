@@ -189,15 +189,20 @@ export function useAgentChat({
   );
 
   const sid = useMemo(() => sessionId ?? `studio-${nanoid(12)}`, [sessionId]);
+  const sessionHistoryKey = useMemo(() => `${locale}:${sid}`, [locale, sid]);
   const abortRef = useRef<AbortController | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
   const activeAssistantIdRef = useRef<string | null>(null);
+  const loadedHistoryKeyRef = useRef<string | null>(null);
+  const resetHistoryKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => abortRef.current?.abort();
   }, []);
 
   useEffect(() => {
+    if (resetHistoryKeyRef.current === sessionHistoryKey) return;
+    resetHistoryKeyRef.current = sessionHistoryKey;
     abortRef.current?.abort();
     abortRef.current = null;
     activeRunIdRef.current = null;
@@ -205,8 +210,14 @@ export function useAgentChat({
     setMessages([]);
     setStatus('idle');
     setErrorText(null);
+    loadedHistoryKeyRef.current = null;
+  }, [sessionHistoryKey]);
 
+  useEffect(() => {
     if (!sessionId || !loadHistory) return;
+    const historyKey = `${locale}:${sessionId}`;
+    if (loadedHistoryKeyRef.current === historyKey) return;
+    loadedHistoryKeyRef.current = historyKey;
 
     const controller = new AbortController();
     void getToken()
@@ -220,11 +231,16 @@ export function useAgentChat({
         }),
       )
       .then((historyMessages) => {
-        if (controller.signal.aborted || historyMessages.length === 0) return;
+        if (controller.signal.aborted) return;
+        if (historyMessages.length === 0) {
+          loadedHistoryKeyRef.current = null;
+          return;
+        }
         setMessages((prev) => (prev.length === 0 ? historyMessages : prev));
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
+        loadedHistoryKeyRef.current = null;
         console.error('failed to load agent session history', err);
       });
 

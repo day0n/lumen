@@ -239,7 +239,11 @@ export function ChatPanel({
   useEffect(() => {
     interactionStartedRef.current = false;
     autoSentRef.current = false;
-    const draftSessionId = sessionId ?? createDraftSessionId();
+    const keepPendingPromptSession = Boolean(
+      !sessionId && initialPromptRef.current?.trim() && !autoSentRef.current,
+    );
+    const draftSessionId =
+      sessionId ?? (keepPendingPromptSession ? activeSessionIdRef.current : createDraftSessionId());
     setActiveSessionId(draftSessionId);
     setSessions([]);
     setSessionsOpen(false);
