@@ -1028,9 +1028,10 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     (groupId: string) => {
       const nodeIds = getGroupedNodeIds(nodes, groupId);
       if (nodeIds.length === 0) return;
+      if (!window.confirm(t('canvas.node.cancelConfirm'))) return;
       cancelNodes(nodeIds);
     },
-    [cancelNodes, nodes],
+    [cancelNodes, nodes, t],
   );
 
   const groupSelectedNodes = useCallback(() => {
@@ -3373,9 +3374,10 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
     (event: MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
       if (!isNodeBusy) return;
+      if (!window.confirm(t('canvas.node.cancelConfirm'))) return;
       cancelNodes([id]);
     },
-    [cancelNodes, id, isNodeBusy],
+    [cancelNodes, id, isNodeBusy, t],
   );
 
   const handlePromptKeyDown = useCallback(
@@ -3725,9 +3727,11 @@ function NodeOutputEditor({
       >
         <video
           // transform-gpu + contain:paint 把视频提升到独立合成层，播放重绘不再波及整个节点/画布
-          className="pointer-events-none absolute inset-0 h-full w-full transform-gpu object-cover"
+          className="nodrag nopan absolute inset-0 h-full w-full transform-gpu object-cover"
           style={{ contain: 'paint' }}
-          muted
+          controls
+          data-skip-node-select="true"
+          onPointerDown={(event) => event.stopPropagation()}
           playsInline
           preload="metadata"
           src={trimmedOutput}
@@ -3903,11 +3907,13 @@ function MediaOutputOpenButton({ url }: { url: string }) {
       aria-label={t('canvas.node.openOutput')}
       title={t('canvas.node.openOutput')}
       data-skip-node-select="true"
-      className="nodrag nopan absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/44 text-white/78 opacity-0 ring-1 ring-white/[0.16] backdrop-blur transition-opacity hover:bg-black/62 hover:text-white group-hover/output:opacity-100"
+      className="nodrag nopan absolute left-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/52 text-white/86 ring-1 ring-white/[0.18] backdrop-blur transition-colors hover:bg-black/70 hover:text-white"
       onClick={(event) => {
         event.stopPropagation();
-        window.open(url, '_blank', 'noopener,noreferrer');
+        const opened = window.open(url, '_blank', 'noopener,noreferrer');
+        if (!opened) window.location.assign(url);
       }}
+      onPointerDown={(event) => event.stopPropagation()}
     >
       <IconExternalLink size={14} stroke={2.2} />
     </button>

@@ -267,6 +267,8 @@ const en = {
       running: 'Running',
       stop: 'Stop',
       cancelled: 'Cancelled',
+      cancelConfirm:
+        'The model has already started generating. If you cancel now, any result that finishes later can still be viewed. Stop this run?',
       promptPlaceholder: 'Describe anything you want to generate',
       upload: 'Upload',
       upstream: 'Upstream',
@@ -915,6 +917,7 @@ const zh: typeof en = {
       running: '运行中',
       stop: '中断',
       cancelled: '已中断',
+      cancelConfirm: '模型已经开始生成。现在中断后，如果后续结果完成，仍然可以查看。确定要中断吗？',
       promptPlaceholder: '描述任何你想要生成的内容',
       upload: '上传',
       upstream: '上游',
