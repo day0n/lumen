@@ -10,7 +10,8 @@ export const TraceContextSchema = z.object({
 });
 export type TraceContext = z.infer<typeof TraceContextSchema>;
 
-export const ClientMessageSchema = z.object({
+export const ClientRunMessageSchema = z.object({
+  action: z.literal('run').optional(),
   runId: z.string().min(1).optional(),
   projectId: z.string().min(1).optional(),
   workflowId: z.string().min(1).optional(),
@@ -20,6 +21,17 @@ export const ClientMessageSchema = z.object({
   edges: z.array(EdgeSchema),
   trace: TraceContextSchema.optional(),
 });
+export type ClientRunMessage = z.infer<typeof ClientRunMessageSchema>;
+
+export const ClientCancelMessageSchema = z.object({
+  action: z.literal('cancel'),
+  runId: z.string().min(1),
+  nodeIds: z.array(z.string()).optional(),
+  reason: z.string().trim().max(160).optional(),
+});
+export type ClientCancelMessage = z.infer<typeof ClientCancelMessageSchema>;
+
+export const ClientMessageSchema = z.union([ClientCancelMessageSchema, ClientRunMessageSchema]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 export const NodeQueuedEventSchema = z.object({
@@ -50,8 +62,20 @@ export const NodeErrorEventSchema = z.object({
   error: z.string(),
 });
 
+export const NodeCancelEventSchema = z.object({
+  event: z.literal('node:cancel'),
+  nodeId: z.string(),
+  reason: z.string().optional(),
+});
+
 export const FlowDoneEventSchema = z.object({
   event: z.literal('flow:done'),
+});
+
+export const FlowCancelEventSchema = z.object({
+  event: z.literal('flow:cancel'),
+  runId: z.string().optional(),
+  reason: z.string().optional(),
 });
 
 export const ServerEventSchema = z.discriminatedUnion('event', [
@@ -60,6 +84,8 @@ export const ServerEventSchema = z.discriminatedUnion('event', [
   NodeProgressEventSchema,
   NodeDoneEventSchema,
   NodeErrorEventSchema,
+  NodeCancelEventSchema,
   FlowDoneEventSchema,
+  FlowCancelEventSchema,
 ]);
 export type ServerEvent = z.infer<typeof ServerEventSchema>;

@@ -1,7 +1,8 @@
 import { config } from '../../config.js';
+import { throwIfCancelled } from '../../engine/cancellation.js';
 import type { ResolvedInput } from '../../engine/resolver.js';
 import { logger } from '../../utils/logger.js';
-import type { NodeOutput } from '../base.js';
+import type { ExecutionContext, NodeOutput } from '../base.js';
 
 const VOICE_MAPPING: Record<string, string> = {
   Rachel: '03397b4c4be74759b72533b663fbd001',
@@ -20,7 +21,10 @@ const DEFAULT_VOICE_ID = '03397b4c4be74759b72533b663fbd001'; // Rachel
 export async function execute(
   input: ResolvedInput,
   settings: Record<string, unknown>,
+  context: ExecutionContext = {},
 ): Promise<NodeOutput> {
+  const { signal } = context;
+  throwIfCancelled(signal);
   const voiceName = (settings.voice as string) ?? 'Rachel';
   const referenceId = VOICE_MAPPING[voiceName] ?? DEFAULT_VOICE_ID;
 
@@ -35,6 +39,7 @@ export async function execute(
       reference_id: referenceId,
       format: 'mp3',
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -43,6 +48,7 @@ export async function execute(
   }
 
   const audioBuffer = await response.arrayBuffer();
+  throwIfCancelled(signal);
   const base64 = Buffer.from(audioBuffer).toString('base64');
   const dataUrl = `data:audio/mpeg;base64,${base64}`;
 

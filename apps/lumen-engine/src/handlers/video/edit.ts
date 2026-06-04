@@ -5,9 +5,14 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { VideoClipInput } from '@lumen/shared/domain';
 import { config } from '../../config.js';
+import {
+  WorkflowCancelledError,
+  cancellationReason,
+  throwIfCancelled,
+} from '../../engine/cancellation.js';
 import type { ResolvedInput } from '../../engine/resolver.js';
 import { logger } from '../../utils/logger.js';
-import type { NodeOutput } from '../base.js';
+import type { ExecutionContext, NodeOutput } from '../base.js';
 
 interface PreparedClip {
   index: number;
@@ -39,7 +44,10 @@ const SUPPORTED_ASPECT_RATIOS = new Set(['9:16', '16:9', '1:1', '4:5']);
 export async function execute(
   input: ResolvedInput,
   settings: Record<string, unknown>,
+  context: ExecutionContext = {},
 ): Promise<NodeOutput> {
+  const { signal } = context;
+  throwIfCancelled(signal);
   const clips = collectClips(input);
   if (clips.length === 0) {
     throw new Error('lumen-video-edit requires at least one input video');
@@ -56,8 +64,9 @@ export async function execute(
   logger.info({ clipCount: clips.length, workdir }, 'starting lumen video edit');
 
   for (const [index, clip] of clips.entries()) {
-    const inputPath = await downloadClip(clip.url, workdir, index);
-    const metadata = await probeClip(inputPath);
+    throwIfCancelled(signal);
+    const inputPath = await downloadClip(clip.url, workdir, index, signal);
+    const metadata = await probeClip(inputPath, signal);
     const sourceDuration = readDuration(metadata);
     const start = clampNumber(clip.start ?? trimHeadSeconds, 0, Math.max(sourceDuration - 0.1, 0));
     const requestedDuration = clip.duration;
@@ -88,7 +97,7 @@ export async function execute(
   const outputPath = join(workdir, 'final.mp4');
   const dimensions = resolveOutputDimensions(settings);
   const fps = resolveFps(settings);
-  const bgmPath = await downloadFirstAudio(input, workdir);
+  const bgmPath = await downloadFirstAudio(input, workdir, signal);
 
   await renderConcat({
     clips: prepared,
@@ -98,6 +107,7 @@ export async function execute(
     fps,
     bgmPath,
     settings,
+    signal,
   });
 
   logger.info(
@@ -134,13 +144,23 @@ function collectClips(input: ResolvedInput): VideoClipInput[] {
   return result;
 }
 
-async function downloadFirstAudio(input: ResolvedInput, workdir: string): Promise<string | null> {
+async function downloadFirstAudio(
+  input: ResolvedInput,
+  workdir: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   const audioUrl = input.audio ?? input.audios[0];
   if (!audioUrl) return null;
-  return downloadAudio(audioUrl, workdir);
+  return downloadAudio(audioUrl, workdir, signal);
 }
 
-async function downloadClip(url: string, workdir: string, index: number): Promise<string> {
+async function downloadClip(
+  url: string,
+  workdir: string,
+  index: number,
+  signal?: AbortSignal,
+): Promise<string> {
+  throwIfCancelled(signal);
   if (url.startsWith('data:video/')) {
     const parsed = parseVideoDataUrl(url);
     const path = join(workdir, `clip-${index}.${parsed.extension}`);
@@ -159,13 +179,14 @@ async function downloadClip(url: string, workdir: string, index: number): Promis
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
       accept: 'video/*,*/*',
     },
-    signal: AbortSignal.timeout(300_000),
+    signal: timeoutSignal(300_000, signal),
   });
   if (!response.ok) {
     throw new Error(`failed to download clip ${index + 1}: HTTP ${response.status}`);
   }
 
   const bytes = Buffer.from(await response.arrayBuffer());
+  throwIfCancelled(signal);
   const maxBytes = config.VIDEO_EDIT_MAX_INPUT_MB * 1024 * 1024;
   if (bytes.byteLength > maxBytes) {
     throw new Error(
@@ -180,7 +201,8 @@ async function downloadClip(url: string, workdir: string, index: number): Promis
   return path;
 }
 
-async function downloadAudio(url: string, workdir: string): Promise<string> {
+async function downloadAudio(url: string, workdir: string, signal?: AbortSignal): Promise<string> {
+  throwIfCancelled(signal);
   if (url.startsWith('data:audio/')) {
     const parsed = parseAudioDataUrl(url);
     const path = join(workdir, `bgm.${parsed.extension}`);
@@ -199,13 +221,14 @@ async function downloadAudio(url: string, workdir: string): Promise<string> {
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
       accept: 'audio/*,*/*',
     },
-    signal: AbortSignal.timeout(300_000),
+    signal: timeoutSignal(300_000, signal),
   });
   if (!response.ok) {
     throw new Error(`failed to download background music: HTTP ${response.status}`);
   }
 
   const bytes = Buffer.from(await response.arrayBuffer());
+  throwIfCancelled(signal);
   const maxBytes = config.VIDEO_EDIT_MAX_INPUT_MB * 1024 * 1024;
   if (bytes.byteLength > maxBytes) {
     throw new Error(
@@ -242,16 +265,13 @@ function parseAudioDataUrl(value: string): { body: Buffer; extension: string } {
   };
 }
 
-async function probeClip(path: string): Promise<ProbeResult> {
-  const output = await runCommand(config.VIDEO_EDIT_FFPROBE_PATH, [
-    '-v',
-    'error',
-    '-print_format',
-    'json',
-    '-show_format',
-    '-show_streams',
-    path,
-  ]);
+async function probeClip(path: string, signal?: AbortSignal): Promise<ProbeResult> {
+  const output = await runCommand(
+    config.VIDEO_EDIT_FFPROBE_PATH,
+    ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', path],
+    60_000,
+    signal,
+  );
   try {
     return JSON.parse(output.stdout) as ProbeResult;
   } catch {
@@ -277,6 +297,7 @@ async function renderConcat(input: {
   fps: number;
   bgmPath: string | null;
   settings: Record<string, unknown>;
+  signal?: AbortSignal;
 }) {
   await mkdir(join(input.outputPath, '..'), { recursive: true }).catch(() => undefined);
   const args = ['-y', '-hide_banner'];
@@ -319,7 +340,7 @@ async function renderConcat(input: {
     input.outputPath,
   );
 
-  await runCommand(config.VIDEO_EDIT_FFMPEG_PATH, args, 20 * 60 * 1000);
+  await runCommand(config.VIDEO_EDIT_FFMPEG_PATH, args, 20 * 60 * 1000, input.signal);
 }
 
 function buildFilterComplex(input: {
@@ -512,6 +533,11 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+function timeoutSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(value, max));
@@ -543,17 +569,35 @@ function runCommand(
   command: string,
   args: string[],
   timeoutMs = 60_000,
+  signal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string }> {
+  throwIfCancelled(signal);
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let settled = false;
-
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onAbort = () => {
       if (settled) return;
       settled = true;
       child.kill('SIGKILL');
+      cleanup();
+      reject(new WorkflowCancelledError(cancellationReason(signal)));
+    };
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGKILL');
+      cleanup();
       reject(new Error(`${command} timed out after ${Math.round(timeoutMs / 1000)}s`));
     }, timeoutMs);
 
@@ -562,13 +606,13 @@ function runCommand(
     child.on('error', (err) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      cleanup();
       reject(err);
     });
     child.on('close', (code) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      cleanup();
       const out = Buffer.concat(stdout).toString('utf8');
       const err = Buffer.concat(stderr).toString('utf8');
       if (code === 0) {

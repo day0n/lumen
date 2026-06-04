@@ -11,14 +11,21 @@ export const WORKFLOW_RUNS_COLLECTION = 'workflow_runs';
 export const WORKFLOW_NODE_RESULTS_COLLECTION = 'workflow_node_results';
 export const MATERIAL_ASSETS_COLLECTION = 'studio_material_assets';
 
-export type WorkflowRunStatus = 'running' | 'success' | 'failed';
-export type WorkflowNodeRunStatus = 'queued' | 'running' | 'success' | 'error' | 'skipped';
+export type WorkflowRunStatus = 'running' | 'success' | 'failed' | 'cancelled';
+export type WorkflowNodeRunStatus =
+  | 'queued'
+  | 'running'
+  | 'success'
+  | 'error'
+  | 'skipped'
+  | 'cancelled';
 
 export interface WorkflowRunSummary {
   queued: number;
   succeeded: number;
   failed: number;
   skipped: number;
+  cancelled: number;
 }
 
 export interface WorkflowGraphSnapshot {
@@ -201,7 +208,13 @@ export class WorkflowStore {
           node_count: input.nodes.length,
           edge_count: input.edges.length,
           graph,
-          summary: { queued: input.nodeIds.length, succeeded: 0, failed: 0, skipped: 0 },
+          summary: {
+            queued: input.nodeIds.length,
+            succeeded: 0,
+            failed: 0,
+            skipped: 0,
+            cancelled: 0,
+          },
           started_at: now,
           updated_at: now,
         },
@@ -339,6 +352,37 @@ export class WorkflowStore {
           node_id: input.node.id,
           node_type: input.node.type,
           status: 'error',
+          model: input.node.model,
+          input: compactNodeInput(input.input),
+          error: input.error,
+          completed_at: completedAt,
+          ...(input.startedAt
+            ? { duration_ms: completedAt.getTime() - input.startedAt.getTime() }
+            : {}),
+          updated_at: completedAt,
+        },
+        $setOnInsert: {
+          _id: resultId(input.runId, input.node.id),
+          created_at: completedAt,
+        },
+      },
+      { upsert: true },
+    );
+  }
+
+  async markNodeCancelled(input: FailNodeInput): Promise<void> {
+    const completedAt = new Date();
+    await this.nodeResults.updateOne(
+      { _id: resultId(input.runId, input.node.id) },
+      {
+        $set: {
+          run_id: input.runId,
+          project_id: input.projectId ?? null,
+          workflow_id: input.workflowId ?? input.projectId ?? null,
+          user_id: input.userId ?? null,
+          node_id: input.node.id,
+          node_type: input.node.type,
+          status: 'cancelled',
           model: input.node.model,
           input: compactNodeInput(input.input),
           error: input.error,

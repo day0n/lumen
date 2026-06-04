@@ -31,7 +31,7 @@ export type ChatTimelineKind =
   | 'message'
   | 'error';
 
-export type ChatTimelineStatus = 'queued' | 'running' | 'success' | 'error' | 'info';
+export type ChatTimelineStatus = 'queued' | 'running' | 'success' | 'error' | 'cancelled' | 'info';
 
 export interface ChatTimelineItem {
   id: string;
@@ -1159,7 +1159,13 @@ function workflowTimelineStatus(
   eventName: string,
   data: Record<string, unknown>,
 ): ChatTimelineStatus {
-  if (eventName === 'workflow_update' || eventName === 'workflow_completed') return 'success';
+  if (eventName === 'workflow_update') return 'success';
+  if (eventName === 'workflow_completed') {
+    const status = readString(data.status);
+    if (status === 'cancelled') return 'cancelled';
+    if (status === 'error') return 'error';
+    return 'success';
+  }
   if (eventName === 'inspiration_results') return 'success';
   if (eventName !== 'workflow_node_status') return 'info';
   const status = readString(data.status);
@@ -1167,6 +1173,7 @@ function workflowTimelineStatus(
   if (status === 'running') return 'running';
   if (status === 'success') return 'success';
   if (status === 'error') return 'error';
+  if (status === 'cancelled') return 'cancelled';
   return 'info';
 }
 
@@ -1177,6 +1184,8 @@ function formatWorkflowEventTitle(
 ): string {
   if (eventName === 'workflow_update') return translate(locale, 'chat.timeline.workflowUpdated');
   if (eventName === 'workflow_completed') {
+    if (readString(data.status) === 'cancelled')
+      return translate(locale, 'chat.timeline.taskStopped');
     return translate(locale, 'chat.timeline.workflowCompleted');
   }
   if (eventName === 'inspiration_results') {
@@ -1190,6 +1199,9 @@ function formatWorkflowEventTitle(
     if (status === 'running') return translate(locale, 'chat.timeline.nodeRunning', { title });
     if (status === 'success') return translate(locale, 'chat.timeline.nodeDone', { title });
     if (status === 'error') return translate(locale, 'chat.timeline.nodeError', { title });
+    if (status === 'cancelled') {
+      return translate(locale, 'chat.timeline.nodeCancelled', { title });
+    }
     return translate(locale, 'chat.timeline.nodeStatus');
   }
   return formatEventName(eventName);

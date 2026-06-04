@@ -45,6 +45,18 @@ export function handleFlowConnection(ws: WebSocket): void {
         return;
       }
 
+      if (message.action === 'cancel') {
+        await publisher.cancelRun(message.runId, message.reason);
+        ws.send(
+          JSON.stringify({
+            event: 'flow:cancel',
+            runId: message.runId,
+            reason: message.reason ?? 'cancelled by user',
+          }),
+        );
+        return;
+      }
+
       const channelId = `flow:events:${connId}`;
 
       // 浏览器把 trace 注入在 message.trace 里；这里续接它，开一个

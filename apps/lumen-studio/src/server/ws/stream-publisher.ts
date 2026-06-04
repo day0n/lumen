@@ -2,6 +2,9 @@ import * as Sentry from '@sentry/nextjs';
 import type { Redis } from 'ioredis';
 
 const STREAM_KEY = 'lumen:flow:tasks';
+const CANCEL_CHANNEL = 'lumen:flow:cancels';
+const CANCEL_KEY_PREFIX = 'lumen:flow:cancel:';
+const CANCEL_TTL_SECONDS = 60 * 60;
 
 export class StreamPublisher {
   constructor(private redis: Redis) {}
@@ -23,5 +26,17 @@ export class StreamPublisher {
       td.baggage ?? '',
     );
     return messageId!;
+  }
+
+  async cancelRun(runId: string, reason?: string): Promise<void> {
+    const payload = JSON.stringify({
+      runId,
+      reason: reason?.trim() || 'cancelled by user',
+    });
+    await this.redis
+      .multi()
+      .set(`${CANCEL_KEY_PREFIX}${runId}`, payload, 'EX', CANCEL_TTL_SECONDS)
+      .publish(CANCEL_CHANNEL, payload)
+      .exec();
   }
 }

@@ -37,7 +37,7 @@ export const LumenCanvasNodeDataSchema = z
     output: z.string().nullable().default(null),
     modelId: z.string().optional().default(''),
     settings: z.record(z.unknown()).default({}),
-    status: z.enum(['idle', 'queued', 'running', 'success', 'error']).default('idle'),
+    status: z.enum(['idle', 'queued', 'running', 'success', 'error', 'cancelled']).default('idle'),
     error: z.string().nullable().optional(),
     groupId: z.string().nullable().optional(),
     groupName: z.string().nullable().optional(),
@@ -198,6 +198,52 @@ export function canvasNodeToWorkflowNode(node: LumenCanvasNode) {
   });
 }
 
+export function canvasNodeToWorkflowNodeWithContext(canvas: LumenCanvas, node: LumenCanvasNode) {
+  const inheritedAspectRatio =
+    node.data.kind === 'image' ? resolveDownstreamVideoAspectRatio(canvas, node.id) : null;
+  if (!inheritedAspectRatio) return canvasNodeToWorkflowNode(node);
+
+  return canvasNodeToWorkflowNode({
+    ...node,
+    data: {
+      ...node.data,
+      settings: {
+        ...(node.data.settings ?? {}),
+        aspectRatio: inheritedAspectRatio,
+        aspect_ratio: inheritedAspectRatio,
+      },
+    },
+  });
+}
+
+export function resolveDownstreamVideoAspectRatio(
+  canvas: LumenCanvas,
+  nodeId: string,
+): string | null {
+  const byId = new Map(canvas.nodes.map((node) => [node.id, node]));
+  const outgoingBySource = new Map<string, LumenCanvasEdge[]>();
+  for (const edge of canvas.edges) {
+    const outgoing = outgoingBySource.get(edge.source) ?? [];
+    outgoing.push(edge);
+    outgoingBySource.set(edge.source, outgoing);
+  }
+
+  const queue = [...(outgoingBySource.get(nodeId) ?? []).map((edge) => edge.target)];
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const nextId = queue.shift();
+    if (!nextId || visited.has(nextId)) continue;
+    visited.add(nextId);
+
+    const node = byId.get(nextId);
+    if (!node) continue;
+    if (node.data.kind === 'video') return getCanvasAspectRatio(node.data.settings);
+    for (const edge of outgoingBySource.get(nextId) ?? []) queue.push(edge.target);
+  }
+
+  return null;
+}
+
 export function canvasEdgesToWorkflowEdges(edges: LumenCanvasEdge[]) {
   return edges.map((edge) =>
     EdgeSchema.parse({ id: edge.id, source: edge.source, target: edge.target }),
@@ -312,6 +358,12 @@ function truncateTextContext(value: string, limit: number): string {
 function getSettingString(settings: Record<string, unknown>, key: string): string {
   const value = settings[key];
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function getCanvasAspectRatio(settings: Record<string, unknown>): string {
+  const value =
+    getSettingString(settings, 'aspectRatio') || getSettingString(settings, 'aspect_ratio');
+  return ['1:1', '4:5', '16:9', '9:16'].includes(value) ? value : '16:9';
 }
 
 function getSettingStringArray(settings: Record<string, unknown>, key: string): string[] {

@@ -11,7 +11,7 @@ import {
   type RemakeRunBoundaries,
   type RemakeScene,
   canvasEdgesToWorkflowEdges,
-  canvasNodeToWorkflowNode,
+  canvasNodeToWorkflowNodeWithContext,
 } from '@lumen/shared/domain';
 import {
   IconArrowLeft,
@@ -123,7 +123,13 @@ export function HotVideoRemakePipeline({
             };
           }),
         };
-        if (state.status === 'success' || state.status === 'error') queueCanvasSave(next);
+        if (
+          state.status === 'success' ||
+          state.status === 'error' ||
+          state.status === 'cancelled'
+        ) {
+          queueCanvasSave(next);
+        }
         return next;
       });
     },
@@ -143,7 +149,10 @@ export function HotVideoRemakePipeline({
     () => new Map(canvas.nodes.map((node) => [node.id, node])),
     [canvas.nodes],
   );
-  const workflowNodes = useMemo(() => canvas.nodes.map(canvasNodeToWorkflowNode), [canvas.nodes]);
+  const workflowNodes = useMemo(
+    () => canvas.nodes.map((node) => canvasNodeToWorkflowNodeWithContext(canvas, node)),
+    [canvas],
+  );
   const workflowEdges = useMemo(() => canvasEdgesToWorkflowEdges(canvas.edges), [canvas.edges]);
 
   useEffect(() => {
@@ -976,6 +985,7 @@ function StatusPill({ status }: { status: NodeStatus }) {
         (status === 'queued' || status === 'running') &&
           'bg-[#79e4ff]/12 text-[#79e4ff] ring-[#79e4ff]/20',
         status === 'error' && 'bg-[#f5c76a]/12 text-[#f5c76a] ring-[#f5c76a]/20',
+        status === 'cancelled' && 'bg-white/[0.08] text-white/52 ring-white/[0.12]',
         status === 'idle' && 'bg-white/[0.06] text-white/42 ring-white/[0.08]',
       )}
     >
@@ -992,6 +1002,7 @@ function StatusDot({ status }: { status: NodeStatus }) {
         status === 'success' && 'bg-[#86efac]',
         (status === 'queued' || status === 'running') && 'bg-[#79e4ff]',
         status === 'error' && 'bg-[#f5c76a]',
+        status === 'cancelled' && 'bg-white/38',
         status === 'idle' && 'bg-white/18',
       )}
     />
@@ -1007,6 +1018,7 @@ function aggregateStatus(ids: string[], nodeById: Map<string, LumenCanvasNode>):
   const statuses = ids.map((id) => nodeById.get(id)?.data.status ?? 'idle');
   if (statuses.some((status) => status === 'error')) return 'error';
   if (statuses.some((status) => status === 'queued' || status === 'running')) return 'running';
+  if (statuses.some((status) => status === 'cancelled')) return 'cancelled';
   if (statuses.length > 0 && statuses.every((status) => status === 'success')) return 'success';
   return 'idle';
 }

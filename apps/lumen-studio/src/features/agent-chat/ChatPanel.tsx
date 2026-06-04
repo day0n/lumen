@@ -1232,7 +1232,9 @@ function ToolEventRow({ item }: { item: ChatTimelineItem }) {
                 ? 'bg-[#7ee787]'
                 : item.status === 'error'
                   ? 'bg-[#ff7b8a]'
-                  : 'bg-white/30',
+                  : item.status === 'cancelled'
+                    ? 'bg-white/42'
+                    : 'bg-white/30',
           )}
         />
         <span className="min-w-0 flex-1 truncate text-white/48">{item.title}</span>
@@ -1315,6 +1317,12 @@ function deriveToolRunStatus(run: ToolActivityRun): ChatTimelineItem['status'] {
     return 'error';
   }
   if (
+    run.root?.status === 'cancelled' ||
+    run.events.some((event) => event.status === 'cancelled')
+  ) {
+    return 'cancelled';
+  }
+  if (
     run.root?.status === 'running' ||
     run.root?.status === 'queued' ||
     run.events.some((event) => event.status === 'running' || event.status === 'queued')
@@ -1333,6 +1341,7 @@ function toolRunTitle(run: ToolActivityRun, t: TimelineTranslator): string {
     const label = formatTimelineToolName(toolName, t);
     if (run.status === 'success') return t('chat.timeline.toolDone', { tool: label });
     if (run.status === 'error') return t('chat.timeline.toolFailed', { tool: label });
+    if (run.status === 'cancelled') return t('chat.timeline.toolCancelled', { tool: label });
     return label;
   }
 
@@ -1409,7 +1418,9 @@ function TimelineDot({ status }: { status: ChatTimelineItem['status'] }) {
               ? 'bg-[#ff7b8a]'
               : status === 'success'
                 ? 'bg-[#7ee787]'
-                : 'bg-white/28',
+                : status === 'cancelled'
+                  ? 'bg-white/42'
+                  : 'bg-white/28',
         )}
       />
     </span>

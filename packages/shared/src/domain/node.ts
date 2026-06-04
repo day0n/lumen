@@ -3,7 +3,14 @@ import { z } from 'zod';
 export const NodeTypeSchema = z.enum(['text', 'image', 'video', 'audio']);
 export type NodeType = z.infer<typeof NodeTypeSchema>;
 
-export const NodeStatusSchema = z.enum(['idle', 'queued', 'running', 'success', 'error']);
+export const NodeStatusSchema = z.enum([
+  'idle',
+  'queued',
+  'running',
+  'success',
+  'error',
+  'cancelled',
+]);
 export type NodeStatus = z.infer<typeof NodeStatusSchema>;
 
 export const VideoClipInputSchema = z.object({

@@ -1,7 +1,8 @@
 import { getGoogleClient } from '../../clients/google.js';
+import { throwIfCancelled } from '../../engine/cancellation.js';
 import type { ResolvedInput } from '../../engine/resolver.js';
 import { logger } from '../../utils/logger.js';
-import type { NodeOutput } from '../base.js';
+import type { ExecutionContext, NodeOutput } from '../base.js';
 
 interface ImagePart {
   text?: string;
@@ -20,7 +21,10 @@ interface ImagePart {
 export async function execute(
   input: ResolvedInput,
   settings: Record<string, unknown>,
+  context: ExecutionContext = {},
 ): Promise<NodeOutput> {
+  const { signal } = context;
+  throwIfCancelled(signal);
   const client = getGoogleClient();
 
   const aspectRatio =
@@ -35,7 +39,7 @@ export async function execute(
   // from them — required for product-swap and character consistency.
   const referenceParts: ImagePart[] = [];
   for (const ref of [input.image, input.lastFrameImage]) {
-    const part = await toImagePart(ref);
+    const part = await toImagePart(ref, signal);
     if (part) referenceParts.push(part);
   }
 
@@ -47,6 +51,7 @@ export async function execute(
       imageConfig: { aspectRatio },
     },
   });
+  throwIfCancelled(signal);
 
   const candidate = response.candidates?.[0];
   if (!candidate?.content?.parts) {
@@ -98,8 +103,9 @@ function readStringSetting(settings: Record<string, unknown>, key: string): stri
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
-async function toImagePart(value: string | null): Promise<ImagePart | null> {
+async function toImagePart(value: string | null, signal?: AbortSignal): Promise<ImagePart | null> {
   if (!value?.trim()) return null;
+  throwIfCancelled(signal);
   const source = value.trim();
 
   if (source.startsWith('gs://')) {
@@ -110,7 +116,7 @@ async function toImagePart(value: string | null): Promise<ImagePart | null> {
   if (inline) return { inlineData: inline };
 
   if (isHttpUrl(source)) {
-    const response = await fetch(source);
+    const response = await fetch(source, { signal });
     if (!response.ok) {
       throw new Error(`failed to fetch image reference: HTTP ${response.status}`);
     }
@@ -120,6 +126,7 @@ async function toImagePart(value: string | null): Promise<ImagePart | null> {
       throw new Error(`image reference URL is not an image: ${mimeType || 'unknown content-type'}`);
     }
     const bytes = Buffer.from(await response.arrayBuffer());
+    throwIfCancelled(signal);
     return { inlineData: { data: bytes.toString('base64'), mimeType } };
   }
 

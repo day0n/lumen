@@ -3,7 +3,7 @@
 import { translate } from '@/i18n/messages';
 import type { Locale } from '@/i18n/routing';
 import type { NodeStatus } from '@lumen/shared/domain';
-import type { ServerEvent } from '@lumen/shared/protocols';
+import type { ClientRunMessage, ServerEvent } from '@lumen/shared/protocols';
 import * as Sentry from '@sentry/nextjs';
 import { nanoid } from 'nanoid';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -18,6 +18,16 @@ export interface WorkflowNode {
     image: string | null;
     lastFrameImage: string | null;
     video: string | null;
+    videos: string[];
+    audio: string | null;
+    audios: string[];
+    clips: Array<{
+      url: string;
+      start?: number;
+      duration?: number;
+      volume?: number;
+      title?: string;
+    }>;
   };
   model: { id: string; settings: Record<string, unknown> };
 }
@@ -45,6 +55,16 @@ interface UseWorkflowWsOptions {
   onFlowDone?: () => void;
 }
 
+interface ActiveRun {
+  runId: string;
+  ws: WebSocket;
+  nodeIds: string[];
+  flowSpan: Sentry.Span | undefined;
+  opened: boolean;
+  flowDone: boolean;
+  cancelled: boolean;
+}
+
 export function useWorkflowWs({
   url,
   projectId,
@@ -55,14 +75,34 @@ export function useWorkflowWs({
   onFlowDone,
 }: UseWorkflowWsOptions) {
   const socketsRef = useRef<Set<WebSocket>>(new Set());
+  const activeRunsRef = useRef<Map<string, ActiveRun>>(new Map());
+  const nodeRunIndexRef = useRef<Map<string, Set<string>>>(new Map());
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [nodeStates, setNodeStates] = useState<Record<string, NodeState>>({});
 
+  const removeRun = useCallback((run: ActiveRun) => {
+    activeRunsRef.current.delete(run.runId);
+    socketsRef.current.delete(run.ws);
+    for (const nodeId of run.nodeIds) {
+      const runIds = nodeRunIndexRef.current.get(nodeId);
+      if (!runIds) continue;
+      runIds.delete(run.runId);
+      if (runIds.size === 0) nodeRunIndexRef.current.delete(nodeId);
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
+      for (const run of activeRunsRef.current.values()) {
+        run.cancelled = true;
+        run.flowSpan?.setStatus({ code: 1 });
+        run.flowSpan?.end();
+      }
       for (const ws of socketsRef.current) {
         ws.close();
       }
+      activeRunsRef.current.clear();
+      nodeRunIndexRef.current.clear();
       socketsRef.current.clear();
     };
   }, []);
@@ -102,12 +142,24 @@ export function useWorkflowWs({
         case 'node:error':
           updateNode(event.nodeId, (prev) => ({ ...prev, status: 'error', error: event.error }));
           break;
+        case 'node:cancel':
+          updateNode(event.nodeId, (prev) => {
+            if (prev.status === 'success') return prev;
+            return {
+              ...prev,
+              status: 'cancelled',
+              error: event.reason ?? translate(locale, 'canvas.node.cancelled'),
+            };
+          });
+          break;
         case 'flow:done':
           onFlowDone?.();
           break;
+        case 'flow:cancel':
+          break;
       }
     },
-    [onFlowDone, updateNode],
+    [locale, onFlowDone, updateNode],
   );
 
   const markRunConnectionFailed = useCallback(
@@ -121,11 +173,38 @@ export function useWorkflowWs({
             error: null,
             progress: 0,
           };
-          if (current.status === 'success') continue;
+          if (current.status === 'success' || current.status === 'cancelled') continue;
           const next: NodeState = {
             ...current,
             status: 'error',
             error,
+          };
+          nextStates[nodeId] = next;
+          onNodeStateChange?.(nodeId, next);
+        }
+        return nextStates;
+      });
+    },
+    [onNodeStateChange],
+  );
+
+  const markRunCancelled = useCallback(
+    (run: ActiveRun, reason: string) => {
+      run.cancelled = true;
+      setNodeStates((prev) => {
+        const nextStates = { ...prev };
+        for (const nodeId of run.nodeIds) {
+          const current = nextStates[nodeId] ?? {
+            status: 'idle',
+            output: null,
+            error: null,
+            progress: 0,
+          };
+          if (current.status === 'success') continue;
+          const next: NodeState = {
+            ...current,
+            status: 'cancelled',
+            error: reason,
           };
           nextStates[nodeId] = next;
           onNodeStateChange?.(nodeId, next);
@@ -158,25 +237,27 @@ export function useWorkflowWs({
         return;
       }
 
+      const runId = nanoid(16);
       // 客户端 ws.flow.run span：量用户视角的整条工作流耗时，onclose 时收尾。
       // 在它的 scope 内取 trace 注入消息，让 engine 的 workflow.execute 挂到它下面。
       const flowSpan = Sentry.startInactiveSpan({
         name: 'ws.flow.run',
         op: 'websocket.client',
         attributes: {
-          run_id: undefined,
+          run_id: runId,
           project_id: projectId ?? undefined,
           node_count: targetNodeIds.length,
         },
       });
       const td = Sentry.withActiveSpan(flowSpan, () => Sentry.getTraceData());
 
-      const message = {
-        runId: nanoid(16),
+      const message: ClientRunMessage = {
+        action: 'run',
+        runId,
         projectId: projectId ?? undefined,
         workflowId: workflowId ?? projectId ?? undefined,
         userId: userId ?? undefined,
-        nodeIds,
+        nodeIds: nodeIds && nodeIds.length > 0 ? nodeIds : undefined,
         nodes,
         edges,
         trace: td['sentry-trace']
@@ -186,18 +267,31 @@ export function useWorkflowWs({
 
       const ws = new WebSocket(url);
       socketsRef.current.add(ws);
-      let opened = false;
-      let flowDone = false;
+      const run: ActiveRun = {
+        runId,
+        ws,
+        nodeIds: targetNodeIds,
+        flowSpan,
+        opened: false,
+        flowDone: false,
+        cancelled: false,
+      };
+      activeRunsRef.current.set(runId, run);
+      for (const nodeId of targetNodeIds) {
+        const runIds = nodeRunIndexRef.current.get(nodeId) ?? new Set<string>();
+        runIds.add(runId);
+        nodeRunIndexRef.current.set(nodeId, runIds);
+      }
 
       const closeSocket = () => {
-        socketsRef.current.delete(ws);
+        removeRun(run);
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
           ws.close();
         }
       };
 
       ws.onopen = () => {
-        opened = true;
+        run.opened = true;
         setConnectionError(null);
         ws.send(JSON.stringify(message));
       };
@@ -207,7 +301,10 @@ export function useWorkflowWs({
           const event = JSON.parse(evt.data) as ServerEvent;
           handleEvent(event);
           if (event.event === 'flow:done') {
-            flowDone = true;
+            run.flowDone = true;
+            closeSocket();
+          } else if (event.event === 'flow:cancel') {
+            run.cancelled = true;
             closeSocket();
           }
         } catch {
@@ -216,19 +313,19 @@ export function useWorkflowWs({
       };
 
       ws.onerror = () => {
-        const error = opened
+        const error = run.opened
           ? translate(locale, 'canvas.connectionError')
           : translate(locale, 'canvas.engineConnectionFailed');
-        setConnectionError(error);
+        if (!run.cancelled) setConnectionError(error);
       };
 
       ws.onclose = () => {
-        socketsRef.current.delete(ws);
-        // 收尾 ws.flow.run span：flowDone=正常完成，否则标记异常。
-        flowSpan.setStatus({ code: flowDone ? 1 : 2 });
-        flowSpan.end();
-        if (flowDone) return;
-        const error = opened
+        removeRun(run);
+        // 收尾 ws.flow.run span：flowDone/cancelled=正常收尾，否则标记异常。
+        run.flowSpan?.setStatus({ code: run.flowDone || run.cancelled ? 1 : 2 });
+        run.flowSpan?.end();
+        if (run.flowDone || run.cancelled) return;
+        const error = run.opened
           ? translate(locale, 'canvas.connectionClosed')
           : translate(locale, 'canvas.engineConnectionFailed');
         setConnectionError(error);
@@ -241,11 +338,40 @@ export function useWorkflowWs({
       markRunConnectionFailed,
       onNodeStateChange,
       projectId,
+      removeRun,
       url,
       userId,
       workflowId,
     ],
   );
 
-  return { connectionError, nodeStates, runNodes };
+  const cancelNodes = useCallback(
+    (nodeIds: string[], reason = translate(locale, 'canvas.node.cancelled')) => {
+      const runIds = new Set<string>();
+      for (const nodeId of nodeIds) {
+        for (const runId of nodeRunIndexRef.current.get(nodeId) ?? []) runIds.add(runId);
+      }
+
+      for (const runId of runIds) {
+        const run = activeRunsRef.current.get(runId);
+        if (!run || run.cancelled || run.flowDone) continue;
+        markRunCancelled(run, reason);
+        if (run.ws.readyState === WebSocket.OPEN) {
+          run.ws.send(
+            JSON.stringify({
+              action: 'cancel',
+              runId,
+              nodeIds: run.nodeIds,
+              reason,
+            }),
+          );
+        } else if (run.ws.readyState === WebSocket.CONNECTING) {
+          run.ws.close();
+        }
+      }
+    },
+    [locale, markRunCancelled],
+  );
+
+  return { cancelNodes, connectionError, nodeStates, runNodes };
 }

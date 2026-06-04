@@ -1,7 +1,8 @@
 import { getGoogleClient } from '../../clients/google.js';
+import { sleep, throwIfCancelled } from '../../engine/cancellation.js';
 import type { ResolvedInput } from '../../engine/resolver.js';
 import { logger } from '../../utils/logger.js';
-import type { NodeOutput } from '../base.js';
+import type { ExecutionContext, NodeOutput } from '../base.js';
 
 interface VeoImage {
   gcsUri?: string;
@@ -31,7 +32,10 @@ interface VideoGenerationResult {
 export async function execute(
   input: ResolvedInput,
   settings: Record<string, unknown>,
+  context: ExecutionContext = {},
 ): Promise<NodeOutput> {
+  const { signal } = context;
+  throwIfCancelled(signal);
   const client = getGoogleClient();
 
   const aspectRatio =
@@ -45,8 +49,8 @@ export async function execute(
   const supportedDurations = [4, 6, 8] as const;
   const clampedDuration = supportedDurations.find((value) => value >= requestedDuration) ?? 8;
   const durationSeconds = resolution === '1080p' || resolution === '4k' ? 8 : clampedDuration;
-  const image = await toVeoImage(input.image);
-  const lastFrame = image ? await toVeoImage(input.lastFrameImage) : null;
+  const image = await toVeoImage(input.image, signal);
+  const lastFrame = image ? await toVeoImage(input.lastFrameImage, signal) : null;
 
   logger.info(
     {
@@ -70,12 +74,14 @@ export async function execute(
       ...(lastFrame ? { lastFrame } : {}),
     },
   });
+  throwIfCancelled(signal);
 
   let result = operation;
   while (!result.done) {
     logger.info('waiting for veo 3.1 video generation...');
-    await sleep(10_000);
+    await sleep(10_000, signal);
     result = await client.operations.get({ operation: result });
+    throwIfCancelled(signal);
   }
 
   if (result.error) {
@@ -107,10 +113,6 @@ export async function execute(
   throw new Error('veo 3.1 video has no URI or inline bytes');
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function readStringSetting(settings: Record<string, unknown>, key: string): string | null {
   const value = settings[key];
   return typeof value === 'string' && value.trim() ? value : null;
@@ -124,8 +126,9 @@ function readNumberSetting(settings: Record<string, unknown>, key: string): numb
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function toVeoImage(value: string | null): Promise<VeoImage | null> {
+async function toVeoImage(value: string | null, signal?: AbortSignal): Promise<VeoImage | null> {
   if (!value?.trim()) return null;
+  throwIfCancelled(signal);
   const source = value.trim();
 
   if (source.startsWith('gs://')) {
@@ -136,7 +139,7 @@ async function toVeoImage(value: string | null): Promise<VeoImage | null> {
   if (dataUrl) return dataUrl;
 
   if (isHttpUrl(source)) {
-    const response = await fetch(source);
+    const response = await fetch(source, { signal });
     if (!response.ok) {
       throw new Error(`failed to fetch veo input image: HTTP ${response.status}`);
     }
@@ -148,6 +151,7 @@ async function toVeoImage(value: string | null): Promise<VeoImage | null> {
     }
 
     const bytes = Buffer.from(await response.arrayBuffer());
+    throwIfCancelled(signal);
     return { imageBytes: bytes.toString('base64'), mimeType };
   }
 

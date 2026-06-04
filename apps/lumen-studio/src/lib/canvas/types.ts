@@ -1,6 +1,6 @@
 export type NodeKind = 'text' | 'image' | 'video' | 'audio';
 
-export type NodeStatus = 'idle' | 'queued' | 'running' | 'success' | 'error';
+export type NodeStatus = 'idle' | 'queued' | 'running' | 'success' | 'error' | 'cancelled';
 
 export interface CanvasNodeShape {
   id: string;

@@ -1,7 +1,8 @@
 import { config } from '../../config.js';
+import { sleep, throwIfCancelled } from '../../engine/cancellation.js';
 import type { ResolvedInput } from '../../engine/resolver.js';
 import { logger } from '../../utils/logger.js';
-import type { NodeOutput } from '../base.js';
+import type { ExecutionContext, NodeOutput } from '../base.js';
 
 const KIE_BASE_URL = 'https://api.kie.ai/api/v1';
 const SUBMIT_ENDPOINT = '/generate';
@@ -40,7 +41,10 @@ interface SunoTrack {
 export async function execute(
   input: ResolvedInput,
   settings: Record<string, unknown>,
+  context: ExecutionContext = {},
 ): Promise<NodeOutput> {
+  const { signal } = context;
+  throwIfCancelled(signal);
   const apiKey = config.KIE_API_KEY?.trim();
   if (!apiKey) {
     throw new Error('suno-music requires KIE_API_KEY to be configured on the engine');
@@ -59,11 +63,12 @@ export async function execute(
     prompt: prompt.slice(0, PROMPT_MAX_LEN),
     model,
     instrumental,
+    signal,
   });
 
   logger.info({ taskId, instrumental, model }, 'suno-music task submitted');
 
-  const audioUrl = await pollMusicResult(apiKey, taskId);
+  const audioUrl = await pollMusicResult(apiKey, taskId, signal);
 
   logger.info({ taskId, audioUrl }, 'suno-music audio generated');
 
@@ -75,7 +80,9 @@ async function submitMusicTask(args: {
   prompt: string;
   model: string;
   instrumental: boolean;
+  signal?: AbortSignal;
 }): Promise<string> {
+  throwIfCancelled(args.signal);
   const callBackUrl = config.KIE_CALLBACK_URL?.trim() || DEFAULT_CALLBACK_URL;
   const response = await fetch(`${KIE_BASE_URL}${SUBMIT_ENDPOINT}`, {
     method: 'POST',
@@ -90,6 +97,7 @@ async function submitMusicTask(args: {
       customMode: false,
       callBackUrl,
     }),
+    signal: args.signal,
   });
 
   if (!response.ok) {
@@ -112,13 +120,18 @@ async function submitMusicTask(args: {
   return taskId;
 }
 
-async function pollMusicResult(apiKey: string, taskId: string): Promise<string> {
+async function pollMusicResult(
+  apiKey: string,
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<string> {
   const start = Date.now();
 
   // 初始等待，避免任务尚未入库时立即轮询拿到 422。
-  await sleep(3000);
+  await sleep(3000, signal);
 
   while (true) {
+    throwIfCancelled(signal);
     const elapsed = Date.now() - start;
     if (elapsed > MAX_POLL_MS) {
       throw new Error(`suno-music timed out after ${Math.round(MAX_POLL_MS / 1000)}s`);
@@ -130,11 +143,12 @@ async function pollMusicResult(apiKey: string, taskId: string): Promise<string> 
     const response = await fetch(pollUrl.toString(), {
       method: 'GET',
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal,
     });
 
     if (response.status === 429) {
       logger.warn({ taskId }, 'suno-music poll rate limited, backing off 30s');
-      await sleep(30_000);
+      await sleep(30_000, signal);
       continue;
     }
 
@@ -151,7 +165,7 @@ async function pollMusicResult(apiKey: string, taskId: string): Promise<string> 
     if (code !== undefined && code !== 200 && code !== 0) {
       const msg = (body.msg ?? body.message ?? '') as string;
       if (code === 422 && msg.includes('recordInfo is null')) {
-        await sleep(pollInterval(elapsed));
+        await sleep(pollInterval(elapsed), signal);
         continue;
       }
       throw new Error(`suno-music poll error (${code}): ${msg || 'unknown error'}`);
@@ -174,7 +188,7 @@ async function pollMusicResult(apiKey: string, taskId: string): Promise<string> 
     }
 
     logger.info({ taskId, status: rawStatus || 'pending' }, 'suno-music still generating');
-    await sleep(pollInterval(elapsed));
+    await sleep(pollInterval(elapsed), signal);
   }
 }
 
@@ -211,8 +225,4 @@ function readBooleanSetting(settings: Record<string, unknown>, ...keys: string[]
     }
   }
   return false;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

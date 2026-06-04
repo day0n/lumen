@@ -5,11 +5,11 @@ import {
   type LumenCanvas,
   type LumenCanvasNode,
   type LumenCanvasNodeData,
-  canvasNodeToWorkflowNode,
+  canvasNodeToWorkflowNodeWithContext,
   computeSingleNodeInput,
   updateCanvasNodeData,
 } from '@lumen/shared/domain';
-import type { ClientMessage, ServerEvent } from '@lumen/shared/protocols';
+import type { ClientRunMessage, ServerEvent } from '@lumen/shared/protocols';
 
 import { getConfig } from '../../../bootstrap/config.js';
 import { logger } from '../../../platform/logger.js';
@@ -21,6 +21,13 @@ export interface RunWorkflowNodeResult {
   project: WorkflowProject;
   node: LumenCanvasNode;
   output: string;
+}
+
+class WorkflowNodeCancelledError extends Error {
+  constructor(message = 'cancelled by user') {
+    super(message);
+    this.name = 'WorkflowNodeCancelledError';
+  }
 }
 
 export class WorkflowEngineClient {
@@ -54,7 +61,7 @@ export class WorkflowEngineClient {
     }
 
     const workflowNode = {
-      ...canvasNodeToWorkflowNode(target),
+      ...canvasNodeToWorkflowNodeWithContext(input.project.canvas, target),
       input: resolvedInput,
       output: null,
     };
@@ -90,8 +97,9 @@ export class WorkflowEngineClient {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const cancelled = err instanceof WorkflowNodeCancelledError;
       const errorCanvas = updateCanvasNodeData(input.project.canvas, target.id, {
-        status: 'error',
+        status: cancelled ? 'cancelled' : 'error',
         error: message,
         progress: 1,
       });
@@ -102,7 +110,7 @@ export class WorkflowEngineClient {
       });
       await emitToolEvent('workflow_update', {
         project_id: input.project.id,
-        reason: 'run_canvas_node_error',
+        reason: cancelled ? 'run_canvas_node_cancelled' : 'run_canvas_node_error',
         node_id: target.id,
         node_title: target.data.title,
         node_kind: target.data.kind,
@@ -168,7 +176,7 @@ export class WorkflowEngineClient {
     nodeId: string;
     nodeTitle: string;
     nodeKind: string;
-    node: ReturnType<typeof canvasNodeToWorkflowNode>;
+    node: ReturnType<typeof canvasNodeToWorkflowNodeWithContext>;
   }): Promise<string> {
     const subscriber = this.redis!.duplicate({ maxRetriesPerRequest: null });
     const cfg = getConfig();
@@ -204,6 +212,16 @@ export class WorkflowEngineClient {
               clearTimeout(timer);
               reject(new Error(event.error));
             }
+            if (event.event === 'node:cancel' && event.nodeId === input.nodeId) {
+              settled = true;
+              clearTimeout(timer);
+              reject(new WorkflowNodeCancelledError(event.reason));
+            }
+            if (event.event === 'flow:cancel') {
+              settled = true;
+              clearTimeout(timer);
+              reject(new WorkflowNodeCancelledError(event.reason));
+            }
           } catch (err) {
             settled = true;
             clearTimeout(timer);
@@ -212,7 +230,8 @@ export class WorkflowEngineClient {
         });
       });
 
-      const message: ClientMessage = {
+      const message: ClientRunMessage = {
+        action: 'run',
         runId: input.runId,
         projectId: input.projectId,
         workflowId: input.projectId,
@@ -319,10 +338,29 @@ export class WorkflowEngineClient {
           error: event.error,
         });
         break;
+      case 'node:cancel':
+        await emitToolEvent('workflow_node_status', {
+          project_id: projectId,
+          run_id: runId,
+          node_id: event.nodeId,
+          node_title: nodeMeta.nodeTitle,
+          node_kind: nodeMeta.nodeKind,
+          status: 'cancelled',
+          error: event.reason,
+        });
+        break;
       case 'flow:done':
         await emitToolEvent('workflow_completed', {
           project_id: projectId,
           run_id: runId,
+        });
+        break;
+      case 'flow:cancel':
+        await emitToolEvent('workflow_completed', {
+          project_id: projectId,
+          run_id: runId,
+          status: 'cancelled',
+          error: event.reason,
         });
         break;
     }

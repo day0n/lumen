@@ -1,7 +1,7 @@
 import { generateAncestorFlow } from './flow-graph';
 import type { CanvasEdgeShape, CanvasNodeShape, NodeStatus } from './types';
 
-const RUNNABLE_STATUSES: NodeStatus[] = ['idle', 'error', 'success'];
+const RUNNABLE_STATUSES: NodeStatus[] = ['idle', 'error', 'success', 'cancelled'];
 
 function isRunnableStatus(status: NodeStatus) {
   return RUNNABLE_STATUSES.includes(status);

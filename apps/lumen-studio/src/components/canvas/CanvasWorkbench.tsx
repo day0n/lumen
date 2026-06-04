@@ -10,6 +10,7 @@ import {
   IconChevronDown,
   IconChevronLeft,
   IconClock,
+  IconExternalLink,
   IconFileText,
   IconFocusCentered,
   IconFolder,
@@ -21,6 +22,7 @@ import {
   IconMusic,
   IconPhoto,
   IconPlayerPlay,
+  IconPlayerStop,
   IconPlus,
   IconSelectAll,
   IconShare3,
@@ -115,11 +117,12 @@ type LumenNodeData = Record<string, unknown> & {
   output: string | null;
   modelId: string;
   settings: Record<string, unknown>;
-  status: 'idle' | 'queued' | 'running' | 'success' | 'error';
+  status: 'idle' | 'queued' | 'running' | 'success' | 'error' | 'cancelled';
   error?: string | null;
   groupId?: string | null;
   groupName?: string | null;
   progress?: number;
+  previewAspectRatio?: string;
 };
 
 type LumenNode = Node<LumenNodeData, 'lumenNode'>;
@@ -128,6 +131,7 @@ type CanvasSaveState = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 
 interface CanvasActions {
   runSingleNode: (nodeId: string) => void;
+  cancelNodes: (nodeIds: string[]) => void;
   updateNodeData: (nodeId: string, patch: Partial<LumenNodeData>) => void;
   uploadCanvasMedia: (file: File, kind: MaterialAssetKind, nodeId?: string) => Promise<string>;
   connectionError: string | null;
@@ -136,6 +140,7 @@ interface CanvasActions {
 
 const CanvasActionsContext = createContext<CanvasActions>({
   runSingleNode: () => {},
+  cancelNodes: () => {},
   updateNodeData: () => {},
   uploadCanvasMedia: async () => '',
   connectionError: null,
@@ -524,8 +529,13 @@ function getOptionalNumber(value: unknown) {
 }
 
 function getAspectRatio(settings: Record<string, unknown>) {
-  const value = getSettingString(settings, 'aspectRatio');
-  return aspectRatioOptions.includes(value as (typeof aspectRatioOptions)[number]) ? value : '16:9';
+  const value =
+    getSettingString(settings, 'aspectRatio') || getSettingString(settings, 'aspect_ratio');
+  return isSupportedAspectRatio(value) ? value : '16:9';
+}
+
+function isSupportedAspectRatio(value: string): value is (typeof aspectRatioOptions)[number] {
+  return aspectRatioOptions.includes(value as (typeof aspectRatioOptions)[number]);
 }
 
 function getVideoDuration(
@@ -595,11 +605,16 @@ function getNodeOutputCount(node: LumenNode | undefined) {
 function withCanvasOutputMetrics(nodes: LumenNode[], edges: LumenEdge[]) {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const incomingByTarget = new Map<string, LumenEdge[]>();
+  const outgoingBySource = new Map<string, LumenEdge[]>();
 
   for (const edge of edges) {
     const incoming = incomingByTarget.get(edge.target) ?? [];
     incoming.push(edge);
     incomingByTarget.set(edge.target, incoming);
+
+    const outgoing = outgoingBySource.get(edge.source) ?? [];
+    outgoing.push(edge);
+    outgoingBySource.set(edge.source, outgoing);
   }
 
   const countUpstreamOutputs = (nodeId: string, visited = new Set<string>()): number => {
@@ -623,6 +638,13 @@ function withCanvasOutputMetrics(nodes: LumenNode[], edges: LumenEdge[]) {
       data: {
         ...node.data,
         outputCount: getNodeOutputCount(node),
+        previewAspectRatio:
+          node.data.kind === 'image'
+            ? (findDownstreamVideoAspectRatio(node.id, nodeById, outgoingBySource) ??
+              getAspectRatio(node.data.settings))
+            : node.data.kind === 'video'
+              ? getAspectRatio(node.data.settings)
+              : undefined,
         upstreamOutputCount: countUpstreamOutputs(node.id),
       },
     })),
@@ -638,6 +660,28 @@ function withCanvasOutputMetrics(nodes: LumenNode[], edges: LumenEdge[]) {
       };
     }),
   };
+}
+
+function findDownstreamVideoAspectRatio(
+  nodeId: string,
+  nodeById: Map<string, LumenNode>,
+  outgoingBySource: Map<string, LumenEdge[]>,
+) {
+  const queue = [...(outgoingBySource.get(nodeId) ?? []).map((edge) => edge.target)];
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const nextId = queue.shift();
+    if (!nextId || visited.has(nextId)) continue;
+    visited.add(nextId);
+
+    const node = nodeById.get(nextId);
+    if (!node) continue;
+    if (node.data.kind === 'video') return getAspectRatio(node.data.settings);
+    for (const edge of outgoingBySource.get(nextId) ?? []) queue.push(edge.target);
+  }
+
+  return null;
 }
 
 function canConnectNodeKinds(sourceKind: NodeKind, targetKind: NodeKind) {
@@ -701,12 +745,31 @@ function readMaterialAssetDragPayload(dataTransfer: DataTransfer): MaterialAsset
   }
 }
 
-function toWorkflowNodes(nodes: LumenNode[]) {
+function toWorkflowNodes(nodes: LumenNode[], edges: LumenEdge[]) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const outgoingBySource = new Map<string, LumenEdge[]>();
+  for (const edge of edges) {
+    const outgoing = outgoingBySource.get(edge.source) ?? [];
+    outgoing.push(edge);
+    outgoingBySource.set(edge.source, outgoing);
+  }
+
   return nodes.map((node) => {
     const inputImage = getSettingString(node.data.settings, 'inputImage');
     const inputLastFrameImage = getSettingString(node.data.settings, 'inputLastFrameImage');
     const inputVideo = getSettingString(node.data.settings, 'inputVideo');
     const inputAudio = getSettingString(node.data.settings, 'inputAudio');
+    const inheritedAspectRatio =
+      node.data.kind === 'image'
+        ? findDownstreamVideoAspectRatio(node.id, nodeById, outgoingBySource)
+        : null;
+    const settings = inheritedAspectRatio
+      ? {
+          ...node.data.settings,
+          aspectRatio: inheritedAspectRatio,
+          aspect_ratio: inheritedAspectRatio,
+        }
+      : node.data.settings;
 
     return {
       id: node.id,
@@ -728,7 +791,7 @@ function toWorkflowNodes(nodes: LumenNode[]) {
         ),
         clips: getSettingVideoClips(node.data.settings).filter((clip) => !isBlobUrl(clip.url)),
       },
-      model: { id: resolveModelId(node.data), settings: node.data.settings },
+      model: { id: resolveModelId(node.data), settings },
     };
   });
 }
@@ -936,7 +999,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     [setNodes],
   );
 
-  const { connectionError, runNodes } = useWorkflowWs({
+  const { cancelNodes, connectionError, runNodes } = useWorkflowWs({
     url: wsUrl,
     projectId: currentProjectId,
     workflowId: currentProjectId,
@@ -947,7 +1010,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
   const runSingleNode = useCallback(
     (nodeId: string) => {
-      runNodes([nodeId], toWorkflowNodes(nodes), toWorkflowEdges(edges));
+      runNodes([nodeId], toWorkflowNodes(nodes, edges), toWorkflowEdges(edges));
     },
     [nodes, edges, runNodes],
   );
@@ -956,9 +1019,18 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     (groupId: string) => {
       const nodeIds = getGroupedNodeIds(nodes, groupId);
       if (nodeIds.length === 0) return;
-      runNodes(nodeIds, toWorkflowNodes(nodes), toWorkflowEdges(edges));
+      runNodes(nodeIds, toWorkflowNodes(nodes, edges), toWorkflowEdges(edges));
     },
     [nodes, edges, runNodes],
+  );
+
+  const cancelGroup = useCallback(
+    (groupId: string) => {
+      const nodeIds = getGroupedNodeIds(nodes, groupId);
+      if (nodeIds.length === 0) return;
+      cancelNodes(nodeIds);
+    },
+    [cancelNodes, nodes],
   );
 
   const groupSelectedNodes = useCallback(() => {
@@ -1607,8 +1679,15 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   );
 
   const canvasActions = useMemo<CanvasActions>(
-    () => ({ runSingleNode, updateNodeData, uploadCanvasMedia, connectionError, canRunNode }),
-    [runSingleNode, updateNodeData, uploadCanvasMedia, connectionError, canRunNode],
+    () => ({
+      runSingleNode,
+      cancelNodes,
+      updateNodeData,
+      uploadCanvasMedia,
+      connectionError,
+      canRunNode,
+    }),
+    [runSingleNode, cancelNodes, updateNodeData, uploadCanvasMedia, connectionError, canRunNode],
   );
 
   return (
@@ -1681,6 +1760,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
                     bounds={group.bounds}
                     canRun={group.canRun}
                     name={group.name}
+                    onStop={() => cancelGroup(group.id)}
                     onRun={() => runGroup(group.id)}
                     onUngroup={() => ungroupNodes(group.id)}
                     running={group.running}
@@ -1788,7 +1868,8 @@ function readNodeStatus(value: unknown): NodeState['status'] | null {
     value === 'queued' ||
     value === 'running' ||
     value === 'success' ||
-    value === 'error'
+    value === 'error' ||
+    value === 'cancelled'
   ) {
     return value;
   }
@@ -1843,6 +1924,7 @@ function GroupFrame({
   canRun,
   name,
   onRun,
+  onStop,
   onUngroup,
   running,
   selected,
@@ -1851,6 +1933,7 @@ function GroupFrame({
   canRun: boolean;
   name: string;
   onRun: () => void;
+  onStop: () => void;
   onUngroup: () => void;
   running: boolean;
   selected: boolean;
@@ -1897,10 +1980,10 @@ function GroupFrame({
         </span>
         <button
           type="button"
-          aria-label={t('canvas.groupActions.runGroup')}
+          aria-label={running ? t('canvas.node.stop') : t('canvas.groupActions.runGroup')}
           aria-busy={running}
-          disabled={!canRun || running}
-          onClick={onRun}
+          disabled={!running && !canRun}
+          onClick={running ? onStop : onRun}
           className={`flex h-8 items-center gap-1.5 rounded-[13px] px-2.5 text-[12px] font-black transition-colors disabled:cursor-not-allowed ${
             running
               ? 'bg-white text-[#111315] shadow-[0_0_22px_rgba(121,228,255,0.2)]'
@@ -1908,11 +1991,11 @@ function GroupFrame({
           }`}
         >
           {running ? (
-            <IconLoader2 size={14} className="animate-spin" stroke={2.4} />
+            <IconPlayerStop size={14} stroke={2.4} />
           ) : (
             <IconPlayerPlay size={14} stroke={2.4} />
           )}
-          {running ? t('canvas.node.running') : t('canvas.groupActions.runGroup')}
+          {running ? t('canvas.node.stop') : t('canvas.groupActions.runGroup')}
         </button>
         <button
           type="button"
@@ -3090,8 +3173,14 @@ function ParamPills<T extends string | number>({
 function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const { t } = useI18n();
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
-  const { runSingleNode, updateNodeData, uploadCanvasMedia, connectionError, canRunNode } =
-    useContext(CanvasActionsContext);
+  const {
+    runSingleNode,
+    cancelNodes,
+    updateNodeData,
+    uploadCanvasMedia,
+    connectionError,
+    canRunNode,
+  } = useContext(CanvasActionsContext);
   const styles = nodeKindStyles[data.kind];
   const status = data.status ?? 'idle';
   const upstreamOutputCount =
@@ -3278,6 +3367,15 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       runSingleNode(id);
     },
     [canRun, data.modelId, id, isNodeBusy, modelId, runSingleNode, updateNodeData],
+  );
+
+  const handleStop = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      if (!isNodeBusy) return;
+      cancelNodes([id]);
+    },
+    [cancelNodes, id, isNodeBusy],
   );
 
   const handlePromptKeyDown = useCallback(
@@ -3522,19 +3620,19 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
               />
               <button
                 type="button"
-                aria-label={t('canvas.node.run')}
+                aria-label={isNodeBusy ? t('canvas.node.stop') : t('canvas.node.run')}
                 aria-busy={isNodeBusy}
-                title={isNodeBusy ? t('canvas.node.running') : t('canvas.node.run')}
-                disabled={!canRun || isNodeBusy}
+                title={isNodeBusy ? t('canvas.node.stop') : t('canvas.node.run')}
+                disabled={!isNodeBusy && !canRun}
                 className={`nodrag flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-black shadow-[0_12px_28px_rgba(0,0,0,0.22)] transition-colors disabled:cursor-not-allowed ${
                   isNodeBusy
                     ? 'bg-white text-[#111315] shadow-[0_0_28px_rgba(121,228,255,0.25),0_12px_28px_rgba(0,0,0,0.28)]'
                     : `${styles.primaryButton} disabled:opacity-30`
                 }`}
-                onClick={handleRun}
+                onClick={isNodeBusy ? handleStop : handleRun}
               >
                 {isNodeBusy ? (
-                  <IconLoader2 size={16} className="animate-spin" stroke={2.6} />
+                  <IconPlayerStop size={16} stroke={2.6} />
                 ) : (
                   <IconPlayerPlay size={15} stroke={2.5} />
                 )}
@@ -3578,6 +3676,7 @@ function NodeOutputEditor({
   const { t } = useI18n();
   const output = data.output ?? '';
   const trimmedOutput = output.trim();
+  const previewAspectRatio = getPreviewAspectRatio(data);
 
   if (data.kind === 'text') {
     return <TextOutputEditor onChange={onChange} output={output} />;
@@ -3586,7 +3685,12 @@ function NodeOutputEditor({
   if (data.kind === 'image') {
     if (trimmedOutput && (trimmedOutput.startsWith('data:image') || isHttpUrl(trimmedOutput))) {
       return (
-        <MediaOutputFrame kind="image" onUpload={onMediaUpload}>
+        <MediaOutputFrame
+          aspectRatio={previewAspectRatio}
+          kind="image"
+          onUpload={onMediaUpload}
+          url={trimmedOutput}
+        >
           <img
             alt={t('canvas.node.imageAlt')}
             className="pointer-events-none absolute inset-0 h-full w-full object-cover"
@@ -3602,7 +3706,9 @@ function NodeOutputEditor({
       );
     }
 
-    return <MediaOutputUpload kind="image" onUpload={onMediaUpload} />;
+    return (
+      <MediaOutputUpload aspectRatio={previewAspectRatio} kind="image" onUpload={onMediaUpload} />
+    );
   }
 
   if (
@@ -3611,7 +3717,12 @@ function NodeOutputEditor({
     (trimmedOutput.startsWith('data:video') || isHttpUrl(trimmedOutput))
   ) {
     return (
-      <MediaOutputFrame kind="video" onUpload={onMediaUpload}>
+      <MediaOutputFrame
+        aspectRatio={previewAspectRatio}
+        kind="video"
+        onUpload={onMediaUpload}
+        url={trimmedOutput}
+      >
         <video
           // transform-gpu + contain:paint 把视频提升到独立合成层，播放重绘不再波及整个节点/画布
           className="pointer-events-none absolute inset-0 h-full w-full transform-gpu object-cover"
@@ -3633,7 +3744,7 @@ function NodeOutputEditor({
     (trimmedOutput.startsWith('data:audio') || isHttpUrl(trimmedOutput))
   ) {
     return (
-      <MediaOutputFrame kind="audio" onUpload={onMediaUpload}>
+      <MediaOutputFrame kind="audio" onUpload={onMediaUpload} url={trimmedOutput}>
         <div className="pointer-events-none flex min-h-[104px] w-full flex-col justify-center gap-3 px-3">
           <div className="flex items-center gap-1.5">
             {waveformBars.map((bar) => (
@@ -3656,7 +3767,24 @@ function NodeOutputEditor({
     );
   }
 
-  return <MediaOutputUpload kind={data.kind} onUpload={onMediaUpload} />;
+  return (
+    <MediaOutputUpload
+      aspectRatio={data.kind === 'video' ? previewAspectRatio : undefined}
+      kind={data.kind}
+      onUpload={onMediaUpload}
+    />
+  );
+}
+
+function getPreviewAspectRatio(data: LumenNodeData): string | undefined {
+  if (
+    typeof data.previewAspectRatio === 'string' &&
+    isSupportedAspectRatio(data.previewAspectRatio)
+  ) {
+    return data.previewAspectRatio;
+  }
+  if (data.kind !== 'image' && data.kind !== 'video') return undefined;
+  return getAspectRatio(data.settings);
 }
 
 function TextOutputEditor({
@@ -3706,26 +3834,38 @@ function TextOutputEditor({
 }
 
 function MediaOutputFrame({
+  aspectRatio,
   children,
   kind,
   onUpload,
+  url,
 }: {
+  aspectRatio?: string;
   children: ReactNode;
   kind: MaterialAssetKind;
   onUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
+  url?: string;
 }) {
   return (
-    <div className="group/output relative min-h-[104px] w-full cursor-grab overflow-hidden active:cursor-grabbing">
+    <div
+      className={`group/output relative w-full cursor-grab overflow-hidden active:cursor-grabbing ${
+        aspectRatio ? '' : 'min-h-[104px]'
+      }`}
+      style={aspectRatio ? { aspectRatio: toCssAspectRatio(aspectRatio) } : undefined}
+    >
       {children}
+      {url ? <MediaOutputOpenButton url={url} /> : null}
       <MediaOutputUploadButton kind={kind} onUpload={onUpload} />
     </div>
   );
 }
 
 function MediaOutputUpload({
+  aspectRatio,
   kind,
   onUpload,
 }: {
+  aspectRatio?: string;
   kind: MaterialAssetKind;
   onUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
 }) {
@@ -3734,7 +3874,12 @@ function MediaOutputUpload({
   const Icon = mediaOutputIcon(kind);
 
   return (
-    <div className="group/output relative flex min-h-[104px] w-full cursor-grab flex-col items-center justify-center gap-2 px-3 py-2.5 text-white/30 transition-colors hover:text-white/64 active:cursor-grabbing">
+    <div
+      className={`group/output relative flex w-full cursor-grab flex-col items-center justify-center gap-2 px-3 py-2.5 text-white/30 transition-colors hover:text-white/64 active:cursor-grabbing ${
+        aspectRatio ? '' : 'min-h-[104px]'
+      }`}
+      style={aspectRatio ? { aspectRatio: toCssAspectRatio(aspectRatio) } : undefined}
+    >
       <div className="pointer-events-none flex flex-col items-center justify-center gap-2">
         {uploading ? (
           <IconLoader2 size={26} stroke={1.8} className="animate-spin opacity-70" />
@@ -3748,6 +3893,29 @@ function MediaOutputUpload({
       <MediaOutputUploadButton kind={kind} onUpload={onUpload} onUploadingChange={setUploading} />
     </div>
   );
+}
+
+function MediaOutputOpenButton({ url }: { url: string }) {
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      aria-label={t('canvas.node.openOutput')}
+      title={t('canvas.node.openOutput')}
+      data-skip-node-select="true"
+      className="nodrag nopan absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/44 text-white/78 opacity-0 ring-1 ring-white/[0.16] backdrop-blur transition-opacity hover:bg-black/62 hover:text-white group-hover/output:opacity-100"
+      onClick={(event) => {
+        event.stopPropagation();
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }}
+    >
+      <IconExternalLink size={14} stroke={2.2} />
+    </button>
+  );
+}
+
+function toCssAspectRatio(value: string): string {
+  return value.replace(':', ' / ');
 }
 
 function MediaOutputUploadButton({
