@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useReducer, useRef } from 'react';
 
 import type { Locale } from '@/i18n/routing';
 import type {
@@ -224,19 +224,29 @@ export function useRemakeJob(
     void fetchView();
   }, [fetchView]);
 
-  // 每秒轮询，直到 final 阶段成功或组件卸载
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  });
+
+  // 每秒轮询，直到终态或组件卸载。
+  // stateRef 避免把 state 加入依赖数组——否则每次 fetch 更新 state
+  // 都会清掉旧 interval 重建新的，节奏不稳定。
   useEffect(() => {
     if (!jobId) return;
 
     const id = setInterval(() => {
-      const s = state;
-      // final:success 是终态，停止轮询
-      if (s.phase === 'ready' && s.view?.stageStatuses.final === 'success') return;
+      const s = stateRef.current;
+      if (s.phase === 'ready') {
+        const { final } = s.view?.stageStatuses ?? {};
+        // final:success / error / cancelled 都是终态，停止轮询
+        if (final === 'success' || final === 'error' || final === 'cancelled') return;
+      }
       void fetchView();
     }, 1000);
 
     return () => clearInterval(id);
-  }, [jobId, fetchView, state]);
+  }, [jobId, fetchView]);
 
   const post = useCallback(
     async <T>(path: string, body: unknown): Promise<RemakeJobView | null> => {
