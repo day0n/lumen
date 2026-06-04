@@ -14,7 +14,7 @@ import { getRemakeJobRepository } from '@/server/db';
 import type { RemakeBreakdown } from '@/server/remakeAnalysis';
 import type { RemakePlan, RemakeReference } from '@/server/remakePlan';
 
-import { dispatchTasks, publishJobEvent, setJobCancelled } from './dispatch';
+import { dispatchTasks, setJobCancelled } from './dispatch';
 import { buildPlanForJob, resolveReferenceVideo } from './planning';
 import {
   type PlannedTask,
@@ -86,7 +86,6 @@ export async function createRemakeJob(options: CreateRemakeJobOptions): Promise<
     userPrompt: options.userPrompt,
   });
 
-  await publishJobEvent({ type: 'job:updated', jobId: job.id });
   return composeView(job, []);
 }
 
@@ -184,7 +183,6 @@ export async function confirmGate1(input: {
   });
   if (!updated) return null;
 
-  await publishJobEvent({ type: 'job:updated', jobId: input.jobId });
   return getRemakeJobView(input.jobId, input.ownerId);
 }
 
@@ -211,7 +209,6 @@ export async function confirmGate2(input: {
   });
   if (!updated) return null;
 
-  await publishJobEvent({ type: 'job:updated', jobId: input.jobId });
   return getRemakeJobView(input.jobId, input.ownerId);
 }
 
@@ -298,23 +295,6 @@ export async function runStage(input: {
     })),
   );
 
-  // 4. 发 task:queued 事件给 SSE
-  for (const task of created) {
-    await publishJobEvent({
-      type: 'task:queued',
-      jobId: input.jobId,
-      taskId: task.id,
-      stage: task.stage,
-      sliceKey: task.sliceKey,
-    });
-  }
-  await publishJobEvent({
-    type: 'stage:status',
-    jobId: input.jobId,
-    stage: input.stage,
-    status: 'running',
-  });
-
   return getRemakeJobView(input.jobId, input.ownerId);
 }
 
@@ -334,7 +314,6 @@ export async function cancelRemakeJob(input: {
   const reason = input.reason?.trim() || 'cancelled by user';
   await setJobCancelled(input.jobId, reason);
   await repository.cancelTasksByStages(input.jobId, ['lock', 'storyboard', 'video', 'final']);
-  await publishJobEvent({ type: 'job:updated', jobId: input.jobId });
   return getRemakeJobView(input.jobId, input.ownerId);
 }
 

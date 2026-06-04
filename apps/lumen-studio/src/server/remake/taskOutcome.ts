@@ -3,7 +3,7 @@ import type { RemakeTaskStatus } from '@lumen/db';
 
 import { getRemakeJobRepository } from '@/server/db';
 
-import { type RemakeEvent, dispatchTasks, publishJobEvent } from './dispatch';
+import { dispatchTasks } from './dispatch';
 import {
   deriveJobStageStatuses,
   parseSceneIndexFromSliceKey,
@@ -58,51 +58,6 @@ export async function recordTaskOutcome(input: RecordTaskOutcomeInput): Promise<
   ) {
     await maybeEnqueueSceneMix(input.jobId, input.ownerId, task.sliceKey);
   }
-
-  const event: RemakeEvent =
-    input.status === 'success' && input.outputUrl
-      ? {
-          type: 'task:done',
-          jobId: input.jobId,
-          taskId: input.taskId,
-          stage: task.stage,
-          sliceKey: task.sliceKey,
-          outputUrl: input.outputUrl,
-          outputKind: input.outputKind ?? 'text',
-        }
-      : input.status === 'error'
-        ? {
-            type: 'task:error',
-            jobId: input.jobId,
-            taskId: input.taskId,
-            stage: task.stage,
-            sliceKey: task.sliceKey,
-            error: input.error ?? 'unknown error',
-          }
-        : input.status === 'cancelled'
-          ? {
-              type: 'task:cancelled',
-              jobId: input.jobId,
-              taskId: input.taskId,
-              stage: task.stage,
-              sliceKey: task.sliceKey,
-              reason: input.error ?? 'cancelled',
-            }
-          : {
-              type: 'task:progress',
-              jobId: input.jobId,
-              taskId: input.taskId,
-              stage: task.stage,
-              sliceKey: task.sliceKey,
-              progress: input.progress ?? 0,
-            };
-  await publishJobEvent(event);
-  await publishJobEvent({
-    type: 'stage:status',
-    jobId: input.jobId,
-    stage: task.stage,
-    status: stageStatuses[task.stage],
-  });
 }
 
 async function applyTaskOutputToJob(
@@ -180,11 +135,4 @@ async function maybeEnqueueSceneMix(
       settingsJson: JSON.stringify(mix.settings),
     },
   ]);
-  await publishJobEvent({
-    type: 'task:queued',
-    jobId,
-    taskId: created.id,
-    stage: created.stage,
-    sliceKey: created.sliceKey,
-  });
 }

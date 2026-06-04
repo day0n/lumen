@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer } from 'react';
 
 import type { Locale } from '@/i18n/routing';
 import type {
@@ -195,8 +195,6 @@ export function useRemakeJob(
     view: null,
     error: null,
   } satisfies State);
-  // refetch 节流：连续多个事件来时只发起一次实际 fetch
-  const refetchPendingRef = useRef(false);
 
   const fetchView = useCallback(async () => {
     if (!jobId) return;
@@ -226,125 +224,19 @@ export function useRemakeJob(
     void fetchView();
   }, [fetchView]);
 
-  // SSE 订阅
+  // 每秒轮询，直到 final 阶段成功或组件卸载
   useEffect(() => {
     if (!jobId) return;
-    const source = new EventSource(`/api/remake/jobs/${jobId}/stream`);
 
-    const scheduleRefetch = () => {
-      if (refetchPendingRef.current) return;
-      refetchPendingRef.current = true;
-      setTimeout(() => {
-        refetchPendingRef.current = false;
-        void fetchView();
-      }, 350);
-    };
+    const id = setInterval(() => {
+      const s = state;
+      // final:success 是终态，停止轮询
+      if (s.phase === 'ready' && s.view?.stageStatuses.final === 'success') return;
+      void fetchView();
+    }, 1000);
 
-    source.onmessage = (event) => {
-      let parsed: ServerEvent;
-      try {
-        parsed = JSON.parse(event.data) as ServerEvent;
-      } catch {
-        return;
-      }
-      switch (parsed.type) {
-        case 'task:queued':
-          dispatch({
-            type: 'patch-task',
-            task: {
-              id: parsed.taskId,
-              sliceKey: parsed.sliceKey,
-              stage: parsed.stage,
-              status: 'queued' as RemakeTaskStatus,
-              progress: 0,
-              error: undefined,
-            },
-          });
-          break;
-        case 'task:start':
-          dispatch({
-            type: 'patch-task',
-            task: {
-              id: parsed.taskId,
-              sliceKey: parsed.sliceKey,
-              stage: parsed.stage,
-              status: 'running' as RemakeTaskStatus,
-              progress: 0,
-            },
-          });
-          break;
-        case 'task:progress':
-          dispatch({
-            type: 'patch-task',
-            task: {
-              id: parsed.taskId,
-              sliceKey: parsed.sliceKey,
-              stage: parsed.stage,
-              status: 'running' as RemakeTaskStatus,
-              progress: parsed.progress,
-            },
-          });
-          break;
-        case 'task:done':
-          dispatch({
-            type: 'patch-task',
-            task: {
-              id: parsed.taskId,
-              sliceKey: parsed.sliceKey,
-              stage: parsed.stage,
-              status: 'success' as RemakeTaskStatus,
-              progress: 1,
-              outputUrl: parsed.outputUrl,
-              outputKind: parsed.outputKind,
-            },
-          });
-          // job.outputs 在 server 端已经写好，refetch 拿全。
-          scheduleRefetch();
-          break;
-        case 'task:error':
-          dispatch({
-            type: 'patch-task',
-            task: {
-              id: parsed.taskId,
-              sliceKey: parsed.sliceKey,
-              stage: parsed.stage,
-              status: 'error' as RemakeTaskStatus,
-              error: parsed.error,
-            },
-          });
-          scheduleRefetch();
-          break;
-        case 'task:cancelled':
-          dispatch({
-            type: 'patch-task',
-            task: {
-              id: parsed.taskId,
-              sliceKey: parsed.sliceKey,
-              stage: parsed.stage,
-              status: 'cancelled' as RemakeTaskStatus,
-              error: parsed.reason,
-            },
-          });
-          scheduleRefetch();
-          break;
-        case 'stage:status':
-          dispatch({ type: 'patch-stage', stage: parsed.stage, status: parsed.status });
-          break;
-        case 'job:updated':
-          // gate confirm / replan 时后端发，直接 refetch 整张 view
-          scheduleRefetch();
-          break;
-      }
-    };
-
-    source.onerror = () => {
-      // EventSource 会自动重连，这里只是记录；不写错误状态，避免和正常重连闪烁。
-    };
-
-    return () => {
-      source.close();
-    };
-  }, [jobId, fetchView]);
+    return () => clearInterval(id);
+  }, [jobId, fetchView, state]);
 
   const post = useCallback(
     async <T>(path: string, body: unknown): Promise<RemakeJobView | null> => {

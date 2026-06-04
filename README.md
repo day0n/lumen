@@ -99,14 +99,14 @@ lumen-engine  →  执行节点  →  PUBLISH 到上面那个 channel
 
 ### 3. 爆款复刻（Remake）
 
-独立于画布和 Agent，有自己的 Redis Stream 和状态机编排。
+独立于画布和 Agent，有自己的 Redis Stream，前端每秒轮询 HTTP 接口获取状态。
 
 ```
 浏览器
   │  POST /api/remake/jobs
   ▼
 lumen-studio
-  │  Gemini 分析参考视频 + 生成复刻计划
+  │  Gemini 分析参考视频 + 商品图 + 生成复刻计划
   │  XADD lumen:remake:tasks  ← 独立 Stream，每个 task 单独派发
   ▼
 lumen-engine（独立 Redis 连接，RemakeStreamConsumer）
@@ -114,10 +114,9 @@ lumen-engine（独立 Redis 连接，RemakeStreamConsumer）
   │  PUBLISH lumen:remake:task-results
   ▼
 lumen-studio  eventMirror.ts  （常驻订阅）
-  │  更新 MongoDB
-  │  PUBLISH lumen:remake:events:{jobId}
-  ▼
-浏览器  ←  SSE  ←  GET /api/remake/jobs/:id/stream
+  └─► 更新 MongoDB
+
+浏览器  每秒  GET /api/remake/jobs/:id  ← 直接读 MongoDB
 ```
 
 编排模型：**状态机**，拓扑写死在 `stages.ts`，Gate 1/2 让用户在关键节点确认后再触发下游。
