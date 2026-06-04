@@ -1,20 +1,16 @@
 'use client';
 
-import { CanvasHydrationOverlay } from '@/components/canvas/CanvasHydrationOverlay';
-import { useI18n } from '@/i18n/provider';
-
 /**
  * 路由级 loading fallback：在 Next.js 切换到 /canvas 子路由时立即显示，
- * 直到对应 page 客户端 hydration 完成。视觉上只显示图标，不显示文案。
+ * 但不播放动画。真正的画布加载动画由 CanvasWorkbench 统一负责，
+ * 避免 route fallback 与 workbench hydration overlay 连续挂载造成视觉上跳两遍。
  */
 export function CanvasRouteLoader() {
-  const { t } = useI18n();
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-[#050607]">
-      <CanvasHydrationOverlay
-        label={t('canvas.hydration.preparing')}
-        hint={t('canvas.hydration.hint')}
-      />
-    </main>
+    <main
+      className="relative h-screen w-screen overflow-hidden bg-[#050607]"
+      aria-busy="true"
+      aria-label="Loading canvas"
+    />
   );
 }
