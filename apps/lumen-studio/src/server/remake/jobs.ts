@@ -1,16 +1,11 @@
 import 'server-only';
 
-import { nanoid } from 'nanoid';
-
 import type {
-  RemakeJobOutputs,
   RemakeJobPlan,
   RemakeJobRecord,
   RemakeJobSettings,
   RemakeStageName,
   RemakeStageStatus,
-  RemakeTaskHandler,
-  RemakeTaskInput,
   RemakeTaskRecord,
   RemakeTaskStatus,
 } from '@lumen/db';
@@ -168,14 +163,18 @@ export async function confirmGate1(input: {
   // Gate 1 把所有下游 task / output 清空 —— 场次数可能变了，旧数据不可信。
   await repository.deleteTasksByStages(input.jobId, ['lock', 'storyboard', 'video', 'final']);
 
-  const newSettings: RemakeJobSettings = {
-    ...job.settings,
-    ...(input.voiceLanguage ? { language: input.voiceLanguage } : {}),
-  };
+  const nextSettings: RemakeJobSettings | undefined = input.voiceLanguage
+    ? { ...job.settings, language: input.voiceLanguage }
+    : undefined;
+  // 用户切换语言时把声线一并钉死在 plan 里，避免 stages.ts pickDefaultVoice 再去猜。
+  const planWithVoice = input.voiceLanguage
+    ? { ...plan, voice: input.voiceLanguage === 'zh' ? 'AD_Sister' : 'Rachel' }
+    : plan;
 
   const updated = await repository.updateJob(input.jobId, input.ownerId, {
-    plan: toJobPlan(plan),
+    plan: toJobPlan(planWithVoice),
     breakdown: breakdown ? toJobBreakdown(breakdown) : undefined,
+    ...(nextSettings ? { settings: nextSettings } : {}),
     gate1ConfirmedAt: new Date(),
     gate2ConfirmedAt: undefined,
     outputsPatch: {
@@ -189,26 +188,8 @@ export async function confirmGate1(input: {
   });
   if (!updated) return null;
 
-  // 三个下游 stage 全 reset 回 locked / ready 由 deriveJobStageStatuses 自动算
-  // （因为 task 都删了，gate2 也清了）
-  // 但要持久化把 settings 也写回去（如果改了 language）
-  const finalUpdated = input.voiceLanguage
-    ? await repository.updateJob(input.jobId, input.ownerId, {
-        // settings 不在 UpdateRemakeJobInput 里，需要走 plan.voice 传 voice
-        // 这里我们简化：把 voice 写进 plan 里，让 stages.ts pickDefaultVoice 直接用
-        plan: toJobPlan({ ...plan, voice: input.voiceLanguage === 'zh' ? 'AD_Sister' : 'Rachel' }),
-      })
-    : updated;
-
-  // 把 newSettings 单独写进去（schema 里 settings 没在 UpdateRemakeJobInput，需要补） —
-  // 简化方案：在 plan 上加 voice 字段就够了，settings.language 保留旧值（罕见用户改语言）
-  // TODO: 后续完善 settings 更新接口
-  void newSettings;
-
   await publishJobEvent({ type: 'job:updated', jobId: input.jobId });
-  return getRemakeJobView(input.jobId, input.ownerId).then(
-    (v) => v ?? composeView(finalUpdated ?? updated, []),
-  );
+  return getRemakeJobView(input.jobId, input.ownerId);
 }
 
 export async function confirmGate2(input: {

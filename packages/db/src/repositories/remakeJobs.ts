@@ -107,6 +107,7 @@ export class RemakeJobRepository {
     const set: Record<string, unknown> = { updated_at: new Date() };
     if (parsed.plan !== undefined) set.plan = parsed.plan;
     if (parsed.breakdown !== undefined) set.breakdown = parsed.breakdown;
+    if (parsed.settings !== undefined) set.settings = parsed.settings;
     if (parsed.productImageUrls !== undefined) set.product_image_urls = parsed.productImageUrls;
     if (parsed.creatorImageUrls !== undefined) set.creator_image_urls = parsed.creatorImageUrls;
     if (parsed.userPrompt !== undefined) set.user_prompt = parsed.userPrompt;

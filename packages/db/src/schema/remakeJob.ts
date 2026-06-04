@@ -374,6 +374,7 @@ export const UpdateRemakeJobInputSchema = z
   .object({
     plan: RemakePlanSchema.optional(),
     breakdown: RemakeBreakdownSchema.optional(),
+    settings: RemakeJobSettingsSchema.optional(),
     productImageUrls: z.array(z.string().trim().url()).min(1).max(9).optional(),
     creatorImageUrls: z.array(z.string().trim().url()).max(2).optional(),
     userPrompt: z.string().trim().max(1200).optional(),
