@@ -23,6 +23,7 @@ import {
   IconLock,
   IconMusic,
   IconPlayerPlay,
+  IconPlayerStopFilled,
 } from '@tabler/icons-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -50,7 +51,7 @@ export function HotVideoRemakePipeline({
 }) {
   const { locale } = useI18n();
   const copy = getCopy(locale);
-  const { state, runStage, confirmGate1, confirmGate2 } = useRemakeJob(jobId, { locale });
+  const { state, runStage, confirmGate1, confirmGate2, cancel } = useRemakeJob(jobId, { locale });
 
   if (state.phase === 'loading') {
     return (
@@ -88,6 +89,7 @@ export function HotVideoRemakePipeline({
       onRunStage={runStage}
       onConfirmGate1={confirmGate1}
       onConfirmGate2={confirmGate2}
+      onCancel={cancel}
     />
   );
 }
@@ -104,6 +106,7 @@ function PipelineView({
   onRunStage,
   onConfirmGate1,
   onConfirmGate2,
+  onCancel,
 }: {
   view: RemakeJobView;
   error: string | null;
@@ -117,12 +120,22 @@ function PipelineView({
     voiceLanguage?: 'zh' | 'en';
   }) => Promise<void>;
   onConfirmGate2: () => Promise<void>;
+  onCancel: (reason?: string) => Promise<void>;
 }) {
   const { job, tasks, stageStatuses } = view;
   // 默认进入页面时，按 stageStatuses 找第一个非 success 的步骤
   const initialStep = useMemo(() => firstNonSuccessStep(stageStatuses, job), [stageStatuses, job]);
   const [activeStep, setActiveStep] = useState(initialStep);
   const [stageBusy, setStageBusy] = useState<RemakeStageName | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  const anyStageRunning = useMemo(
+    () =>
+      (['lock', 'storyboard', 'video', 'final'] as RemakeStageName[]).some(
+        (name) => stageStatuses[name] === 'running',
+      ),
+    [stageStatuses],
+  );
 
   // job id 切换 / 用户从外部 reset 时，把 activeStep 回到合理位置
   useEffect(() => {
@@ -166,8 +179,32 @@ function PipelineView({
           <div className="text-[12px] font-semibold text-white/38">{copy.inPageWorkflow}</div>
           <h1 className="truncate text-[22px] font-bold text-white">{job.reference.label}</h1>
         </div>
-        <div className="ml-auto rounded-full bg-[#79e4ff]/12 px-3 py-1.5 text-[12px] font-semibold text-[#79e4ff] ring-1 ring-[#79e4ff]/20">
-          {copy.jobMode}
+        <div className="ml-auto flex items-center gap-2">
+          {anyStageRunning ? (
+            <button
+              type="button"
+              disabled={cancelling}
+              onClick={async () => {
+                setCancelling(true);
+                try {
+                  await onCancel();
+                } finally {
+                  setCancelling(false);
+                }
+              }}
+              className="flex h-9 items-center gap-1.5 rounded-full bg-[#f5c76a]/12 px-3 text-[12px] font-bold text-[#f5c76a] ring-1 ring-[#f5c76a]/22 transition-colors hover:bg-[#f5c76a]/22 disabled:opacity-55"
+            >
+              {cancelling ? (
+                <IconLoader2 size={13} className="animate-spin" />
+              ) : (
+                <IconPlayerStopFilled size={12} />
+              )}
+              {copy.cancelRunning}
+            </button>
+          ) : null}
+          <div className="rounded-full bg-[#79e4ff]/12 px-3 py-1.5 text-[12px] font-semibold text-[#79e4ff] ring-1 ring-[#79e4ff]/20">
+            {copy.jobMode}
+          </div>
         </div>
       </div>
 
@@ -1233,6 +1270,7 @@ function getCopy(locale: 'en' | 'zh') {
       back: '返回爆款库',
       inPageWorkflow: '页面内复刻工作流',
       jobMode: '任务模式（可断点续传）',
+      cancelRunning: '取消任务',
       reference: '参考视频',
       productImages: '商品图',
       creatorImages: '创作者参考',
@@ -1299,6 +1337,7 @@ function getCopy(locale: 'en' | 'zh') {
     back: 'Back to library',
     inPageWorkflow: 'In-page remix workflow',
     jobMode: 'Job mode (resumable)',
+    cancelRunning: 'Cancel running',
     reference: 'Reference',
     productImages: 'Product images',
     creatorImages: 'Creator references',

@@ -3,6 +3,7 @@
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
 import { HotVideoRemakePipeline } from '@/components/studio/HotVideoRemakePipeline';
+import { RemakeJobsDrawer } from '@/components/studio/RemakeJobsDrawer';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
 import { useLoginRedirect } from '@/lib/auth-redirect';
@@ -20,6 +21,7 @@ import {
   IconEye,
   IconFlame,
   IconHeart,
+  IconHistory,
   IconLink,
   IconLoader2,
   IconLock,
@@ -35,7 +37,8 @@ import {
   IconX,
 } from '@tabler/icons-react';
 import { motion } from 'motion/react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 
 type FilterKey = 'owner' | 'region' | 'category' | 'gmv' | 'videoType' | 'published';
@@ -289,7 +292,22 @@ export function HotVideosPage() {
   const [replicaPreview, setReplicaPreview] = useState<HotVideoView | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [previewVideo, setPreviewVideo] = useState<HotVideoView | null>(null);
-  const [remakeJobId, setRemakeJobId] = useState<string | null>(null);
+  const [jobsDrawerOpen, setJobsDrawerOpen] = useState(false);
+  // jobId 同步到 ?job=<id> 查询参数 —— 刷新、跨设备、可分享。
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const remakeJobId = searchParams.get('job');
+  const setRemakeJobId = useCallback(
+    (jobId: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (jobId) params.set('job', jobId);
+      else params.delete('job');
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
   const [remakePreparing, setRemakePreparing] = useState<RemakePreparingState | null>(null);
   const generateAbortRef = useRef<AbortController | null>(null);
 
@@ -534,8 +552,19 @@ export function HotVideosPage() {
 
             <button
               type="button"
+              onClick={() => {
+                if (!requireLogin('/hot-videos')) return;
+                setJobsDrawerOpen(true);
+              }}
+              className="ml-auto flex h-9 items-center gap-1.5 rounded-full bg-[#79e4ff]/12 px-3 text-[13px] font-semibold text-[#79e4ff] ring-1 ring-[#79e4ff]/22 transition-colors hover:bg-[#79e4ff]/22"
+            >
+              <IconHistory size={13} stroke={2.4} />
+              {t('hotVideos.myJobs')}
+            </button>
+            <button
+              type="button"
               onClick={resetFilters}
-              className="ml-auto flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[#ff5fbf] transition-colors hover:bg-[#ff5fbf]/10"
+              className="flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[#ff5fbf] transition-colors hover:bg-[#ff5fbf]/10"
             >
               <IconRefresh size={13} stroke={2.4} />
               {t('common.resetFilters')}
@@ -634,6 +663,15 @@ export function HotVideosPage() {
       {previewVideo ? (
         <VideoPreviewModal video={previewVideo} onClose={() => setPreviewVideo(null)} />
       ) : null}
+
+      <RemakeJobsDrawer
+        open={jobsDrawerOpen}
+        onClose={() => setJobsDrawerOpen(false)}
+        onResume={(jobId) => {
+          setJobsDrawerOpen(false);
+          setRemakeJobId(jobId);
+        }}
+      />
     </div>
   );
 }
