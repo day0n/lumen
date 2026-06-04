@@ -2,8 +2,8 @@ import Redis from 'ioredis';
 
 import { getStudioServerConfig } from '../config';
 import { logger } from '../logger';
-import { REMAKE_TASK_RESULTS_CHANNEL } from './dispatch';
-import { recordTaskOutcome } from './jobs';
+import { REMAKE_TASK_RESULTS_CHANNEL } from './channels';
+import { recordTaskOutcome } from './taskOutcome';
 
 /**
  * 爆款复刻 —— 事件镜像 worker。

@@ -7,7 +7,6 @@ import type {
   RemakeStageName,
   RemakeStageStatus,
   RemakeTaskRecord,
-  RemakeTaskStatus,
 } from '@lumen/db';
 
 import type { Locale } from '@/i18n/routing';
@@ -15,7 +14,7 @@ import { getRemakeJobRepository } from '@/server/db';
 import type { RemakeBreakdown } from '@/server/remakeAnalysis';
 import type { RemakePlan, RemakeReference } from '@/server/remakePlan';
 
-import { type RemakeEvent, dispatchTasks, publishJobEvent, setJobCancelled } from './dispatch';
+import { dispatchTasks, publishJobEvent, setJobCancelled } from './dispatch';
 import { buildPlanForJob, resolveReferenceVideo } from './planning';
 import {
   type PlannedTask,
@@ -25,9 +24,6 @@ import {
   expandLockStage,
   expandStoryboardStage,
   expandVideoStage,
-  parseSceneIndexFromSliceKey,
-  planSceneMixTask,
-  sliceOutputField,
 } from './stages';
 
 /**
@@ -320,196 +316,6 @@ export async function runStage(input: {
   });
 
   return getRemakeJobView(input.jobId, input.ownerId);
-}
-
-// ============================================================
-// Task 完成事件（由 engine event → studio mirror → 这个函数）
-// ============================================================
-
-export interface RecordTaskOutcomeInput {
-  jobId: string;
-  ownerId: string;
-  taskId: string;
-  status: RemakeTaskStatus;
-  progress?: number;
-  outputUrl?: string;
-  outputKind?: 'image' | 'video' | 'audio' | 'text';
-  error?: string;
-}
-
-export async function recordTaskOutcome(input: RecordTaskOutcomeInput): Promise<void> {
-  const repository = await getRemakeJobRepository();
-  const task = await repository.patchTaskStatus(input.taskId, {
-    status: input.status,
-    progress: input.progress,
-    outputUrl: input.outputUrl,
-    outputKind: input.outputKind,
-    error: input.error ?? null,
-  });
-  if (!task) return;
-
-  // 把 output 反映射到 job.outputs
-  if (input.status === 'success' && input.outputUrl) {
-    await applyTaskOutputToJob(input.jobId, input.ownerId, task.sliceKey, input.outputUrl);
-  }
-
-  // 推导 stage 状态 → patch
-  const job = await repository.getJob(input.jobId, input.ownerId);
-  if (!job) return;
-  const allTasks = await repository.listTasksByJob(input.jobId);
-  const stageStatuses = deriveJobStageStatuses(job, allTasks);
-  await repository.updateJob(input.jobId, input.ownerId, {
-    stagePatch: {
-      name: task.stage,
-      state: {
-        status: stageStatuses[task.stage],
-        ...(stageStatuses[task.stage] === 'success' ? { settledAt: new Date() } : {}),
-      },
-    },
-  });
-
-  // video stage 内：scene-video-N + scene-voice-N 都 success 且 scene-mix-N 还没存在 → enqueue
-  if (
-    task.stage === 'video' &&
-    input.status === 'success' &&
-    (task.sliceKey.startsWith('scene-video-') || task.sliceKey.startsWith('scene-voice-'))
-  ) {
-    await maybeEnqueueSceneMix(input.jobId, input.ownerId, task.sliceKey);
-  }
-
-  // video stage 内全部 mix + bgm 都 success → 自动把 stage 标 success 并发事件
-  // 上面 deriveJobStageStatuses 已经算过了
-
-  // 发事件
-  const event: RemakeEvent =
-    input.status === 'success' && input.outputUrl
-      ? {
-          type: 'task:done',
-          jobId: input.jobId,
-          taskId: input.taskId,
-          stage: task.stage,
-          sliceKey: task.sliceKey,
-          outputUrl: input.outputUrl,
-          outputKind: input.outputKind ?? 'text',
-        }
-      : input.status === 'error'
-        ? {
-            type: 'task:error',
-            jobId: input.jobId,
-            taskId: input.taskId,
-            stage: task.stage,
-            sliceKey: task.sliceKey,
-            error: input.error ?? 'unknown error',
-          }
-        : input.status === 'cancelled'
-          ? {
-              type: 'task:cancelled',
-              jobId: input.jobId,
-              taskId: input.taskId,
-              stage: task.stage,
-              sliceKey: task.sliceKey,
-              reason: input.error ?? 'cancelled',
-            }
-          : {
-              type: 'task:progress',
-              jobId: input.jobId,
-              taskId: input.taskId,
-              stage: task.stage,
-              sliceKey: task.sliceKey,
-              progress: input.progress ?? 0,
-            };
-  await publishJobEvent(event);
-  await publishJobEvent({
-    type: 'stage:status',
-    jobId: input.jobId,
-    stage: task.stage,
-    status: stageStatuses[task.stage],
-  });
-}
-
-async function applyTaskOutputToJob(
-  jobId: string,
-  ownerId: string,
-  sliceKey: string,
-  outputUrl: string,
-): Promise<void> {
-  const repository = await getRemakeJobRepository();
-  const field = sliceOutputField(sliceKey);
-  if (!field) return;
-
-  if (
-    field === 'creatorLockUrl' ||
-    field === 'productLockUrl' ||
-    field === 'bgmUrl' ||
-    field === 'finalUrl'
-  ) {
-    await repository.updateJob(jobId, ownerId, {
-      outputsPatch: { [field]: outputUrl },
-    });
-    return;
-  }
-
-  const sceneIndex = parseSceneIndexFromSliceKey(sliceKey);
-  if (sceneIndex === null) return;
-  await repository.patchSceneOutput(jobId, ownerId, sceneIndex, { [field]: outputUrl });
-}
-
-async function maybeEnqueueSceneMix(
-  jobId: string,
-  ownerId: string,
-  triggerSliceKey: string,
-): Promise<void> {
-  const sceneIndex = parseSceneIndexFromSliceKey(triggerSliceKey);
-  if (sceneIndex === null) return;
-
-  const repository = await getRemakeJobRepository();
-  const job = await repository.getJob(jobId, ownerId);
-  if (!job) return;
-  const mix = planSceneMixTask(job, sceneIndex);
-  if (!mix) return;
-
-  // 检查是否已经派发过这一场的 mix
-  const existing = await repository
-    .listTasksByJob(jobId)
-    .then((tasks) => tasks.find((task) => task.sliceKey === mix.sliceKey));
-  if (
-    existing &&
-    (existing.status === 'queued' || existing.status === 'running' || existing.status === 'success')
-  ) {
-    return;
-  }
-
-  const [created] = await repository.createTasks([
-    {
-      jobId,
-      stage: mix.stage,
-      sliceKey: mix.sliceKey,
-      handler: mix.handler,
-      input: mix.input,
-      settings: mix.settings,
-    },
-  ]);
-  if (!created) return;
-
-  await dispatchTasks([
-    {
-      taskId: created.id,
-      jobId,
-      ownerId,
-      stage: created.stage,
-      sliceKey: created.sliceKey,
-      handler: created.handler,
-      inputJson: JSON.stringify(mix.input),
-      settingsJson: JSON.stringify(mix.settings),
-    },
-  ]);
-  await publishJobEvent({
-    type: 'task:queued',
-    jobId,
-    taskId: created.id,
-    stage: created.stage,
-    sliceKey: created.sliceKey,
-  });
 }
 
 // ============================================================

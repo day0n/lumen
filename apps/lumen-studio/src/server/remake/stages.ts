@@ -1,5 +1,4 @@
-import 'server-only';
-
+// 勿加 server-only：由 jobs.ts 在 server.ts 启动链上加载。
 import type {
   RemakeJobRecord,
   RemakeJobSceneOutput,

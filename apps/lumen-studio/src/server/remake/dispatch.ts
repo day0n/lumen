@@ -1,5 +1,4 @@
-import 'server-only';
-
+// 勿加 server-only：server.ts 经 eventMirror 在进程启动时加载本模块。
 import { getRedisClient } from '@lumen/db';
 
 import { getStudioServerConfig } from '../config';
@@ -17,27 +16,27 @@ import { logger } from '../logger';
  * 与老 `lumen:flow:tasks` 完全独立 —— 爆款复刻退出 workflow 模型，普通画布工作流不受影响。
  */
 
-export const REMAKE_TASKS_STREAM = 'lumen:remake:tasks';
-export const REMAKE_TASKS_GROUP = 'remake-engine-group';
-/**
- * Engine 端发布的 task 原始结果走这个全局 channel。
- * Studio 的 eventMirror 唯一订阅源。
- * 跟下面 SSE 用的 `lumen:remake:events:<jobId>` 完全隔离，避免 mirror 自回环。
- */
-export const REMAKE_TASK_RESULTS_CHANNEL = 'lumen:remake:task-results';
-export const REMAKE_CANCEL_KEY_PREFIX = 'lumen:remake:cancel:';
-export const REMAKE_CANCEL_CHANNEL = 'lumen:remake:cancels';
-export const REMAKE_CANCEL_TTL_SECONDS = 60 * 60;
+export {
+  REMAKE_CANCEL_CHANNEL,
+  REMAKE_CANCEL_KEY_PREFIX,
+  REMAKE_CANCEL_TTL_SECONDS,
+  REMAKE_TASK_RESULTS_CHANNEL,
+  REMAKE_TASKS_GROUP,
+  REMAKE_TASKS_STREAM,
+  jobEventChannel,
+  jobEventLogKey,
+} from './channels';
+
+import {
+  REMAKE_CANCEL_KEY_PREFIX,
+  REMAKE_CANCEL_TTL_SECONDS,
+  REMAKE_TASKS_STREAM,
+  jobEventChannel,
+  jobEventLogKey,
+} from './channels';
+
 const EVENT_LOG_TTL_SECONDS = 60 * 60;
 const EVENT_LOG_TRIM_MAXLEN = 500;
-
-export function jobEventChannel(jobId: string): string {
-  return `lumen:remake:events:${jobId}`;
-}
-
-export function jobEventLogKey(jobId: string): string {
-  return `lumen:remake:events:${jobId}:log`;
-}
 
 function getRedis() {
   const cfg = getStudioServerConfig();
