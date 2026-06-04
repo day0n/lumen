@@ -423,6 +423,47 @@ body::before {
   transform: translateX(-100%);
 }
 
+/* 列表/卡片加载占位骨架。统一在亮度上做"呼吸 + 微光扫过"两层动画，
+   既能在静态截图里也看得出在加载，又不会因为饱和色块抢走真实内容的注意力。 */
+@keyframes lumen-skeleton-breathe {
+  0%,
+  100% {
+    background-color: rgba(255, 255, 255, 0.04);
+  }
+  50% {
+    background-color: rgba(255, 255, 255, 0.07);
+  }
+}
+
+@keyframes lumen-skeleton-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.lumen-skeleton {
+  animation: lumen-skeleton-breathe 1.8s ease-in-out infinite;
+  background-color: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  position: relative;
+}
+
+.lumen-skeleton::after {
+  animation: lumen-skeleton-sweep 2.4s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    transparent 100%
+  );
+  content: "";
+  inset: 0;
+  position: absolute;
+}
+
 /* respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *,

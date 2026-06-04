@@ -102,6 +102,9 @@ export function WorkspacePage() {
   const [folderActionError, setFolderActionError] = useState<string | null>(null);
   // 默认收起：避免文件夹列表挡住主网格；用户显式展开过会写入 localStorage 后保持。
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  // 首次抓 projects/folders 时铺一层骨架卡，避免用户先看到「空白 + 新建卡」再瞬间跳出真实数据。
+  // 只在初次加载时为 true；后续刷新（移动、删除、重命名）走乐观更新，不再回到骨架态。
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -161,12 +164,18 @@ export function WorkspacePage() {
   useEffect(() => {
     if (!authLoaded) return;
     if (!isSignedIn) {
+      // 未登录时让 requireLogin 接管跳转，骨架可以收掉了。
+      setIsInitialLoading(false);
       requireLogin('/canvas/projects');
       return;
     }
 
     const controller = new AbortController();
-    void Promise.all([loadProjects(controller.signal), loadFolders(controller.signal)]);
+    void Promise.all([loadProjects(controller.signal), loadFolders(controller.signal)]).finally(
+      () => {
+        if (!controller.signal.aborted) setIsInitialLoading(false);
+      },
+    );
     return () => controller.abort();
   }, [authLoaded, isSignedIn, requireLogin, loadProjects, loadFolders]);
 
@@ -531,7 +540,14 @@ export function WorkspacePage() {
           </aside>
 
           <div className="min-w-0">
-            {hasNoMatches ? (
+            {isInitialLoading ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {Array.from({ length: PROJECT_SKELETON_COUNT }).map((_, index) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: 骨架占位卡是同质静态项，使用 index 作为 key 不会引发协调问题。
+                  <ProjectCardSkeleton key={`workspace-skeleton-${index}`} />
+                ))}
+              </div>
+            ) : hasNoMatches ? (
               <div className="rounded-xl bg-[#171819]/70 px-4 py-10 text-center text-[13px] text-white/55 ring-1 ring-white/[0.06]">
                 {t('workspace.searchEmpty', { query: searchQuery.trim() })}
               </div>
@@ -679,6 +695,33 @@ function DeleteLabel() {
   const { t } = useI18n();
   return <span>{t('workspace.folders.remove')}</span>;
 }
+
+/**
+ * 工作流卡片骨架。
+ * - 整体结构与 ProjectCard 完全对齐（外框 padding、缩略图高度、标题/时间两行占位），
+ *   这样真实数据切入时网格几乎不会跳动。
+ * - `lumen-skeleton` 提供「呼吸 + 微光扫过」的双层动画，柔和不晃眼。
+ */
+function ProjectCardSkeleton() {
+  return (
+    <div
+      className="overflow-hidden rounded-xl bg-[#1a1c1d] p-2.5 ring-1 ring-white/[0.05]"
+      aria-hidden="true"
+    >
+      <div className="lumen-skeleton h-[116px] rounded-lg" />
+      <div className="mt-2.5 flex items-start gap-2 px-0.5 pb-0.5">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="lumen-skeleton h-3 w-[62%] rounded" />
+          <div className="lumen-skeleton h-2.5 w-[36%] rounded" />
+        </div>
+        <div className="lumen-skeleton h-7 w-7 shrink-0 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
+/** 骨架卡片的渲染数量：在 xl 4 列下正好铺满 2 行，视觉刚好有"占位但不喧宾夺主"。 */
+const PROJECT_SKELETON_COUNT = 8;
 
 function NewProjectCard({ href }: { href: string }) {
   const { t } = useI18n();

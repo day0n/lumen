@@ -576,9 +576,11 @@ export function HotVideosPage() {
               {t('hotVideos.loadFailed')}: {loadError}
             </div>
           ) : loading && videos.length === 0 ? (
-            <div className="flex h-40 items-center justify-center rounded-[18px] bg-[#1c1e20] text-white/52 ring-1 ring-white/[0.07]">
-              <IconLoader2 size={20} className="mr-2 animate-spin" stroke={2.2} />
-              {t('hotVideos.loading')}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: HOT_VIDEO_SKELETON_COUNT }).map((_, index) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: 同质骨架占位卡，index 作为 key 不会引发 reorder 问题。
+                <HotVideoCardSkeleton key={`hot-video-skeleton-${index}`} />
+              ))}
             </div>
           ) : videos.length === 0 ? (
             <div className="rounded-[18px] bg-[#1c1e20] p-10 text-center text-[13px] text-white/48 ring-1 ring-white/[0.07]">
@@ -636,6 +638,39 @@ export function HotVideosPage() {
         <VideoPreviewModal video={previewVideo} onClose={() => setPreviewVideo(null)} />
       ) : null}
     </div>
+  );
+}
+
+/** 初次加载爆款视频时铺一层骨架卡，xl 4 列下正好 2 行。 */
+const HOT_VIDEO_SKELETON_COUNT = 8;
+
+/**
+ * 爆款卡片骨架：撑住 3:4 缩略图 + 顶部 tag + 底部标题/数据三段区域，
+ * 与真实 HotVideoCard 的视觉轮廓一致，数据到位后切换几乎不跳。
+ */
+function HotVideoCardSkeleton() {
+  return (
+    <article
+      className="overflow-hidden rounded-[18px] bg-[#1c1e20] ring-1 ring-white/[0.07]"
+      aria-hidden="true"
+    >
+      <div className="relative aspect-[3/4] w-full overflow-hidden">
+        <div className="lumen-skeleton absolute inset-0" />
+        <div className="pointer-events-none absolute left-3 top-3 flex gap-1.5">
+          <div className="lumen-skeleton h-6 w-14 rounded-full" />
+          <div className="lumen-skeleton h-6 w-10 rounded-full" />
+        </div>
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 space-y-2">
+          <div className="lumen-skeleton h-3.5 w-[78%] rounded" />
+          <div className="lumen-skeleton h-3 w-[48%] rounded" />
+        </div>
+      </div>
+      <div className="flex items-center gap-2 px-4 py-3">
+        <div className="lumen-skeleton h-8 w-8 shrink-0 rounded-full" />
+        <div className="lumen-skeleton h-3 w-[60%] rounded" />
+        <div className="lumen-skeleton ml-auto h-3 w-8 rounded" />
+      </div>
+    </article>
   );
 }
 
