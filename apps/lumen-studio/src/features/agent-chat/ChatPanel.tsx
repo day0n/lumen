@@ -49,6 +49,7 @@ import {
 import {
   type AgentChatStatus,
   type AgentSessionSummary,
+  type ChatFeedback,
   type ChatMessage,
   type ChatTimelineItem,
   fetchAgentSessions,
@@ -124,7 +125,7 @@ export function ChatPanel({
       sessions.some((item) => item.session_id === activeSessionId),
     [activeSessionId, sessionId, sessions],
   );
-  const { messages, status, errorText, send, stop } = useAgentChat({
+  const { messages, status, errorText, send, stop, setMessageFeedback } = useAgentChat({
     sessionId: activeSessionId,
     context: agentContext,
     locale,
@@ -503,7 +504,11 @@ export function ChatPanel({
             <ul className="flex min-h-full flex-col gap-6">
               <AnimatePresence initial={false}>
                 {messages.map((message) => (
-                  <MessageItem key={message.id} message={message} />
+                  <MessageItem
+                    key={message.id}
+                    message={message}
+                    onFeedback={setMessageFeedback}
+                  />
                 ))}
               </AnimatePresence>
             </ul>
@@ -909,11 +914,25 @@ function WelcomeMessage() {
   );
 }
 
-function MessageItem({ message }: { message: ChatMessage }) {
+type MessageFeedbackHandler = (params: {
+  messageId: string;
+  runId?: string;
+  turn?: number;
+  feedback: ChatFeedback | null;
+  previousFeedback?: ChatFeedback | null;
+}) => Promise<void>;
+
+function MessageItem({
+  message,
+  onFeedback,
+}: {
+  message: ChatMessage;
+  onFeedback: MessageFeedbackHandler;
+}) {
   return message.role === 'user' ? (
     <UserMessage message={message} />
   ) : (
-    <AssistantMessage message={message} />
+    <AssistantMessage message={message} onFeedback={onFeedback} />
   );
 }
 
@@ -936,7 +955,13 @@ function UserMessage({ message }: { message: ChatMessage }) {
   );
 }
 
-function AssistantMessage({ message }: { message: ChatMessage }) {
+function AssistantMessage({
+  message,
+  onFeedback,
+}: {
+  message: ChatMessage;
+  onFeedback: MessageFeedbackHandler;
+}) {
   const { t } = useI18n();
   const isStreaming = message.status === 'streaming';
   const isFailed = message.status === 'failed';
@@ -968,7 +993,9 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
             <MediaPreviewList media={richContent.media} />
           </div>
         ) : null}
-        {message.content && !isStreaming && !isFailed ? <MessageActions /> : null}
+        {message.content && !isStreaming && !isFailed ? (
+          <MessageActions message={message} onFeedback={onFeedback} />
+        ) : null}
 
         {isFailed ? (
           <div className="mt-3 text-[14px] font-medium leading-6 text-[#ff9aa6]">
@@ -1516,33 +1543,118 @@ function TimelineDot({ status }: { status: ChatTimelineItem['status'] }) {
   );
 }
 
-function MessageActions() {
+function MessageActions({
+  message,
+  onFeedback,
+}: {
+  message: ChatMessage;
+  onFeedback: MessageFeedbackHandler;
+}) {
   const { t } = useI18n();
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [savingFeedback, setSavingFeedback] = useState<ChatFeedback | null>(null);
+  const canPersistFeedback = Boolean(message.runId || typeof message.turn === 'number');
+
+  const copyMessage = async () => {
+    try {
+      await copyTextToClipboard(message.content);
+      setCopyState('copied');
+      window.setTimeout(() => setCopyState('idle'), 1400);
+    } catch {
+      setCopyState('error');
+      window.setTimeout(() => setCopyState('idle'), 1800);
+    }
+  };
+
+  const updateFeedback = async (feedback: ChatFeedback) => {
+    if (!canPersistFeedback || savingFeedback) return;
+    const previousFeedback = message.feedback ?? null;
+    const nextFeedback = previousFeedback === feedback ? null : feedback;
+    setSavingFeedback(feedback);
+    try {
+      await onFeedback({
+        messageId: message.id,
+        runId: message.runId,
+        turn: message.turn,
+        feedback: nextFeedback,
+        previousFeedback,
+      });
+    } catch {
+      // The hook rolls the optimistic state back. Keep the action quiet.
+    } finally {
+      setSavingFeedback(null);
+    }
+  };
+
   return (
     <div className="mt-5 flex items-center gap-4 text-white/46">
       <button
         type="button"
-        aria-label={t('chat.actions.copy')}
-        className="transition-colors hover:text-white/78"
+        onClick={() => {
+          void copyMessage();
+        }}
+        aria-label={copyState === 'copied' ? t('chat.actions.copied') : t('chat.actions.copy')}
+        title={copyState === 'error' ? t('chat.actions.copyFailed') : t('chat.actions.copy')}
+        className={cn(
+          'transition-colors hover:text-white/78',
+          copyState === 'copied' ? 'text-[#7ee787]' : '',
+          copyState === 'error' ? 'text-[#ff9aa6]' : '',
+        )}
       >
         <IconCopy size={18} stroke={2.1} />
       </button>
       <button
         type="button"
+        onClick={() => {
+          void updateFeedback('like');
+        }}
+        disabled={!canPersistFeedback || Boolean(savingFeedback)}
+        aria-pressed={message.feedback === 'like'}
         aria-label={t('chat.actions.like')}
-        className="transition-colors hover:text-white/78"
+        title={t('chat.actions.like')}
+        className={cn(
+          'transition-colors hover:text-white/78 disabled:cursor-not-allowed disabled:opacity-38',
+          message.feedback === 'like' ? 'text-[#7ee787]' : '',
+        )}
       >
-        <IconThumbUp size={18} stroke={2.1} />
+        <IconThumbUp size={18} stroke={message.feedback === 'like' ? 2.5 : 2.1} />
       </button>
       <button
         type="button"
+        onClick={() => {
+          void updateFeedback('dislike');
+        }}
+        disabled={!canPersistFeedback || Boolean(savingFeedback)}
+        aria-pressed={message.feedback === 'dislike'}
         aria-label={t('chat.actions.dislike')}
-        className="transition-colors hover:text-white/78"
+        title={t('chat.actions.dislike')}
+        className={cn(
+          'transition-colors hover:text-white/78 disabled:cursor-not-allowed disabled:opacity-38',
+          message.feedback === 'dislike' ? 'text-[#ff9aa6]' : '',
+        )}
       >
-        <IconThumbDown size={18} stroke={2.1} />
+        <IconThumbDown size={18} stroke={message.feedback === 'dislike' ? 2.5 : 2.1} />
       </button>
     </div>
   );
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  const ok = document.execCommand('copy');
+  textarea.remove();
+  if (!ok) throw new Error('copy failed');
 }
 
 function ThinkingLine({ label }: { label: string }) {

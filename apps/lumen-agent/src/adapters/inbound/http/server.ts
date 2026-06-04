@@ -41,6 +41,12 @@ const CreateRunSchema = z.object({
   client_request_id: z.string().optional(),
 });
 
+const MessageFeedbackSchema = z.object({
+  run_id: z.string().min(1).optional(),
+  turn: z.number().int().min(0).optional(),
+  feedback: z.enum(['like', 'dislike']).nullable(),
+});
+
 const SSE_HEARTBEAT_MS = 15_000;
 
 export interface ServerDeps {
@@ -98,6 +104,34 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
       revision: session.revision,
       updated_at: session.updatedAt.toISOString(),
       messages: session.messages.slice(-limit),
+    });
+  });
+
+  app.post('/v1/agent/sessions/:sessionId/messages/feedback', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    const authUser = c.get('authUser') as AuthUser;
+    const json = await c.req.json().catch(() => ({}));
+    const parsed = MessageFeedbackSchema.safeParse(json);
+    if (!parsed.success || (!parsed.data.run_id && typeof parsed.data.turn !== 'number')) {
+      return c.json(
+        { error: 'invalid_request', issues: parsed.success ? [] : parsed.error.issues },
+        400,
+      );
+    }
+
+    const result = await deps.sessionManager.setAssistantFeedback({
+      sessionId,
+      userIds: [authUser.userId, authUser.clerkUserId],
+      runId: parsed.data.run_id ?? null,
+      turn: parsed.data.turn ?? null,
+      feedback: parsed.data.feedback,
+    });
+    if (!result) return c.json({ error: 'message_not_found' }, 404);
+
+    c.header('cache-control', 'no-store');
+    return c.json({
+      session_id: sessionId,
+      feedback: result.feedback,
     });
   });
 

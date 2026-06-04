@@ -52,6 +52,8 @@ export interface AssistantDisplayMessage {
   role: 'assistant';
   content: string;
   turn?: number;
+  run_id?: string;
+  feedback?: 'like' | 'dislike' | null;
   tool_hints?: string[];
   created_at?: string;
 }

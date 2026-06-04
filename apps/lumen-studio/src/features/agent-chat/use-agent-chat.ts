@@ -32,6 +32,7 @@ export type ChatTimelineKind =
   | 'error';
 
 export type ChatTimelineStatus = 'queued' | 'running' | 'success' | 'error' | 'cancelled' | 'info';
+export type ChatFeedback = 'like' | 'dislike';
 
 export interface ChatTimelineItem {
   id: string;
@@ -55,6 +56,8 @@ export interface ChatMessage {
   status: 'streaming' | 'done' | 'failed';
   error?: string;
   runId?: string;
+  turn?: number;
+  feedback?: ChatFeedback | null;
   thinking?: string;
   events?: ChatTimelineItem[];
   usage?: Record<string, number>;
@@ -157,6 +160,8 @@ interface StoredHistoryMessage {
   role?: string;
   content?: unknown;
   turn?: number;
+  run_id?: string;
+  feedback?: unknown;
   created_at?: string;
   tool_call_id?: string;
   tool_name?: string;
@@ -567,7 +572,37 @@ export function useAgentChat({
     ],
   );
 
-  return { messages, status, errorText, send, stop, sessionId: sid };
+  const setMessageFeedback = useCallback(
+    async (params: {
+      messageId: string;
+      runId?: string;
+      turn?: number;
+      feedback: ChatFeedback | null;
+      previousFeedback?: ChatFeedback | null;
+    }) => {
+      if (!params.runId && typeof params.turn !== 'number') {
+        throw new Error('message feedback requires runId or turn');
+      }
+
+      updateMessage(params.messageId, { feedback: params.feedback });
+      try {
+        const token = await getToken().catch(() => null);
+        await updateAgentMessageFeedback({
+          sessionId: sid,
+          runId: params.runId,
+          turn: params.turn,
+          feedback: params.feedback,
+          token,
+        });
+      } catch (err) {
+        updateMessage(params.messageId, { feedback: params.previousFeedback ?? null });
+        throw err;
+      }
+    },
+    [getToken, sid, updateMessage],
+  );
+
+  return { messages, status, errorText, send, stop, setMessageFeedback, sessionId: sid };
 }
 
 export async function fetchAgentSessions(params: {
@@ -704,7 +739,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[], locale: Locale):
   const messages: ChatMessage[] = [];
   const assistantByTurn = new Map<string, ChatMessage>();
 
-  const ensureAssistant = (turnKey: string, createdAt: number) => {
+  const ensureAssistant = (turnKey: string, createdAt: number, turn?: number) => {
     const existing = assistantByTurn.get(turnKey);
     if (existing) return existing;
 
@@ -714,6 +749,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[], locale: Locale):
       content: '',
       createdAt,
       status: 'done',
+      turn,
       thinking: '',
       events: [],
     };
@@ -729,6 +765,8 @@ function projectHistoryMessages(stored: StoredHistoryMessage[], locale: Locale):
       typeof item.turn === 'number' && Number.isFinite(item.turn)
         ? String(item.turn)
         : `t-${index}`;
+    const turn =
+      typeof item.turn === 'number' && Number.isFinite(item.turn) ? item.turn : undefined;
 
     if (role === 'user') {
       messages.push({
@@ -744,14 +782,16 @@ function projectHistoryMessages(stored: StoredHistoryMessage[], locale: Locale):
     if (role === 'assistant') {
       const content = historyContentToText(item.content);
       if (!content && !assistantByTurn.has(turnKey)) return;
-      const assistant = ensureAssistant(turnKey, createdAt);
+      const assistant = ensureAssistant(turnKey, createdAt, turn);
       assistant.content = content || assistant.content;
+      assistant.runId = readString(item.run_id) ?? assistant.runId;
+      assistant.feedback = readFeedback(item.feedback);
       assistant.status = 'done';
       return;
     }
 
     if (role === 'act_call') {
-      const assistant = ensureAssistant(turnKey, createdAt);
+      const assistant = ensureAssistant(turnKey, createdAt, turn);
       const toolName = item.tool_name ?? 'tool';
       const toolCallId = item.tool_call_id ?? `history-${index}`;
       const args = asRecord(item.tool_call);
@@ -772,7 +812,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[], locale: Locale):
     }
 
     if (role === 'act_result') {
-      const assistant = ensureAssistant(turnKey, createdAt);
+      const assistant = ensureAssistant(turnKey, createdAt, turn);
       const toolName = item.tool_name ?? 'tool';
       const toolCallId = item.tool_call_id ?? `history-${index}`;
       const status = item.status === 'error' ? 'error' : 'success';
@@ -800,7 +840,7 @@ function projectHistoryMessages(stored: StoredHistoryMessage[], locale: Locale):
     }
 
     if (role === 'act_event') {
-      const assistant = ensureAssistant(turnKey, createdAt);
+      const assistant = ensureAssistant(turnKey, createdAt, turn);
       const toolName = item.tool_name ?? 'tool';
       const eventName = item.event ?? 'event';
       const data = asRecord(item.event_data);
@@ -822,6 +862,42 @@ function projectHistoryMessages(stored: StoredHistoryMessage[], locale: Locale):
   return messages.filter(
     (message) => message.role === 'user' || message.content || message.events?.length,
   );
+}
+
+async function updateAgentMessageFeedback(params: {
+  sessionId: string;
+  runId?: string;
+  turn?: number;
+  feedback: ChatFeedback | null;
+  token: string | null;
+}): Promise<void> {
+  const headers: Record<string, string> = {
+    accept: 'application/json',
+    'content-type': 'application/json',
+  };
+  if (params.token) headers.authorization = `Bearer ${params.token}`;
+
+  const response = await fetch(
+    `${AGENT_URL}/v1/agent/sessions/${encodeURIComponent(params.sessionId)}/messages/feedback`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        run_id: params.runId,
+        turn: params.turn,
+        feedback: params.feedback,
+      }),
+    },
+  );
+
+  if (response.ok) return;
+  const rawText = await response.text().catch(() => '');
+  const payload = parseJsonPayload(rawText) as ApiError | null;
+  throw new Error(readApiError(payload) ?? (rawText || `HTTP ${response.status}`));
+}
+
+function readFeedback(value: unknown): ChatFeedback | null {
+  return value === 'like' || value === 'dislike' ? value : null;
 }
 
 function parseHistoryTimestamp(value: unknown): number {

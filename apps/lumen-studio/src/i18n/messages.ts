@@ -387,6 +387,8 @@ const en = {
     browserVideoUnsupported: 'Your browser does not support the video tag.',
     actions: {
       copy: 'Copy',
+      copied: 'Copied',
+      copyFailed: 'Copy failed',
       like: 'Like',
       dislike: 'Dislike',
     },
@@ -1049,6 +1051,8 @@ const zh: typeof en = {
     browserVideoUnsupported: '当前浏览器不支持视频播放。',
     actions: {
       copy: '复制',
+      copied: '已复制',
+      copyFailed: '复制失败',
       like: '赞',
       dislike: '踩',
     },

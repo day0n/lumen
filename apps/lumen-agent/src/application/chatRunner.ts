@@ -210,7 +210,7 @@ export class ChatRunner {
                   span.setAttribute('lumen.agent.finish_reason', result.finish_reason);
 
                   // 持久化最终的 assistant 消息（最后一条 assistant or final content）
-                  session.appendAssistantFinal(result.content);
+                  session.appendAssistantFinal(result.content, runId);
                   await this.opts.sessionManager.save(session);
 
                   // 异步存储长期记忆（不阻塞响应）

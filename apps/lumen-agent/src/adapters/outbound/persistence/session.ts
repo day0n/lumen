@@ -11,7 +11,7 @@
  */
 
 import type Redis from 'ioredis';
-import type { Collection, Db } from 'mongodb';
+import type { Collection, Db, UpdateFilter } from 'mongodb';
 
 import type {
   ChatMessage,
@@ -162,11 +162,12 @@ export class Session {
     this.lastMessagePreview = previewOf(content);
   }
 
-  appendAssistantFinal(content: string): void {
+  appendAssistantFinal(content: string, runId?: string): void {
     const created = new Date().toISOString();
     this.messages.push({
       role: 'assistant',
       content,
+      ...(runId ? { run_id: runId } : {}),
       turn: this.turnCount,
       created_at: created,
     } as StoredMessage);
@@ -447,6 +448,57 @@ export class SessionManager {
         },
       },
     );
+  }
+
+  async setAssistantFeedback(opts: {
+    sessionId: string;
+    userIds: string[];
+    runId?: string | null;
+    turn?: number | null;
+    feedback: 'like' | 'dislike' | null;
+  }): Promise<{ feedback: 'like' | 'dislike' | null } | null> {
+    const userIds = [...new Set(opts.userIds.map((id) => id.trim()).filter(Boolean))];
+    if (userIds.length === 0) return null;
+    if (!opts.runId && typeof opts.turn !== 'number') return null;
+
+    const userFilter = userIds.length === 1 ? userIds[0] : { $in: userIds };
+    const meta = await this.sessions.findOne(
+      { _id: opts.sessionId, user_id: userFilter },
+      { projection: { _id: 1 } },
+    );
+    if (!meta) return null;
+
+    const messageFilter: Record<string, unknown> = {
+      session_id: opts.sessionId,
+      role: 'assistant',
+    };
+    if (opts.runId) {
+      messageFilter.run_id = opts.runId;
+    } else {
+      messageFilter.turn = opts.turn;
+    }
+
+    const now = new Date();
+    const update: UpdateFilter<MessageDoc> =
+      opts.feedback === null
+        ? { $unset: { feedback: true, feedback_updated_at: true } }
+        : { $set: { feedback: opts.feedback, feedback_updated_at: now.toISOString() } };
+
+    const result = await this.messages.updateOne(messageFilter, update);
+    if (result.matchedCount === 0) return null;
+
+    await this.sessions.updateOne(
+      { _id: opts.sessionId },
+      {
+        $set: { updated_at: now },
+        $inc: { revision: 1 },
+      },
+    );
+
+    const refreshed = await this.loadFromMongo(opts.sessionId);
+    if (refreshed) await this.writeRedis(refreshed);
+
+    return { feedback: opts.feedback };
   }
 
   // ── Redis helpers ───────────────────────────────────────────────
