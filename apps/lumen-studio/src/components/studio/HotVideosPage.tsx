@@ -491,7 +491,7 @@ export function HotVideosPage() {
               onSubmit={handleSubmit}
               className="mx-auto mt-7 max-w-[980px] overflow-hidden rounded-[18px] bg-[#111315]/86 text-left ring-1 ring-white/[0.09]"
             >
-              <div className="flex min-h-[58px] items-center gap-3 px-4">
+              <div className="flex min-h-[52px] flex-wrap items-center gap-2 px-3 py-2 sm:min-h-[58px] sm:flex-nowrap sm:gap-3 sm:px-4 sm:py-0">
                 <IconLink size={18} className="shrink-0 text-white/42" stroke={2.2} />
                 <input
                   value={referenceInput}
@@ -501,7 +501,7 @@ export function HotVideosPage() {
                   }}
                   disabled={parseLoading}
                   placeholder={t('hotVideos.inputPlaceholder')}
-                  className="min-w-0 flex-1 bg-transparent text-[14px] text-white outline-none placeholder:text-white/30 disabled:opacity-60"
+                  className="min-h-11 min-w-0 flex-1 bg-transparent text-[14px] text-white outline-none placeholder:text-white/30 disabled:opacity-60"
                 />
                 <button
                   type="button"
@@ -515,7 +515,7 @@ export function HotVideosPage() {
                 <button
                   type="submit"
                   disabled={parseLoading}
-                  className="flex h-10 items-center gap-1.5 rounded-xl bg-white px-4 text-[13px] font-bold text-[#111315] shadow-[0_14px_34px_-22px_rgba(255,255,255,0.9)] transition-transform active:scale-[0.97] disabled:cursor-wait disabled:opacity-70"
+                  className="flex min-h-11 items-center gap-1.5 rounded-xl bg-white px-4 text-[13px] font-bold text-[#111315] shadow-[0_14px_34px_-22px_rgba(255,255,255,0.9)] transition-transform active:scale-[0.97] disabled:cursor-wait disabled:opacity-70"
                 >
                   {parseLoading ? (
                     <>
@@ -556,7 +556,7 @@ export function HotVideosPage() {
                 if (!requireLogin('/hot-videos')) return;
                 setJobsDrawerOpen(true);
               }}
-              className="ml-auto flex h-9 items-center gap-1.5 rounded-full bg-[#79e4ff]/12 px-3 text-[13px] font-semibold text-[#79e4ff] ring-1 ring-[#79e4ff]/22 transition-colors hover:bg-[#79e4ff]/22"
+              className="ml-auto flex min-h-11 items-center gap-1.5 rounded-full bg-[#79e4ff]/12 px-3 text-[13px] font-semibold text-[#79e4ff] ring-1 ring-[#79e4ff]/22 transition-colors hover:bg-[#79e4ff]/22"
             >
               <IconHistory size={13} stroke={2.4} />
               {t('hotVideos.myJobs')}
@@ -564,7 +564,7 @@ export function HotVideosPage() {
             <button
               type="button"
               onClick={resetFilters}
-              className="flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[#ff5fbf] transition-colors hover:bg-[#ff5fbf]/10"
+              className="flex min-h-11 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[#ff5fbf] transition-colors hover:bg-[#ff5fbf]/10"
             >
               <IconRefresh size={13} stroke={2.4} />
               {t('common.resetFilters')}
@@ -586,13 +586,13 @@ export function HotVideosPage() {
                     })}
               </div>
             </div>
-            <label className="ml-auto flex h-10 min-w-[260px] items-center gap-2 rounded-xl bg-[#141619] px-3 ring-1 ring-white/[0.08]">
+            <label className="ml-auto flex min-h-11 w-full min-w-0 items-center gap-2 rounded-xl bg-[#141619] px-3 ring-1 ring-white/[0.08] sm:w-auto sm:min-w-[260px]">
               <IconSearch size={16} className="text-white/38" stroke={2.1} />
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder={t('hotVideos.searchPlaceholder')}
-                className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/30"
+                className="min-h-11 min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/30"
               />
             </label>
           </div>
@@ -1807,7 +1807,7 @@ function FilterPill({
         type="button"
         onClick={() => setOpen((c) => !c)}
         className={cn(
-          'flex h-9 items-center gap-1.5 rounded-full pl-3.5 pr-3 text-[13px] transition-colors',
+          'flex min-h-11 items-center gap-1.5 rounded-full pl-3.5 pr-3 text-[13px] transition-colors',
           reallyActive
             ? 'bg-[#1a1c1f] text-white ring-1 ring-[#ff5fbf]/65'
             : 'bg-[#1a1c1f] text-white/82 ring-1 ring-white/[0.07] hover:bg-[#23262a] hover:ring-white/[0.12]',

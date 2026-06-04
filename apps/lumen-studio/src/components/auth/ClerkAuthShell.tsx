@@ -112,7 +112,7 @@ export function ClerkAuthShell({ children }: { children: React.ReactNode }) {
 function Spinner({ label, loadingLabel }: { label: string; loadingLabel: string }) {
   return (
     <output
-      className="flex min-h-[420px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-6 py-12 text-white/70"
+      className="flex min-h-[320px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-4 py-10 text-white/70 sm:min-h-[420px] sm:px-6 sm:py-12"
       aria-live="polite"
       aria-label={label}
     >
@@ -170,13 +170,13 @@ function TroubleshootCard({
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex items-center justify-center rounded-full bg-white/95 px-4 py-2 text-sm font-medium text-black transition hover:bg-white"
+          className="inline-flex min-h-11 items-center justify-center rounded-full bg-white/95 px-4 py-2 text-sm font-medium text-black transition hover:bg-white"
         >
           {retryLabel}
         </button>
         <a
           href="/"
-          className="inline-flex items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm text-white/75 transition hover:border-white/25 hover:text-white"
+          className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm text-white/75 transition hover:border-white/25 hover:text-white"
         >
           {backLabel}
         </a>

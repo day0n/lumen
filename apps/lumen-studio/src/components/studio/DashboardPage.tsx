@@ -399,7 +399,11 @@ export function DashboardPage() {
               />
             </div>
           </div>
-          <MobileSheet open={filtersOpen} onClose={() => setFiltersOpen(false)} title={t('dashboard.range')}>
+          <MobileSheet
+            open={filtersOpen}
+            onClose={() => setFiltersOpen(false)}
+            title={t('dashboard.range')}
+          >
             <DashboardFilterControls
               range={range}
               region={region}
@@ -440,7 +444,7 @@ export function DashboardPage() {
               type="button"
               onClick={() => setShowForecast((current) => !current)}
               className={cn(
-                'inline-flex h-7 items-center gap-1.5 rounded-lg px-2 font-semibold transition-colors',
+                'inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 font-semibold transition-colors',
                 showForecast
                   ? 'bg-[#79e4ff]/14 text-[#79e4ff] ring-1 ring-[#79e4ff]/20'
                   : 'bg-white/[0.05] text-white/48 ring-1 ring-white/[0.06]',
@@ -470,8 +474,7 @@ export function DashboardPage() {
                 delta={data.summary.revenueDelta}
                 meta={
                   showForecast
-                    ? t('dashboard.forecast') +
-                      ` ${formatCurrency(data.summary.forecastRevenue, locale)}`
+                    ? `${t('dashboard.forecast')} ${formatCurrency(data.summary.forecastRevenue, locale)}`
                     : t('dashboard.currentWindow')
                 }
                 accent="#79e4ff"
@@ -731,7 +734,7 @@ function SegmentedControl<T extends string>({
             aria-selected={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              'h-8 rounded-md px-3 text-[12px] font-semibold transition-colors',
+              'min-h-11 rounded-md px-3 text-[12px] font-semibold transition-colors',
               active
                 ? 'bg-white text-[#111315]'
                 : 'text-white/48 hover:bg-white/[0.05] hover:text-white/80',
@@ -759,13 +762,13 @@ function SelectControl({
   ariaLabel: string;
 }) {
   return (
-    <label className="relative flex h-9 min-w-[132px] items-center gap-2 rounded-lg bg-white/[0.045] px-3 text-white/58 ring-1 ring-white/[0.06]">
+    <label className="relative flex min-h-11 min-w-[132px] items-center gap-2 rounded-lg bg-white/[0.045] px-3 text-white/58 ring-1 ring-white/[0.06]">
       <Icon size={15} stroke={2.2} />
       <select
         aria-label={ariaLabel}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 appearance-none bg-transparent pr-5 text-[12px] font-semibold text-white outline-none"
+        className="min-h-11 min-w-0 flex-1 appearance-none bg-transparent pr-5 text-[12px] font-semibold text-white outline-none"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value} className="bg-[#111315] text-white">
@@ -1213,7 +1216,11 @@ function DashboardFilterControls({
         onClick={onRefresh}
         className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-white/[0.06] px-3 text-[12px] font-semibold text-white/78 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1]"
       >
-        <IconRefresh size={15} stroke={2.2} className={status === 'loading' ? 'animate-spin' : ''} />
+        <IconRefresh
+          size={15}
+          stroke={2.2}
+          className={status === 'loading' ? 'animate-spin' : ''}
+        />
         {t('common.refresh')}
       </button>
       <button
@@ -1257,9 +1264,7 @@ function CampaignCards({
             key={campaign.id}
             className={cn(
               'rounded-xl p-4 ring-1 transition-colors',
-              selected
-                ? 'bg-[#14313a] ring-[#79e4ff]/24'
-                : 'bg-white/[0.035] ring-white/[0.08]',
+              selected ? 'bg-[#14313a] ring-[#79e4ff]/24' : 'bg-white/[0.035] ring-white/[0.08]',
             )}
           >
             <button

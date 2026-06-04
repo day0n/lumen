@@ -38,10 +38,14 @@ export function Topbar() {
   return (
     <header className="fixed inset-x-0 top-0 z-40">
       <div className="border-b border-white/[0.06] bg-[#111315]/95 backdrop-blur-xl">
-        <div className="relative flex h-16 w-full items-center gap-3 px-4 sm:h-20 sm:gap-6 sm:px-6">
-          <Link href={localePath('/home')} className="flex items-center gap-3">
-            <LumenMark size={34} />
-            <span className="font-display text-[17px] font-bold tracking-tight text-white">
+        <div className="relative flex h-16 w-full min-w-0 items-center gap-2 px-3 sm:h-20 sm:gap-4 sm:px-6">
+          <Link
+            href={localePath('/home')}
+            className="flex min-h-11 min-w-11 shrink-0 items-center gap-2 sm:gap-3"
+          >
+            <LumenMark size={30} className="sm:hidden" />
+            <LumenMark size={34} className="hidden sm:block" />
+            <span className="hidden font-display text-[17px] font-bold tracking-tight text-white sm:inline">
               Lumen
             </span>
           </Link>
@@ -79,21 +83,21 @@ export function Topbar() {
             })}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2">
-            <NotificationsPopover />
-            <LanguageToggle compact />
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1 sm:gap-2">
+            {authLoaded && isSignedIn ? <NotificationsPopover /> : null}
+            <LanguageToggle compact iconOnlyOnMobile />
 
             {(!authLoaded || !isSignedIn) && (
-              <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="flex items-center gap-1">
                 <Link
                   href={localePath(`/sign-in?redirect_url=${authRedirect}`)}
-                  className="flex min-h-11 items-center rounded-full px-3 text-[12px] font-medium text-white/70 transition-colors hover:text-white sm:px-3.5 sm:text-[13px]"
+                  className="hidden min-h-11 items-center rounded-full px-3 text-[13px] font-medium text-white/70 transition-colors hover:text-white sm:flex"
                 >
                   {t('common.login')}
                 </Link>
                 <Link
                   href={localePath(`/sign-up?redirect_url=${authRedirect}`)}
-                  className="flex min-h-11 items-center rounded-full bg-white px-3 text-[12px] font-semibold text-black transition-opacity hover:opacity-90 sm:px-3.5 sm:text-[13px]"
+                  className="flex min-h-11 max-w-[108px] items-center justify-center truncate rounded-full bg-white px-3 text-[12px] font-semibold text-black transition-opacity hover:opacity-90 sm:max-w-none sm:px-3.5 sm:text-[13px]"
                 >
                   {t('common.signup')}
                 </Link>
@@ -104,7 +108,7 @@ export function Topbar() {
               <UserButton
                 appearance={{
                   elements: {
-                    avatarBox: 'h-9 w-9 ring-2 ring-white/15',
+                    avatarBox: 'h-9 w-9 ring-2 ring-white/15 sm:h-9 sm:w-9',
                   },
                 }}
               />

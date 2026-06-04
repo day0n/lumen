@@ -288,7 +288,7 @@ export function Hero() {
               aria-label={t('home.uploadImage')}
               title={t('home.uploadImageTitle', { count: MAX_IMAGES })}
               disabled={attachedImages.length >= MAX_IMAGES}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
             >
               <IconPhotoPlus size={17} stroke={2.1} />
             </button>
@@ -304,8 +304,8 @@ export function Hero() {
               title={voiceLabel}
               className={
                 listening
-                  ? 'flex h-9 w-9 items-center justify-center rounded-xl bg-[#ff5fbf]/22 text-[#ff5fbf] ring-1 ring-[#ff5fbf]/55 transition-colors'
-                  : 'flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45'
+                  ? 'flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-[#ff5fbf]/22 text-[#ff5fbf] ring-1 ring-[#ff5fbf]/55 transition-colors'
+                  : 'flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45'
               }
             >
               {listening ? (
@@ -324,7 +324,7 @@ export function Hero() {
                   void goCreate();
                 }}
                 aria-label={t('home.sendGenerate')}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_10px_28px_-16px_rgba(255,255,255,0.7)] transition-transform active:scale-[0.96]"
+                className="flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_10px_28px_-16px_rgba(255,255,255,0.7)] transition-transform active:scale-[0.96]"
               >
                 <IconArrowUp size={18} stroke={2.6} />
               </button>
@@ -339,7 +339,7 @@ export function Hero() {
               key={prompt}
               type="button"
               onClick={() => setValue(prompt)}
-              className="rounded-full bg-white/[0.045] px-3 py-1.5 text-[12px] text-white/55 ring-1 ring-white/[0.06] transition-colors hover:bg-white/[0.08] hover:text-white"
+              className="min-h-11 rounded-full bg-white/[0.045] px-3 py-1.5 text-[12px] text-white/55 ring-1 ring-white/[0.06] transition-colors hover:bg-white/[0.08] hover:text-white"
             >
               {prompt}
             </button>

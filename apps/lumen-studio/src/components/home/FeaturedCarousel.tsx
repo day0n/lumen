@@ -237,11 +237,17 @@ export function FeaturedCarousel() {
             type="button"
             aria-label={t('home.featuredGoTo', { title: slide.title })}
             onClick={() => setCurrent(index)}
-            className={cn(
-              'h-1.5 rounded-full transition-all',
-              index === safeCurrent ? 'w-9 bg-white/70' : 'w-4 bg-white/18 hover:bg-white/35',
-            )}
-          />
+            className="group flex min-h-11 min-w-11 items-center justify-center rounded-full"
+          >
+            <span
+              className={cn(
+                'h-1.5 rounded-full transition-all',
+                index === safeCurrent
+                  ? 'w-9 bg-white/70'
+                  : 'w-4 bg-white/18 group-hover:bg-white/35',
+              )}
+            />
+          </button>
         ))}
       </div>
     </section>
