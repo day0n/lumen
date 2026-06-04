@@ -5,6 +5,11 @@ import { nanoid } from 'nanoid';
 import type { WorkflowRunSummary, WorkflowStore } from '../database/workflow-store.js';
 import { executeNode } from '../handlers/base.js';
 import type { EventPublisher } from '../publisher.js';
+import {
+  isSnapshotOutputType,
+  type SnapshotCandidate,
+  updateProjectSnapshotFromRun,
+} from '../storage/project-snapshot.js';
 import { persistNodeOutput } from '../storage/r2.js';
 import { logger } from '../utils/logger.js';
 import {
@@ -60,6 +65,7 @@ export class WorkflowExecutor {
           skipped: 0,
           cancelled: 0,
         };
+        let latestSnapshot: SnapshotCandidate | null = null;
 
         await this.workflowStore.createRun({
           runId,
@@ -209,6 +215,10 @@ export class WorkflowExecutor {
             terminalIds.add(nodeId);
             summary.succeeded += 1;
 
+            if (isSnapshotOutputType(stored.type) && stored.value.trim()) {
+              latestSnapshot = { type: stored.type, url: stored.value };
+            }
+
             await this.publisher.publish(channelId, {
               event: 'node:done',
               nodeId,
@@ -260,6 +270,18 @@ export class WorkflowExecutor {
               ? `${summary.failed} node(s) failed`
               : undefined,
         });
+
+        if (!cancelled && projectId && latestSnapshot) {
+          try {
+            await updateProjectSnapshotFromRun({
+              projectId,
+              candidate: latestSnapshot,
+              signal,
+            });
+          } catch (err) {
+            logger.warn({ err, projectId, runId }, 'failed to update project snapshot');
+          }
+        }
 
         await this.publisher.publish(
           channelId,

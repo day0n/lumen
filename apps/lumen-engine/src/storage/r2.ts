@@ -41,6 +41,24 @@ export class ObjectStorageNotConfiguredError extends Error {
   }
 }
 
+export async function uploadProjectSnapshotBuffer(args: {
+  body: Buffer;
+  contentType: string;
+  projectId: string;
+}): Promise<WorkflowOutputAsset | null> {
+  const settings = getR2Settings();
+  if (!settings) return null;
+
+  const prefix = ['project-snapshots', args.projectId.trim() || 'unbound-project'].join('/');
+  return uploadBuffer({
+    body: args.body,
+    contentType: args.contentType,
+    extension: 'jpg',
+    prefix,
+    settings,
+  });
+}
+
 export async function persistNodeOutput(args: {
   output: NodeOutput;
   runId: string;

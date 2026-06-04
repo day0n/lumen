@@ -39,6 +39,7 @@ interface StudioProject {
   name: string;
   updatedAt: string;
   cover: string;
+  thumbnail?: string;
   coverMode?: 'tutorial' | 'soft';
   folderId?: string;
 }
@@ -48,6 +49,7 @@ interface ProjectListRecord {
   title: string;
   folderId?: string;
   updatedAt: string;
+  thumbnail?: string;
 }
 
 type ProjectsApiResponse =
@@ -759,9 +761,18 @@ function ProjectCard({
       >
         <div
           className="relative h-[116px] overflow-hidden rounded-lg"
-          style={{ background: project.cover }}
+          style={project.thumbnail ? undefined : { background: project.cover }}
         >
-          {project.coverMode === 'tutorial' ? (
+          {project.thumbnail ? (
+            <>
+              <img
+                src={project.thumbnail}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 opacity-40 mix-blend-soft-light [background-image:linear-gradient(120deg,transparent_20%,rgba(255,255,255,0.35)_48%,transparent_62%)]" />
+            </>
+          ) : project.coverMode === 'tutorial' ? (
             <div className="absolute inset-0 flex items-center justify-center bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.05)_0,rgba(255,255,255,0.05)_8px,transparent_8px,transparent_18px)]">
               <div className="text-center">
                 <div className="font-display text-[18px] font-extrabold tracking-wider text-white/55">
@@ -773,7 +784,7 @@ function ProjectCard({
           ) : (
             <div className="absolute inset-0 opacity-60 mix-blend-soft-light [background-image:linear-gradient(120deg,transparent_20%,rgba(255,255,255,0.45)_48%,transparent_62%)]" />
           )}
-          {project.coverMode === 'soft' && (
+          {!project.thumbnail && project.coverMode === 'soft' && (
             <IconPhoto
               size={32}
               className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/18"
@@ -898,7 +909,8 @@ function toStudioProject(
     name: project.title || t('workspace.untitled'),
     updatedAt: formatUpdatedAt(project.updatedAt, locale, t),
     cover: coverForProject(project.id),
-    coverMode: project.id.charCodeAt(0) % 3 === 0 ? 'soft' : undefined,
+    thumbnail: project.thumbnail,
+    coverMode: project.thumbnail ? undefined : project.id.charCodeAt(0) % 3 === 0 ? 'soft' : undefined,
     folderId: project.folderId,
   };
 }
