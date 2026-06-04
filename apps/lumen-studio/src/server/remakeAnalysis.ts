@@ -30,6 +30,8 @@ const ShotItemSchema = z
     startSec: z.number().nonnegative(),
     endSec: z.number().nonnegative(),
     action: z.string().trim().max(280),
+    /** Core replicable action stripped of product-specific details. e.g. "creator holds product to camera while speaking" not "creator holds FaceSerum bottle". */
+    actionPattern: z.string().trim().max(200).optional(),
     camera: z.string().trim().max(160),
     visual: z.string().trim().max(280),
     dialogue: z.string().trim().max(280).optional(),
@@ -139,7 +141,8 @@ Return ONE JSON object, no markdown, no commentary. Exact shape:
     {
       "startSec": number,
       "endSec": number,
-      "action": "what the person/product is doing in this shot",
+      "action": "what the person/product is doing in this shot (specific)",
+      "actionPattern": "the core replicable action stripped of any product-specific detail — describe the MOTION and INTERACTION PATTERN only, e.g. 'creator holds product close to camera lens while speaking directly to viewer' NOT 'creator holds FaceSerum bottle'",
       "camera": "framing / movement — handheld close-up, static medium, etc.",
       "visual": "key visual elements: setting, product placement, on-screen text",
       "dialogue": "optional — what is being said during this shot (matches transcript)"
@@ -151,6 +154,7 @@ Constraints:
 - Use 3 to 8 shots total, covering the full video without gaps or overlaps.
 - Round timestamps to 0.1s precision.
 - If you cannot hear the audio at all, set language="other" and transcript=[].
+- actionPattern is REQUIRED for every shot — it is the product-agnostic motion skeleton that will be locked when replicating this video for a different product.
 `.trim();
 }
 
@@ -171,9 +175,10 @@ export function summarizeBreakdownForPlan(breakdown: RemakeBreakdown | null): st
   if (!breakdown) return '';
   const lines: string[] = [];
   lines.push(`Original duration: ${breakdown.durationSec.toFixed(1)}s`);
-  lines.push(`Hook: ${breakdown.hook}`);
+  lines.push(`Hook (first 1.5s): ${breakdown.hook}`);
   lines.push(`Angle: ${breakdown.angle}`);
   lines.push(`Summary: ${breakdown.summary}`);
+
   if (breakdown.transcript.length > 0) {
     lines.push('Transcript (start-end | line):');
     for (const item of breakdown.transcript) {
@@ -182,13 +187,27 @@ export function summarizeBreakdownForPlan(breakdown: RemakeBreakdown | null): st
   } else {
     lines.push('Transcript: (no spoken dialogue detected)');
   }
+
   if (breakdown.shots.length > 0) {
-    lines.push('Shots (start-end | action | camera | visual | dialogue):');
-    for (const shot of breakdown.shots) {
+    lines.push('');
+    lines.push('=== REPLICATION SKELETON (LOCKED — DO NOT DEVIATE) ===');
+    lines.push('Each scene in the new script MUST match the corresponding locked action pattern.');
+    lines.push('Only 4 element classes may be swapped: PRODUCT / DIALOGUE / CREATOR / ENVIRONMENT.');
+    lines.push('Scene count must equal the number of rows below.');
+    lines.push('');
+    lines.push('| Scene | Time | Locked Action Pattern | Camera | Replaceable Elements |');
+    lines.push('|-------|------|----------------------|--------|---------------------|');
+    for (let i = 0; i < breakdown.shots.length; i++) {
+      const shot = breakdown.shots[i]!;
+      const label = i === 0 ? `Scene ${i + 1} (HOOK — copy exactly)` : `Scene ${i + 1}`;
+      const pattern = shot.actionPattern ?? shot.action;
       lines.push(
-        `  ${shot.startSec.toFixed(1)}-${shot.endSec.toFixed(1)} | ${shot.action} | ${shot.camera} | ${shot.visual} | ${shot.dialogue ?? ''}`,
+        `| ${label} | ${shot.startSec.toFixed(1)}-${shot.endSec.toFixed(1)}s | ${pattern} | ${shot.camera} | product / dialogue / creator / environment |`,
       );
     }
+    lines.push('');
+    lines.push('=== END REPLICATION SKELETON ===');
   }
+
   return lines.join('\n');
 }

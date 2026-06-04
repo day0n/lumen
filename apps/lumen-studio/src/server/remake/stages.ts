@@ -115,6 +115,10 @@ export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
       handler: 'nano-banana2',
       input: makeInput({
         prompt: creatorPrompt,
+        // Multi-image reference mode (NOT first/last-frame i2v):
+        // nano-banana2 iterates [image, lastFrameImage] and sends both as inline
+        // reference parts to Gemini. This is intentional — two creator photos give
+        // the model more angles to lock identity. Do NOT interpret these as video frames.
         image: creator0 ?? null,
         lastFrameImage: creator1 ?? null,
       }),
@@ -126,6 +130,9 @@ export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
       handler: 'nano-banana2',
       input: makeInput({
         prompt: productPrompt,
+        // Same multi-image reference mode as above — up to 2 product photos.
+        // product0/product1 are the first two uploaded product images; the rest are
+        // not passed because nano-banana2 only reads image + lastFrameImage.
         image: product0 ?? null,
         lastFrameImage: product1 ?? null,
       }),

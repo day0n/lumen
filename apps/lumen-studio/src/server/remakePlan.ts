@@ -180,7 +180,23 @@ function buildGeminiPrompt(input: BuildPlanInput): string {
     ? `\nGATE-1 USER-CONFIRMED AUDIENCE TAGS (return them as-is in audienceTags):\n- ${input.userAudienceTags.join('\n- ')}\n`
     : '';
   const breakdownBlock = breakdownText
-    ? `\nReal multimodal breakdown of the original video (authoritative, derived from actual frames + audio — match this rhythm and dialogue):\n${breakdownText}\n`
+    ? `\nREPLICATION SKELETON — derived from real multimodal analysis of the original video. This is authoritative.\n${breakdownText}\n`
+    : '';
+
+  const replicationRules = breakdownText
+    ? `
+REPLICATION MODE HARD RULES (violation = invalid output):
+1. SCENE COUNT: your scenes array MUST contain exactly the same number of scenes as skeleton rows above. Do not add or remove scenes.
+2. HOOK LOCKED: Scene 1 action MUST replicate the Hook pattern exactly — same motion, same camera, same pacing. Only swap product/creator/dialogue.
+3. ACTION SKELETON LOCKED: each scene's action MUST be semantically consistent with the corresponding locked action pattern row. The motion and interaction pattern cannot change.
+4. ONLY 4 REPLACEABLE CLASSES per scene:
+   - PRODUCT → replace with the new product from uploaded images
+   - DIALOGUE → rewrite voiceLine and dialogue for the new product; keep same rhythm and duration
+   - CREATOR → new creator identity; preserve motion pattern
+   - ENVIRONMENT → similar environment type (kitchen stays kitchen, outdoor stays outdoor)
+5. CROSS-CHECK: before finalising each scene, verify its action matches the skeleton row. If it doesn't, rewrite it.
+6. sceneImagePrompts and sceneVideoPrompts must each contain exactly the same number of entries as scenes.
+`
     : '';
   return `
 You are building a deterministic "one-click viral product replication" plan for Lumen.
@@ -194,7 +210,8 @@ Important workflow:
 6. Final deterministic edit: per-scene mix already has TTS baked in; final cut concats and adds BGM.
 
 Do not invent a canvas. Return only JSON for the hidden workflow builder.
-Use 3 to 6 scenes. Keep every scene suitable for 4s, 6s, or 8s video generation (Veo 3.1 constraint).
+Scene count is determined by the replication skeleton below (when present) — otherwise use 3 to 6 scenes.
+Keep every scene suitable for 4s, 6s, or 8s video generation (Veo 3.1 constraint).
 
 Each scene MUST have:
 - "dialogue": short on-screen subtitle / line label (will display as caption)
@@ -215,7 +232,7 @@ Reference:
   }
 - Output language for scriptText / dialogue / voiceLine / sellingPoints / audienceTags: ${input.locale === 'zh' ? 'Chinese' : 'English'}
 - Target total video length: ${input.targetDurationSeconds ? `~${input.targetDurationSeconds}s (pick scene count and per-scene duration so the sum lands near this)` : 'flexible'}
-${breakdownBlock}${userScriptBlock}${userSellingBlock}${userAudienceBlock}
+${breakdownBlock}${replicationRules}${userScriptBlock}${userSellingBlock}${userAudienceBlock}
 Return this exact JSON shape, no markdown:
 {
   "scriptText": "full script users can review at Gate 1",
@@ -240,7 +257,7 @@ function scenesFromBreakdown(
 ): RemakeScene[] {
   if (!breakdown || breakdown.shots.length < 3) return [];
   const transcript = breakdown.transcript;
-  return breakdown.shots.slice(0, 6).map((shot, index) => {
+  return breakdown.shots.slice(0, 8).map((shot, index) => {
     const sceneNumber = index + 1;
     const duration = snapDuration(Math.max(2, shot.endSec - shot.startSec));
     const overlap = transcript.find(
@@ -311,7 +328,7 @@ function normalizeScenes(value: unknown, fallback: RemakeScene[]): RemakeScene[]
       durationSeconds: snapDuration(rawDuration),
       camera,
     });
-    if (rawScenes.length >= 6) break;
+    if (rawScenes.length >= 8) break;
   }
   return rawScenes.length >= 3 ? rawScenes : fallback;
 }
