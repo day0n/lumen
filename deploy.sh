@@ -21,6 +21,12 @@ export TSX_BIN="$(dirname "$NODE_BIN")/tsx"
 cd "$APP_DIR"
 
 echo "==> Pulling latest code..."
+# Next.js 每次 build 都会 append 当前 build dir 的 types 路径到 studio tsconfig.json 的
+# include，但从不清理旧条目。多次部署后 include 会累积一堆历史 build 路径，旧 types
+# 文件又会引用已删除的源（比如已删的 /api/hot-videos/remake），导致 typecheck 报
+# "Cannot find module" 整次构建挂掉。git pull 默认会保留这些 dirty 改动，所以这里
+# 先硬重置一下，让 git pull 能干净落到远端最新版本。
+git checkout -- apps/lumen-studio/tsconfig.json 2>/dev/null || true
 git pull origin main
 
 echo "==> Ensuring FFmpeg runtime..."
