@@ -44,6 +44,18 @@ echo "==> Building studio..."
 STUDIO_RELEASE_ID="$(git rev-parse --short HEAD)-$(date +%Y%m%d%H%M%S)"
 STUDIO_BUILD_DIR=".next-build-${STUDIO_RELEASE_ID}"
 rm -rf "apps/lumen-studio/${STUDIO_BUILD_DIR}"
+# Next.js 每次 build 都会往 apps/lumen-studio/tsconfig.json 的 include 里
+# append 当前 build dir 的 types 路径（".next-build-<sha>-<ts>/types/**/*.ts"），
+# 但不会移除旧条目。多次部署后 include 会累积一堆历史 build 路径，旧 types 文件
+# 又会引用已删除的源文件（如本次的 /api/hot-videos/remake），导致 typecheck 报
+# "Cannot find module" 然后整次构建挂掉。
+# 每次 build 前用 git 版本重置 tsconfig.json，让 Next 只追加当前 build 的路径。
+git checkout -- apps/lumen-studio/tsconfig.json 2>/dev/null || true
+# 同时清掉所有旧 build 目录里的 types/ 子目录，即使 tsconfig include 还残留旧
+# 引用（极端情况下），类型检查也找不到旧 types 文件可以扫，进一步堵死回归路径。
+find apps/lumen-studio -maxdepth 1 -type d -name '.next-build-*' \
+  -not -name "${STUDIO_BUILD_DIR}" \
+  -exec rm -rf {}/types \;
 NEXT_DIST_DIR="$STUDIO_BUILD_DIR" pnpm build:studio
 
 echo "==> Building agent..."
