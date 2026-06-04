@@ -14,6 +14,13 @@ import * as Sentry from '@sentry/node';
 import type { MessageList } from '../../../domain/contracts/messages.js';
 import type { LLMResponse, ToolCallRequest } from '../../../domain/contracts/providers.js';
 import { logger } from '../../../platform/logger.js';
+import {
+  setGenAiUsageAttributes,
+  setJsonAttribute,
+  stringifyForSentry,
+  toSentryAvailableTools,
+  toSentryToolCalls,
+} from '../../../telemetry/genAi.js';
 
 export interface GenerationSettings {
   temperature: number | null;
@@ -196,15 +203,42 @@ export abstract class LLMProvider {
     // gen_ai span 覆盖整个流式 + 重试过程，量到的就是对模型 API 的真实耗时。
     // 用 inactive span + try/finally，保证生成器任意退出路径都能 end()。
     const span = Sentry.startInactiveSpan({
-      name: 'llm.chat',
+      name: `chat ${resolvedModel}`,
       op: 'gen_ai.chat',
       attributes: {
+        'gen_ai.operation.name': 'chat',
         'gen_ai.system': provider,
         'gen_ai.request.model': resolvedModel,
+        'gen_ai.request.messages': stringifyForSentry(opts.messages),
+        'gen_ai.request.available_tools': stringifyForSentry(toSentryAvailableTools(opts.tools)),
         message_count: opts.messages.length,
         tool_count: opts.tools?.length ?? 0,
+        ...(opts.maxTokens ? { 'gen_ai.request.max_tokens': opts.maxTokens } : {}),
+        ...(opts.temperature !== undefined && opts.temperature !== null
+          ? { 'gen_ai.request.temperature': opts.temperature }
+          : {}),
       },
     });
+    if (opts.toolChoice) {
+      span.setAttribute('gen_ai.request.tool_choice', stringifyForSentry(opts.toolChoice));
+    }
+
+    let responseText = '';
+    const responseToolCalls: ToolCallRequest[] = [];
+    let responseUsage: Record<string, number> = {};
+    let finishReason: string | undefined;
+
+    const recordChunk = (chunk: LLMStreamChunk) => {
+      if (chunk.textDelta) responseText += chunk.textDelta;
+      if (chunk.completedToolCalls) responseToolCalls.push(...chunk.completedToolCalls);
+      if (chunk.usage) responseUsage = { ...responseUsage, ...chunk.usage };
+      if (chunk.finishReason) finishReason = chunk.finishReason;
+      if (chunk.errorContent) {
+        responseText += chunk.errorContent;
+        span.setAttribute('gen_ai.response.error', chunk.errorContent);
+        span.setStatus({ code: 2, message: chunk.errorContent });
+      }
+    };
 
     try {
       for (let attempt = 1; attempt <= MAX_STREAM_RETRIES; attempt += 1) {
@@ -212,11 +246,10 @@ export abstract class LLMProvider {
         try {
           for await (const chunk of this.chatStream(opts)) {
             firstChunkReceived = true;
+            recordChunk(chunk);
             yield chunk;
             if (chunk.finishReason && chunk.usage) {
-              for (const [k, v] of Object.entries(chunk.usage)) {
-                span.setAttribute(`gen_ai.usage.${k}`, v);
-              }
+              setGenAiUsageAttributes(span, chunk.usage);
               logger.info(
                 { provider, model: resolvedModel, attempt, usage: chunk.usage },
                 'LLM stream done',
@@ -228,14 +261,18 @@ export abstract class LLMProvider {
           const errStr = err instanceof Error ? err.message : String(err);
           if (firstChunkReceived) {
             logger.error({ err, provider, model: resolvedModel }, 'LLM 流式响应中断');
-            yield { finishReason: 'error', errorContent: `Stream interrupted: ${errStr}` };
+            const chunk = { finishReason: 'error', errorContent: `Stream interrupted: ${errStr}` };
+            recordChunk(chunk);
+            yield chunk;
             return;
           }
 
           const transient = LLMProvider.isTransient(errStr);
           if (!transient) {
             logger.warn({ err, provider }, 'LLM 流式请求遇到不可重试错误');
-            yield { finishReason: 'error', errorContent: `Error calling LLM: ${errStr}` };
+            const chunk = { finishReason: 'error', errorContent: `Error calling LLM: ${errStr}` };
+            recordChunk(chunk);
+            yield chunk;
             return;
           }
 
@@ -250,13 +287,29 @@ export abstract class LLMProvider {
 
       // 最后一次裸跑，不再重试
       try {
-        yield* this.chatStream(opts);
+        for await (const chunk of this.chatStream(opts)) {
+          recordChunk(chunk);
+          yield chunk;
+        }
       } catch (err) {
         const errStr = err instanceof Error ? err.message : String(err);
         logger.error({ err }, 'LLM 流式请求重试后仍失败');
-        yield { finishReason: 'error', errorContent: `Error calling LLM after retries: ${errStr}` };
+        const chunk = {
+          finishReason: 'error',
+          errorContent: `Error calling LLM after retries: ${errStr}`,
+        };
+        recordChunk(chunk);
+        yield chunk;
       }
     } finally {
+      if (responseText) {
+        span.setAttribute('gen_ai.response.text', stringifyForSentry([responseText]));
+      }
+      if (responseToolCalls.length > 0) {
+        setJsonAttribute(span, 'gen_ai.response.tool_calls', toSentryToolCalls(responseToolCalls));
+      }
+      if (Object.keys(responseUsage).length > 0) setGenAiUsageAttributes(span, responseUsage);
+      if (finishReason) span.setAttribute('lumen.finish_reason', finishReason);
       span.end();
     }
   }

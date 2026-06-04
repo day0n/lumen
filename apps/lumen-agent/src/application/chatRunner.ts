@@ -45,6 +45,12 @@ import type {
   BlueprintRegistry,
   BuiltAgent,
 } from '../domain/profile.js';
+import {
+  collectToolCalls,
+  setGenAiUsageAttributes,
+  setJsonAttribute,
+  stringifyForSentry,
+} from '../telemetry/genAi.js';
 import { AgentBuilder } from './agentBuilder.js';
 import { type InferenceHooks, InferenceLoop } from './inferenceLoop.js';
 import { buildMessages } from './prompt/builder.js';
@@ -101,120 +107,155 @@ export class ChatRunner {
     }
 
     const runId = runIdHint ?? nanoid(12);
+    const projectId = readContextString(input.context, 'project_id', 'projectId');
+    const workflowId = readContextString(input.context, 'workflow_id', 'workflowId') ?? projectId;
 
     const runBody = () =>
-      withLogContext({ session_id: input.sessionId, run_id: runId, user_id: input.userId }, () =>
-        Sentry.startSpan(
-          {
-            name: 'agent.run',
-            op: 'agent.run',
-            forceTransaction: true,
-            attributes: {
-              run_id: runId,
-              session_id: input.sessionId,
-              'user.id': input.userId,
-              profile: profileName,
-            },
-          },
-          async () => {
-            try {
-              await emit(agentStarted(input.sessionId, runId));
+      withLogContext(
+        { session_id: input.sessionId, run_id: runId, user_id: input.userId },
+        async () => {
+          Sentry.setConversationId(input.sessionId);
+          try {
+            await Sentry.startSpan(
+              {
+                name: `invoke_agent lumen-agent ${profileName}`,
+                op: 'gen_ai.invoke_agent',
+                forceTransaction: true,
+                attributes: {
+                  'gen_ai.operation.name': 'invoke_agent',
+                  'gen_ai.agent.name': `lumen-agent ${profileName}`,
+                  'gen_ai.conversation.id': input.sessionId,
+                  'gen_ai.request.model': profile.model ?? this.opts.defaultModel,
+                  run_id: runId,
+                  session_id: input.sessionId,
+                  'user.id': input.userId,
+                  profile: profileName,
+                  ...(projectId ? { project_id: projectId } : {}),
+                  ...(workflowId ? { workflow_id: workflowId } : {}),
+                },
+              },
+              async (span) => {
+                try {
+                  await emit(agentStarted(input.sessionId, runId));
 
-              const projectId = readContextString(input.context, 'project_id', 'projectId');
-              const workflowId =
-                readContextString(input.context, 'workflow_id', 'workflowId') ?? projectId;
-              const session = await this.opts.sessionManager.getOrCreate(
-                input.sessionId,
-                input.userId,
-                workflowId,
-              );
-              const instance = this.buildInstance(profile);
+                  const session = await this.opts.sessionManager.getOrCreate(
+                    input.sessionId,
+                    input.userId,
+                    workflowId,
+                  );
+                  const instance = this.buildInstance(profile);
+                  span.setAttribute('gen_ai.request.model', instance.model);
 
-              // 检索长期记忆并注入 system prompt
-              let systemPrompt = instance.systemPrompt;
-              const userQuery =
-                typeof input.message === 'string' ? input.message : JSON.stringify(input.message);
-              if (this.opts.memory && input.userId && input.userId !== 'anonymous') {
-                const memories = await this.opts.memory.retrieve(input.userId, userQuery);
-                const memoryBlock = formatMemoriesForPrompt(memories);
-                if (memoryBlock) {
-                  systemPrompt = systemPrompt + memoryBlock;
+                  // 检索长期记忆并注入 system prompt
+                  let systemPrompt = instance.systemPrompt;
+                  const userQuery =
+                    typeof input.message === 'string'
+                      ? input.message
+                      : JSON.stringify(input.message);
+                  if (this.opts.memory && input.userId && input.userId !== 'anonymous') {
+                    const memories = await this.opts.memory.retrieve(input.userId, userQuery);
+                    const memoryBlock = formatMemoriesForPrompt(memories);
+                    if (memoryBlock) {
+                      systemPrompt = systemPrompt + memoryBlock;
+                    }
+                  }
+
+                  const provider = this.resolveProvider(instance.model);
+                  const messages: MessageList = buildMessages({
+                    systemPrompt,
+                    history: session.toLLMHistory(),
+                    userMessage: input.message,
+                  });
+                  const initialMessageCount = messages.length;
+
+                  setJsonAttribute(span, 'gen_ai.request.messages', messages);
+                  setJsonAttribute(
+                    span,
+                    'gen_ai.request.available_tools',
+                    instance.tools.getDefinitions(),
+                  );
+
+                  // 把当前 user 消息也写入 session 的内部存储（display 用）
+                  session.appendUserMessage(input.message, input.metadata);
+
+                  const executor = new InferenceLoop({
+                    provider,
+                    model: instance.model,
+                    tools: instance.tools,
+                    maxIterations: instance.maxIterations,
+                    maxTokens: this.opts.defaultMaxTokens,
+                    hooks: this.makeHooks(emit, session),
+                  });
+
+                  const result = await withAgentRequestContext(
+                    {
+                      sessionId: input.sessionId,
+                      userId: input.userId,
+                      runId,
+                      projectId: projectId ?? undefined,
+                      workflowId: workflowId ?? undefined,
+                      metadata: input.metadata,
+                      context: input.context,
+                    },
+                    () => executor.run(messages),
+                  );
+                  span.setAttribute('gen_ai.response.text', stringifyForSentry([result.content]));
+                  setJsonAttribute(
+                    span,
+                    'gen_ai.response.tool_calls',
+                    collectToolCalls(result.messages.slice(initialMessageCount)),
+                  );
+                  setGenAiUsageAttributes(span, result.usage);
+                  span.setAttribute('lumen.agent.iterations', result.iterations);
+                  span.setAttribute('lumen.agent.finish_reason', result.finish_reason);
+
+                  // 持久化最终的 assistant 消息（最后一条 assistant or final content）
+                  session.appendAssistantFinal(result.content);
+                  await this.opts.sessionManager.save(session);
+
+                  // 异步存储长期记忆（不阻塞响应）
+                  if (this.opts.memory && input.userId && input.userId !== 'anonymous') {
+                    void this.opts.memory.store(input.userId, [
+                      { role: 'user', content: userQuery },
+                      { role: 'assistant', content: result.content },
+                    ]);
+                  }
+
+                  if (result.finish_reason === 'error') {
+                    await emit(
+                      agentFailed(result.content, {
+                        code: 'agent_error',
+                        details: result.terminal_error ?? undefined,
+                      }),
+                    );
+                    span.setStatus({ code: 2, message: result.content });
+                    await emit(runFailed(runId, result.content));
+                    return;
+                  }
+
+                  await emit(agentCompleted(result.content, result.usage));
+                  await emit(runCompleted(runId));
+                  logger.info(
+                    {
+                      tools_used: result.tools_used,
+                      iterations: result.iterations,
+                      usage: result.usage,
+                    },
+                    'Agent run 完成',
+                  );
+                } catch (err) {
+                  const message = err instanceof Error ? err.message : String(err);
+                  logger.error({ err }, 'Agent run 异常');
+                  span.setStatus({ code: 2, message });
+                  await emit(agentFailed(message, { code: 'internal_error' }));
+                  await emit(runFailed(runId, message));
                 }
-              }
-
-              const provider = this.resolveProvider(instance.model);
-              const messages: MessageList = buildMessages({
-                systemPrompt,
-                history: session.toLLMHistory(),
-                userMessage: input.message,
-              });
-
-              // 把当前 user 消息也写入 session 的内部存储（display 用）
-              session.appendUserMessage(input.message, input.metadata);
-
-              const executor = new InferenceLoop({
-                provider,
-                model: instance.model,
-                tools: instance.tools,
-                maxIterations: instance.maxIterations,
-                maxTokens: this.opts.defaultMaxTokens,
-                hooks: this.makeHooks(emit, session),
-              });
-
-              const result = await withAgentRequestContext(
-                {
-                  sessionId: input.sessionId,
-                  userId: input.userId,
-                  runId,
-                  projectId: projectId ?? undefined,
-                  workflowId: workflowId ?? undefined,
-                  metadata: input.metadata,
-                  context: input.context,
-                },
-                () => executor.run(messages),
-              );
-
-              // 持久化最终的 assistant 消息（最后一条 assistant or final content）
-              session.appendAssistantFinal(result.content);
-              await this.opts.sessionManager.save(session);
-
-              // 异步存储长期记忆（不阻塞响应）
-              if (this.opts.memory && input.userId && input.userId !== 'anonymous') {
-                void this.opts.memory.store(input.userId, [
-                  { role: 'user', content: userQuery },
-                  { role: 'assistant', content: result.content },
-                ]);
-              }
-
-              if (result.finish_reason === 'error') {
-                await emit(
-                  agentFailed(result.content, {
-                    code: 'agent_error',
-                    details: result.terminal_error ?? undefined,
-                  }),
-                );
-                await emit(runFailed(runId, result.content));
-                return;
-              }
-
-              await emit(agentCompleted(result.content, result.usage));
-              await emit(runCompleted(runId));
-              logger.info(
-                {
-                  tools_used: result.tools_used,
-                  iterations: result.iterations,
-                  usage: result.usage,
-                },
-                'Agent run 完成',
-              );
-            } catch (err) {
-              const message = err instanceof Error ? err.message : String(err);
-              logger.error({ err }, 'Agent run 异常');
-              await emit(agentFailed(message, { code: 'internal_error' }));
-              await emit(runFailed(runId, message));
-            }
-          },
-        ),
+              },
+            );
+          } finally {
+            Sentry.setConversationId(null);
+          }
+        },
       );
 
     // fire-and-forget 的 run 在 HTTP 请求返回之后才真正执行，必须在这里
@@ -246,7 +287,7 @@ export class ChatRunner {
 
   private makeHooks(emit: EventEmitter, session: Session): InferenceHooks {
     // 工具 start/end 是两个回调，用 tool_call_id 把 inactive span 串起来。
-    // 在 onToolStart 时活跃 span 是 agent.run，startInactiveSpan 会自动挂为其子 span。
+    // 在 onToolStart 时活跃 span 是 invoke_agent，startInactiveSpan 会自动挂为其子 span。
     const toolSpans = new Map<string, Span>();
     return {
       onStepStart: (i) => {
@@ -274,16 +315,23 @@ export class ChatRunner {
         toolSpans.set(
           id,
           Sentry.startInactiveSpan({
-            name: `tool.${name}`,
-            op: 'tool.execute',
-            attributes: { tool_name: name, tool_call_id: id },
+            name: `execute_tool ${name}`,
+            op: 'gen_ai.execute_tool',
+            attributes: {
+              'gen_ai.operation.name': 'execute_tool',
+              'gen_ai.tool.name': name,
+              'gen_ai.tool.type': 'function',
+              'gen_ai.tool.input': stringifyForSentry(args),
+              tool_name: name,
+              tool_call_id: id,
+            },
           }),
         );
         return Promise.resolve(
           emit(toolStarted({ tool_name: name, tool_call_id: id, arguments: args })),
         );
       },
-      onToolEnd: (name, id, bytes, error, _args, status, durationMs) => {
+      onToolEnd: (name, id, bytes, error, _args, status, durationMs, output, truncated) => {
         appendDisplayMessage(session, {
           role: 'act_result',
           content: null,
@@ -294,12 +342,17 @@ export class ChatRunner {
           error,
           duration_ms: durationMs,
           output_size_bytes: bytes,
-          truncated: false,
+          truncated,
           created_at: new Date().toISOString(),
         });
         const span = toolSpans.get(id);
         if (span) {
-          span.setAttributes({ output_size_bytes: bytes, status });
+          span.setAttributes({
+            'gen_ai.tool.output': stringifyForSentry(output),
+            output_size_bytes: bytes,
+            status,
+            truncated,
+          });
           span.setStatus({ code: error ? 2 : 1 });
           span.end();
           toolSpans.delete(id);
@@ -311,7 +364,7 @@ export class ChatRunner {
               tool_call_id: id,
               output_size_bytes: bytes,
               duration_ms: durationMs,
-              truncated: false,
+              truncated,
               error,
               status,
             }),
