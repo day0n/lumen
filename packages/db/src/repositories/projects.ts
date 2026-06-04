@@ -114,6 +114,29 @@ export class ProjectRepository {
     return result.modifiedCount;
   }
 
+  /**
+   * 文件夹被销毁式删除时，把它下面所有项目一并软删。
+   * 与 `delete(ownerId, projectId)` 同语义：只设 deleted_at，不真删 document，
+   * 保留可恢复能力。
+   */
+  async deleteAllInFolder(ownerId: string, folderId: string): Promise<number> {
+    const now = new Date();
+    const result = await this.collection().updateMany(
+      {
+        owner_id: ownerId,
+        folder_id: folderId,
+        deleted_at: { $exists: false },
+      },
+      {
+        $set: {
+          deleted_at: now,
+          updated_at: now,
+        },
+      },
+    );
+    return result.modifiedCount;
+  }
+
   async get(ownerId: string, projectId: string): Promise<ProjectRecord | null> {
     const document = await this.collection().findOne({
       _id: projectId,

@@ -207,7 +207,9 @@ const en = {
       cancel: 'Cancel',
       rename: 'Rename',
       remove: 'Delete',
-      confirmDelete: 'Delete folder "{name}"? Workflows inside will move back to Uncategorized.',
+      confirmDelete: 'Delete folder "{name}"? This cannot be undone.',
+      confirmDeleteWithWorkflows:
+        'Delete folder "{name}" and permanently delete all {count} workflows inside? This cannot be undone.',
       cannotEditSystem: 'System folder cannot be renamed or deleted',
       moveTo: 'Move to',
       moveToRoot: 'Uncategorized',
@@ -853,7 +855,9 @@ const zh: typeof en = {
       cancel: '取消',
       rename: '重命名',
       remove: '删除',
-      confirmDelete: '删除文件夹「{name}」？里面的工作流会回到「未分类」。',
+      confirmDelete: '删除文件夹「{name}」？此操作无法撤销。',
+      confirmDeleteWithWorkflows:
+        '删除文件夹「{name}」？这将一并永久删除里面的 {count} 个工作流，无法撤销。',
       cannotEditSystem: '系统文件夹不可重命名或删除',
       moveTo: '移动到',
       moveToRoot: '未分类',

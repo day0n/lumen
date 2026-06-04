@@ -98,13 +98,14 @@ export function WorkspacePage() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [folderActionError, setFolderActionError] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // 默认收起：避免文件夹列表挡住主网格；用户显式展开过会写入 localStorage 后保持。
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
-  // 折叠状态用 localStorage 持久化，刷新后保持
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const stored = window.localStorage.getItem('workspace.sidebar.collapsed');
-    if (stored === '1') setSidebarCollapsed(true);
+    // 只有显式存了 '0' 才视为用户偏好展开；其他情况（首次访问 / 旧记录）都保持折叠默认。
+    if (stored === '0') setSidebarCollapsed(false);
   }, []);
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -311,8 +312,14 @@ export function WorkspacePage() {
   };
 
   const handleDeleteFolder = async (folder: FolderRecord) => {
+    const workflowCount = counts[folder.id] ?? 0;
     const ok = window.confirm(
-      t('workspace.folders.confirmDelete', { name: folderDisplayName(folder, t) }),
+      workflowCount > 0
+        ? t('workspace.folders.confirmDeleteWithWorkflows', {
+            name: folderDisplayName(folder, t),
+            count: workflowCount,
+          })
+        : t('workspace.folders.confirmDelete', { name: folderDisplayName(folder, t) }),
     );
     if (!ok) return;
 
@@ -401,9 +408,15 @@ export function WorkspacePage() {
                 onClick={() => setSidebarCollapsed(false)}
                 title={t('common.expand')}
                 aria-label={t('common.expand')}
-                className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#171819] text-white/52 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.06] hover:text-white"
+                className="group flex h-[148px] w-11 flex-col items-center justify-center gap-3 rounded-2xl bg-[#171819] text-white/55 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.06] hover:text-white lg:sticky lg:top-28"
               >
-                <IconLayoutSidebarLeftExpand size={17} stroke={2.1} />
+                <IconLayoutSidebarLeftExpand size={20} stroke={2.1} />
+                <span
+                  className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/35 transition-colors group-hover:text-white/72"
+                  style={{ writingMode: 'vertical-rl' }}
+                >
+                  {t('workspace.folders.heading')}
+                </span>
               </button>
             ) : (
               <>

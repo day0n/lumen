@@ -53,13 +53,14 @@ export async function updateStudioFolder(
 }
 
 /**
- * 删除文件夹：先把里面的项目挪回未分类，再软删文件夹。返回是否成功（系统文件夹返回 false）。
+ * 删除文件夹：连带里面所有工作流一起软删（前端必须已经做过二次确认）。
+ * 返回是否成功（系统文件夹返回 false）。
  */
 export async function deleteStudioFolder(folderId: string): Promise<boolean> {
   const user = await requireStudioUser();
   const folderRepo = await getProjectFolderRepository();
   const projectRepo = await getProjectRepository();
-  await projectRepo.clearFolderForOwner(user.id, folderId);
+  await projectRepo.deleteAllInFolder(user.id, folderId);
   return folderRepo.delete(user.id, folderId);
 }
 
