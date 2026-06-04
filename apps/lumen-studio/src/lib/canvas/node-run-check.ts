@@ -16,6 +16,10 @@ function hasProducedOutput(node: CanvasNodeShape): boolean {
   return Boolean(output && !output.startsWith('blob:'));
 }
 
+function canIgnoreMissingSourceOutput(target: CanvasNodeShape, source: CanvasNodeShape): boolean {
+  return target.data.kind === 'video' && source.data.kind === 'image';
+}
+
 export interface CanRunSingleNodeArgs<
   TNode extends CanvasNodeShape,
   TEdge extends CanvasEdgeShape,
@@ -45,7 +49,7 @@ export function canRunSingleNode<TNode extends CanvasNodeShape, TEdge extends Ca
   for (const edge of incomingEdges) {
     const source = nodeMap.get(edge.source);
     if (!source) return false;
-    if (!hasProducedOutput(source)) return false;
+    if (!hasProducedOutput(source) && !canIgnoreMissingSourceOutput(node, source)) return false;
   }
   return true;
 }
@@ -99,7 +103,7 @@ export function canRunSelectedNodes<TNode extends CanvasNodeShape, TEdge extends
     for (const edge of externalIncoming) {
       const source = nodeMap.get(edge.source);
       if (!source) return false;
-      if (!hasProducedOutput(source)) return false;
+      if (!hasProducedOutput(source) && !canIgnoreMissingSourceOutput(entry, source)) return false;
     }
   }
 
