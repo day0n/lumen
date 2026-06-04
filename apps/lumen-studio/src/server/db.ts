@@ -10,6 +10,7 @@ import {
   ProjectFolderRepository,
   ProjectHistoryRepository,
   ProjectRepository,
+  RemakeJobRepository,
   UserRepository,
   getMongoDatabase,
   getRedisClient,
@@ -111,6 +112,13 @@ export const getProjectFolderRepository = createRepositoryLoader(async () => {
   return repository;
 });
 
+export const getRemakeJobRepository = createRepositoryLoader(async () => {
+  const db = await getDb();
+  const repository = new RemakeJobRepository(db);
+  await repository.ensureIndexes();
+  return repository;
+});
+
 /**
  * Eagerly initialize all repositories (Mongo connect + ensureIndexes) so the
  * cold-start cost is paid at boot instead of by the first user request after a
@@ -127,6 +135,7 @@ export async function warmupRepositories(): Promise<void> {
     getHotVideoRepository(),
     getNotificationRepository(),
     getMaterialAssetRepository(),
+    getRemakeJobRepository(),
   ]);
 }
 

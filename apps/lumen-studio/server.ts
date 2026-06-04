@@ -11,6 +11,7 @@ import { WebSocketServer } from 'ws';
 
 import { warmupRepositories } from './src/server/db';
 import { logger } from './src/server/logger';
+import { initRemakeEventMirror, stopRemakeEventMirror } from './src/server/remake/eventMirror';
 import {
   handleFlowConnection,
   initFlowGateway,
@@ -46,6 +47,7 @@ async function main() {
   });
 
   initFlowGateway();
+  initRemakeEventMirror();
 
   const wss = new WebSocketServer({ noServer: true });
   wss.on('connection', (ws) => handleFlowConnection(ws));
@@ -75,6 +77,7 @@ async function main() {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'shutting down');
     await stopFlowGateway();
+    await stopRemakeEventMirror();
     wss.close();
     server.close();
     process.exit(0);
