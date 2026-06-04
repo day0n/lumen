@@ -13,8 +13,15 @@ export const GET = withApiRouteSpan('GET /api/projects', async (request: Request
     const query = url.searchParams.get('q') ?? undefined;
     const limitParam = url.searchParams.get('limit');
     const limit = limitParam ? Number.parseInt(limitParam, 10) : undefined;
+    const folderIdParam = url.searchParams.get('folderId');
+    const folderId =
+      folderIdParam === 'uncategorized'
+        ? 'uncategorized'
+        : folderIdParam && folderIdParam.trim().length > 0
+          ? folderIdParam
+          : undefined;
 
-    const projects = await listStudioProjects({ query, limit });
+    const projects = await listStudioProjects({ query, limit, folderId });
     return okJson({ projects });
   } catch (error) {
     return routeError(error, locale);

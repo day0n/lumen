@@ -7,6 +7,7 @@ import {
   JsonCache,
   MaterialAssetRepository,
   NotificationRepository,
+  ProjectFolderRepository,
   ProjectHistoryRepository,
   ProjectRepository,
   UserRepository,
@@ -103,6 +104,13 @@ export const getProjectHistoryRepository = createRepositoryLoader(async () => {
   return repository;
 });
 
+export const getProjectFolderRepository = createRepositoryLoader(async () => {
+  const db = await getDb();
+  const repository = new ProjectFolderRepository(db);
+  await repository.ensureIndexes();
+  return repository;
+});
+
 /**
  * Eagerly initialize all repositories (Mongo connect + ensureIndexes) so the
  * cold-start cost is paid at boot instead of by the first user request after a
@@ -113,6 +121,7 @@ export async function warmupRepositories(): Promise<void> {
   await Promise.allSettled([
     getUserRepository(),
     getProjectRepository(),
+    getProjectFolderRepository(),
     getProjectHistoryRepository(),
     getHomeFeaturedRepository(),
     getHotVideoRepository(),

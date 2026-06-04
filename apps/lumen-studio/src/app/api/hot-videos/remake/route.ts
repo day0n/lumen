@@ -3,6 +3,7 @@ import { GeminiNotConfiguredError, generateGeminiText } from '@/server/gemini';
 import { getHotVideo } from '@/server/hotVideos';
 import { failJson, okJson, readJson, routeError, withApiRouteSpan } from '@/server/http';
 import { resolveRequestLocale } from '@/server/locale';
+import { ensureStudioSystemFolder } from '@/server/projectFolders';
 import { createStudioProject } from '@/server/projects';
 import { type HotVideoRecord, ProjectCanvasSchema } from '@lumen/db';
 import { type RemakeScene, buildRemakeCanvas, remakeRunBoundaries } from '@lumen/shared/domain';
@@ -99,6 +100,7 @@ export const POST = withApiRouteSpan('POST /api/hot-videos/remake', async (reque
         resolution: normalizeResolution(body.settings?.resolution),
       },
     });
+    const viralRemixFolder = await ensureStudioSystemFolder('viral_remix');
     const project = await createStudioProject({
       title: `${copyLocale === 'zh' ? '爆款复刻' : 'Viral remix'} - ${reference.label}`,
       description:
@@ -106,6 +108,7 @@ export const POST = withApiRouteSpan('POST /api/hot-videos/remake', async (reque
           ? '隐藏画布：由爆款复刻页面驱动的后台工作流'
           : 'Hidden canvas: backend workflow driven by the viral remix page',
       ...(video?.thumbnailUrl ? { thumbnail: video.thumbnailUrl } : {}),
+      folderId: viralRemixFolder.id,
       canvas: ProjectCanvasSchema.parse(canvas),
     });
 

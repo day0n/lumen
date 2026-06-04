@@ -22,12 +22,15 @@ const CACHED_PROJECT_LIST_LIMITS = new Set([3, 50]);
 export interface ListStudioProjectsOptions {
   query?: string;
   limit?: number;
+  /** 字符串 = 该文件夹下；`'uncategorized'` = 未分类；不传 = 全部。 */
+  folderId?: string | 'uncategorized';
 }
 
 export interface CreateStudioProjectOptions {
   title?: string;
   description?: string;
   thumbnail?: string;
+  folderId?: string;
   canvas?: ProjectCanvas;
 }
 
@@ -37,9 +40,10 @@ export async function listStudioProjects(
   const user = await traceStudioStep('studio.auth.require_user', 'auth', () => requireStudioUser());
   const limit = options.limit ?? 50;
   const query = normalizeProjectListQuery(options.query);
+  const folderId = options.folderId;
   const cache = getStudioCache();
-  const cacheKey = projectListCacheKey(user.id, { query, limit });
-  const canUseCache = shouldUseProjectListCache({ query, limit });
+  const cacheKey = projectListCacheKey(user.id, { query, limit, folderId });
+  const canUseCache = shouldUseProjectListCache({ query, limit, folderId });
   const cached = canUseCache
     ? await traceStudioStep(
         'studio.projects.list.cache_get',
@@ -60,6 +64,7 @@ export async function listStudioProjects(
         ownerId: user.id,
         query,
         limit,
+        ...(folderId !== undefined ? { folderId } : {}),
       }),
     { limit, has_query: Boolean(query) },
   );
@@ -88,6 +93,7 @@ export async function createStudioProject(
     title: options.title ?? 'Untitled canvas',
     description: options.description,
     thumbnail: options.thumbnail,
+    folderId: options.folderId,
     canvas: options.canvas,
   });
 
@@ -250,11 +256,12 @@ function projectListCacheKey(
   options: {
     query?: string;
     limit: number;
+    folderId?: string;
   },
 ) {
-  return `${projectListCachePrefix(ownerId)}limit:${options.limit}:q:${encodeURIComponent(
-    options.query ?? '',
-  )}`;
+  return `${projectListCachePrefix(ownerId)}limit:${options.limit}:f:${encodeURIComponent(
+    options.folderId ?? '',
+  )}:q:${encodeURIComponent(options.query ?? '')}`;
 }
 
 function projectListCachePrefix(ownerId: string) {
@@ -262,6 +269,8 @@ function projectListCachePrefix(ownerId: string) {
 }
 
 async function clearProjectListCache(ownerId: string) {
+  // 只清不带 query 的缓存键（哪些 limit/folderId 组合会进缓存由 shouldUseProjectListCache 决定）。
+  // folderId === undefined 对应"全部"列表，其他视图改动时把它一并失效。
   await Promise.all(
     [...CACHED_PROJECT_LIST_LIMITS].map((limit) =>
       getStudioCache().delete(projectListCacheKey(ownerId, { limit })),
@@ -277,11 +286,14 @@ function normalizeProjectListQuery(query?: string) {
 function shouldUseProjectListCache({
   query,
   limit,
+  folderId,
 }: {
   query?: string;
   limit: number;
+  folderId?: string;
 }) {
-  return !query && CACHED_PROJECT_LIST_LIMITS.has(limit);
+  // 只对"无搜索 + 全部范围"的请求走缓存，避免按文件夹过滤的键膨胀。
+  return !query && !folderId && CACHED_PROJECT_LIST_LIMITS.has(limit);
 }
 
 async function recordProjectHistory({

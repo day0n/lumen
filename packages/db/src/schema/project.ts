@@ -70,6 +70,8 @@ export const ProjectDocumentSchema = z
     status: ProjectStatusSchema.default('draft'),
     thumbnail: z.string().trim().optional(),
     share_id: z.string().trim().min(1).optional(),
+    /** 文件夹 id；未设置 = "未分类"。系统文件夹（如爆款复刻）也走这个字段。 */
+    folder_id: z.string().trim().min(1).optional(),
     canvas: ProjectCanvasSchema.default({ nodes: [], edges: [] }),
     created_at: z.date(),
     updated_at: z.date(),
@@ -86,6 +88,7 @@ export const ProjectRecordSchema = z
     description: z.string().optional(),
     status: ProjectStatusSchema,
     thumbnail: z.string().optional(),
+    folderId: z.string().optional(),
     canvas: ProjectCanvasSchema,
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -102,6 +105,7 @@ export const CreateProjectInputSchema = z
     title: z.string().trim().min(1).max(120).default('未命名画布'),
     description: z.string().trim().max(1000).optional(),
     thumbnail: z.string().trim().optional(),
+    folderId: z.string().trim().min(1).optional(),
     canvas: ProjectCanvasSchema.optional(),
   })
   .strict();
@@ -113,16 +117,25 @@ export const UpdateProjectInputSchema = z
     description: z.string().trim().max(1000).nullable().optional(),
     status: ProjectStatusSchema.optional(),
     thumbnail: z.string().trim().nullable().optional(),
+    /** 传 null = 移到"未分类"。 */
+    folderId: z.string().trim().min(1).nullable().optional(),
     canvas: ProjectCanvasSchema.optional(),
   })
   .strict();
 export type UpdateProjectInput = z.infer<typeof UpdateProjectInputSchema>;
+
+/** `folderId` 取值：字符串 = 该文件夹下；`'uncategorized'` = 未分类；`undefined` = 全部。 */
+export const ProjectFolderFilterSchema = z.union([
+  z.string().trim().min(1),
+  z.literal('uncategorized'),
+]);
 
 export const ListProjectsInputSchema = z
   .object({
     ownerId: z.string().min(1),
     limit: z.number().int().min(1).max(100).default(50),
     query: z.string().trim().max(120).optional(),
+    folderId: ProjectFolderFilterSchema.optional(),
   })
   .strict();
 export type ListProjectsInput = z.input<typeof ListProjectsInputSchema>;

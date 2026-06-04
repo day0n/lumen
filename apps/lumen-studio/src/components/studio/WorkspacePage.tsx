@@ -5,9 +5,32 @@ import { Topbar } from '@/components/home/Topbar';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
 import { useLoginRedirect } from '@/lib/auth-redirect';
-import { IconDotsVertical, IconPhoto, IconPlus, IconSearch } from '@tabler/icons-react';
+import { cn } from '@/lib/cn';
+import {
+  IconCheck,
+  IconDotsVertical,
+  IconFlame,
+  IconFolder,
+  IconFolderOpen,
+  IconFolderPlus,
+  IconLayoutGrid,
+  IconPencil,
+  IconPhoto,
+  IconPlus,
+  IconSearch,
+  IconTrash,
+} from '@tabler/icons-react';
+import { motion } from 'motion/react';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 interface StudioProject {
   id: string;
@@ -15,11 +38,13 @@ interface StudioProject {
   updatedAt: string;
   cover: string;
   coverMode?: 'tutorial' | 'soft';
+  folderId?: string;
 }
 
 interface ProjectListRecord {
   id: string;
   title: string;
+  folderId?: string;
   updatedAt: string;
 }
 
@@ -37,26 +62,67 @@ type ProjectsApiResponse =
       };
     };
 
+interface FolderRecord {
+  id: string;
+  name: string;
+  systemKey?: 'viral_remix';
+}
+
+type FoldersApiResponse =
+  | {
+      ok: true;
+      data: {
+        folders: FolderRecord[];
+        counts: Record<string, number>;
+      };
+    }
+  | {
+      ok: false;
+      error: { message: string };
+    };
+
+/** 侧栏选中的范围：`null` = 全部，字符串 = 某文件夹 id，`'uncategorized'` = 未分类。 */
+type SelectedScope = null | 'uncategorized' | string;
+
 export function WorkspacePage() {
   const { locale, t, localePath } = useI18n();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [projects, setProjects] = useState<StudioProject[]>([]);
+  const [folders, setFolders] = useState<FolderRecord[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedScope, setSelectedScope] = useState<SelectedScope>(null);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [folderActionError, setFolderActionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!authLoaded) return;
-    if (!isSignedIn) {
-      requireLogin('/canvas/projects');
-      return;
-    }
+  const loadFolders = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        const response = await fetch('/api/folders', {
+          signal,
+          headers: { 'x-lumen-locale': locale },
+        });
+        const payload = (await response.json()) as FoldersApiResponse;
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.ok ? t('workspace.readFailed') : payload.error.message);
+        }
+        setFolders(payload.data.folders);
+        setCounts(payload.data.counts);
+      } catch (loadError) {
+        if (signal?.aborted) return;
+        setError(loadError instanceof Error ? loadError.message : t('workspace.readFailed'));
+      }
+    },
+    [locale, t],
+  );
 
-    const controller = new AbortController();
-
-    async function loadProjects() {
+  const loadProjects = useCallback(
+    async (signal?: AbortSignal) => {
       try {
         const response = await fetch('/api/projects', {
-          signal: controller.signal,
+          signal,
           headers: { 'x-lumen-locale': locale },
         });
         const payload = (await response.json()) as ProjectsApiResponse;
@@ -68,29 +134,176 @@ export function WorkspacePage() {
         setProjects(payload.data.projects.map((project) => toStudioProject(project, locale, t)));
         setError(null);
       } catch (loadError) {
-        if (!controller.signal.aborted) {
-          setError(loadError instanceof Error ? loadError.message : t('workspace.readFailed'));
-        }
+        if (signal?.aborted) return;
+        setError(loadError instanceof Error ? loadError.message : t('workspace.readFailed'));
       }
+    },
+    [locale, t],
+  );
+
+  useEffect(() => {
+    if (!authLoaded) return;
+    if (!isSignedIn) {
+      requireLogin('/canvas/projects');
+      return;
     }
 
-    void loadProjects();
+    const controller = new AbortController();
+    void Promise.all([loadProjects(controller.signal), loadFolders(controller.signal)]);
     return () => controller.abort();
-  }, [authLoaded, isSignedIn, locale, requireLogin, t]);
+  }, [authLoaded, isSignedIn, requireLogin, loadProjects, loadFolders]);
 
   const trimmedQuery = searchQuery.trim().toLowerCase();
+  const scopedProjects = useMemo(() => {
+    if (selectedScope === null) return projects;
+    if (selectedScope === 'uncategorized') return projects.filter((p) => !p.folderId);
+    return projects.filter((p) => p.folderId === selectedScope);
+  }, [projects, selectedScope]);
+
   const visibleProjects = useMemo(() => {
-    if (!trimmedQuery) return projects;
-    return projects.filter((project) => project.name.toLowerCase().includes(trimmedQuery));
-  }, [projects, trimmedQuery]);
+    if (!trimmedQuery) return scopedProjects;
+    return scopedProjects.filter((project) => project.name.toLowerCase().includes(trimmedQuery));
+  }, [scopedProjects, trimmedQuery]);
+
   const hasNoMatches = trimmedQuery.length > 0 && visibleProjects.length === 0;
+
+  const moveProject = useCallback(
+    async (projectId: string, folderId: string | null) => {
+      const previous = projects;
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === projectId ? { ...project, folderId: folderId ?? undefined } : project,
+        ),
+      );
+
+      try {
+        const response = await fetch(`/api/projects/${projectId}`, {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            'x-lumen-locale': locale,
+          },
+          body: JSON.stringify({ folderId }),
+        });
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as {
+            ok: false;
+            error?: { message?: string };
+          } | null;
+          throw new Error(payload?.error?.message ?? t('workspace.folders.moveFailed'));
+        }
+        void loadFolders();
+      } catch (moveError) {
+        setProjects(previous);
+        setError(moveError instanceof Error ? moveError.message : t('workspace.folders.moveFailed'));
+      }
+    },
+    [projects, locale, t, loadFolders],
+  );
+
+  const handleCreateFolder = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = newFolderName.trim();
+    if (!name) return;
+
+    setFolderActionError(null);
+    try {
+      const response = await fetch('/api/folders', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-lumen-locale': locale,
+        },
+        body: JSON.stringify({ name }),
+      });
+      const payload = (await response.json()) as
+        | { ok: true; data: { folder: FolderRecord } }
+        | { ok: false; error: { message: string } };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.ok ? t('workspace.folders.createFailed') : payload.error.message);
+      }
+      setFolders((current) => [...current, payload.data.folder]);
+      setCreatingFolder(false);
+      setNewFolderName('');
+      setSelectedScope(payload.data.folder.id);
+    } catch (createError) {
+      setFolderActionError(
+        createError instanceof Error ? createError.message : t('workspace.folders.createFailed'),
+      );
+    }
+  };
+
+  const handleRenameFolder = async (folder: FolderRecord) => {
+    const next = window.prompt(t('workspace.folders.rename'), folder.name)?.trim();
+    if (!next || next === folder.name) return;
+
+    try {
+      const response = await fetch(`/api/folders/${folder.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'x-lumen-locale': locale },
+        body: JSON.stringify({ name: next }),
+      });
+      const payload = (await response.json()) as
+        | { ok: true; data: { folder: FolderRecord } }
+        | { ok: false; error: { message: string } };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.ok ? t('workspace.folders.renameFailed') : payload.error.message);
+      }
+      setFolders((current) =>
+        current.map((item) => (item.id === folder.id ? payload.data.folder : item)),
+      );
+    } catch (renameError) {
+      setError(
+        renameError instanceof Error ? renameError.message : t('workspace.folders.renameFailed'),
+      );
+    }
+  };
+
+  const handleDeleteFolder = async (folder: FolderRecord) => {
+    const ok = window.confirm(
+      t('workspace.folders.confirmDelete', { name: folderDisplayName(folder, t) }),
+    );
+    if (!ok) return;
+
+    try {
+      const response = await fetch(`/api/folders/${folder.id}`, {
+        method: 'DELETE',
+        headers: { 'x-lumen-locale': locale },
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          ok: false;
+          error?: { message?: string };
+        } | null;
+        throw new Error(payload?.error?.message ?? t('workspace.folders.deleteFailed'));
+      }
+      setFolders((current) => current.filter((item) => item.id !== folder.id));
+      if (selectedScope === folder.id) setSelectedScope(null);
+      void Promise.all([loadProjects(), loadFolders()]);
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error ? deleteError.message : t('workspace.folders.deleteFailed'),
+      );
+    }
+  };
+
+  const sortedFolders = useMemo(() => {
+    // 系统文件夹永远在前
+    const sorted = [...folders];
+    sorted.sort((a, b) => {
+      if (a.systemKey && !b.systemKey) return -1;
+      if (!a.systemKey && b.systemKey) return 1;
+      return 0;
+    });
+    return sorted;
+  }, [folders]);
 
   return (
     <div className="relative min-h-screen text-white">
       <AuroraBackdrop />
       <Topbar />
 
-      <main className="relative z-10 mx-auto max-w-[1180px] px-6 pb-16 pt-28">
+      <main className="relative z-10 mx-auto max-w-[1320px] px-6 pb-16 pt-28">
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <div>
             <h1 className="text-[22px] font-bold tracking-tight text-white">
@@ -120,25 +333,247 @@ export function WorkspacePage() {
           </div>
         ) : null}
 
-        {hasNoMatches ? (
-          <div className="rounded-xl bg-[#171819]/70 px-4 py-10 text-center text-[13px] text-white/55 ring-1 ring-white/[0.06]">
-            {t('workspace.searchEmpty', { query: searchQuery.trim() })}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            {trimmedQuery ? null : <NewProjectCard href={localePath('/canvas/new')} />}
-            {visibleProjects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                href={localePath(`/canvas/${project.id}`)}
+        <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <aside className="space-y-1">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/35">
+                {t('workspace.folders.heading')}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCreatingFolder(true);
+                  setFolderActionError(null);
+                }}
+                title={t('workspace.folders.newFolder')}
+                aria-label={t('workspace.folders.newFolder')}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white"
+              >
+                <IconFolderPlus size={15} stroke={2.2} />
+              </button>
+            </div>
+
+            <FolderSidebarItem
+              icon={<IconLayoutGrid size={15} stroke={2.2} />}
+              label={t('workspace.folders.all')}
+              count={projects.length}
+              active={selectedScope === null}
+              onClick={() => setSelectedScope(null)}
+            />
+            <FolderSidebarItem
+              icon={<IconFolder size={15} stroke={2.2} />}
+              label={t('workspace.folders.uncategorized')}
+              count={counts.uncategorized ?? 0}
+              active={selectedScope === 'uncategorized'}
+              onClick={() => setSelectedScope('uncategorized')}
+            />
+
+            {sortedFolders.map((folder) => (
+              <FolderSidebarItem
+                key={folder.id}
+                icon={
+                  folder.systemKey === 'viral_remix' ? (
+                    <IconFlame size={15} stroke={2.2} />
+                  ) : selectedScope === folder.id ? (
+                    <IconFolderOpen size={15} stroke={2.2} />
+                  ) : (
+                    <IconFolder size={15} stroke={2.2} />
+                  )
+                }
+                label={folderDisplayName(folder, t)}
+                count={counts[folder.id] ?? 0}
+                active={selectedScope === folder.id}
+                onClick={() => setSelectedScope(folder.id)}
+                onRename={folder.systemKey ? undefined : () => handleRenameFolder(folder)}
+                onDelete={folder.systemKey ? undefined : () => handleDeleteFolder(folder)}
               />
             ))}
+
+            {creatingFolder ? (
+              <form
+                onSubmit={handleCreateFolder}
+                className="mt-2 rounded-lg bg-white/[0.04] p-2 ring-1 ring-white/[0.08]"
+              >
+                <input
+                  // biome-ignore lint/a11y/noAutofocus: input only mounts on user request, focusing is the expected behavior.
+                  autoFocus
+                  type="text"
+                  value={newFolderName}
+                  onChange={(event) => setNewFolderName(event.target.value)}
+                  placeholder={t('workspace.folders.newFolderPlaceholder')}
+                  className="w-full bg-transparent text-[13px] text-white outline-none placeholder:text-white/30"
+                />
+                {folderActionError ? (
+                  <div className="mt-1 text-[11px] text-[#ffabb6]">{folderActionError}</div>
+                ) : null}
+                <div className="mt-2 flex items-center justify-end gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreatingFolder(false);
+                      setNewFolderName('');
+                      setFolderActionError(null);
+                    }}
+                    className="rounded-md px-2 py-1 text-[11px] text-white/55 hover:bg-white/[0.05] hover:text-white"
+                  >
+                    {t('workspace.folders.cancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={newFolderName.trim().length === 0}
+                    className="rounded-md bg-white px-2.5 py-1 text-[11px] font-bold text-[#111315] transition-opacity disabled:opacity-40"
+                  >
+                    {t('workspace.folders.create')}
+                  </button>
+                </div>
+              </form>
+            ) : null}
+          </aside>
+
+          <div className="min-w-0">
+            {hasNoMatches ? (
+              <div className="rounded-xl bg-[#171819]/70 px-4 py-10 text-center text-[13px] text-white/55 ring-1 ring-white/[0.06]">
+                {t('workspace.searchEmpty', { query: searchQuery.trim() })}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {trimmedQuery || selectedScope !== null ? null : (
+                  <NewProjectCard href={localePath('/canvas/new')} />
+                )}
+                {visibleProjects.map((project) => (
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    href={localePath(`/canvas/${project.id}`)}
+                    folders={sortedFolders}
+                    onMove={(folderId) => moveProject(project.id, folderId)}
+                    folderDisplayName={(folder) => folderDisplayName(folder, t)}
+                    moveToLabel={t('workspace.folders.moveTo')}
+                    moveToRootLabel={t('workspace.folders.moveToRoot')}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </main>
     </div>
   );
+}
+
+function FolderSidebarItem({
+  icon,
+  label,
+  count,
+  active,
+  onClick,
+  onRename,
+  onDelete,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+  onRename?: () => void;
+  onDelete?: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuOpen]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors',
+          active ? 'bg-white/[0.08] text-white' : 'text-white/65 hover:bg-white/[0.05] hover:text-white',
+        )}
+      >
+        <span className={cn('shrink-0', active ? 'text-white' : 'text-white/52')}>{icon}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{label}</span>
+        <span className="text-[11px] text-white/35">{count}</span>
+        {onRename || onDelete ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen((prev) => !prev);
+            }}
+            className="ml-0.5 flex h-5 w-5 items-center justify-center rounded text-white/35 opacity-0 transition-opacity hover:bg-white/[0.06] hover:text-white group-hover:opacity-100"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+          >
+            <IconDotsVertical size={13} stroke={2.2} />
+          </button>
+        ) : null}
+      </button>
+      {menuOpen ? (
+        <motion.div
+          initial={{ opacity: 0, y: -4, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.12, ease: [0.32, 0.72, 0, 1] }}
+          className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 flex flex-col gap-0.5 overflow-hidden rounded-lg bg-[#1c1d1f] p-1 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.9)] ring-1 ring-white/[0.08]"
+        >
+          {onRename ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                onRename();
+              }}
+              className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] text-white/82 hover:bg-white/[0.06] hover:text-white"
+            >
+              <IconPencil size={13} stroke={2.2} />
+              <RenameLabel />
+            </button>
+          ) : null}
+          {onDelete ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                onDelete();
+              }}
+              className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] text-[#ffabb6] hover:bg-[#ff5d73]/16"
+            >
+              <IconTrash size={13} stroke={2.2} />
+              <DeleteLabel />
+            </button>
+          ) : null}
+        </motion.div>
+      ) : null}
+    </div>
+  );
+}
+
+function RenameLabel() {
+  const { t } = useI18n();
+  return <span>{t('workspace.folders.rename')}</span>;
+}
+
+function DeleteLabel() {
+  const { t } = useI18n();
+  return <span>{t('workspace.folders.remove')}</span>;
 }
 
 function NewProjectCard({ href }: { href: string }) {
@@ -169,49 +604,170 @@ function NewProjectCard({ href }: { href: string }) {
   );
 }
 
-function ProjectCard({ project, href }: { project: StudioProject; href: string }) {
+function ProjectCard({
+  project,
+  href,
+  folders,
+  onMove,
+  folderDisplayName,
+  moveToLabel,
+  moveToRootLabel,
+}: {
+  project: StudioProject;
+  href: string;
+  folders: FolderRecord[];
+  onMove: (folderId: string | null) => void;
+  folderDisplayName: (folder: FolderRecord) => string;
+  moveToLabel: string;
+  moveToRootLabel: string;
+}) {
   const { t } = useI18n();
-  return (
-    <Link
-      href={href}
-      className="group overflow-hidden rounded-xl bg-[#202121] p-2.5 text-left ring-1 ring-white/[0.08] transition-colors hover:bg-[#262829]"
-    >
-      <div
-        className="relative h-[116px] overflow-hidden rounded-lg"
-        style={{ background: project.cover }}
-      >
-        {project.coverMode === 'tutorial' ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.05)_0,rgba(255,255,255,0.05)_8px,transparent_8px,transparent_18px)]">
-            <div className="text-center">
-              <div className="font-display text-[18px] font-extrabold tracking-wider text-white/55">
-                LUMEN
-              </div>
-              <div className="text-[18px] font-black text-white">{t('workspace.tutorial')}</div>
-            </div>
-          </div>
-        ) : (
-          <div className="absolute inset-0 opacity-60 mix-blend-soft-light [background-image:linear-gradient(120deg,transparent_20%,rgba(255,255,255,0.45)_48%,transparent_62%)]" />
-        )}
-        {project.coverMode === 'soft' && (
-          <IconPhoto
-            size={32}
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/18"
-            stroke={1.7}
-          />
-        )}
-      </div>
+  const [menuOpen, setMenuOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
-      <div className="mt-2 flex items-start gap-2 px-0.5 pb-0.5">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-bold text-white/88">{project.name}</div>
-          <div className="mt-1 text-[11px] text-white/35">{project.updatedAt}</div>
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuOpen]);
+
+  const stopPropagation = (event: React.MouseEvent | KeyboardEvent) => {
+    event.stopPropagation();
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Link
+        href={href}
+        className="group block overflow-hidden rounded-xl bg-[#202121] p-2.5 text-left ring-1 ring-white/[0.08] transition-colors hover:bg-[#262829]"
+      >
+        <div
+          className="relative h-[116px] overflow-hidden rounded-lg"
+          style={{ background: project.cover }}
+        >
+          {project.coverMode === 'tutorial' ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.05)_0,rgba(255,255,255,0.05)_8px,transparent_8px,transparent_18px)]">
+              <div className="text-center">
+                <div className="font-display text-[18px] font-extrabold tracking-wider text-white/55">
+                  LUMEN
+                </div>
+                <div className="text-[18px] font-black text-white">{t('workspace.tutorial')}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="absolute inset-0 opacity-60 mix-blend-soft-light [background-image:linear-gradient(120deg,transparent_20%,rgba(255,255,255,0.45)_48%,transparent_62%)]" />
+          )}
+          {project.coverMode === 'soft' && (
+            <IconPhoto
+              size={32}
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/18"
+              stroke={1.7}
+            />
+          )}
         </div>
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg text-white/35 transition-colors group-hover:bg-white/[0.06] group-hover:text-white/72">
-          <IconDotsVertical size={15} stroke={2.2} />
-        </span>
-      </div>
-    </Link>
+
+        <div className="mt-2 flex items-start gap-2 px-0.5 pb-0.5">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-bold text-white/88">{project.name}</div>
+            <div className="mt-1 text-[11px] text-white/35">{project.updatedAt}</div>
+          </div>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setMenuOpen((prev) => !prev);
+            }}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-white/35 transition-colors group-hover:bg-white/[0.06] group-hover:text-white/72"
+          >
+            <IconDotsVertical size={15} stroke={2.2} />
+          </button>
+        </div>
+      </Link>
+
+      {menuOpen ? (
+        <motion.div
+          initial={{ opacity: 0, y: -4, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
+          className="absolute right-2 top-[calc(116px+12px)] z-40 w-[200px] overflow-hidden rounded-xl bg-[#1c1d1f] p-1 shadow-[0_24px_70px_-30px_rgba(0,0,0,0.92)] ring-1 ring-white/[0.08]"
+          onClick={stopPropagation}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setMenuOpen(false);
+          }}
+        >
+          <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-bold uppercase tracking-wider text-white/35">
+            {moveToLabel}
+          </div>
+          <MoveMenuItem
+            label={moveToRootLabel}
+            selected={!project.folderId}
+            onClick={() => {
+              setMenuOpen(false);
+              if (project.folderId) onMove(null);
+            }}
+          />
+          {folders.map((folder) => (
+            <MoveMenuItem
+              key={folder.id}
+              label={folderDisplayName(folder)}
+              selected={project.folderId === folder.id}
+              onClick={() => {
+                setMenuOpen(false);
+                if (project.folderId !== folder.id) onMove(folder.id);
+              }}
+            />
+          ))}
+        </motion.div>
+      ) : null}
+    </div>
   );
+}
+
+function MoveMenuItem({
+  label,
+  selected,
+  onClick,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors',
+        selected
+          ? 'bg-white/[0.08] text-white'
+          : 'text-white/72 hover:bg-white/[0.05] hover:text-white',
+      )}
+    >
+      <span className="truncate">{label}</span>
+      {selected ? <IconCheck size={13} stroke={2.6} className="text-[#9da8ff]" /> : null}
+    </button>
+  );
+}
+
+function folderDisplayName(
+  folder: FolderRecord,
+  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
+): string {
+  if (folder.systemKey === 'viral_remix') return t('workspace.folders.systemViralRemix');
+  return folder.name;
 }
 
 function toStudioProject(
@@ -225,6 +781,7 @@ function toStudioProject(
     updatedAt: formatUpdatedAt(project.updatedAt, locale, t),
     cover: coverForProject(project.id),
     coverMode: project.id.charCodeAt(0) % 3 === 0 ? 'soft' : undefined,
+    folderId: project.folderId,
   };
 }
 

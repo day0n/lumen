@@ -29,6 +29,7 @@ export class ProjectRepository {
     await collection.createIndex({ owner_id: 1, updated_at: -1 });
     await collection.createIndex({ owner_id: 1, deleted_at: 1 });
     await collection.createIndex({ owner_id: 1, title: 1 });
+    await collection.createIndex({ owner_id: 1, folder_id: 1, updated_at: -1 });
     await collection.createIndex({ share_id: 1 }, { unique: true, sparse: true });
   }
 
@@ -41,6 +42,7 @@ export class ProjectRepository {
       title: parsed.title,
       description: parsed.description,
       thumbnail: parsed.thumbnail,
+      folder_id: parsed.folderId,
       status: 'draft',
       canvas: parsed.canvas ?? { nodes: [], edges: [] },
       created_at: now,
@@ -58,6 +60,12 @@ export class ProjectRepository {
       deleted_at: { $exists: false },
     };
 
+    if (parsed.folderId === 'uncategorized') {
+      filter.folder_id = { $exists: false };
+    } else if (typeof parsed.folderId === 'string') {
+      filter.folder_id = parsed.folderId;
+    }
+
     if (parsed.query) {
       filter.title = { $regex: escapeRegExp(parsed.query), $options: 'i' };
     }
@@ -69,6 +77,41 @@ export class ProjectRepository {
       .toArray();
 
     return documents.map(toProjectListRecord);
+  }
+
+  /**
+   * 给侧栏算计数用：返回 { folderId -> count }；未分类的项目计入 `'uncategorized'` 这个 key。
+   */
+  async countByFolder(ownerId: string): Promise<Record<string, number>> {
+    const cursor = this.collection().aggregate<{ _id: string | null; count: number }>([
+      { $match: { owner_id: ownerId, deleted_at: { $exists: false } } },
+      { $group: { _id: { $ifNull: ['$folder_id', null] }, count: { $sum: 1 } } },
+    ]);
+    const result: Record<string, number> = {};
+    for await (const row of cursor) {
+      const key = row._id ?? 'uncategorized';
+      result[key] = row.count;
+    }
+    return result;
+  }
+
+  /**
+   * 文件夹被删除时，把它下面的项目批量挪到"未分类"（unset folder_id）。
+   * 仅校验 owner，避免越权改别人的项目。
+   */
+  async clearFolderForOwner(ownerId: string, folderId: string): Promise<number> {
+    const result = await this.collection().updateMany(
+      {
+        owner_id: ownerId,
+        folder_id: folderId,
+        deleted_at: { $exists: false },
+      },
+      {
+        $unset: { folder_id: '' },
+        $set: { updated_at: new Date() },
+      },
+    );
+    return result.modifiedCount;
   }
 
   async get(ownerId: string, projectId: string): Promise<ProjectRecord | null> {
@@ -157,6 +200,11 @@ export class ProjectRepository {
       else set.thumbnail = parsed.thumbnail;
     }
 
+    if (parsed.folderId !== undefined) {
+      if (parsed.folderId === null) unset.folder_id = '';
+      else set.folder_id = parsed.folderId;
+    }
+
     const document = await this.collection().findOneAndUpdate(
       {
         _id: projectId,
@@ -213,6 +261,7 @@ function toProjectRecord(document: ProjectDocument): ProjectRecord {
     description: parsed.description,
     status: parsed.status,
     thumbnail: parsed.thumbnail,
+    folderId: parsed.folder_id,
     canvas: parsed.canvas,
     createdAt: parsed.created_at.toISOString(),
     updatedAt: parsed.updated_at.toISOString(),
@@ -228,6 +277,7 @@ function toProjectListRecord(document: Omit<ProjectDocument, 'canvas'>): Project
     description: parsed.description,
     status: parsed.status,
     thumbnail: parsed.thumbnail,
+    folderId: parsed.folder_id,
     createdAt: parsed.created_at.toISOString(),
     updatedAt: parsed.updated_at.toISOString(),
   });
