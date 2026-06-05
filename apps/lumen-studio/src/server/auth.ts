@@ -3,6 +3,8 @@ import 'server-only';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import type { UserRecord } from '@lumen/db';
 
+import { AUTH_BYPASS_CLERK_USER_ID, isAuthBypassEnabled } from '@/lib/auth-bypass';
+
 import { getUserRepository } from './db';
 
 export class UnauthorizedError extends Error {
@@ -17,6 +19,8 @@ export class UnauthorizedError extends Error {
  * Cheap — only reads the auth cookie/JWT.
  */
 export async function getClerkUserId(): Promise<string | null> {
+  if (isAuthBypassEnabled()) return AUTH_BYPASS_CLERK_USER_ID;
+
   const { userId } = await auth();
   return userId;
 }
@@ -28,6 +32,10 @@ export async function getClerkUserId(): Promise<string | null> {
  * Use this in API routes and server actions that need an owner_id.
  */
 export async function requireStudioUser(): Promise<UserRecord> {
+  if (isAuthBypassEnabled()) {
+    return getBypassStudioUser();
+  }
+
   const { userId } = await auth();
   if (!userId) {
     throw new UnauthorizedError();
@@ -55,5 +63,14 @@ export async function requireStudioUser(): Promise<UserRecord> {
     lastName: clerkUser.lastName ?? undefined,
     fullName: fullName.length > 0 ? fullName : undefined,
     imageUrl: clerkUser.imageUrl,
+  });
+}
+
+async function getBypassStudioUser(): Promise<UserRecord> {
+  const repository = await getUserRepository();
+  return repository.upsertFromClerk({
+    clerkUserId: AUTH_BYPASS_CLERK_USER_ID,
+    email: 'tester@lumen.local',
+    fullName: 'Lumen Test User',
   });
 }

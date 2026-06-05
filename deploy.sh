@@ -17,6 +17,8 @@ export PATH="$FNM_PATH:$PATH"
 eval "$(fnm env)"
 export NODE_BIN="$(readlink -f "$(command -v node)")"
 export TSX_BIN="$(dirname "$NODE_BIN")/tsx"
+export NEXT_PUBLIC_LUMEN_AUTH_BYPASS="${NEXT_PUBLIC_LUMEN_AUTH_BYPASS:-1}"
+export LUMEN_AUTH_BYPASS="${LUMEN_AUTH_BYPASS:-$NEXT_PUBLIC_LUMEN_AUTH_BYPASS}"
 
 cd "$APP_DIR"
 

@@ -16,6 +16,9 @@ module.exports = {
         PORT: 3000,
         NEXT_DIST_DIR: process.env.NEXT_DIST_DIR || '.next-current',
         NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'https://lumenstudio.tech',
+        NEXT_PUBLIC_LUMEN_AUTH_BYPASS: process.env.NEXT_PUBLIC_LUMEN_AUTH_BYPASS || '1',
+        LUMEN_AUTH_BYPASS:
+          process.env.LUMEN_AUTH_BYPASS || process.env.NEXT_PUBLIC_LUMEN_AUTH_BYPASS || '1',
         PATH: runtimePath,
       },
     },
@@ -27,6 +30,8 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3001,
+        LUMEN_AUTH_BYPASS:
+          process.env.LUMEN_AUTH_BYPASS || process.env.NEXT_PUBLIC_LUMEN_AUTH_BYPASS || '1',
         PATH: runtimePath,
       },
     },

@@ -2,6 +2,7 @@
 
 import { translate } from '@/i18n/messages';
 import type { Locale } from '@/i18n/routing';
+import { getStudioAuthToken } from '@/lib/auth-token';
 import { useAuth } from '@clerk/nextjs';
 import type { NodeStatus } from '@lumen/shared/domain';
 import type { ClientRunMessage, ServerEvent } from '@lumen/shared/protocols';
@@ -267,7 +268,7 @@ export function useWorkflowWs({
           : undefined,
       };
 
-      void getToken()
+      void getStudioAuthToken(getToken)
         .then((token) => {
           if (!token) {
             throw new Error('missing auth token');

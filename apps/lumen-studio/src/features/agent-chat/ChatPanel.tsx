@@ -12,6 +12,7 @@ import { LumenMark } from '@/components/ui/LumenMark';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
+import { getStudioAuthToken } from '@/lib/auth-token';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@clerk/nextjs';
 import {
@@ -213,7 +214,7 @@ export function ChatPanel({
       const controller = new AbortController();
       setSessionsLoading(true);
       try {
-        const token = await getToken().catch(() => null);
+        const token = await getStudioAuthToken(getToken);
         const nextSessions = await fetchAgentSessions({
           workflowId: projectId,
           token,
@@ -254,8 +255,7 @@ export function ChatPanel({
     if (!authReady || !isSignedIn || !projectId) return;
     const controller = new AbortController();
     setSessionsLoading(true);
-    void getToken()
-      .catch(() => null)
+    void getStudioAuthToken(getToken)
       .then((token) =>
         fetchAgentSessions({
           workflowId: projectId,
@@ -431,111 +431,107 @@ export function ChatPanel({
           : 'border-l border-white/[0.08] shadow-[0_30px_100px_-52px_rgba(0,0,0,0.98)]',
       )}
     >
-        <header className="relative z-10 flex min-h-[56px] shrink-0 items-center justify-between border-b border-white/[0.07] px-4 pt-[max(0px,env(safe-area-inset-top))] sm:px-5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="min-w-0 truncate text-[14px] font-semibold leading-5 text-white/88">
-              {title}
-            </span>
-            {busy ? <StatusRing busy compact /> : null}
-          </div>
-
-          <div className="flex items-center gap-1 text-white/50">
-            <button
-              type="button"
-              onClick={startNewSession}
-              disabled={busy}
-              aria-label={t('chat.newChat')}
-              title={t('chat.newChat')}
-              className={cn(
-                'flex min-h-11 min-w-11 items-center justify-center rounded-lg transition-colors',
-                busy
-                  ? 'cursor-not-allowed text-white/24'
-                  : 'text-white/68 hover:bg-white/[0.07] hover:text-white',
-              )}
-            >
-              <IconPlus size={18} stroke={2.2} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setSessionsOpen((value) => !value)}
-              aria-label={t('chat.history')}
-              title={t('chat.history')}
-              className={cn(
-                'flex min-h-11 min-w-11 items-center justify-center rounded-lg transition-colors',
-                sessionsOpen
-                  ? 'bg-white/[0.08] text-white'
-                  : 'hover:bg-white/[0.07] hover:text-white',
-              )}
-            >
-              <IconMessages size={17} stroke={2.15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              aria-label={t('common.close')}
-              title={t('common.close')}
-              className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-white/68 transition-colors hover:bg-white/[0.07] hover:text-white"
-            >
-              <IconX size={18} stroke={2.2} />
-            </button>
-          </div>
-        </header>
-
-        <AnimatePresence>
-          {sessionsOpen && !isMobile ? (
-            <SessionMenu
-              activeSessionId={activeSessionId}
-              busy={busy}
-              loading={sessionsLoading}
-              sessions={sessions}
-              onNewSession={startNewSession}
-              onSelectSession={selectSession}
-            />
-          ) : null}
-        </AnimatePresence>
-
-        <div
-          ref={scrollRef}
-          className="relative z-10 flex-1 overflow-y-auto px-5 pb-5 pt-5 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]"
-        >
-          {messages.length === 0 ? (
-            <WelcomeMessage />
-          ) : (
-            <ul className="flex min-h-full flex-col gap-6">
-              <AnimatePresence initial={false}>
-                {messages.map((message) => (
-                  <MessageItem
-                    key={message.id}
-                    message={message}
-                    onFeedback={setMessageFeedback}
-                  />
-                ))}
-              </AnimatePresence>
-            </ul>
-          )}
-
-          {errorText ? (
-            <div className="mt-4 text-[13px] leading-6 text-[#ff9aa6]">{errorText}</div>
-          ) : null}
+      <header className="relative z-10 flex min-h-[56px] shrink-0 items-center justify-between border-b border-white/[0.07] px-4 pt-[max(0px,env(safe-area-inset-top))] sm:px-5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="min-w-0 truncate text-[14px] font-semibold leading-5 text-white/88">
+            {title}
+          </span>
+          {busy ? <StatusRing busy compact /> : null}
         </div>
 
-        <Composer
-          attachments={attachments}
-          busy={busy}
-          draft={draft}
-          fileInputRef={fileInputRef}
-          mobile={isMobile}
-          textareaRef={textareaRef}
-          uploadError={uploadError}
-          uploading={uploading}
-          onDraftChange={setDraft}
-          onFileChange={handleFileChange}
-          onKeyDown={handleKeyDown}
-          onRemoveAttachment={removeAttachment}
-          onSubmit={handleSubmit}
-          onStop={stop}
-        />
-      </motion.aside>
+        <div className="flex items-center gap-1 text-white/50">
+          <button
+            type="button"
+            onClick={startNewSession}
+            disabled={busy}
+            aria-label={t('chat.newChat')}
+            title={t('chat.newChat')}
+            className={cn(
+              'flex min-h-11 min-w-11 items-center justify-center rounded-lg transition-colors',
+              busy
+                ? 'cursor-not-allowed text-white/24'
+                : 'text-white/68 hover:bg-white/[0.07] hover:text-white',
+            )}
+          >
+            <IconPlus size={18} stroke={2.2} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setSessionsOpen((value) => !value)}
+            aria-label={t('chat.history')}
+            title={t('chat.history')}
+            className={cn(
+              'flex min-h-11 min-w-11 items-center justify-center rounded-lg transition-colors',
+              sessionsOpen
+                ? 'bg-white/[0.08] text-white'
+                : 'hover:bg-white/[0.07] hover:text-white',
+            )}
+          >
+            <IconMessages size={17} stroke={2.15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label={t('common.close')}
+            title={t('common.close')}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-white/68 transition-colors hover:bg-white/[0.07] hover:text-white"
+          >
+            <IconX size={18} stroke={2.2} />
+          </button>
+        </div>
+      </header>
+
+      <AnimatePresence>
+        {sessionsOpen && !isMobile ? (
+          <SessionMenu
+            activeSessionId={activeSessionId}
+            busy={busy}
+            loading={sessionsLoading}
+            sessions={sessions}
+            onNewSession={startNewSession}
+            onSelectSession={selectSession}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <div
+        ref={scrollRef}
+        className="relative z-10 flex-1 overflow-y-auto px-5 pb-5 pt-5 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]"
+      >
+        {messages.length === 0 ? (
+          <WelcomeMessage />
+        ) : (
+          <ul className="flex min-h-full flex-col gap-6">
+            <AnimatePresence initial={false}>
+              {messages.map((message) => (
+                <MessageItem key={message.id} message={message} onFeedback={setMessageFeedback} />
+              ))}
+            </AnimatePresence>
+          </ul>
+        )}
+
+        {errorText ? (
+          <div className="mt-4 text-[13px] leading-6 text-[#ff9aa6]">{errorText}</div>
+        ) : null}
+      </div>
+
+      <Composer
+        attachments={attachments}
+        busy={busy}
+        draft={draft}
+        fileInputRef={fileInputRef}
+        mobile={isMobile}
+        textareaRef={textareaRef}
+        uploadError={uploadError}
+        uploading={uploading}
+        onDraftChange={setDraft}
+        onFileChange={handleFileChange}
+        onKeyDown={handleKeyDown}
+        onRemoveAttachment={removeAttachment}
+        onSubmit={handleSubmit}
+        onStop={stop}
+      />
+    </motion.aside>
   );
 
   if (!open) {
@@ -566,9 +562,7 @@ export function ChatPanel({
   if (isMobile) {
     return (
       <>
-        <div className="fixed inset-0 z-[70] flex flex-col bg-[#151515] lg:hidden">
-          {chatAside}
-        </div>
+        <div className="fixed inset-0 z-[70] flex flex-col bg-[#151515] lg:hidden">{chatAside}</div>
         <MobileSheet
           open={sessionsOpen}
           onClose={() => setSessionsOpen(false)}

@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { translate } from '@/i18n/messages';
 import type { Locale } from '@/i18n/routing';
+import { getStudioAuthToken } from '@/lib/auth-token';
 
 const AGENT_URL = process.env.NEXT_PUBLIC_AGENT_URL ?? 'http://localhost:3001';
 
@@ -225,8 +226,7 @@ export function useAgentChat({
     loadedHistoryKeyRef.current = historyKey;
 
     const controller = new AbortController();
-    void getToken()
-      .catch(() => null)
+    void getStudioAuthToken(getToken)
       .then((token) =>
         fetchSessionHistory({
           locale,
@@ -290,8 +290,7 @@ export function useAgentChat({
     }
 
     if (runId) {
-      void getToken()
-        .catch(() => null)
+      void getStudioAuthToken(getToken)
         .then((token) => {
           const headers: Record<string, string> = {};
           if (token) headers.authorization = `Bearer ${token}`;
@@ -347,7 +346,7 @@ export function useAgentChat({
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const token = await getToken().catch(() => null);
+      const token = await getStudioAuthToken(getToken);
 
       // step 1: create run
       let runId: string;
@@ -586,7 +585,7 @@ export function useAgentChat({
 
       updateMessage(params.messageId, { feedback: params.feedback });
       try {
-        const token = await getToken().catch(() => null);
+        const token = await getStudioAuthToken(getToken);
         await updateAgentMessageFeedback({
           sessionId: sid,
           runId: params.runId,

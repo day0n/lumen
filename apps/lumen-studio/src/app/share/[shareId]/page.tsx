@@ -1,8 +1,8 @@
 import { ShareLoginPanel } from '@/components/share/ShareLoginPanel';
 import { localePath } from '@/i18n/routing';
 import { getRequestLocale } from '@/i18n/server';
+import { getClerkUserId } from '@/server/auth';
 import { cloneSharedProject, getSharedProjectPreview } from '@/server/projects';
-import { auth } from '@clerk/nextjs/server';
 import { notFound, redirect } from 'next/navigation';
 
 interface ShareProjectPageProps {
@@ -17,7 +17,7 @@ export default async function ShareProjectPage({ params }: ShareProjectPageProps
   const preview = await getSharedProjectPreview(shareId);
   if (!preview) notFound();
 
-  const { userId } = await auth();
+  const userId = await getClerkUserId();
   if (!userId) {
     return <ShareLoginPanel projectTitle={preview.title} shareId={shareId} />;
   }

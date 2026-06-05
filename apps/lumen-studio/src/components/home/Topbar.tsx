@@ -5,6 +5,7 @@ import { LanguageToggle } from '@/components/i18n/LanguageToggle';
 import { LumenMark } from '@/components/ui/LumenMark';
 import { useI18n } from '@/i18n/provider';
 import { stripLocalePrefix } from '@/i18n/routing';
+import { isAuthBypassEnabled } from '@/lib/auth-bypass';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { isLoginRequiredPath } from '@/lib/protected-paths';
@@ -29,6 +30,7 @@ export function Topbar() {
   const { t, localePath } = useI18n();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const authRedirect = encodeURIComponent(pathname || '/');
+  const authBypass = isAuthBypassEnabled();
 
   const handleProtectedNavClick = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
     if (!authLoaded || !isLoginRequiredPath(href)) return;
@@ -104,7 +106,7 @@ export function Topbar() {
               </div>
             )}
 
-            {authLoaded && isSignedIn && (
+            {authLoaded && isSignedIn && !authBypass && (
               <UserButton
                 appearance={{
                   elements: {
