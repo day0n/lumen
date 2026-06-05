@@ -4,6 +4,36 @@ import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
 import { MobileSheet } from '@/components/mobile';
 import {
+  DashboardCommandPalette,
+  useDashboardCommandPalette,
+  type DashboardCommand,
+} from '@/components/studio/dashboard/DashboardCommandPalette';
+import { DashboardInsightBar, type DashboardInsight } from '@/components/studio/dashboard/DashboardInsightBar';
+import { DashboardTimeScrubber } from '@/components/studio/dashboard/DashboardTimeScrubber';
+import {
+  CHANNEL_OPTIONS,
+  OBJECTIVE_OPTIONS,
+  RANGE_OPTIONS,
+  REGION_OPTIONS,
+  SORT_LABEL_KEYS,
+  type DashboardSectionTarget,
+} from '@/components/studio/dashboard/constants';
+import {
+  applyCampaignEdit,
+  buildPolylinePoints,
+  campaignMatchesFactor,
+  factorToFunnelStageIndex,
+  formatCompact,
+  formatCurrency,
+  formatDate,
+  formatNumber,
+  readSortValue,
+  type CampaignEdit,
+  type CampaignSortKey,
+  type SortDirection,
+  type SortState,
+} from '@/components/studio/dashboard/utils';
+import {
   BlurText,
   CountUp,
   DashboardPanel,
@@ -19,6 +49,7 @@ import { useIsMobile } from '@/hooks/use-is-mobile';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
 import { cn } from '@/lib/cn';
+import { useDashboardReducedMotion, useElectricPulse } from '@/lib/dashboard-motion';
 import type {
   TiktokAbTest,
   TiktokCampaign,
@@ -61,75 +92,30 @@ import {
   IconTrendingUp,
   IconWorld,
 } from '@tabler/icons-react';
-import { AnimatePresence, motion } from 'motion/react';
-import type { ReactNode } from 'react';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
+import type { ReactNode, RefObject } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 type DashboardStatus = 'idle' | 'loading' | 'ready' | 'error';
-type CampaignSortKey = 'revenue' | 'roas' | 'cvr' | 'spend' | 'creativeScore';
-type SortDirection = 'asc' | 'desc';
 type TFunction = ReturnType<typeof useI18n>['t'];
 
 type DashboardApiResponse =
   | { ok: true; data: TiktokDashboardPayload }
   | { ok: false; error: { message: string } };
 
-interface CampaignEdit {
-  status?: TiktokCampaign['status'];
-  budgetDelta?: number;
-}
-
-interface SortState {
-  key: CampaignSortKey;
-  direction: SortDirection;
-}
-
 interface ActivityMessage {
   key: string;
   params?: Record<string, string | number>;
 }
 
-const RANGE_OPTIONS: { label: string; value: TiktokDashboardRange }[] = [
-  { label: '7D', value: '7d' },
-  { label: '14D', value: '14d' },
-  { label: '30D', value: '30d' },
-  { label: '90D', value: '90d' },
-];
-
-const REGION_OPTIONS: { labelKey: string; value: TiktokDashboardRegion }[] = [
-  { labelKey: 'global', value: 'global' },
-  { labelKey: 'us', value: 'us' },
-  { labelKey: 'sea', value: 'sea' },
-  { labelKey: 'uk', value: 'uk' },
-  { labelKey: 'de', value: 'de' },
-];
-
-const CHANNEL_OPTIONS: { labelKey: string; label?: string; value: TiktokDashboardChannel }[] = [
-  { labelKey: 'allChannels', value: 'all' },
-  { labelKey: 'spark_ads', label: 'Spark Ads', value: 'spark_ads' },
-  { labelKey: 'creator', value: 'creator_whitelist' },
-  { labelKey: 'retargeting', value: 'retargeting' },
-  { labelKey: 'live_boost', label: 'Live Boost', value: 'live_boost' },
-];
-
-const OBJECTIVE_OPTIONS: { labelKey: string; value: TiktokDashboardObjective }[] = [
-  { labelKey: 'sales', value: 'sales' },
-  { labelKey: 'roas', value: 'roas' },
-  { labelKey: 'cold', value: 'cold_start' },
-  { labelKey: 'creative', value: 'creative_test' },
-];
-
-const SORT_LABEL_KEYS: Record<CampaignSortKey, string> = {
-  revenue: 'revenue',
-  roas: 'ROAS',
-  cvr: 'CVR',
-  spend: 'spend',
-  creativeScore: 'creativeScore',
-};
+const SECTION_OFFSET = 112;
 
 export function DashboardPage() {
   const isMobile = useIsMobile();
   const { locale, t } = useI18n();
+  const reducedMotion = useDashboardReducedMotion();
+  const { active: electricActive, pulse: electricPulse } = useElectricPulse();
+  const { open: commandOpen, setOpen: setCommandOpen } = useDashboardCommandPalette();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [range, setRange] = useState<TiktokDashboardRange>('30d');
   const [region, setRegion] = useState<TiktokDashboardRegion>('global');
@@ -138,16 +124,29 @@ export function DashboardPage() {
   const [status, setStatus] = useState<DashboardStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<TiktokDashboardPayload | null>(null);
+  const [prevSummary, setPrevSummary] = useState<TiktokDashboardPayload['summary'] | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedFactorKey, setSelectedFactorKey] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState>({ key: 'revenue', direction: 'desc' });
   const [campaignEdits, setCampaignEdits] = useState<Record<string, CampaignEdit>>({});
   const [showForecast, setShowForecast] = useState(true);
+  const [scrubIndex, setScrubIndex] = useState<number | null>(null);
+  const [activeInsightTarget, setActiveInsightTarget] = useState<DashboardSectionTarget | null>(
+    null,
+  );
   const [activityMessage, setActivityMessage] = useState<ActivityMessage>({
     key: 'dashboard.activity',
   });
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [pulsedCampaignIds, setPulsedCampaignIds] = useState<string[]>([]);
+  const trendRef = useRef<HTMLDivElement>(null);
+  const funnelRef = useRef<HTMLDivElement>(null);
+  const factorRef = useRef<HTMLDivElement>(null);
+  const campaignRef = useRef<HTMLDivElement>(null);
+  const recommendationRef = useRef<HTMLDivElement>(null);
+
+  const filterKey = `${range}-${region}-${channel}-${objective}-${refreshNonce}`;
   const regionOptions = useMemo(
     () =>
       REGION_OPTIONS.map((option) => ({
@@ -198,7 +197,11 @@ export function DashboardPage() {
         if (!response.ok || !payload.ok) {
           throw new Error(payload.ok ? t('dashboard.dataFailed') : payload.error.message);
         }
-        setData(payload.data);
+        setData((current) => {
+          if (current) setPrevSummary(current.summary);
+          return payload.data;
+        });
+        setScrubIndex(null);
         setSelectedCampaignId((current) => current ?? payload.data.campaigns[0]?.id ?? null);
         setStatus('ready');
       } catch (loadError) {
@@ -275,6 +278,8 @@ export function DashboardPage() {
         status: campaign.status === 'paused' ? 'active' : 'paused',
       },
     }));
+    setPulsedCampaignIds([campaign.id]);
+    window.setTimeout(() => setPulsedCampaignIds([]), 1600);
     setActivityMessage(
       campaign.status === 'paused'
         ? { key: 'dashboard.restored', params: { name: campaign.name } }
@@ -290,6 +295,9 @@ export function DashboardPage() {
         budgetDelta: (current[campaign.id]?.budgetDelta ?? 0) + 120,
       },
     }));
+    electricPulse();
+    setPulsedCampaignIds([campaign.id]);
+    window.setTimeout(() => setPulsedCampaignIds([]), 1600);
     setActivityMessage({ key: 'dashboard.boosted', params: { name: campaign.name } });
   };
 
@@ -312,11 +320,153 @@ export function DashboardPage() {
       },
     }));
     setSelectedCampaignId(winner.id);
+    electricPulse();
+    setPulsedCampaignIds([winner.id, laggard.id]);
+    window.setTimeout(() => setPulsedCampaignIds([]), 1800);
     setActivityMessage({
       key: 'dashboard.optimized',
       params: { from: laggard.product, to: winner.product },
     });
   };
+
+  const scrollToSection = (target: DashboardSectionTarget) => {
+    const map: Record<DashboardSectionTarget, RefObject<HTMLDivElement | null>> = {
+      trend: trendRef,
+      funnel: funnelRef,
+      factors: factorRef,
+      campaigns: campaignRef,
+      recommendations: recommendationRef,
+    };
+    const node = map[target].current;
+    if (!node) return;
+    setActiveInsightTarget(target);
+    const top = node.getBoundingClientRect().top + window.scrollY - SECTION_OFFSET;
+    window.scrollTo({ top, behavior: reducedMotion ? 'auto' : 'smooth' });
+  };
+
+  const insights = useMemo((): DashboardInsight[] => {
+    if (!data) return [];
+    const topFactor = [...data.factorMatrix].sort((a, b) => b.score - a.score)[0];
+    const picks: DashboardInsight[] = [];
+
+    if (data.recommendations[0]) {
+      picks.push({
+        id: `rec-${data.recommendations[0].id}`,
+        title: data.recommendations[0].title,
+        detail: data.recommendations[0].impact,
+        target: 'recommendations',
+        accent: '#f5c76a',
+      });
+    }
+    if (topFactor) {
+      picks.push({
+        id: `factor-${topFactor.key}`,
+        title: topFactor.factor,
+        detail: topFactor.diagnosis,
+        target: 'factors',
+        accent: '#79e4ff',
+      });
+    }
+    if (selectedCampaign) {
+      picks.push({
+        id: `campaign-${selectedCampaign.id}`,
+        title: selectedCampaign.name,
+        detail: `${selectedCampaign.product} · ROAS ${selectedCampaign.metrics.roas.toFixed(2)}x`,
+        target: 'campaigns',
+        accent: '#8dd9a3',
+      });
+    } else if (data.recommendations[1]) {
+      picks.push({
+        id: `rec-${data.recommendations[1].id}`,
+        title: data.recommendations[1].title,
+        detail: data.recommendations[1].detail,
+        target: 'recommendations',
+        accent: '#9da8ff',
+      });
+    }
+
+    return picks.slice(0, 3);
+  }, [data, selectedCampaign]);
+
+  const commands = useMemo((): DashboardCommand[] => {
+    if (!data) return [];
+    const navCommands: DashboardCommand[] = [
+      {
+        id: 'nav-trend',
+        label: t('dashboard.trend'),
+        group: t('dashboard.commandGroupNav'),
+        icon: 'nav',
+        run: () => scrollToSection('trend'),
+      },
+      {
+        id: 'nav-factors',
+        label: t('dashboard.factorTitle'),
+        group: t('dashboard.commandGroupNav'),
+        icon: 'nav',
+        run: () => scrollToSection('factors'),
+      },
+      {
+        id: 'nav-campaigns',
+        label: t('dashboard.campaignConsole'),
+        group: t('dashboard.commandGroupNav'),
+        icon: 'nav',
+        run: () => scrollToSection('campaigns'),
+      },
+    ];
+
+    const campaignCommands = campaigns.slice(0, 8).map((campaign) => ({
+      id: `campaign-${campaign.id}`,
+      label: campaign.name,
+      hint: `${campaign.product} · ROAS ${campaign.metrics.roas.toFixed(2)}x`,
+      group: t('dashboard.commandGroupCampaign'),
+      icon: 'campaign' as const,
+      run: () => {
+        setSelectedCampaignId(campaign.id);
+        scrollToSection('campaigns');
+      },
+    }));
+
+    const factorCommands = data.factorMatrix.slice(0, 6).map((factor) => ({
+      id: `factor-${factor.key}`,
+      label: factor.factor,
+      hint: factor.module,
+      group: t('dashboard.commandGroupFactor'),
+      icon: 'factor' as const,
+      run: () => {
+        setSelectedFactorKey(factor.key);
+        scrollToSection('factors');
+      },
+    }));
+
+    const actionCommands: DashboardCommand[] = [
+      {
+        id: 'action-optimize',
+        label: t('dashboard.smartBudget'),
+        group: t('dashboard.commandGroupAction'),
+        icon: 'action',
+        run: () => handleOptimizeBudget(),
+      },
+      {
+        id: 'action-refresh',
+        label: t('common.refresh'),
+        group: t('dashboard.commandGroupAction'),
+        icon: 'action',
+        run: () => setRefreshNonce((current) => current + 1),
+      },
+    ];
+
+    return [...actionCommands, ...navCommands, ...campaignCommands, ...factorCommands];
+  }, [campaigns, data, t]);
+
+  const highlightedFunnelStageIndex =
+    selectedFactor && data
+      ? factorToFunnelStageIndex(selectedFactor, data.funnel)
+      : null;
+  const highlightedGeoRegion = selectedCampaign?.regionLabel ?? null;
+  const linkedFactorKeys = selectedCampaign?.factors ?? [];
+
+  const isLoading = status === 'loading' && !data;
+  const isRefreshing = status === 'loading' && Boolean(data);
 
   const handleExport = () => {
     if (!data) return;
@@ -355,12 +505,17 @@ export function DashboardPage() {
     }
   };
 
-  const isLoading = status === 'loading' && !data;
-
   return (
     <div className="relative min-h-screen text-white">
       <AuroraBackdrop />
       <Topbar />
+      <DashboardCommandPalette
+        open={commandOpen}
+        onClose={() => setCommandOpen(false)}
+        commands={commands}
+        title={t('dashboard.commandTitle')}
+        placeholder={t('dashboard.commandPlaceholder')}
+      />
 
       <main className="dashboard-analytics-shell relative z-10 mx-auto max-w-[1440px] px-4 pb-nav-mobile pt-24 sm:px-6 lg:pt-28">
         <div aria-hidden className="dashboard-analytics-ambient" />
@@ -387,6 +542,17 @@ export function DashboardPage() {
             <DashboardReveal className="mt-2 max-w-[720px]" delay={0.12} blur={false}>
               <p className="text-[13px] leading-6 text-white/45">{t('dashboard.subtitle')}</p>
             </DashboardReveal>
+            {!isMobile ? (
+              <button
+                type="button"
+                onClick={() => setCommandOpen(true)}
+                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-white/[0.05] px-3 py-1.5 text-[11px] font-semibold text-white/42 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.08] hover:text-white/68"
+              >
+                <IconSearch size={13} stroke={2.2} />
+                {t('dashboard.commandHint')}
+                <kbd className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-white/32">⌘K</kbd>
+              </button>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -494,80 +660,133 @@ export function DashboardPage() {
 
         {data ? (
           <>
-            <DashboardStagger
-              key={`metrics-${refreshNonce}`}
-              className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-6"
-            >
-              <DashboardStaggerItem className="xl:col-span-2">
-                <MetricCard
-                  featured
-                  icon={IconShoppingBag}
-                  label={t('dashboard.controls.revenue')}
-                  countTo={data.summary.revenue}
-                  formatCount={(value) => formatCurrency(value, locale)}
-                  delta={data.summary.revenueDelta}
-                  meta={
-                    showForecast
-                      ? `${t('dashboard.forecast')} ${formatCurrency(data.summary.forecastRevenue, locale)}`
-                      : t('dashboard.currentWindow')
-                  }
-                  accent="#79e4ff"
-                  sparkline={data.timeseries.map((point) => point.revenue)}
-                />
-              </DashboardStaggerItem>
-              <DashboardStaggerItem>
-                <MetricCard
-                  icon={IconTrendingUp}
-                  label="ROAS"
-                  countTo={data.summary.roas}
-                  formatCount={(value) => `${value.toFixed(2)}x`}
-                  delta={data.summary.roasDelta}
-                  meta={`${formatCurrency(data.summary.spend, locale)} ${t('dashboard.spend')}`}
-                  accent="#f5c76a"
-                  sparkline={data.timeseries.map((point) => point.roas)}
-                />
-              </DashboardStaggerItem>
-              <DashboardStaggerItem>
-                <MetricCard
-                  icon={IconTargetArrow}
-                  label="CVR"
-                  countTo={data.summary.cvr}
-                  formatCount={(value) => `${value.toFixed(2)}%`}
-                  delta={data.summary.cvrDelta}
-                  meta={t('dashboard.orders', { count: formatNumber(data.summary.orders, locale) })}
-                  accent="#8dd9a3"
-                  sparkline={data.timeseries.map((point) => point.cvr)}
-                />
-              </DashboardStaggerItem>
-              <DashboardStaggerItem>
-                <MetricCard
-                  icon={IconEye}
-                  label="3s"
-                  countTo={data.summary.thumbStop}
-                  formatCount={(value) => `${value.toFixed(1)}%`}
-                  delta={4.8}
-                  meta={t('dashboard.avgWatch', { seconds: data.summary.watchAvg.toFixed(1) })}
-                  accent="#9da8ff"
-                  sparkline={data.timeseries.map((point) => point.ctr)}
-                />
-              </DashboardStaggerItem>
-              <DashboardStaggerItem>
-                <MetricCard
-                  icon={IconGauge}
-                  label={t('dashboard.confidence')}
-                  countTo={data.summary.confidence}
-                  formatCount={(value) => `${Math.round(value)}%`}
-                  delta={2.6}
-                  meta={t('dashboard.factorMeta')}
-                  accent="#ffb86b"
-                  sparkline={data.factorMatrix.map((factor) => factor.confidence)}
-                />
-              </DashboardStaggerItem>
-            </DashboardStagger>
+            <DashboardInsightBar
+              insights={insights}
+              activeTarget={activeInsightTarget}
+              onSelect={(target) => {
+                if (target === 'factors' && !selectedFactorKey && data.factorMatrix[0]) {
+                  setSelectedFactorKey(data.factorMatrix[0].key);
+                }
+                scrollToSection(target);
+              }}
+              reducedMotion={reducedMotion}
+            />
 
-            <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(360px,0.8fr)]">
+            <div
+              className={cn(
+                'sticky top-[72px] z-20 -mx-4 mb-4 border-b border-white/[0.06] bg-[#0b0c0d]/78 px-4 py-3 backdrop-blur-xl transition-opacity duration-300 lg:top-[84px]',
+                isRefreshing && 'opacity-70',
+              )}
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-white/32">
+                  KPI
+                </span>
+                {isRefreshing ? (
+                  <span className="text-[11px] font-semibold text-[#79e4ff]">
+                    {t('dashboard.updating')}
+                  </span>
+                ) : null}
+              </div>
+              <DashboardStagger
+                key={`metrics-${filterKey}`}
+                className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-6"
+              >
+                <DashboardStaggerItem className="xl:col-span-2">
+                  <MetricCard
+                    featured
+                    icon={IconShoppingBag}
+                    label={t('dashboard.controls.revenue')}
+                    countFrom={prevSummary?.revenue}
+                    countTo={data.summary.revenue}
+                    animationKey={filterKey}
+                    reducedMotion={reducedMotion}
+                    formatCount={(value) => formatCurrency(value, locale)}
+                    delta={data.summary.revenueDelta}
+                    meta={
+                      showForecast
+                        ? `${t('dashboard.forecast')} ${formatCurrency(data.summary.forecastRevenue, locale)}`
+                        : t('dashboard.currentWindow')
+                    }
+                    accent="#79e4ff"
+                    sparkline={data.timeseries.map((point) => point.revenue)}
+                  />
+                </DashboardStaggerItem>
+                <DashboardStaggerItem>
+                  <MetricCard
+                    icon={IconTrendingUp}
+                    label="ROAS"
+                    countFrom={prevSummary?.roas}
+                    countTo={data.summary.roas}
+                    animationKey={filterKey}
+                    reducedMotion={reducedMotion}
+                    formatCount={(value) => `${value.toFixed(2)}x`}
+                    delta={data.summary.roasDelta}
+                    meta={`${formatCurrency(data.summary.spend, locale)} ${t('dashboard.spend')}`}
+                    accent="#f5c76a"
+                    sparkline={data.timeseries.map((point) => point.roas)}
+                  />
+                </DashboardStaggerItem>
+                <DashboardStaggerItem>
+                  <MetricCard
+                    icon={IconTargetArrow}
+                    label="CVR"
+                    countFrom={prevSummary?.cvr}
+                    countTo={data.summary.cvr}
+                    animationKey={filterKey}
+                    reducedMotion={reducedMotion}
+                    formatCount={(value) => `${value.toFixed(2)}%`}
+                    delta={data.summary.cvrDelta}
+                    meta={t('dashboard.orders', { count: formatNumber(data.summary.orders, locale) })}
+                    accent="#8dd9a3"
+                    sparkline={data.timeseries.map((point) => point.cvr)}
+                  />
+                </DashboardStaggerItem>
+                <DashboardStaggerItem>
+                  <MetricCard
+                    icon={IconEye}
+                    label="3s"
+                    countFrom={prevSummary?.thumbStop}
+                    countTo={data.summary.thumbStop}
+                    animationKey={filterKey}
+                    reducedMotion={reducedMotion}
+                    formatCount={(value) => `${value.toFixed(1)}%`}
+                    delta={4.8}
+                    meta={t('dashboard.avgWatch', { seconds: data.summary.watchAvg.toFixed(1) })}
+                    accent="#9da8ff"
+                    sparkline={data.timeseries.map((point) => point.ctr)}
+                  />
+                </DashboardStaggerItem>
+                <DashboardStaggerItem>
+                  <MetricCard
+                    icon={IconGauge}
+                    label={t('dashboard.confidence')}
+                    countFrom={prevSummary?.confidence}
+                    countTo={data.summary.confidence}
+                    animationKey={filterKey}
+                    reducedMotion={reducedMotion}
+                    formatCount={(value) => `${Math.round(value)}%`}
+                    delta={2.6}
+                    meta={t('dashboard.factorMeta')}
+                    accent="#ffb86b"
+                    sparkline={data.factorMatrix.map((factor) => factor.confidence)}
+                  />
+                </DashboardStaggerItem>
+              </DashboardStagger>
+            </div>
+
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={filterKey}
+                initial={reducedMotion ? false : { opacity: 0.72 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0.72 }}
+                transition={{ duration: 0.35 }}
+                className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(360px,0.8fr)]"
+              >
               <div className="space-y-4">
-                <DashboardPanel delay={0.05}>
+                <div ref={trendRef}>
+                <DashboardPanel delay={0.05} spotlight>
                   <SectionHeader
                     icon={IconChartBar}
                     title={t('dashboard.trend')}
@@ -584,28 +803,53 @@ export function DashboardPage() {
                     }
                   />
                   <PerformanceChart
-                    key={`trend-${refreshNonce}`}
                     points={data.timeseries}
+                    highlightIndex={scrubIndex}
+                    reducedMotion={reducedMotion}
                     t={t}
                   />
+                  <DashboardTimeScrubber
+                    points={data.timeseries}
+                    index={scrubIndex}
+                    locale={locale}
+                    label={t('dashboard.scrubber')}
+                    onChange={setScrubIndex}
+                    reducedMotion={reducedMotion}
+                  />
                 </DashboardPanel>
+                </div>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                  <div ref={funnelRef}>
                   <DashboardPanel delay={0.1}>
                     <SectionHeader
                       icon={IconChartPie}
                       title={t('dashboard.funnel')}
                       meta={t('dashboard.funnelMeta')}
                     />
-                    <FunnelChart stages={data.funnel} locale={locale} t={t} />
+                    <FunnelChart
+                      stages={data.funnel}
+                      locale={locale}
+                      highlightedStageIndex={highlightedFunnelStageIndex}
+                      reducedMotion={reducedMotion}
+                      t={t}
+                    />
                   </DashboardPanel>
+                  </div>
 
                   <DashboardPanel delay={0.14}>
                     <SectionHeader icon={IconWorld} title={t('dashboard.geo')} meta="GMV share" />
-                    <GeoBreakdownChart items={data.geoBreakdown} locale={locale} t={t} />
+                    <GeoBreakdownChart
+                      items={data.geoBreakdown}
+                      locale={locale}
+                      highlightedRegion={highlightedGeoRegion}
+                      reducedMotion={reducedMotion}
+                      t={t}
+                    />
                   </DashboardPanel>
                 </div>
 
+                <div ref={factorRef}>
                 <DashboardPanel delay={0.08}>
                   <SectionHeader
                     icon={IconSparkles}
@@ -615,6 +859,8 @@ export function DashboardPage() {
                   <FactorMatrix
                     factors={data.factorMatrix}
                     selectedKey={selectedFactorKey}
+                    linkedKeys={linkedFactorKeys}
+                    reducedMotion={reducedMotion}
                     t={t}
                     onSelect={(factor) =>
                       setSelectedFactorKey((current) =>
@@ -624,7 +870,7 @@ export function DashboardPage() {
                   />
                   {selectedFactor ? (
                     <motion.div
-                      initial={{ opacity: 0, height: 0 }}
+                      initial={reducedMotion ? false : { opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       className="mt-3 overflow-hidden rounded-lg bg-white/[0.035] px-3 py-2 text-[12px] leading-5 text-white/52 ring-1 ring-white/[0.05]"
                     >
@@ -634,7 +880,9 @@ export function DashboardPage() {
                     </motion.div>
                   ) : null}
                 </DashboardPanel>
+                </div>
 
+                <div ref={campaignRef}>
                 <DashboardPanel delay={0.12}>
                   <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <SectionHeader
@@ -676,23 +924,29 @@ export function DashboardPage() {
                     />
                   </div>
                   <div className="hidden lg:block">
-                    <CampaignTable
-                      campaigns={campaigns}
-                      sort={sort}
-                      selectedCampaignId={selectedCampaign?.id ?? null}
-                      onSort={handleSort}
-                      onSelect={(campaign) => setSelectedCampaignId(campaign.id)}
-                      onToggle={handleToggleCampaign}
-                      onBoost={handleBoostCampaign}
-                      locale={locale}
-                      t={t}
-                    />
+                    <LayoutGroup>
+                      <CampaignTable
+                        campaigns={campaigns}
+                        sort={sort}
+                        selectedCampaignId={selectedCampaign?.id ?? null}
+                        selectedFactorKey={selectedFactorKey}
+                        pulsedCampaignIds={pulsedCampaignIds}
+                        reducedMotion={reducedMotion}
+                        onSort={handleSort}
+                        onSelect={(campaign) => setSelectedCampaignId(campaign.id)}
+                        onToggle={handleToggleCampaign}
+                        onBoost={handleBoostCampaign}
+                        locale={locale}
+                        t={t}
+                      />
+                    </LayoutGroup>
                   </div>
                 </DashboardPanel>
+                </div>
               </div>
 
               <aside className="space-y-4">
-                <DashboardPanel delay={0.06} electric={Boolean(selectedCampaign)}>
+                <DashboardPanel delay={0.06} electric={electricActive} skipReveal>
                   <CampaignInspector
                     campaign={selectedCampaign}
                     tests={selectedCampaignTests}
@@ -707,37 +961,26 @@ export function DashboardPage() {
                     }
                   />
                 </DashboardPanel>
-                <DashboardPanel delay={0.1}>
+                <div ref={recommendationRef}>
+                <DashboardPanel delay={0.1} skipReveal>
                   <RecommendationPanel
                     items={data.recommendations}
                     onApply={handleOptimizeBudget}
                     t={t}
                   />
                 </DashboardPanel>
-                <DashboardPanel delay={0.14}>
+                </div>
+                <DashboardPanel delay={0.14} skipReveal>
                   <TracePanel events={data.trace} t={t} />
                 </DashboardPanel>
               </aside>
-            </div>
+              </motion.div>
+            </AnimatePresence>
           </>
         ) : null}
       </main>
     </div>
   );
-}
-
-function applyCampaignEdit(campaign: TiktokCampaign, edit?: CampaignEdit): TiktokCampaign {
-  if (!edit) return campaign;
-  return {
-    ...campaign,
-    status: edit.status ?? campaign.status,
-    budget: Math.max(80, campaign.budget + (edit.budgetDelta ?? 0)),
-  };
-}
-
-function readSortValue(campaign: TiktokCampaign, key: CampaignSortKey) {
-  if (key === 'creativeScore') return campaign.creativeScore;
-  return campaign.metrics[key];
 }
 
 function SectionHeader({
@@ -846,7 +1089,10 @@ function SelectControl({
 function MetricCard({
   icon: Icon,
   label,
+  countFrom,
   countTo,
+  animationKey,
+  reducedMotion = false,
   formatCount,
   delta,
   meta,
@@ -856,7 +1102,10 @@ function MetricCard({
 }: {
   icon: typeof IconShoppingBag;
   label: string;
+  countFrom?: number;
   countTo: number;
+  animationKey?: string | number;
+  reducedMotion?: boolean;
   formatCount: (value: number) => string;
   delta: number;
   meta: string;
@@ -865,20 +1114,13 @@ function MetricCard({
   featured?: boolean;
 }) {
   const positive = delta >= 0;
-  return (
-    <SpotlightCard
-      spotlightColor={`${accent}33`}
+  const cardBody = (
+    <section
       className={cn(
-        'group block w-full rounded-2xl ring-1 ring-white/[0.08] transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:ring-white/[0.16]',
-        featured && 'min-h-[168px]',
+        'relative overflow-hidden rounded-2xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]',
+        featured ? 'min-h-[168px]' : 'min-h-[150px]',
       )}
     >
-      <section
-        className={cn(
-          'relative overflow-hidden rounded-2xl bg-[#151719]/86 p-4',
-          featured ? 'min-h-[168px]' : 'min-h-[150px]',
-        )}
-      >
       {/* accent glow */}
       <span
         aria-hidden
@@ -928,8 +1170,11 @@ function MetricCard({
         )}
       >
         <CountUp
+          from={countFrom ?? countTo}
           to={countTo}
-          duration={1.15}
+          animationKey={animationKey}
+          immediate={Boolean(animationKey)}
+          duration={reducedMotion ? 0.01 : 1.05}
           formatValue={formatCount}
           className="tabular-nums"
         />
@@ -939,7 +1184,23 @@ function MetricCard({
         <MiniSparkline values={sparkline} color={accent} />
       </div>
     </section>
-    </SpotlightCard>
+  );
+
+  if (featured) {
+    return (
+      <SpotlightCard
+        spotlightColor={`${accent}33`}
+        className="group block w-full rounded-2xl transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:ring-white/[0.16]"
+      >
+        {cardBody}
+      </SpotlightCard>
+    );
+  }
+
+  return (
+    <div className="group block w-full rounded-2xl transition-transform duration-300 hover:-translate-y-0.5">
+      {cardBody}
+    </div>
   );
 }
 
@@ -993,7 +1254,17 @@ function MiniSparkline({ values, color }: { values: number[]; color: string }) {
   );
 }
 
-function PerformanceChart({ points, t }: { points: TiktokDailyPoint[]; t: TFunction }) {
+function PerformanceChart({
+  points,
+  highlightIndex,
+  reducedMotion = false,
+  t,
+}: {
+  points: TiktokDailyPoint[];
+  highlightIndex?: number | null;
+  reducedMotion?: boolean;
+  t: TFunction;
+}) {
   const width = 760;
   const height = 260;
   const padding = { top: 18, right: 18, bottom: 34, left: 48 };
@@ -1014,6 +1285,11 @@ function PerformanceChart({ points, t }: { points: TiktokDailyPoint[]; t: TFunct
   const areaPath = `${revenuePath} L ${getX(points.length - 1)} ${height - padding.bottom} L ${getX(0)} ${
     height - padding.bottom
   } Z`;
+  const markerIndex =
+    highlightIndex === null || highlightIndex === undefined
+      ? points.length - 1
+      : highlightIndex;
+  const markerPoint = points[markerIndex];
 
   return (
     <div className="h-[300px] overflow-hidden rounded-lg bg-[#101214] ring-1 ring-white/[0.05]">
@@ -1045,12 +1321,18 @@ function PerformanceChart({ points, t }: { points: TiktokDailyPoint[]; t: TFunct
             <motion.rect
               key={point.date}
               x={getX(index) - barWidth / 2}
-              initial={{ y: height - padding.bottom, height: 0 }}
+              initial={reducedMotion ? false : { y: height - padding.bottom, height: 0 }}
               animate={{ y: height - padding.bottom - barHeight, height: barHeight }}
-              transition={{ delay: 0.08 + index * 0.025, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+              transition={
+                reducedMotion
+                  ? { duration: 0.01 }
+                  : { delay: 0.08 + index * 0.025, duration: 0.45, ease: [0.22, 1, 0.36, 1] }
+              }
               width={barWidth}
               rx="3"
-              fill="rgba(245,199,106,0.38)"
+              fill={
+                index === markerIndex ? 'rgba(121,228,255,0.55)' : 'rgba(245,199,106,0.38)'
+              }
             />
           );
         })}
@@ -1067,10 +1349,30 @@ function PerformanceChart({ points, t }: { points: TiktokDailyPoint[]; t: TFunct
           stroke="#79e4ff"
           strokeWidth="3"
           strokeLinecap="round"
-          initial={{ pathLength: 0, opacity: 0.5 }}
+          initial={reducedMotion ? false : { pathLength: 0, opacity: 0.5 }}
           animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ duration: 1.25, ease: [0.22, 1, 0.36, 1] }}
+          transition={reducedMotion ? { duration: 0.01 } : { duration: 1.25, ease: [0.22, 1, 0.36, 1] }}
         />
+        {markerPoint ? (
+          <>
+            <line
+              x1={getX(markerIndex)}
+              x2={getX(markerIndex)}
+              y1={padding.top}
+              y2={height - padding.bottom}
+              stroke="rgba(121,228,255,0.35)"
+              strokeDasharray="4 4"
+            />
+            <circle
+              cx={getX(markerIndex)}
+              cy={getRevenueY(markerPoint.revenue)}
+              r="5"
+              fill="#79e4ff"
+              stroke="#071316"
+              strokeWidth="2"
+            />
+          </>
+        ) : null}
         {points.map((point, index) => {
           if (index % Math.ceil(points.length / 6) !== 0 && index !== points.length - 1)
             return null;
@@ -1102,10 +1404,14 @@ function PerformanceChart({ points, t }: { points: TiktokDailyPoint[]; t: TFunct
 function FunnelChart({
   stages,
   locale,
+  highlightedStageIndex,
+  reducedMotion = false,
   t,
 }: {
   stages: TiktokFunnelStage[];
   locale: Locale;
+  highlightedStageIndex?: number | null;
+  reducedMotion?: boolean;
   t: TFunction;
 }) {
   const max = stages[0]?.value ?? 1;
@@ -1114,13 +1420,21 @@ function FunnelChart({
       {stages.map((stage, index) => {
         const width = Math.max(8, (stage.value / max) * 100);
         const strong = stage.rate >= stage.benchmark || index === 0;
+        const linked = highlightedStageIndex === index;
         return (
           <motion.div
             key={stage.key}
-            initial={{ opacity: 0, x: -16 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: index * 0.07, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className="rounded-lg bg-white/[0.035] p-3 ring-1 ring-white/[0.04]"
+            initial={reducedMotion ? false : { opacity: 0, x: -16 }}
+            animate={{
+              opacity: linked ? 1 : highlightedStageIndex === null || highlightedStageIndex === undefined ? 1 : 0.42,
+              x: 0,
+              scale: linked ? 1.02 : 1,
+            }}
+            transition={{ delay: reducedMotion ? 0 : index * 0.07, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className={cn(
+              'rounded-lg bg-white/[0.035] p-3 ring-1',
+              linked ? 'ring-[#79e4ff]/30 bg-[#14313a]/60' : 'ring-white/[0.04]',
+            )}
           >
             <div className="mb-2 flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-white/78">
@@ -1154,21 +1468,32 @@ function FunnelChart({
 function GeoBreakdownChart({
   items,
   locale,
+  highlightedRegion,
+  reducedMotion = false,
   t,
 }: {
   items: TiktokGeoBreakdown[];
   locale: Locale;
+  highlightedRegion?: string | null;
+  reducedMotion?: boolean;
   t: TFunction;
 }) {
   const maxRevenue = Math.max(...items.map((item) => item.revenue), 1);
   return (
     <div className="space-y-3">
-      {items.map((item, index) => (
+      {items.map((item, index) => {
+        const linked = highlightedRegion ? item.region === highlightedRegion : false;
+        return (
         <motion.div
           key={item.region}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: index * 0.06, duration: 0.35 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 10 }}
+          animate={{
+            opacity: linked ? 1 : highlightedRegion ? 0.38 : 1,
+            y: 0,
+            scale: linked ? 1.02 : 1,
+          }}
+          transition={{ delay: reducedMotion ? 0 : index * 0.06, duration: 0.35 }}
+          className={cn(linked && 'rounded-lg ring-1 ring-[#79e4ff]/24 px-1 py-1')}
         >
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="text-[12px] font-semibold text-white/78">{item.region}</span>
@@ -1187,7 +1512,8 @@ function GeoBreakdownChart({
             </motion.div>
           </div>
         </motion.div>
-      ))}
+        );
+      })}
       {items.length === 0 ? <EmptyState text={t('dashboard.noCampaigns')} /> : null}
     </div>
   );
@@ -1196,11 +1522,15 @@ function GeoBreakdownChart({
 function FactorMatrix({
   factors,
   selectedKey,
+  linkedKeys = [],
+  reducedMotion = false,
   t,
   onSelect,
 }: {
   factors: TiktokFactorRow[];
   selectedKey: string | null;
+  linkedKeys?: string[];
+  reducedMotion?: boolean;
   t: TFunction;
   onSelect: (factor: TiktokFactorRow) => void;
 }) {
@@ -1230,17 +1560,21 @@ function FactorMatrix({
         <tbody>
           {factors.map((factor, index) => {
             const selected = selectedKey === factor.key;
+            const linked = linkedKeys.includes(factor.key);
+            const dimmed = linkedKeys.length > 0 && !linked && !selected;
             return (
               <motion.tr
                 key={factor.key}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.05, duration: 0.32 }}
+                initial={reducedMotion ? false : { opacity: 0, x: -10 }}
+                animate={{ opacity: dimmed ? 0.35 : 1, x: 0 }}
+                transition={{ delay: reducedMotion ? 0 : index * 0.05, duration: 0.32 }}
                 className={cn(
                   'rounded-lg text-[12px] transition-colors',
                   selected
                     ? 'bg-[#14313a] ring-1 ring-[#79e4ff]/24'
-                    : 'bg-white/[0.035] hover:bg-white/[0.06]',
+                    : linked
+                      ? 'bg-[#123326]/40 ring-1 ring-[#8dd9a3]/18'
+                      : 'bg-white/[0.035] hover:bg-white/[0.06]',
                 )}
               >
                 <td className="rounded-l-lg px-3 py-3">
@@ -1476,6 +1810,9 @@ function CampaignTable({
   campaigns,
   sort,
   selectedCampaignId,
+  selectedFactorKey,
+  pulsedCampaignIds = [],
+  reducedMotion = false,
   onSort,
   onSelect,
   onToggle,
@@ -1486,6 +1823,9 @@ function CampaignTable({
   campaigns: TiktokCampaign[];
   sort: SortState;
   selectedCampaignId: string | null;
+  selectedFactorKey?: string | null;
+  pulsedCampaignIds?: string[];
+  reducedMotion?: boolean;
   onSort: (key: CampaignSortKey) => void;
   onSelect: (campaign: TiktokCampaign) => void;
   onToggle: (campaign: TiktokCampaign) => void;
@@ -1525,14 +1865,27 @@ function CampaignTable({
           </tr>
         </thead>
         <tbody>
-          {campaigns.map((campaign, index) => {
+          {campaigns.map((campaign) => {
             const selected = selectedCampaignId === campaign.id;
+            const dimmed = selectedFactorKey
+              ? !campaignMatchesFactor(campaign, selectedFactorKey)
+              : false;
+            const pulsed = pulsedCampaignIds.includes(campaign.id);
             return (
               <motion.tr
+                layout={!reducedMotion}
                 key={campaign.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.04, duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+                initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+                animate={{
+                  opacity: dimmed ? 0.38 : 1,
+                  y: 0,
+                  boxShadow: pulsed ? '0 0 0 1px rgba(121,228,255,0.35)' : '0 0 0 0 rgba(0,0,0,0)',
+                }}
+                transition={{
+                  layout: { type: 'spring', stiffness: 340, damping: 32 },
+                  opacity: { duration: 0.25 },
+                  boxShadow: { duration: 0.35 },
+                }}
                 className={cn(
                   'text-[12px] transition-colors',
                   selected
@@ -1952,65 +2305,8 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-function buildPolylinePoints(values: number[], width: number, height: number) {
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, max);
-  const range = Math.max(max - min, 1);
-  return values
-    .map((value, index) => {
-      const x = (index / Math.max(values.length - 1, 1)) * width;
-      const y = height - ((value - min) / range) * (height - 4) - 2;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
-}
-
 function sortLabel(key: CampaignSortKey, t: TFunction) {
   const labelKey = SORT_LABEL_KEYS[key];
   if (labelKey === 'ROAS' || labelKey === 'CVR') return labelKey;
   return t(`dashboard.controls.${labelKey}`);
-}
-
-function formatCurrency(value: number, locale: Locale) {
-  const numberLocale = toNumberLocale(locale);
-  if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (Math.abs(value) >= 10_000) {
-    return new Intl.NumberFormat(numberLocale, {
-      style: 'currency',
-      currency: 'USD',
-      notation: 'compact',
-      maximumFractionDigits: 1,
-    }).format(value);
-  }
-  return new Intl.NumberFormat(numberLocale, {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatNumber(value: number, locale: Locale) {
-  return new Intl.NumberFormat(toNumberLocale(locale)).format(value);
-}
-
-function formatCompact(value: number, locale: Locale) {
-  return new Intl.NumberFormat(toNumberLocale(locale), {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function formatDate(value: string, locale: Locale) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return locale === 'zh' ? '刚刚' : 'Just now';
-  return new Intl.DateTimeFormat(toNumberLocale(locale), {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-}
-
-function toNumberLocale(locale: Locale) {
-  return locale === 'zh' ? 'zh-CN' : 'en-US';
 }

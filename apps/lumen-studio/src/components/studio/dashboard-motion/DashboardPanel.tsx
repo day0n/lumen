@@ -11,24 +11,36 @@ export function DashboardPanel({
   className,
   delay = 0,
   electric = false,
+  spotlight = false,
   spotlightColor = 'rgba(121, 228, 255, 0.18)',
+  skipReveal = false,
 }: {
   children: ReactNode;
   className?: string;
   delay?: number;
   electric?: boolean;
+  /** Spotlight follows pointer — use sparingly on hero panels only. */
+  spotlight?: boolean;
   spotlightColor?: string;
+  skipReveal?: boolean;
 }) {
-  const panel = (
-    <SpotlightCard
-      spotlightColor={spotlightColor}
+  const shell = (
+    <div
       className={cn(
         'rounded-xl bg-[#151719]/88 p-4 ring-1 ring-white/[0.08] backdrop-blur-sm',
         className,
       )}
     >
       {children}
+    </div>
+  );
+
+  const panel = spotlight ? (
+    <SpotlightCard spotlightColor={spotlightColor} className="rounded-xl">
+      {shell}
     </SpotlightCard>
+  ) : (
+    shell
   );
 
   const body = electric ? (
@@ -39,5 +51,6 @@ export function DashboardPanel({
     panel
   );
 
+  if (skipReveal) return body;
   return <DashboardReveal delay={delay}>{body}</DashboardReveal>;
 }

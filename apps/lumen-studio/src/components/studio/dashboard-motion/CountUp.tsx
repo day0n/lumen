@@ -18,6 +18,10 @@ export interface CountUpProps {
   formatValue?: (value: number) => string;
   onStart?: () => void;
   onEnd?: () => void;
+  /** When this changes, the counter re-animates from `from` to `to`. */
+  animationKey?: string | number;
+  /** Skip in-view gate and animate immediately (for filter transitions). */
+  immediate?: boolean;
 }
 
 export function CountUp({
@@ -32,6 +36,8 @@ export function CountUp({
   formatValue: formatValueProp,
   onStart,
   onEnd,
+  animationKey,
+  immediate = false,
 }: CountUpProps) {
   const ref = useRef<HTMLSpanElement>(null);
   const motionValue = useMotionValue(direction === 'down' ? to : from);
@@ -44,7 +50,9 @@ export function CountUp({
     stiffness,
   });
 
-  const isInView = useInView(ref, { once: true, margin: '0px' });
+  const isInView = useInView(ref, { once: !animationKey && !immediate, margin: '0px' });
+
+  const shouldAnimate = immediate || isInView;
 
   const getDecimalPlaces = (num: number): number => {
     const str = num.toString();
@@ -83,26 +91,39 @@ export function CountUp({
   }, [from, to, direction, formatValue]);
 
   useEffect(() => {
-    if (isInView && startWhen) {
-      onStart?.();
+    if (!shouldAnimate || !startWhen) return;
 
-      const timeoutId = window.setTimeout(() => {
-        motionValue.set(direction === 'down' ? from : to);
-      }, delay * 1000);
+    onStart?.();
+    motionValue.set(from);
 
-      const durationTimeoutId = window.setTimeout(
-        () => {
-          onEnd?.();
-        },
-        delay * 1000 + duration * 1000,
-      );
+    const timeoutId = window.setTimeout(() => {
+      motionValue.set(direction === 'down' ? from : to);
+    }, delay * 1000);
 
-      return () => {
-        window.clearTimeout(timeoutId);
-        window.clearTimeout(durationTimeoutId);
-      };
-    }
-  }, [isInView, startWhen, motionValue, direction, from, to, delay, onStart, onEnd, duration]);
+    const durationTimeoutId = window.setTimeout(
+      () => {
+        onEnd?.();
+      },
+      delay * 1000 + duration * 1000,
+    );
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearTimeout(durationTimeoutId);
+    };
+  }, [
+    shouldAnimate,
+    startWhen,
+    motionValue,
+    direction,
+    from,
+    to,
+    delay,
+    onStart,
+    onEnd,
+    duration,
+    animationKey,
+  ]);
 
   useEffect(() => {
     const unsubscribe = springValue.on('change', (latest: number) => {
