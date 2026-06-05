@@ -3,6 +3,14 @@
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
 import { MobileSheet } from '@/components/mobile';
+import {
+  BlurText,
+  CountUp,
+  DashboardReveal,
+  DashboardStagger,
+  DashboardStaggerItem,
+  GlareHover,
+} from '@/components/studio/dashboard-motion';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
@@ -49,6 +57,7 @@ import {
   IconTrendingUp,
   IconWorld,
 } from '@tabler/icons-react';
+import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { useEffect, useId, useMemo, useState } from 'react';
 
@@ -362,12 +371,17 @@ export function DashboardPage() {
                 TikTok Shop
               </span>
             </div>
-            <h1 className="text-[24px] font-bold tracking-tight text-white sm:text-[30px]">
-              {t('dashboard.title')}
-            </h1>
-            <p className="mt-2 max-w-[720px] text-[13px] leading-6 text-white/45">
-              {t('dashboard.subtitle')}
-            </p>
+            <BlurText
+              as="h1"
+              text={t('dashboard.title')}
+              className="text-[24px] font-bold tracking-tight text-white sm:text-[30px]"
+              animateBy="words"
+              delay={80}
+              direction="bottom"
+            />
+            <DashboardReveal className="mt-2 max-w-[720px]" delay={0.12} blur={false}>
+              <p className="text-[13px] leading-6 text-white/45">{t('dashboard.subtitle')}</p>
+            </DashboardReveal>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -466,60 +480,79 @@ export function DashboardPage() {
 
         {data ? (
           <>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-5">
-              <MetricCard
-                icon={IconShoppingBag}
-                label={t('dashboard.controls.revenue')}
-                value={formatCurrency(data.summary.revenue, locale)}
-                delta={data.summary.revenueDelta}
-                meta={
-                  showForecast
-                    ? `${t('dashboard.forecast')} ${formatCurrency(data.summary.forecastRevenue, locale)}`
-                    : t('dashboard.currentWindow')
-                }
-                accent="#79e4ff"
-                sparkline={data.timeseries.map((point) => point.revenue)}
-              />
-              <MetricCard
-                icon={IconTrendingUp}
-                label="ROAS"
-                value={`${data.summary.roas.toFixed(2)}x`}
-                delta={data.summary.roasDelta}
-                meta={`${formatCurrency(data.summary.spend, locale)} ${t('dashboard.spend')}`}
-                accent="#f5c76a"
-                sparkline={data.timeseries.map((point) => point.roas)}
-              />
-              <MetricCard
-                icon={IconTargetArrow}
-                label="CVR"
-                value={`${data.summary.cvr.toFixed(2)}%`}
-                delta={data.summary.cvrDelta}
-                meta={t('dashboard.orders', { count: formatNumber(data.summary.orders, locale) })}
-                accent="#8dd9a3"
-                sparkline={data.timeseries.map((point) => point.cvr)}
-              />
-              <MetricCard
-                icon={IconEye}
-                label="3s"
-                value={`${data.summary.thumbStop.toFixed(1)}%`}
-                delta={4.8}
-                meta={t('dashboard.avgWatch', { seconds: data.summary.watchAvg.toFixed(1) })}
-                accent="#9da8ff"
-                sparkline={data.timeseries.map((point) => point.ctr)}
-              />
-              <MetricCard
-                icon={IconGauge}
-                label={t('dashboard.confidence')}
-                value={`${data.summary.confidence}%`}
-                delta={2.6}
-                meta={t('dashboard.factorMeta')}
-                accent="#ffb86b"
-                sparkline={data.factorMatrix.map((factor) => factor.confidence)}
-              />
-            </div>
+            <DashboardStagger
+              key={`metrics-${refreshNonce}`}
+              className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-5"
+            >
+              <DashboardStaggerItem>
+                <MetricCard
+                  icon={IconShoppingBag}
+                  label={t('dashboard.controls.revenue')}
+                  countTo={data.summary.revenue}
+                  formatCount={(value) => formatCurrency(value, locale)}
+                  delta={data.summary.revenueDelta}
+                  meta={
+                    showForecast
+                      ? `${t('dashboard.forecast')} ${formatCurrency(data.summary.forecastRevenue, locale)}`
+                      : t('dashboard.currentWindow')
+                  }
+                  accent="#79e4ff"
+                  sparkline={data.timeseries.map((point) => point.revenue)}
+                />
+              </DashboardStaggerItem>
+              <DashboardStaggerItem>
+                <MetricCard
+                  icon={IconTrendingUp}
+                  label="ROAS"
+                  countTo={data.summary.roas}
+                  formatCount={(value) => `${value.toFixed(2)}x`}
+                  delta={data.summary.roasDelta}
+                  meta={`${formatCurrency(data.summary.spend, locale)} ${t('dashboard.spend')}`}
+                  accent="#f5c76a"
+                  sparkline={data.timeseries.map((point) => point.roas)}
+                />
+              </DashboardStaggerItem>
+              <DashboardStaggerItem>
+                <MetricCard
+                  icon={IconTargetArrow}
+                  label="CVR"
+                  countTo={data.summary.cvr}
+                  formatCount={(value) => `${value.toFixed(2)}%`}
+                  delta={data.summary.cvrDelta}
+                  meta={t('dashboard.orders', { count: formatNumber(data.summary.orders, locale) })}
+                  accent="#8dd9a3"
+                  sparkline={data.timeseries.map((point) => point.cvr)}
+                />
+              </DashboardStaggerItem>
+              <DashboardStaggerItem>
+                <MetricCard
+                  icon={IconEye}
+                  label="3s"
+                  countTo={data.summary.thumbStop}
+                  formatCount={(value) => `${value.toFixed(1)}%`}
+                  delta={4.8}
+                  meta={t('dashboard.avgWatch', { seconds: data.summary.watchAvg.toFixed(1) })}
+                  accent="#9da8ff"
+                  sparkline={data.timeseries.map((point) => point.ctr)}
+                />
+              </DashboardStaggerItem>
+              <DashboardStaggerItem>
+                <MetricCard
+                  icon={IconGauge}
+                  label={t('dashboard.confidence')}
+                  countTo={data.summary.confidence}
+                  formatCount={(value) => `${Math.round(value)}%`}
+                  delta={2.6}
+                  meta={t('dashboard.factorMeta')}
+                  accent="#ffb86b"
+                  sparkline={data.factorMatrix.map((factor) => factor.confidence)}
+                />
+              </DashboardStaggerItem>
+            </DashboardStagger>
 
             <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(360px,0.8fr)]">
               <div className="space-y-4">
+                <DashboardReveal delay={0.05}>
                 <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
                   <SectionHeader
                     icon={IconChartBar}
@@ -536,10 +569,16 @@ export function DashboardPage() {
                       </span>
                     }
                   />
-                  <PerformanceChart points={data.timeseries} t={t} />
+                  <PerformanceChart
+                    key={`trend-${refreshNonce}`}
+                    points={data.timeseries}
+                    t={t}
+                  />
                 </section>
+                </DashboardReveal>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                  <DashboardReveal delay={0.1}>
                   <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
                     <SectionHeader
                       icon={IconChartPie}
@@ -548,13 +587,17 @@ export function DashboardPage() {
                     />
                     <FunnelChart stages={data.funnel} locale={locale} t={t} />
                   </section>
+                  </DashboardReveal>
 
+                  <DashboardReveal delay={0.14}>
                   <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
                     <SectionHeader icon={IconWorld} title={t('dashboard.geo')} meta="GMV share" />
                     <GeoBreakdownChart items={data.geoBreakdown} locale={locale} t={t} />
                   </section>
+                  </DashboardReveal>
                 </div>
 
+                <DashboardReveal delay={0.08}>
                 <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
                   <SectionHeader
                     icon={IconSparkles}
@@ -579,7 +622,9 @@ export function DashboardPage() {
                     </div>
                   ) : null}
                 </section>
+                </DashboardReveal>
 
+                <DashboardReveal delay={0.12}>
                 <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
                   <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <SectionHeader
@@ -632,9 +677,11 @@ export function DashboardPage() {
                     />
                   </div>
                 </section>
+                </DashboardReveal>
               </div>
 
               <aside className="space-y-4">
+                <DashboardReveal delay={0.06}>
                 <CampaignInspector
                   campaign={selectedCampaign}
                   tests={selectedCampaignTests}
@@ -648,12 +695,17 @@ export function DashboardPage() {
                     selectedCampaign ? () => handleBoostCampaign(selectedCampaign) : undefined
                   }
                 />
+                </DashboardReveal>
+                <DashboardReveal delay={0.1}>
                 <RecommendationPanel
                   items={data.recommendations}
                   onApply={handleOptimizeBudget}
                   t={t}
                 />
+                </DashboardReveal>
+                <DashboardReveal delay={0.14}>
                 <TracePanel events={data.trace} t={t} />
+                </DashboardReveal>
               </aside>
             </div>
           </>
@@ -783,7 +835,8 @@ function SelectControl({
 function MetricCard({
   icon: Icon,
   label,
-  value,
+  countTo,
+  formatCount,
   delta,
   meta,
   accent,
@@ -791,7 +844,8 @@ function MetricCard({
 }: {
   icon: typeof IconShoppingBag;
   label: string;
-  value: string;
+  countTo: number;
+  formatCount: (value: number) => string;
   delta: number;
   meta: string;
   accent: string;
@@ -799,7 +853,13 @@ function MetricCard({
 }) {
   const positive = delta >= 0;
   return (
-    <section className="group relative min-h-[150px] overflow-hidden rounded-2xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08] transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:ring-white/[0.16]">
+    <GlareHover
+      glareColor={accent}
+      glareOpacity={0.42}
+      glareSize={140}
+      className="group block w-full rounded-2xl ring-1 ring-white/[0.08] transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:ring-white/[0.16]"
+    >
+    <section className="relative min-h-[150px] overflow-hidden rounded-2xl bg-[#151719]/86 p-4">
       {/* accent glow */}
       <span
         aria-hidden
@@ -820,7 +880,10 @@ function MetricCard({
         >
           <Icon size={18} stroke={2.2} style={{ color: accent }} />
         </span>
-        <span
+        <motion.span
+          initial={{ opacity: 0, scale: 0.85 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.35, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
           className={cn(
             'inline-flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-bold',
             positive
@@ -830,17 +893,23 @@ function MetricCard({
         >
           {positive ? <IconArrowUpRight size={13} /> : <IconArrowDownRight size={13} />}
           {Math.abs(delta).toFixed(1)}%
-        </span>
+        </motion.span>
       </div>
       <div className="relative text-[12px] font-semibold text-white/42">{label}</div>
       <div className="relative mt-1.5 text-[26px] font-bold leading-none tracking-tight text-white">
-        {value}
+        <CountUp
+          to={countTo}
+          duration={1.15}
+          formatValue={formatCount}
+          className="tabular-nums"
+        />
       </div>
       <div className="relative mt-3 flex items-end justify-between gap-3">
         <div className="min-w-0 flex-1 truncate text-[11px] text-white/34">{meta}</div>
         <MiniSparkline values={sparkline} color={accent} />
       </div>
     </section>
+    </GlareHover>
   );
 }
 
@@ -870,13 +939,22 @@ function MiniSparkline({ values, color }: { values: number[]; color: string }) {
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <polygon points={areaPoints} fill={`url(#${gradientId})`} />
-      <polyline
+      <motion.polygon
+        points={areaPoints}
+        fill={`url(#${gradientId})`}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.8, delay: 0.2 }}
+      />
+      <motion.polyline
         points={points}
         fill="none"
         stroke={color}
         strokeWidth="2"
         strokeLinecap="round"
+        initial={{ pathLength: 0, opacity: 0.4 }}
+        animate={{ pathLength: 1, opacity: 1 }}
+        transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
         strokeLinejoin="round"
       />
       <circle cx={lastX} cy={lastY} r="2.4" fill={color} />
@@ -945,8 +1023,23 @@ function PerformanceChart({ points, t }: { points: TiktokDailyPoint[]; t: TFunct
             />
           );
         })}
-        <path d={areaPath} fill="url(#trend-area)" />
-        <path d={revenuePath} fill="none" stroke="#79e4ff" strokeWidth="3" strokeLinecap="round" />
+        <motion.path
+          d={areaPath}
+          fill="url(#trend-area)"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.7, delay: 0.15 }}
+        />
+        <motion.path
+          d={revenuePath}
+          fill="none"
+          stroke="#79e4ff"
+          strokeWidth="3"
+          strokeLinecap="round"
+          initial={{ pathLength: 0, opacity: 0.5 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 1.25, ease: [0.22, 1, 0.36, 1] }}
+        />
         {points.map((point, index) => {
           if (index % Math.ceil(points.length / 6) !== 0 && index !== points.length - 1)
             return null;
@@ -1257,11 +1350,14 @@ function CampaignCards({
 
   return (
     <div className="space-y-3">
-      {campaigns.map((campaign) => {
+      {campaigns.map((campaign, index) => {
         const selected = selectedCampaignId === campaign.id;
         return (
-          <article
+          <motion.article
             key={campaign.id}
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.05, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             className={cn(
               'rounded-xl p-4 ring-1 transition-colors',
               selected ? 'bg-[#14313a] ring-[#79e4ff]/24' : 'bg-white/[0.035] ring-white/[0.08]',
@@ -1316,7 +1412,7 @@ function CampaignCards({
                 {campaign.status === 'paused' ? t('dashboard.enable') : t('dashboard.pause')}
               </button>
             </div>
-          </article>
+          </motion.article>
         );
       })}
     </div>
@@ -1376,11 +1472,14 @@ function CampaignTable({
           </tr>
         </thead>
         <tbody>
-          {campaigns.map((campaign) => {
+          {campaigns.map((campaign, index) => {
             const selected = selectedCampaignId === campaign.id;
             return (
-              <tr
+              <motion.tr
                 key={campaign.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.04, duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
                 className={cn(
                   'text-[12px] transition-colors',
                   selected
@@ -1461,7 +1560,7 @@ function CampaignTable({
                     </button>
                   </div>
                 </td>
-              </tr>
+              </motion.tr>
             );
           })}
         </tbody>
@@ -1768,22 +1867,26 @@ function StatusBadge({ status, t }: { status: TiktokCampaign['status']; t: TFunc
 
 function DashboardSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+    <DashboardStagger className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
       {Array.from({ length: 5 }, (_, index) => `metric-skeleton-${index}`).map((key) => (
-        <div
-          key={key}
-          className="h-[132px] animate-pulse rounded-xl bg-white/[0.045] ring-1 ring-white/[0.04]"
-        />
+        <DashboardStaggerItem key={key}>
+          <div className="lumen-skeleton h-[132px] rounded-xl ring-1 ring-white/[0.04]" />
+        </DashboardStaggerItem>
       ))}
-    </div>
+    </DashboardStagger>
   );
 }
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="flex min-h-[96px] items-center justify-center rounded-lg bg-white/[0.025] text-[12px] text-white/35 ring-1 ring-white/[0.04]">
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      className="flex min-h-[96px] items-center justify-center rounded-lg bg-white/[0.025] text-[12px] text-white/35 ring-1 ring-white/[0.04]"
+    >
       {text}
-    </div>
+    </motion.div>
   );
 }
 
