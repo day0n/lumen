@@ -25,7 +25,6 @@ import {
   IconMicrophone,
   IconPaperclip,
   IconPhoto,
-  IconPlayerStopFilled,
   IconPlus,
   IconThumbDown,
   IconThumbUp,
@@ -1656,10 +1655,10 @@ function ThinkingLine({ label }: { label: string }) {
     <motion.div
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-4 inline-flex items-center gap-2 text-[14px] font-medium leading-6 text-white/46"
+      className="mt-4 inline-flex items-center gap-2.5 text-[14px] font-medium leading-6 text-white/46"
     >
       <span>{label}</span>
-      <IconLoader2 size={13} className="animate-spin text-[#79e4ff]/70" stroke={2.4} />
+      <ReplyProcessGlyph active compact />
     </motion.div>
   );
 }
@@ -1921,9 +1920,9 @@ function SendOrStopButton({
         onClick={onStop}
         aria-label={t('chat.stop')}
         title={t('chat.stop')}
-        className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_12px_30px_-18px_rgba(255,255,255,0.82)] transition-transform active:scale-[0.96]"
+        className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition-transform active:scale-[0.96]"
       >
-        <IconPlayerStopFilled size={14} />
+        <ReplyProcessGlyph active />
       </button>
     );
   }
@@ -1935,14 +1934,89 @@ function SendOrStopButton({
       aria-label={t('chat.send')}
       title={t('chat.send')}
       className={cn(
-        'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-all',
-        canSend && !disabled
-          ? 'bg-white text-[#111315] shadow-[0_12px_30px_-18px_rgba(255,255,255,0.82)] hover:brightness-95 active:scale-[0.96]'
-          : 'bg-white/[0.07] text-white/28 ring-1 ring-white/[0.06]',
+        'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-all active:scale-[0.96]',
+        canSend && !disabled ? 'hover:brightness-110' : 'cursor-not-allowed',
       )}
     >
-      <IconArrowUp size={17} stroke={2.8} />
+      <ReplyProcessGlyph muted={!canSend || disabled} />
     </button>
+  );
+}
+
+function ReplyProcessGlyph({
+  active = false,
+  compact = false,
+  muted = false,
+}: {
+  active?: boolean;
+  compact?: boolean;
+  muted?: boolean;
+}) {
+  const shellSize = compact ? 'h-[22px] w-[22px]' : 'h-11 w-11';
+  const coreSize = compact ? 'h-[18px] w-[18px]' : 'h-11 w-11';
+  const iconSize = compact ? 11 : 17;
+
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'relative flex shrink-0 items-center justify-center overflow-visible',
+        shellSize,
+      )}
+    >
+      {active ? (
+        <>
+          <motion.span
+            className={cn(
+              'absolute rounded-[34%] bg-white/18 blur-[10px]',
+              compact ? 'inset-[-4px]' : 'inset-[-6px]',
+            )}
+            animate={{
+              borderRadius: ['48%', '34%', '58%', '42%', '48%'],
+              opacity: [0.36, 0.72, 0.42, 0.58, 0.36],
+              rotate: [0, 8, -5, 4, 0],
+              scale: [0.92, 1.12, 0.98, 1.08, 0.92],
+            }}
+            transition={{ duration: 2.2, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
+          />
+          <motion.span
+            className={cn(
+              'absolute rounded-full border border-white/18',
+              compact ? 'inset-[-2px]' : 'inset-[-3px]',
+            )}
+            animate={{
+              opacity: [0.18, 0.42, 0.18],
+              scale: [0.96, 1.12, 0.96],
+            }}
+            transition={{ duration: 1.35, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
+          />
+        </>
+      ) : null}
+      <motion.span
+        className={cn(
+          'relative z-10 flex items-center justify-center rounded-full border',
+          coreSize,
+          muted
+            ? 'border-white/[0.06] bg-white/[0.07] text-white/28'
+            : 'border-white/[0.08] bg-[#2d2d2d] text-white shadow-[0_14px_34px_-18px_rgba(255,255,255,0.42)]',
+        )}
+        animate={
+          active
+            ? {
+                borderRadius: ['999px', '26px', '999px', '30px', '999px'],
+                scale: [1, 1.03, 0.99, 1.02, 1],
+              }
+            : undefined
+        }
+        transition={{
+          duration: 2.2,
+          repeat: active ? Number.POSITIVE_INFINITY : 0,
+          ease: 'easeInOut',
+        }}
+      >
+        <IconArrowUp size={iconSize} stroke={compact ? 2.6 : 2.8} />
+      </motion.span>
+    </span>
   );
 }
 
