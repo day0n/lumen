@@ -1,15 +1,15 @@
 'use client';
 
-import { NotificationsPopover } from '@/components/home/NotificationsPopover';
-import { MobileSheet } from '@/components/mobile';
-import { LumenMark } from '@/components/ui/LumenMark';
-import { useIsMobileCanvas } from '@/hooks/use-is-mobile';
-import { cn } from '@/lib/cn';
 import {
   MobileCanvasBottomControls,
   MobileCanvasBottomToolbar,
   MobileCanvasFitView,
 } from '@/components/canvas/canvas-mobile';
+import { NotificationsPopover } from '@/components/home/NotificationsPopover';
+import { MobileSheet } from '@/components/mobile';
+import { LumenMark } from '@/components/ui/LumenMark';
+import { useIsMobileCanvas } from '@/hooks/use-is-mobile';
+import { cn } from '@/lib/cn';
 import {
   IconAlertTriangle,
   IconArrowLeft,
@@ -60,6 +60,7 @@ import {
   useNodesState,
   useOnViewportChange,
   useReactFlow,
+  useStoreApi,
 } from '@xyflow/react';
 import type {
   Connection,
@@ -917,6 +918,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const [nodes, setNodes, onNodesChange] = useNodesState<LumenNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<LumenEdge>([]);
   const reactFlow = useReactFlow<LumenNode, LumenEdge>();
+  const reactFlowStore = useStoreApi<LumenNode, LumenEdge>();
   const hasRequestedCreate = useRef(false);
   const hasHydratedProject = useRef(!projectId && !createOnMount);
   // 初次进入存量画布或新画布时，先盖一层全屏加载动画，等节点真正落到 ReactFlow 上之后再淡出，
@@ -1638,6 +1640,18 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     [activeKind, addCanvasNode, reactFlow],
   );
 
+  const collapseSingleNodeSelectionFrame = useCallback(() => {
+    queueMicrotask(() => {
+      const selectedNodeCount = reactFlowStore
+        .getState()
+        .nodes.filter((node) => node.selected).length;
+
+      if (selectedNodeCount <= 1) {
+        reactFlowStore.setState({ nodesSelectionActive: false });
+      }
+    });
+  }, [reactFlowStore]);
+
   const onPickTemplate = useCallback(
     (template: NodeTemplate) => {
       setActiveKind(template.kind);
@@ -1750,6 +1764,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             onReconnect={onReconnect}
             onDragOver={handleFlowDragOver}
             onDrop={handleFlowDrop}
+            onSelectionEnd={collapseSingleNodeSelectionFrame}
             isValidConnection={isValidConnection}
             edgesFocusable
             edgesReconnectable
@@ -2223,7 +2238,9 @@ function CanvasTopbar({
             </span>
           </div>
           {!compact ? (
-            <p className="mt-1 hidden text-[12px] text-white/42 sm:block">{t('canvas.studioPath')}</p>
+            <p className="mt-1 hidden text-[12px] text-white/42 sm:block">
+              {t('canvas.studioPath')}
+            </p>
           ) : null}
         </div>
       </div>
@@ -2249,13 +2266,13 @@ function CanvasTopbar({
           ) : (
             <IconShare3 size={16} stroke={2.3} />
           )}
-          {!compact ? (
-            shareState === 'copied'
+          {!compact
+            ? shareState === 'copied'
               ? t('canvas.shareCopied')
               : shareState === 'error'
                 ? t('canvas.shareFailed')
                 : t('canvas.shareProject')
-          ) : null}
+            : null}
         </button>
       </div>
     </header>
