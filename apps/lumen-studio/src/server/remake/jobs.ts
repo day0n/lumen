@@ -238,9 +238,9 @@ export async function runStage(input: {
   if (input.stage === 'lock') {
     planned = expandLockStage(job);
   } else if (input.stage === 'storyboard') {
-    planned = expandStoryboardStage(job);
+    planned = await expandStoryboardStage(job);
   } else if (input.stage === 'video') {
-    planned = expandVideoStage(job);
+    planned = await expandVideoStage(job);
   } else if (input.stage === 'final') {
     const final = expandFinalStage(job);
     if (!final) {

@@ -36,6 +36,16 @@ const RemakeSceneSchema = z
   .strict();
 export type RemakeJobScene = z.infer<typeof RemakeSceneSchema>;
 
+const RemakeCharacterSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    gender: z.enum(['female', 'male', 'unspecified']),
+    ageRange: z.string().trim().min(1).max(40),
+    tone: z.string().trim().min(1).max(120),
+  })
+  .strict();
+export type RemakeJobCharacter = z.infer<typeof RemakeCharacterSchema>;
+
 const RemakePlanSchema = z
   .object({
     scriptText: z.string().trim().min(1),
@@ -49,6 +59,8 @@ const RemakePlanSchema = z
     sceneVideoPrompts: z.array(z.string().trim().min(1)).optional(),
     /** TTS 声线 id（fish-tts voice 名）；前端选了语言后由后端解析 */
     voice: z.string().trim().optional(),
+    /** 主流 UGC 风格的角色身份卡，用于视频 prompt 里 @Name (VO, gender) says 语法锁口型。 */
+    character: RemakeCharacterSchema.optional(),
   })
   .strict();
 export type RemakeJobPlan = z.infer<typeof RemakePlanSchema>;

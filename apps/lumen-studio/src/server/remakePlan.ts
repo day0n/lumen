@@ -32,6 +32,13 @@ export const RemakeReferenceSchema = z
   .strict();
 export type RemakeReference = z.infer<typeof RemakeReferenceSchema>;
 
+export interface RemakeCharacter {
+  name: string;
+  gender: 'female' | 'male' | 'unspecified';
+  ageRange: string;
+  tone: string;
+}
+
 export interface RemakePlan {
   scriptText: string;
   scenes: RemakeScene[];
@@ -39,9 +46,13 @@ export interface RemakePlan {
   audienceTags: string[];
   creatorPrompt?: string;
   productPrompt?: string;
+  /** 已被 generateStoryboardPrompt 取代：plan 阶段不再预生成（参考实现 模型是在 stage 跑前看图生成 prompt） */
   sceneImagePrompts?: string[];
+  /** 已被 generateVideoPrompt 取代 */
   sceneVideoPrompts?: string[];
   bgmPrompt?: string;
+  /** 主流 UGC 风格角色身份卡，video prompt 会用它生成 @Name (VO, gender) says 语法锁口型 */
+  character?: RemakeCharacter;
 }
 
 export interface BuildPlanInput {
@@ -136,14 +147,12 @@ export function buildFallbackPlan(input: {
     productPrompt: `Create a crisp multi-view reference sheet for the uploaded ${product} product image: front, side, three-quarter, detail macro. Preserve exact shape, color, material, and branding.`,
     bgmPrompt:
       'Instrumental modern TikTok Shop product ad music, clean upbeat luxury feel, no vocals, steady rhythm, suitable for UGC product demonstration.',
-    sceneImagePrompts: scenes.map(
-      (scene) =>
-        `Storyboard keyframe for scene ${scene.index}. ${scene.action}. Camera: ${scene.camera}. Keep the locked creator and locked product consistent. Photorealistic vertical UGC frame.`,
-    ),
-    sceneVideoPrompts: scenes.map(
-      (scene) =>
-        `Scene ${scene.index}, ${scene.durationSeconds}s. ${scene.action}. Camera: ${scene.camera}. The creator says: "${scene.voiceLine ?? scene.dialogue}". Smooth natural UGC motion, product remains visually consistent. Audio will be replaced in post by clean TTS.`,
-    ),
+    character: {
+      name: 'Sam',
+      gender: 'female',
+      ageRange: '22-30',
+      tone: 'warm friendly UGC creator',
+    },
   };
 }
 
@@ -160,17 +169,23 @@ export function normalizePlan(
     creatorPrompt: readString(generated?.creatorPrompt) ?? fallback.creatorPrompt,
     productPrompt: readString(generated?.productPrompt) ?? fallback.productPrompt,
     bgmPrompt: readString(generated?.bgmPrompt) ?? fallback.bgmPrompt,
-    sceneImagePrompts: normalizePromptArray(
-      generated?.sceneImagePrompts,
-      fallback.sceneImagePrompts,
-      scenes.length,
-    ),
-    sceneVideoPrompts: normalizePromptArray(
-      generated?.sceneVideoPrompts,
-      fallback.sceneVideoPrompts,
-      scenes.length,
-    ),
+    character: normalizeCharacter(generated?.character) ?? fallback.character,
+    // sceneImagePrompts / sceneVideoPrompts 不再在 plan 阶段预生成，
+    // 由 stages.ts 在 lock / storyboard 完成后看图动态生成。
   };
+}
+
+function normalizeCharacter(value: unknown): RemakeCharacter | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  const name = readString(record.name);
+  const ageRange = readString(record.ageRange);
+  const tone = readString(record.tone);
+  const genderRaw = readString(record.gender);
+  if (!name || !ageRange || !tone) return undefined;
+  const gender =
+    genderRaw === 'male' || genderRaw === 'female' ? genderRaw : 'unspecified';
+  return { name, gender, ageRange, tone };
 }
 
 function buildGeminiPrompt(input: BuildPlanInput): string {
@@ -214,11 +229,13 @@ You are building a deterministic "one-click viral product replication" plan for 
 
 Important workflow:
 1. Break down the reference (you already have the real breakdown below — do NOT invent new shots).
-2. Produce the script and wait for Gate 1 confirmation.
-3. Lock creator identity and product appearance.
-4. Produce 3-6 storyboard keyframes and wait for Gate 2 confirmation.
-5. Generate per-scene videos + per-scene TTS voiceover + Suno BGM.
+2. Produce the script + character identity card and wait for Gate 1 confirmation.
+3. Lock creator identity and product appearance (image generation).
+4. Look at the locked creator + product images to generate per-scene storyboard prompts (NOT your job — happens later).
+5. Look at each storyboard frame to generate per-scene video prompts (NOT your job — happens later).
 6. Final deterministic edit: per-scene mix already has TTS baked in; final cut concats and adds BGM.
+
+Do not output sceneImagePrompts or sceneVideoPrompts — those are generated later from the actual lock images.
 
 Do not invent a canvas. Return only JSON for the hidden workflow builder.
 Scene count is determined by the replication skeleton below (when present) — otherwise use 3 to 6 scenes.
@@ -228,6 +245,13 @@ Each scene MUST have:
 - "dialogue": short on-screen subtitle / line label (will display as caption)
 - "voiceLine": the exact words spoken in the scene's voiceover (drives fish-tts; can equal dialogue if simple)
 - Both MUST be short enough to fit in durationSeconds at natural speaking pace.
+
+Character identity card (CRITICAL — drives lip-sync via @Name (VO, gender) says: "..." syntax in video prompts):
+- Pick a single recurring on-camera creator. Stick with this one identity across all scenes.
+- name: short first name (e.g. "Mia"). Will be used as @Name token in downstream prompts.
+- gender: "female" / "male" / "unspecified". REQUIRED — drives mouth-shape gender priors in the video model.
+- ageRange: e.g. "22-30".
+- tone: 2-6 words describing voice texture (e.g. "warm friendly UGC creator").
 
 Reference:
 - Title: ${video?.title ?? input.reference.value}
@@ -252,11 +276,10 @@ Return this exact JSON shape, no markdown:
   "creatorPrompt": "photorealistic creator identity lock prompt",
   "productPrompt": "product multi-view lock prompt using uploaded product images",
   "bgmPrompt": "instrumental Suno music prompt, no vocals",
+  "character": {"name": "Mia", "gender": "female", "ageRange": "22-30", "tone": "warm friendly UGC creator"},
   "scenes": [
     {"index": 1, "action": "shot action", "dialogue": "on-screen caption", "voiceLine": "exact spoken voiceover", "durationSeconds": 4, "camera": "framing"}
-  ],
-  "sceneImagePrompts": ["one image prompt per scene, matching scenes order"],
-  "sceneVideoPrompts": ["one video prompt per scene, matching scenes order"]
+  ]
 }
 `.trim();
 }
@@ -421,20 +444,6 @@ function normalizeStringArray(value: unknown, fallback: string[], max: number): 
     .map((item) => item.trim())
     .slice(0, max);
   return cleaned.length ? cleaned : fallback;
-}
-
-function normalizePromptArray(
-  value: unknown,
-  fallback: string[] | undefined,
-  expectedLength: number,
-): string[] | undefined {
-  if (!Array.isArray(value)) return fallback;
-  const cleaned = value
-    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    .map((item) => item.trim())
-    .slice(0, expectedLength);
-  if (cleaned.length !== expectedLength) return fallback;
-  return cleaned;
 }
 
 function readString(value: unknown): string | null {

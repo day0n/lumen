@@ -9,6 +9,8 @@ import type {
   RemakeTaskRecord,
 } from '@lumen/db';
 
+import { generateStoryboardPrompt, generateVideoPrompt } from './promptGenerators';
+
 /**
  * Stage → Task 展开逻辑（纯函数）。
  *
@@ -143,24 +145,36 @@ export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
 
 // ============================================================
 // Storyboard stage：每场首帧分镜（i2i，喂 lock 输出 + 脚本）
+// 改 async：在派发任务前用 Gemini 多模态"看着 lock 图"生成具体的分镜 prompt。
 // ============================================================
 
-export function expandStoryboardStage(job: RemakeJobRecord): PlannedTask[] {
+export async function expandStoryboardStage(job: RemakeJobRecord): Promise<PlannedTask[]> {
   const aspectRatio = job.settings.aspectRatio;
   const creatorLock = job.outputs.creatorLockUrl ?? null;
   const productLock = job.outputs.productLockUrl ?? null;
 
+  const prompts = await Promise.all(
+    job.plan.scenes.map((scene) =>
+      generateStoryboardPrompt({
+        scene,
+        character: job.plan.character,
+        creatorLockUrl: creatorLock,
+        productLockUrl: productLock,
+        aspectRatio,
+      }),
+    ),
+  );
+
   return job.plan.scenes.map((scene, i) => {
-    const prompt =
-      job.plan.sceneImagePrompts?.[i] ??
-      `First-frame keyframe of Scene ${scene.index}. ${scene.action}. Camera: ${scene.camera}. Feature the locked creator holding/wearing the locked product; keep their identity and the product's appearance consistent with the reference images. ${aspectRatio} vertical composition, photorealistic UGC look.`;
+    const generated = prompts[i];
+    const fallback = `First-frame keyframe of Scene ${scene.index}. ${scene.action}. Camera: ${scene.camera}. Feature the locked creator holding/wearing the locked product; keep their identity and the product's appearance consistent with the reference images. ${aspectRatio} vertical composition, photorealistic UGC look.`;
 
     return {
       stage: 'storyboard',
       sliceKey: SliceKeys.sceneImage(scene.index),
       handler: 'nano-banana2',
       input: makeInput({
-        prompt,
+        prompt: generated ?? fallback,
         image: creatorLock,
         lastFrameImage: productLock,
       }),
@@ -173,29 +187,52 @@ export function expandStoryboardStage(job: RemakeJobRecord): PlannedTask[] {
 // Video stage：每场视频 (i2v 喂分镜首帧) + 每场 TTS 口播 + 全片 BGM
 // scene-mix 不在这里展开，因为它依赖 scene-video + scene-voice 完成后才能跑，
 // 由 jobs.ts 在 video stage 内某场两个输入齐了时自动 enqueue。
+// 改 async：在派发任务前用 Gemini 多模态"看着分镜首帧"生成具体的视频 prompt。
 // ============================================================
 
-export function expandVideoStage(job: RemakeJobRecord): PlannedTask[] {
+export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTask[]> {
   const aspectRatio = job.settings.aspectRatio;
   const videoResolution = '720p'; // veo-3.1 约束：720p 才尊重 per-scene duration
   const voice = job.plan.voice ?? pickDefaultVoice(job.plan.scriptText, job.settings.language);
+
+  const generatedVideoPrompts = await Promise.all(
+    job.plan.scenes.map((scene) => {
+      const sceneImageUrl = job.outputs.scenes.find(
+        (entry) => entry.sceneIndex === scene.index,
+      )?.imageUrl;
+      return generateVideoPrompt({
+        scene,
+        character: job.plan.character,
+        storyboardUrl: sceneImageUrl ?? null,
+        aspectRatio,
+      });
+    }),
+  );
+
   const tasks: PlannedTask[] = [];
 
   for (const [i, scene] of job.plan.scenes.entries()) {
-    const videoPrompt =
-      job.plan.sceneVideoPrompts?.[i] ??
-      `Scene ${scene.index}, ~${scene.durationSeconds}s. Action: ${scene.action}. Camera: ${scene.camera}. Continue motion from the first-frame keyframe; keep the creator and product identity stable. The locked creator visibly mouths the line as natural lip-sync (audio will be replaced in post): "${scene.voiceLine ?? scene.dialogue}".`;
-
+    const generated = generatedVideoPrompts[i];
     const sceneImageOutput = job.outputs.scenes.find(
       (entry) => entry.sceneIndex === scene.index,
     )?.imageUrl;
+
+    const character = job.plan.character;
+    const characterName = character?.name?.trim() || 'Speaker';
+    const characterGender = character?.gender ?? 'unspecified';
+    const characterAge = character?.ageRange ?? 'adult';
+    const characterTone = character?.tone ?? 'natural UGC tone';
+    const voiceLine = (scene.voiceLine ?? scene.dialogue ?? '').trim();
+
+    // Fallback 也按 标准 UGC 语法写死（@Name (VO, gender) says）以保留口型同步信号。
+    const fallback = `Continue motion from the attached first-frame keyframe. Keep creator identity and product appearance stable. Scene ${scene.index}, ~${scene.durationSeconds}s. Action: ${scene.action}. Camera: ${scene.camera}. Speaker voice: @${characterName} — ${characterGender}, ${characterAge}, ${characterTone}. @${characterName} (VO, ${characterGender}) says: "${voiceLine}". Audio will be replaced in post; the on-screen mouth shapes must match the spoken line above.`;
 
     tasks.push({
       stage: 'video',
       sliceKey: SliceKeys.sceneVideo(scene.index),
       handler: 'veo-3.1',
       input: makeInput({
-        prompt: videoPrompt,
+        prompt: generated ?? fallback,
         image: sceneImageOutput ?? null,
       }),
       settings: {
@@ -205,7 +242,6 @@ export function expandVideoStage(job: RemakeJobRecord): PlannedTask[] {
       },
     });
 
-    const voiceLine = (scene.voiceLine ?? scene.dialogue ?? '').trim();
     tasks.push({
       stage: 'video',
       sliceKey: SliceKeys.sceneVoice(scene.index),
