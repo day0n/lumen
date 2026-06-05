@@ -25,7 +25,7 @@ import {
   IconPlayerPlay,
   IconPlayerStopFilled,
 } from '@tabler/icons-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 /**
@@ -123,9 +123,8 @@ function PipelineView({
   onCancel: (reason?: string) => Promise<void>;
 }) {
   const { job, tasks, stageStatuses } = view;
-  // 默认进入页面时，按 stageStatuses 找第一个非 success 的步骤
-  const initialStep = useMemo(() => firstNonSuccessStep(stageStatuses, job), [stageStatuses, job]);
-  const [activeStep, setActiveStep] = useState(initialStep);
+  const [activeStep, setActiveStep] = useState(() => firstNonSuccessStep(stageStatuses, job));
+  const activeJobIdRef = useRef(job.id);
   const [stageBusy, setStageBusy] = useState<RemakeStageName | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
@@ -137,8 +136,10 @@ function PipelineView({
     [stageStatuses],
   );
 
-  // job id 切换 / 用户从外部 reset 时，把 activeStep 回到合理位置
+  // 只在切换到另一个 job 时重置落点；轮询/SSE 状态更新不应覆盖用户手动回看步骤。
   useEffect(() => {
+    if (activeJobIdRef.current === job.id) return;
+    activeJobIdRef.current = job.id;
     setActiveStep(firstNonSuccessStep(stageStatuses, job));
   }, [job, stageStatuses]);
 
