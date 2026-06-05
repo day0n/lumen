@@ -6,11 +6,15 @@ import { MobileSheet } from '@/components/mobile';
 import {
   BlurText,
   CountUp,
+  DashboardPanel,
   DashboardReveal,
   DashboardStagger,
   DashboardStaggerItem,
-  GlareHover,
+  GradientText,
+  ShinyText,
+  SpotlightCard,
 } from '@/components/studio/dashboard-motion';
+import '@/components/studio/dashboard-motion/dashboard-shell.css';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
@@ -57,7 +61,7 @@ import {
   IconTrendingUp,
   IconWorld,
 } from '@tabler/icons-react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { useEffect, useId, useMemo, useState } from 'react';
 
@@ -358,17 +362,18 @@ export function DashboardPage() {
       <AuroraBackdrop />
       <Topbar />
 
-      <main className="relative z-10 mx-auto max-w-[1440px] px-4 pb-nav-mobile pt-24 sm:px-6 lg:pt-28">
-        <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+      <main className="dashboard-analytics-shell relative z-10 mx-auto max-w-[1440px] px-4 pb-nav-mobile pt-24 sm:px-6 lg:pt-28">
+        <div aria-hidden className="dashboard-analytics-ambient" />
+        <div className="relative mb-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-[760px]">
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-[12px] font-semibold text-white/72 ring-1 ring-white/[0.08]">
-                <IconChartDots3 size={15} stroke={2.2} />
-                {t('dashboard.attribution')}
+              <span className="dashboard-analytics-pill-glow inline-flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-[12px] font-semibold ring-1 ring-white/[0.08]">
+                <IconChartDots3 size={15} stroke={2.2} className="text-[#79e4ff]" />
+                <ShinyText text={t('dashboard.attribution')} color="rgba(255,255,255,0.62)" shineColor="#79e4ff" />
               </span>
               <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#10252b] px-3 text-[12px] font-semibold text-[#79e4ff] ring-1 ring-[#79e4ff]/20">
                 <IconCheck size={15} stroke={2.4} />
-                TikTok Shop
+                <GradientText className="font-semibold">TikTok Shop</GradientText>
               </span>
             </div>
             <BlurText
@@ -451,9 +456,18 @@ export function DashboardPage() {
 
           <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl bg-[#151719]/78 px-3 py-2 text-[12px] text-white/46 ring-1 ring-white/[0.08]">
             <IconBolt size={15} className="text-[#f5c76a]" stroke={2.2} />
-            <span className="min-w-0 flex-1 truncate">
-              {t(activityMessage.key, activityMessage.params)}
-            </span>
+            <AnimatePresence mode="wait">
+              <motion.span
+                key={activityMessage.key + JSON.stringify(activityMessage.params ?? {})}
+                initial={{ opacity: 0, y: 6, filter: 'blur(4px)' }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, y: -4, filter: 'blur(4px)' }}
+                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                className="min-w-0 flex-1 truncate"
+              >
+                {t(activityMessage.key, activityMessage.params)}
+              </motion.span>
+            </AnimatePresence>
             <button
               type="button"
               onClick={() => setShowForecast((current) => !current)}
@@ -482,10 +496,11 @@ export function DashboardPage() {
           <>
             <DashboardStagger
               key={`metrics-${refreshNonce}`}
-              className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-5"
+              className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-6"
             >
-              <DashboardStaggerItem>
+              <DashboardStaggerItem className="xl:col-span-2">
                 <MetricCard
+                  featured
                   icon={IconShoppingBag}
                   label={t('dashboard.controls.revenue')}
                   countTo={data.summary.revenue}
@@ -552,8 +567,7 @@ export function DashboardPage() {
 
             <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(360px,0.8fr)]">
               <div className="space-y-4">
-                <DashboardReveal delay={0.05}>
-                <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
+                <DashboardPanel delay={0.05}>
                   <SectionHeader
                     icon={IconChartBar}
                     title={t('dashboard.trend')}
@@ -574,31 +588,25 @@ export function DashboardPage() {
                     points={data.timeseries}
                     t={t}
                   />
-                </section>
-                </DashboardReveal>
+                </DashboardPanel>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-                  <DashboardReveal delay={0.1}>
-                  <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
+                  <DashboardPanel delay={0.1}>
                     <SectionHeader
                       icon={IconChartPie}
                       title={t('dashboard.funnel')}
                       meta={t('dashboard.funnelMeta')}
                     />
                     <FunnelChart stages={data.funnel} locale={locale} t={t} />
-                  </section>
-                  </DashboardReveal>
+                  </DashboardPanel>
 
-                  <DashboardReveal delay={0.14}>
-                  <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
+                  <DashboardPanel delay={0.14}>
                     <SectionHeader icon={IconWorld} title={t('dashboard.geo')} meta="GMV share" />
                     <GeoBreakdownChart items={data.geoBreakdown} locale={locale} t={t} />
-                  </section>
-                  </DashboardReveal>
+                  </DashboardPanel>
                 </div>
 
-                <DashboardReveal delay={0.08}>
-                <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
+                <DashboardPanel delay={0.08}>
                   <SectionHeader
                     icon={IconSparkles}
                     title={t('dashboard.factorTitle')}
@@ -615,17 +623,19 @@ export function DashboardPage() {
                     }
                   />
                   {selectedFactor ? (
-                    <div className="mt-3 rounded-lg bg-white/[0.035] px-3 py-2 text-[12px] leading-5 text-white/52 ring-1 ring-white/[0.05]">
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="mt-3 overflow-hidden rounded-lg bg-white/[0.035] px-3 py-2 text-[12px] leading-5 text-white/52 ring-1 ring-white/[0.05]"
+                    >
                       <span className="font-semibold text-white/78">{selectedFactor.factor}</span>
                       <span className="mx-2 text-white/22">/</span>
                       {selectedFactor.diagnosis}
-                    </div>
+                    </motion.div>
                   ) : null}
-                </section>
-                </DashboardReveal>
+                </DashboardPanel>
 
-                <DashboardReveal delay={0.12}>
-                <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
+                <DashboardPanel delay={0.12}>
                   <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <SectionHeader
                       icon={IconAdjustments}
@@ -642,14 +652,16 @@ export function DashboardPage() {
                           placeholder={t('dashboard.searchPlaceholder')}
                         />
                       </label>
-                      <button
+                      <motion.button
                         type="button"
                         onClick={handleOptimizeBudget}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#79e4ff] px-3 text-[12px] font-bold text-[#071316] transition-opacity hover:opacity-90"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#79e4ff] px-3 text-[12px] font-bold text-[#071316] shadow-[0_0_24px_rgba(121,228,255,0.25)]"
                       >
                         <IconBolt size={15} stroke={2.5} />
                         {t('dashboard.smartBudget')}
-                      </button>
+                      </motion.button>
                     </div>
                   </div>
                   <div className="lg:hidden">
@@ -676,36 +688,35 @@ export function DashboardPage() {
                       t={t}
                     />
                   </div>
-                </section>
-                </DashboardReveal>
+                </DashboardPanel>
               </div>
 
               <aside className="space-y-4">
-                <DashboardReveal delay={0.06}>
-                <CampaignInspector
-                  campaign={selectedCampaign}
-                  tests={selectedCampaignTests}
-                  locale={locale}
-                  t={t}
-                  onCopyTracking={handleCopyTracking}
-                  onToggle={
-                    selectedCampaign ? () => handleToggleCampaign(selectedCampaign) : undefined
-                  }
-                  onBoost={
-                    selectedCampaign ? () => handleBoostCampaign(selectedCampaign) : undefined
-                  }
-                />
-                </DashboardReveal>
-                <DashboardReveal delay={0.1}>
-                <RecommendationPanel
-                  items={data.recommendations}
-                  onApply={handleOptimizeBudget}
-                  t={t}
-                />
-                </DashboardReveal>
-                <DashboardReveal delay={0.14}>
-                <TracePanel events={data.trace} t={t} />
-                </DashboardReveal>
+                <DashboardPanel delay={0.06} electric={Boolean(selectedCampaign)}>
+                  <CampaignInspector
+                    campaign={selectedCampaign}
+                    tests={selectedCampaignTests}
+                    locale={locale}
+                    t={t}
+                    onCopyTracking={handleCopyTracking}
+                    onToggle={
+                      selectedCampaign ? () => handleToggleCampaign(selectedCampaign) : undefined
+                    }
+                    onBoost={
+                      selectedCampaign ? () => handleBoostCampaign(selectedCampaign) : undefined
+                    }
+                  />
+                </DashboardPanel>
+                <DashboardPanel delay={0.1}>
+                  <RecommendationPanel
+                    items={data.recommendations}
+                    onApply={handleOptimizeBudget}
+                    t={t}
+                  />
+                </DashboardPanel>
+                <DashboardPanel delay={0.14}>
+                  <TracePanel events={data.trace} t={t} />
+                </DashboardPanel>
               </aside>
             </div>
           </>
@@ -841,6 +852,7 @@ function MetricCard({
   meta,
   accent,
   sparkline,
+  featured = false,
 }: {
   icon: typeof IconShoppingBag;
   label: string;
@@ -850,16 +862,23 @@ function MetricCard({
   meta: string;
   accent: string;
   sparkline: number[];
+  featured?: boolean;
 }) {
   const positive = delta >= 0;
   return (
-    <GlareHover
-      glareColor={accent}
-      glareOpacity={0.42}
-      glareSize={140}
-      className="group block w-full rounded-2xl ring-1 ring-white/[0.08] transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:ring-white/[0.16]"
+    <SpotlightCard
+      spotlightColor={`${accent}33`}
+      className={cn(
+        'group block w-full rounded-2xl ring-1 ring-white/[0.08] transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:ring-white/[0.16]',
+        featured && 'min-h-[168px]',
+      )}
     >
-    <section className="relative min-h-[150px] overflow-hidden rounded-2xl bg-[#151719]/86 p-4">
+      <section
+        className={cn(
+          'relative overflow-hidden rounded-2xl bg-[#151719]/86 p-4',
+          featured ? 'min-h-[168px]' : 'min-h-[150px]',
+        )}
+      >
       {/* accent glow */}
       <span
         aria-hidden
@@ -895,8 +914,19 @@ function MetricCard({
           {Math.abs(delta).toFixed(1)}%
         </motion.span>
       </div>
-      <div className="relative text-[12px] font-semibold text-white/42">{label}</div>
-      <div className="relative mt-1.5 text-[26px] font-bold leading-none tracking-tight text-white">
+      <div className="relative text-[12px] font-semibold text-white/42">
+        {featured ? (
+          <GradientText className="font-semibold">{label}</GradientText>
+        ) : (
+          label
+        )}
+      </div>
+      <div
+        className={cn(
+          'relative mt-1.5 font-bold leading-none tracking-tight text-white',
+          featured ? 'text-[32px]' : 'text-[26px]',
+        )}
+      >
         <CountUp
           to={countTo}
           duration={1.15}
@@ -909,7 +939,7 @@ function MetricCard({
         <MiniSparkline values={sparkline} color={accent} />
       </div>
     </section>
-    </GlareHover>
+    </SpotlightCard>
   );
 }
 
@@ -1012,12 +1042,13 @@ function PerformanceChart({ points, t }: { points: TiktokDailyPoint[]; t: TFunct
           const barWidth = Math.max(3, (width - padding.left - padding.right) / points.length - 5);
           const barHeight = getSpendHeight(point.spend);
           return (
-            <rect
+            <motion.rect
               key={point.date}
               x={getX(index) - barWidth / 2}
-              y={height - padding.bottom - barHeight}
+              initial={{ y: height - padding.bottom, height: 0 }}
+              animate={{ y: height - padding.bottom - barHeight, height: barHeight }}
+              transition={{ delay: 0.08 + index * 0.025, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
               width={barWidth}
-              height={barHeight}
               rx="3"
               fill="rgba(245,199,106,0.38)"
             />
@@ -1084,7 +1115,13 @@ function FunnelChart({
         const width = Math.max(8, (stage.value / max) * 100);
         const strong = stage.rate >= stage.benchmark || index === 0;
         return (
-          <div key={stage.key} className="rounded-lg bg-white/[0.035] p-3 ring-1 ring-white/[0.04]">
+          <motion.div
+            key={stage.key}
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.07, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="rounded-lg bg-white/[0.035] p-3 ring-1 ring-white/[0.04]"
+          >
             <div className="mb-2 flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-white/78">
                 {stage.label}
@@ -1094,9 +1131,11 @@ function FunnelChart({
               </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
-              <div
+              <motion.div
                 className={cn('h-full rounded-full', strong ? 'bg-[#79e4ff]' : 'bg-[#ffb86b]')}
-                style={{ width: `${width}%` }}
+                initial={{ width: 0 }}
+                animate={{ width: `${width}%` }}
+                transition={{ delay: 0.12 + index * 0.08, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
               />
             </div>
             <div className="mt-2 flex items-center justify-between text-[11px]">
@@ -1105,7 +1144,7 @@ function FunnelChart({
                 {t('dashboard.benchmark', { value: stage.benchmark })}
               </span>
             </div>
-          </div>
+          </motion.div>
         );
       })}
     </div>
@@ -1124,8 +1163,13 @@ function GeoBreakdownChart({
   const maxRevenue = Math.max(...items.map((item) => item.revenue), 1);
   return (
     <div className="space-y-3">
-      {items.map((item) => (
-        <div key={item.region}>
+      {items.map((item, index) => (
+        <motion.div
+          key={item.region}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: index * 0.06, duration: 0.35 }}
+        >
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="text-[12px] font-semibold text-white/78">{item.region}</span>
             <span className="text-[11px] text-white/38">
@@ -1133,16 +1177,18 @@ function GeoBreakdownChart({
             </span>
           </div>
           <div className="h-9 overflow-hidden rounded-lg bg-white/[0.035] ring-1 ring-white/[0.04]">
-            <div
+            <motion.div
               className="flex h-full items-center justify-end rounded-lg bg-gradient-to-r from-[#19414b] via-[#79e4ff] to-[#f5c76a] px-2 text-[11px] font-bold text-[#071316]"
-              style={{ width: `${Math.max(12, (item.revenue / maxRevenue) * 100)}%` }}
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.max(12, (item.revenue / maxRevenue) * 100)}%` }}
+              transition={{ delay: 0.1 + index * 0.07, duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
             >
               {item.share}%
-            </div>
+            </motion.div>
           </div>
-        </div>
+        </motion.div>
       ))}
-      {items.length === 0 ? <EmptyState text={t('hotVideos.empty')} /> : null}
+      {items.length === 0 ? <EmptyState text={t('dashboard.noCampaigns')} /> : null}
     </div>
   );
 }
@@ -1182,11 +1228,14 @@ function FactorMatrix({
           </tr>
         </thead>
         <tbody>
-          {factors.map((factor) => {
+          {factors.map((factor, index) => {
             const selected = selectedKey === factor.key;
             return (
-              <tr
+              <motion.tr
                 key={factor.key}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.05, duration: 0.32 }}
                 className={cn(
                   'rounded-lg text-[12px] transition-colors',
                   selected
@@ -1221,7 +1270,7 @@ function FactorMatrix({
                 <td className="rounded-r-lg px-3 py-3 text-right font-bold text-white/72">
                   {factor.confidence}%
                 </td>
-              </tr>
+              </motion.tr>
             );
           })}
         </tbody>
@@ -1238,13 +1287,17 @@ function HeatCell({ value }: { value: number }) {
       : `rgba(255, 125, 148, ${0.12 + intensity * 0.34})`;
   const color = value >= 0 ? '#d5f8ff' : '#ffd7de';
   return (
-    <div
+    <motion.div
+      initial={{ scale: 0.82, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ scale: 1.06 }}
       className="mx-auto flex h-8 w-[76px] items-center justify-center rounded-md text-[12px] font-bold ring-1 ring-white/[0.04]"
       style={{ background, color }}
     >
       {value > 0 ? '+' : ''}
       {value.toFixed(1)}%
-    </div>
+    </motion.div>
   );
 }
 
@@ -1588,15 +1641,11 @@ function CampaignInspector({
   onBoost?: () => void;
 }) {
   if (!campaign) {
-    return (
-      <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
-        <EmptyState text={t('dashboard.chooseCampaign')} />
-      </section>
-    );
+    return <EmptyState text={t('dashboard.chooseCampaign')} />;
   }
 
   return (
-    <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
+    <>
       <SectionHeader
         icon={IconSettings}
         title={t('dashboard.creativeDiagnosis')}
@@ -1733,7 +1782,7 @@ function CampaignInspector({
           ))}
         </div>
       </div>
-    </section>
+    </>
   );
 }
 
@@ -1756,7 +1805,7 @@ function RecommendationPanel({
   t: TFunction;
 }) {
   return (
-    <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
+    <>
       <SectionHeader
         icon={IconTargetArrow}
         title={t('dashboard.growthAdvice')}
@@ -1772,8 +1821,15 @@ function RecommendationPanel({
         }
       />
       <div className="space-y-2">
-        {items.map((item) => (
-          <div key={item.id} className="rounded-lg bg-white/[0.035] p-3 ring-1 ring-white/[0.04]">
+        {items.map((item, index) => (
+          <motion.div
+            key={item.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.07, duration: 0.35 }}
+            whileHover={{ x: 4 }}
+            className="rounded-lg bg-white/[0.035] p-3 ring-1 ring-white/[0.04]"
+          >
             <div className="flex items-start gap-2">
               <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#f5c76a]/14 text-[#f5c76a]">
                 <IconSparkles size={14} stroke={2.2} />
@@ -1794,16 +1850,16 @@ function RecommendationPanel({
                 {item.owner}
               </span>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
-    </section>
+    </>
   );
 }
 
 function TracePanel({ events, t }: { events: TiktokTraceEvent[]; t: TFunction }) {
   return (
-    <section className="rounded-xl bg-[#151719]/86 p-4 ring-1 ring-white/[0.08]">
+    <>
       <SectionHeader
         icon={IconCalendarStats}
         title={t('dashboard.traceTitle')}
@@ -1811,7 +1867,13 @@ function TracePanel({ events, t }: { events: TiktokTraceEvent[]; t: TFunction })
       />
       <div className="space-y-3">
         {events.map((event, index) => (
-          <div key={event.id} className="relative flex gap-3">
+          <motion.div
+            key={event.id}
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.08, duration: 0.35 }}
+            className="relative flex gap-3"
+          >
             {index < events.length - 1 ? (
               <span className="absolute left-[13px] top-7 h-[calc(100%+2px)] w-px bg-white/[0.08]" />
             ) : null}
@@ -1835,10 +1897,10 @@ function TracePanel({ events, t }: { events: TiktokTraceEvent[]; t: TFunction })
               <div className="mt-1 text-[11px] text-white/34">{event.agent}</div>
               <div className="mt-1 text-[11px] leading-5 text-white/48">{event.output}</div>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
-    </section>
+    </>
   );
 }
 
