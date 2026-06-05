@@ -3,12 +3,6 @@ import type { Duplex } from 'node:stream';
 
 import { verifyToken } from '@clerk/backend';
 
-import {
-  AUTH_BYPASS_CLERK_USER_ID,
-  AUTH_BYPASS_TOKEN,
-  isAuthBypassEnabled,
-} from '@/lib/auth-bypass';
-
 import { getUserRepository } from '../db';
 import { logger } from '../logger';
 
@@ -22,20 +16,6 @@ export async function authenticateFlowUpgrade(
   req: IncomingMessage,
 ): Promise<FlowAuthContext | null> {
   const token = readFlowToken(req);
-
-  if (isAuthBypassEnabled() && (!token || token === AUTH_BYPASS_TOKEN)) {
-    const repository = await getUserRepository();
-    const user = await repository.upsertFromClerk({
-      clerkUserId: AUTH_BYPASS_CLERK_USER_ID,
-      email: 'tester@lumen.local',
-      fullName: 'Lumen Test User',
-    });
-    return {
-      userId: user.id,
-      clerkUserId: AUTH_BYPASS_CLERK_USER_ID,
-      sessionId: 'auth-bypass',
-    };
-  }
 
   if (!token) return null;
 

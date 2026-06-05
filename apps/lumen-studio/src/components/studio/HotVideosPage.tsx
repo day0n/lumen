@@ -6,7 +6,6 @@ import { HotVideoRemakePipeline } from '@/components/studio/HotVideoRemakePipeli
 import { RemakeJobsDrawer } from '@/components/studio/RemakeJobsDrawer';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
-import { AUTH_BYPASS_CLERK_USER_ID, isAuthBypassEnabled } from '@/lib/auth-bypass';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { useUser } from '@clerk/nextjs';
@@ -279,12 +278,7 @@ export function HotVideosPage() {
   const { locale, t } = useI18n();
   const { user } = useUser();
   const { isSignedIn, requireLogin } = useLoginRedirect();
-  const authBypass = isAuthBypassEnabled();
-  const currentClerkUserId = isSignedIn
-    ? authBypass
-      ? AUTH_BYPASS_CLERK_USER_ID
-      : user?.id
-    : undefined;
+  const currentClerkUserId = isSignedIn ? user?.id : undefined;
   const [referenceInput, setReferenceInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');

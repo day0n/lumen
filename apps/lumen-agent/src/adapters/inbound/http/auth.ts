@@ -6,8 +6,6 @@ import { logger } from '../../../platform/logger.js';
 import { getStudioMongo } from '../../outbound/persistence/mongo.js';
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
-const AUTH_BYPASS_CLERK_USER_ID = 'lumen-public-test-user';
-const AUTH_BYPASS_TOKEN = 'lumen-auth-bypass';
 
 function getJwks(issuer: string) {
   if (!jwks) {
@@ -64,25 +62,14 @@ export function clerkAuth(opts: { issuer: string; skipPaths?: string[] }) {
     }
 
     const authHeader = c.req.header('authorization');
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-    if (isAuthBypassEnabled() && (!token || token === AUTH_BYPASS_TOKEN)) {
-      const userId = await resolveStudioUserId(AUTH_BYPASS_CLERK_USER_ID);
-      c.set('authUser', {
-        clerkUserId: AUTH_BYPASS_CLERK_USER_ID,
-        userId,
-        sessionId: 'auth-bypass',
-      } satisfies AuthUser);
-      return next();
-    }
-
-    if (!token) {
+    if (!authHeader?.startsWith('Bearer ')) {
       return c.json(
         { error: 'unauthorized', message: 'Missing or invalid Authorization header' },
         401,
       );
     }
 
+    const token = authHeader.slice(7);
     try {
       const { payload } = await jwtVerify(token, getJwks(opts.issuer), {
         issuer: opts.issuer,
@@ -106,15 +93,4 @@ export function clerkAuth(opts: { issuer: string; skipPaths?: string[] }) {
       return c.json({ error: 'unauthorized', message: 'Invalid token' }, 401);
     }
   };
-}
-
-function isAuthBypassEnabled(): boolean {
-  return (
-    isTruthy(process.env.LUMEN_AUTH_BYPASS) || isTruthy(process.env.NEXT_PUBLIC_LUMEN_AUTH_BYPASS)
-  );
-}
-
-function isTruthy(value: string | undefined): boolean {
-  if (!value) return false;
-  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }

@@ -1,7 +1,6 @@
 'use client';
 
 import { useI18n } from '@/i18n/provider';
-import { isAuthBypassEnabled } from '@/lib/auth-bypass';
 import { useAuth, useClerk } from '@clerk/nextjs';
 import { useCallback } from 'react';
 
@@ -9,11 +8,9 @@ export function useLoginRedirect() {
   const { isLoaded, isSignedIn } = useAuth();
   const clerk = useClerk();
   const { localePath } = useI18n();
-  const authBypass = isAuthBypassEnabled();
 
   const redirectToRegistration = useCallback(
     (target?: string) => {
-      if (authBypass) return true;
       if (!isLoaded) return false;
       if (isSignedIn) return true;
 
@@ -25,12 +22,12 @@ export function useLoginRedirect() {
       });
       return false;
     },
-    [authBypass, clerk, isLoaded, isSignedIn, localePath],
+    [clerk, isLoaded, isSignedIn, localePath],
   );
 
   return {
-    isLoaded: authBypass || isLoaded,
-    isSignedIn: authBypass || Boolean(isSignedIn),
+    isLoaded,
+    isSignedIn: Boolean(isSignedIn),
     redirectToLogin: redirectToRegistration,
     redirectToRegistration,
     requireLogin: redirectToRegistration,

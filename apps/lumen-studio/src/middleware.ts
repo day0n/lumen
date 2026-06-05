@@ -11,7 +11,6 @@ import {
   stripLocalePrefix,
   withoutEnglishPrefix,
 } from '@/i18n/routing';
-import { isAuthBypassEnabled } from '@/lib/auth-bypass';
 
 const PROTECTED_PREFIXES = ['/agent-chat', '/canvas', '/materials'] as const;
 
@@ -28,7 +27,7 @@ export default clerkMiddleware(
     const locale = resolveMiddlewareLocale(request);
     const normalizedPath = stripLocalePrefix(pathname);
 
-    if (isProtectedPath(normalizedPath) && !isAuthBypassEnabled()) {
+    if (isProtectedPath(normalizedPath)) {
       const { userId } = await auth();
       if (!userId) {
         const signUpUrl = new URL(localePath('/sign-up', locale), request.url);

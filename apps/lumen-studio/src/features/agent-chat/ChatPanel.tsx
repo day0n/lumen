@@ -12,7 +12,6 @@ import { LumenMark } from '@/components/ui/LumenMark';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
-import { getStudioAuthToken } from '@/lib/auth-token';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@clerk/nextjs';
 import {
@@ -214,7 +213,7 @@ export function ChatPanel({
       const controller = new AbortController();
       setSessionsLoading(true);
       try {
-        const token = await getStudioAuthToken(getToken);
+        const token = await getToken().catch(() => null);
         const nextSessions = await fetchAgentSessions({
           workflowId: projectId,
           token,
@@ -255,7 +254,8 @@ export function ChatPanel({
     if (!authReady || !isSignedIn || !projectId) return;
     const controller = new AbortController();
     setSessionsLoading(true);
-    void getStudioAuthToken(getToken)
+    void getToken()
+      .catch(() => null)
       .then((token) =>
         fetchAgentSessions({
           workflowId: projectId,
