@@ -1,5 +1,6 @@
 'use client';
 
+import { preloadCanvasHydrationOverlay } from '@/components/canvas/preload-canvas-hydration';
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
 import { useI18n } from '@/i18n/provider';
@@ -24,6 +25,7 @@ import {
 } from '@tabler/icons-react';
 import { motion } from 'motion/react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -90,6 +92,7 @@ type SelectedScope = null | 'uncategorized' | string;
 
 export function WorkspacePage() {
   const { locale, t, localePath } = useI18n();
+  const router = useRouter();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [projects, setProjects] = useState<StudioProject[]>([]);
   const [folders, setFolders] = useState<FolderRecord[]>([]);
@@ -105,6 +108,14 @@ export function WorkspacePage() {
   // 首次抓 projects/folders 时铺一层骨架卡，避免用户先看到「空白 + 新建卡」再瞬间跳出真实数据。
   // 只在初次加载时为 true；后续刷新（移动、删除、重命名）走乐观更新，不再回到骨架态。
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+
+  const warmCanvasDestination = useCallback(
+    (href?: string) => {
+      void preloadCanvasHydrationOverlay();
+      if (href) router.prefetch(href);
+    },
+    [router],
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -178,6 +189,38 @@ export function WorkspacePage() {
     );
     return () => controller.abort();
   }, [authLoaded, isSignedIn, requireLogin, loadProjects, loadFolders]);
+
+  useEffect(() => {
+    if (!authLoaded || !isSignedIn || isInitialLoading) return;
+
+    const hrefs = [
+      localePath('/canvas/new'),
+      ...projects.slice(0, 6).map((project) => localePath(`/canvas/${project.id}`)),
+    ];
+    let cancelled = false;
+
+    const warm = () => {
+      if (cancelled) return;
+      void preloadCanvasHydrationOverlay();
+      for (const href of hrefs) router.prefetch(href);
+    };
+
+    const requestIdle = window.requestIdleCallback;
+    const cancelIdle = window.cancelIdleCallback;
+    if (typeof requestIdle === 'function' && typeof cancelIdle === 'function') {
+      const idleId = requestIdle(warm, { timeout: 1400 });
+      return () => {
+        cancelled = true;
+        cancelIdle(idleId);
+      };
+    }
+
+    const timeoutId = globalThis.setTimeout(warm, 520);
+    return () => {
+      cancelled = true;
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, [authLoaded, isInitialLoading, isSignedIn, localePath, projects, router]);
 
   const trimmedQuery = searchQuery.trim().toLowerCase();
   const scopedProjects = useMemo(() => {
@@ -554,7 +597,10 @@ export function WorkspacePage() {
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {trimmedQuery || selectedScope !== null ? null : (
-                  <NewProjectCard href={localePath('/canvas/new')} />
+                  <NewProjectCard
+                    href={localePath('/canvas/new')}
+                    onWarm={warmCanvasDestination}
+                  />
                 )}
                 {visibleProjects.map((project) => (
                   <ProjectCard
@@ -568,6 +614,7 @@ export function WorkspacePage() {
                     moveToLabel={t('workspace.folders.moveTo')}
                     moveToRootLabel={t('workspace.folders.moveToRoot')}
                     deleteLabel={t('workspace.folders.deleteWorkflow')}
+                    onWarm={warmCanvasDestination}
                   />
                 ))}
               </div>
@@ -723,11 +770,15 @@ function ProjectCardSkeleton() {
 /** 骨架卡片的渲染数量：在 xl 4 列下正好铺满 2 行，视觉刚好有"占位但不喧宾夺主"。 */
 const PROJECT_SKELETON_COUNT = 8;
 
-function NewProjectCard({ href }: { href: string }) {
+function NewProjectCard({ href, onWarm }: { href: string; onWarm: (href: string) => void }) {
   const { t } = useI18n();
   return (
     <Link
       href={href}
+      prefetch={true}
+      onFocus={() => onWarm(href)}
+      onMouseDown={() => onWarm(href)}
+      onPointerEnter={() => onWarm(href)}
       className="group relative flex min-h-[160px] flex-col items-center justify-center gap-3 overflow-hidden rounded-xl bg-[#171b20] ring-1 ring-white/[0.1] transition-colors hover:bg-[#1b2027]"
     >
       <span
@@ -761,6 +812,7 @@ function ProjectCard({
   moveToLabel,
   moveToRootLabel,
   deleteLabel,
+  onWarm,
 }: {
   project: StudioProject;
   href: string;
@@ -771,6 +823,7 @@ function ProjectCard({
   moveToLabel: string;
   moveToRootLabel: string;
   deleteLabel: string;
+  onWarm: (href: string) => void;
 }) {
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -800,6 +853,10 @@ function ProjectCard({
     <div ref={containerRef} className="relative">
       <Link
         href={href}
+        prefetch={true}
+        onFocus={() => onWarm(href)}
+        onMouseDown={() => onWarm(href)}
+        onPointerEnter={() => onWarm(href)}
         className="group block overflow-hidden rounded-xl bg-[#202121] p-2.5 text-left ring-1 ring-white/[0.08] transition-colors hover:bg-[#262829]"
       >
         <div
