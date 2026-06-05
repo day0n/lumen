@@ -83,6 +83,8 @@ import {
   IconGauge,
   IconPlayerPause,
   IconPlayerPlay,
+  IconPin,
+  IconPinned,
   IconRefresh,
   IconSearch,
   IconSettings,
@@ -140,6 +142,14 @@ export function DashboardPage() {
   });
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [pulsedCampaignIds, setPulsedCampaignIds] = useState<string[]>([]);
+  const [kpiPinned, setKpiPinned] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return localStorage.getItem('lumen-dashboard-kpi-pinned') === '1';
+    } catch {
+      return false;
+    }
+  });
   const trendRef = useRef<HTMLDivElement>(null);
   const funnelRef = useRef<HTMLDivElement>(null);
   const factorRef = useRef<HTMLDivElement>(null);
@@ -147,6 +157,18 @@ export function DashboardPage() {
   const recommendationRef = useRef<HTMLDivElement>(null);
 
   const filterKey = `${range}-${region}-${channel}-${objective}-${refreshNonce}`;
+
+  const toggleKpiPinned = () => {
+    setKpiPinned((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem('lumen-dashboard-kpi-pinned', next ? '1' : '0');
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
   const regionOptions = useMemo(
     () =>
       REGION_OPTIONS.map((option) => ({
@@ -674,7 +696,9 @@ export function DashboardPage() {
 
             <div
               className={cn(
-                'sticky top-[72px] z-20 -mx-4 mb-4 border-b border-white/[0.06] bg-[#0b0c0d]/78 px-4 py-3 backdrop-blur-xl transition-opacity duration-300 lg:top-[84px]',
+                '-mx-4 mb-4 px-4 py-3 transition-[box-shadow,background-color,border-color] duration-300',
+                kpiPinned &&
+                  'sticky top-[72px] z-20 border-b border-white/[0.06] bg-[#0b0c0d]/78 backdrop-blur-xl lg:top-[84px]',
                 isRefreshing && 'opacity-70',
               )}
             >
@@ -682,11 +706,28 @@ export function DashboardPage() {
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-white/32">
                   KPI
                 </span>
-                {isRefreshing ? (
-                  <span className="text-[11px] font-semibold text-[#79e4ff]">
-                    {t('dashboard.updating')}
-                  </span>
-                ) : null}
+                <div className="flex items-center gap-2">
+                  {isRefreshing ? (
+                    <span className="text-[11px] font-semibold text-[#79e4ff]">
+                      {t('dashboard.updating')}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={toggleKpiPinned}
+                    aria-pressed={kpiPinned}
+                    title={kpiPinned ? t('dashboard.unpinKpi') : t('dashboard.pinKpi')}
+                    className={cn(
+                      'inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold ring-1 transition-colors',
+                      kpiPinned
+                        ? 'bg-[#79e4ff]/14 text-[#79e4ff] ring-[#79e4ff]/24'
+                        : 'bg-white/[0.05] text-white/42 ring-white/[0.08] hover:bg-white/[0.08] hover:text-white/62',
+                    )}
+                  >
+                    {kpiPinned ? <IconPinned size={14} stroke={2.2} /> : <IconPin size={14} stroke={2.2} />}
+                    {kpiPinned ? t('dashboard.unpinKpi') : t('dashboard.pinKpi')}
+                  </button>
+                </div>
               </div>
               <DashboardStagger
                 key={`metrics-${filterKey}`}

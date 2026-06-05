@@ -635,6 +635,8 @@ const en = {
     commandGroupAction: 'Action',
     updating: 'Updating…',
     scrubber: 'Timeline scrubber',
+    pinKpi: 'Pin KPI',
+    unpinKpi: 'Unpin',
     controls: {
       global: 'Global',
       us: 'United States',
@@ -1305,6 +1307,8 @@ const zh: typeof en = {
     commandGroupAction: '操作',
     updating: '更新中…',
     scrubber: '时间轴',
+    pinKpi: '固定 KPI',
+    unpinKpi: '取消固定',
     controls: {
       global: '全球',
       us: '美国',
