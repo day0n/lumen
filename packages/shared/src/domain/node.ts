@@ -26,6 +26,7 @@ export const NodeInputSchema = z.object({
   prompt: z.string().default(''),
   image: z.string().nullable().default(null),
   lastFrameImage: z.string().nullable().default(null),
+  images: z.array(z.string().trim().min(1)).default([]),
   video: z.string().nullable().default(null),
   videos: z.array(z.string().trim().min(1)).default([]),
   audio: z.string().nullable().default(null),

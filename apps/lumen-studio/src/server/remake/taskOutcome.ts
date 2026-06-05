@@ -3,7 +3,12 @@ import type { RemakeTaskStatus } from '@lumen/db';
 
 import { getRemakeJobRepository } from '@/server/db';
 
-import { deriveJobStageStatuses, parseSceneIndexFromSliceKey, sliceOutputField } from './stages';
+import {
+  deriveJobStageStatuses,
+  parseEnvironmentIndexFromSliceKey,
+  parseSceneIndexFromSliceKey,
+  sliceOutputField,
+} from './stages';
 
 export interface RecordTaskOutcomeInput {
   jobId: string;
@@ -65,6 +70,13 @@ async function applyTaskOutputToJob(
     await repository.updateJob(jobId, ownerId, {
       outputsPatch: { [field]: outputUrl },
     });
+    return;
+  }
+
+  if (field === 'environmentLockUrl') {
+    const environmentIndex = parseEnvironmentIndexFromSliceKey(sliceKey);
+    if (environmentIndex === null) return;
+    await repository.patchEnvironmentOutput(jobId, ownerId, environmentIndex, outputUrl);
     return;
   }
 

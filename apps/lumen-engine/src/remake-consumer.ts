@@ -276,6 +276,7 @@ function defaultResolvedInput(): ResolvedInput {
     prompt: '',
     image: null,
     lastFrameImage: null,
+    images: [],
     video: null,
     videos: [],
     audio: null,

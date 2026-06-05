@@ -51,6 +51,7 @@ export interface CreateRemakeJobOptions {
   settings: RemakeJobSettings;
   productImageUrls: string[];
   creatorImageUrls?: string[];
+  environmentImageUrls?: string[];
   userPrompt?: string;
   locale: Locale;
 }
@@ -67,6 +68,7 @@ export async function createRemakeJob(options: CreateRemakeJobOptions): Promise<
     reference: options.reference,
     video,
     productImageUrls: options.productImageUrls,
+    environmentImageUrls: options.environmentImageUrls ?? [],
     creatorImageCount: options.creatorImageUrls?.length ?? 0,
     locale: options.locale,
     userPrompt: options.userPrompt,
@@ -83,6 +85,7 @@ export async function createRemakeJob(options: CreateRemakeJobOptions): Promise<
     breakdown: breakdown ? toJobBreakdown(breakdown) : undefined,
     productImageUrls: options.productImageUrls,
     creatorImageUrls: options.creatorImageUrls ?? [],
+    environmentImageUrls: options.environmentImageUrls ?? [],
     userPrompt: options.userPrompt,
   });
 
@@ -144,6 +147,7 @@ export async function confirmGate1(input: {
     reference: job.reference,
     video,
     productImageUrls: job.productImageUrls,
+    environmentImageUrls: job.environmentImageUrls,
     creatorImageCount: job.creatorImageUrls.length,
     locale: input.locale,
     userPrompt: job.userPrompt,
@@ -335,6 +339,7 @@ function toJobPlan(plan: RemakePlan & { voice?: string }): RemakeJobPlan {
       ...(scene.voiceLine ? { voiceLine: scene.voiceLine } : {}),
       durationSeconds: scene.durationSeconds,
       camera: scene.camera,
+      ...(scene.environmentIndex ? { environmentIndex: scene.environmentIndex } : {}),
     })),
     sellingPoints: plan.sellingPoints,
     audienceTags: plan.audienceTags,
@@ -344,6 +349,9 @@ function toJobPlan(plan: RemakePlan & { voice?: string }): RemakeJobPlan {
     ...(plan.sceneImagePrompts ? { sceneImagePrompts: plan.sceneImagePrompts } : {}),
     ...(plan.sceneVideoPrompts ? { sceneVideoPrompts: plan.sceneVideoPrompts } : {}),
     ...(plan.voice ? { voice: plan.voice } : {}),
+    ...(plan.character ? { character: plan.character } : {}),
+    environments: plan.environments,
+    sceneEnvironmentMap: plan.sceneEnvironmentMap,
   };
 }
 

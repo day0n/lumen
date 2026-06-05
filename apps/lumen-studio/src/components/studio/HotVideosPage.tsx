@@ -1178,8 +1178,10 @@ function ReplicaConfigModal({
   const { locale, t } = useI18n();
   const fileInputId = useId();
   const creatorFileInputId = useId();
+  const environmentFileInputId = useId();
   const [uploadedImages, setUploadedImages] = useState<UploadedProductImage[]>([]);
   const [creatorImages, setCreatorImages] = useState<UploadedProductImage[]>([]);
+  const [environmentImages, setEnvironmentImages] = useState<UploadedProductImage[]>([]);
   const [prompt, setPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -1189,7 +1191,13 @@ function ReplicaConfigModal({
   const [resolution, setResolution] = useState<ResolutionOption>('720p');
   const uploadedImagesRef = useRef(uploadedImages);
   const creatorImagesRef = useRef(creatorImages);
-  const canGenerate = uploadedImages.length > 0 && !generating;
+  const environmentImagesRef = useRef(environmentImages);
+  const hasRemakeInput =
+    uploadedImages.length > 0 ||
+    creatorImages.length > 0 ||
+    environmentImages.length > 0 ||
+    prompt.trim().length > 0;
+  const canGenerate = hasRemakeInput && !generating;
 
   useEffect(() => {
     uploadedImagesRef.current = uploadedImages;
@@ -1200,11 +1208,18 @@ function ReplicaConfigModal({
   }, [creatorImages]);
 
   useEffect(() => {
+    environmentImagesRef.current = environmentImages;
+  }, [environmentImages]);
+
+  useEffect(() => {
     return () => {
       for (const image of uploadedImagesRef.current) {
         URL.revokeObjectURL(image.previewUrl);
       }
       for (const image of creatorImagesRef.current) {
+        URL.revokeObjectURL(image.previewUrl);
+      }
+      for (const image of environmentImagesRef.current) {
         URL.revokeObjectURL(image.previewUrl);
       }
     };
@@ -1244,6 +1259,23 @@ function ReplicaConfigModal({
     event.currentTarget.value = '';
   };
 
+  const handleEnvironmentUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    const availableSlots = 4 - environmentImages.length;
+    const nextImages = files.slice(0, availableSlots).map((file, index) => ({
+      id: `environment-${file.name}-${file.size}-${file.lastModified}-${Date.now()}-${index}`,
+      name: file.name,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+
+    if (nextImages.length) {
+      setEnvironmentImages((current) => [...current, ...nextImages]);
+    }
+
+    event.currentTarget.value = '';
+  };
+
   const removeImage = (imageId: string) => {
     setUploadedImages((current) => {
       const targetImage = current.find((image) => image.id === imageId);
@@ -1254,6 +1286,14 @@ function ReplicaConfigModal({
 
   const removeCreatorImage = (imageId: string) => {
     setCreatorImages((current) => {
+      const targetImage = current.find((image) => image.id === imageId);
+      if (targetImage) URL.revokeObjectURL(targetImage.previewUrl);
+      return current.filter((image) => image.id !== imageId);
+    });
+  };
+
+  const removeEnvironmentImage = (imageId: string) => {
+    setEnvironmentImages((current) => {
       const targetImage = current.find((image) => image.id === imageId);
       if (targetImage) URL.revokeObjectURL(targetImage.previewUrl);
       return current.filter((image) => image.id !== imageId);
@@ -1293,7 +1333,7 @@ function ReplicaConfigModal({
     generateAbortRef.current = controller;
     setGenerating(true);
     setGenerateError(null);
-    const totalToUpload = uploadedImages.length + creatorImages.length;
+    const totalToUpload = uploadedImages.length + creatorImages.length + environmentImages.length;
     onGenerateStart(totalToUpload);
     try {
       const productImageUrls: string[] = [];
@@ -1331,6 +1371,25 @@ function ReplicaConfigModal({
           ),
         );
       }
+      const environmentImageUrls: string[] = [];
+      for (const [index, image] of environmentImages.entries()) {
+        if (controller.signal.aborted) return;
+        onGenerateProgress({
+          phase: 'upload',
+          uploadCurrent: uploadedImages.length + creatorImages.length + index,
+        });
+        environmentImageUrls.push(
+          await uploadOneImage(
+            image,
+            `hot-remake-environment-${index + 1}`,
+            (id, url) =>
+              setEnvironmentImages((cur) =>
+                cur.map((item) => (item.id === id ? { ...item, uploadedUrl: url } : item)),
+              ),
+            controller.signal,
+          ),
+        );
+      }
       if (controller.signal.aborted) return;
       onGenerateProgress({
         phase: 'remake',
@@ -1350,6 +1409,7 @@ function ReplicaConfigModal({
           reference: target,
           productImageUrls,
           ...(creatorImageUrls.length ? { creatorImageUrls } : {}),
+          ...(environmentImageUrls.length ? { environmentImageUrls } : {}),
           userPrompt: prompt || undefined,
           settings: {
             aspectRatio,
@@ -1444,7 +1504,6 @@ function ReplicaConfigModal({
             <div className="mt-7">
               <div className="flex items-center gap-2 text-[14px] font-bold text-white">
                 {t('hotVideos.uploadProduct')}
-                <span className="text-[#f5c76a]">*</span>
               </div>
               <p className="mt-2 text-[12px] leading-5 text-white/38">{t('hotVideos.uploadTip')}</p>
 
@@ -1555,6 +1614,66 @@ function ReplicaConfigModal({
 
               <div className="mt-3 text-[12px] text-white/36">
                 {t('hotVideos.uploadedCreator', { count: creatorImages.length })}
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <div className="text-[14px] font-bold text-white">
+                {t('hotVideos.uploadEnvironment')}
+              </div>
+              <p className="mt-2 text-[12px] leading-5 text-white/38">
+                {t('hotVideos.uploadEnvironmentTip')}
+              </p>
+
+              <input
+                id={environmentFileInputId}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleEnvironmentUpload}
+                className="sr-only"
+              />
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <label
+                  htmlFor={environmentFileInputId}
+                  className={cn(
+                    'flex h-[88px] w-[88px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/16 bg-white/[0.045] text-[11px] font-semibold text-white/46 transition-colors hover:border-[#3ae08a]/48 hover:bg-[#3ae08a]/8 hover:text-white',
+                    environmentImages.length >= 4 && 'pointer-events-none opacity-45',
+                  )}
+                >
+                  <IconPlus size={22} stroke={2.2} />
+                  {t('common.upload')}
+                </label>
+
+                {environmentImages.map((image) => (
+                  <div
+                    key={image.id}
+                    className="relative h-[88px] w-[88px] overflow-hidden rounded-xl bg-white/[0.06] ring-1 ring-[#3ae08a]/22"
+                  >
+                    <img
+                      src={image.previewUrl}
+                      alt={image.name}
+                      className="h-full w-full object-cover"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 line-clamp-2 bg-black/58 px-1.5 py-1 text-center text-[9px] leading-3 text-white/78 backdrop-blur">
+                      {image.name}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeEnvironmentImage(image.id)}
+                      disabled={generating}
+                      aria-label={`${t('common.remove')} ${image.name}`}
+                      className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/62 text-white/68 ring-1 ring-white/[0.12] hover:text-white disabled:opacity-40"
+                    >
+                      <IconX size={13} stroke={2.2} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 text-[12px] text-white/36">
+                {t('hotVideos.uploadedEnvironment', { count: environmentImages.length })}
               </div>
             </div>
 

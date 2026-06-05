@@ -38,13 +38,13 @@ export async function execute(
   // Feed every available reference as an inline part so the model can edit
   // from them — required for product-swap and character consistency.
   const referenceParts: ImagePart[] = [];
-  for (const ref of [input.image, input.lastFrameImage]) {
+  for (const ref of uniqueRefs([...(input.images ?? []), input.image, input.lastFrameImage])) {
     const part = await toImagePart(ref, signal);
     if (part) referenceParts.push(part);
   }
 
   const response = await client.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
+    model: 'gemini-3-pro-image',
     contents: [{ role: 'user', parts: [...referenceParts, { text: input.prompt }] }],
     config: {
       responseModalities: ['IMAGE'],
@@ -101,6 +101,15 @@ function normalizeGeneratedMediaUri(value: string): string {
 function readStringSetting(settings: Record<string, unknown>, key: string): string | null {
   const value = settings[key];
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function uniqueRefs(values: Array<string | null | undefined>): string[] {
+  const refs: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed && !refs.includes(trimmed)) refs.push(trimmed);
+  }
+  return refs;
 }
 
 async function toImagePart(value: string | null, signal?: AbortSignal): Promise<ImagePart | null> {

@@ -225,19 +225,21 @@ function PipelineView({
       <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="space-y-4">
           <ReferencePreview job={job} copy={copy} />
-          <div className="rounded-[18px] bg-[#15171a]/88 p-4 ring-1 ring-white/[0.08]">
-            <div className="text-[13px] font-bold text-white">{copy.productImages}</div>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {job.productImageUrls.map((url) => (
-                <img
-                  key={url}
-                  src={url}
-                  alt=""
-                  className="aspect-square rounded-xl bg-black object-cover ring-1 ring-white/[0.08]"
-                />
-              ))}
+          {job.productImageUrls.length > 0 ? (
+            <div className="rounded-[18px] bg-[#15171a]/88 p-4 ring-1 ring-white/[0.08]">
+              <div className="text-[13px] font-bold text-white">{copy.productImages}</div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {job.productImageUrls.map((url) => (
+                  <img
+                    key={url}
+                    src={url}
+                    alt=""
+                    className="aspect-square rounded-xl bg-black object-cover ring-1 ring-white/[0.08]"
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
           {job.creatorImageUrls.length > 0 ? (
             <div className="rounded-[18px] bg-[#15171a]/88 p-4 ring-1 ring-white/[0.08]">
               <div className="text-[13px] font-bold text-white">{copy.creatorImages}</div>
@@ -248,6 +250,21 @@ function PipelineView({
                     src={url}
                     alt=""
                     className="aspect-square rounded-xl bg-black object-cover ring-1 ring-[#9da8ff]/22"
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {job.environmentImageUrls.length > 0 ? (
+            <div className="rounded-[18px] bg-[#15171a]/88 p-4 ring-1 ring-white/[0.08]">
+              <div className="text-[13px] font-bold text-white">{copy.environmentImages}</div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {job.environmentImageUrls.map((url) => (
+                  <img
+                    key={url}
+                    src={url}
+                    alt=""
+                    className="aspect-square rounded-xl bg-black object-cover ring-1 ring-[#3ae08a]/22"
                   />
                 ))}
               </div>
@@ -690,6 +707,25 @@ function LockStage({
           kind="image"
         />
       </div>
+      {job.plan.environments.length > 0 ? (
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {job.plan.environments.map((environment) => (
+            <SlicePreview
+              key={environment.index}
+              copy={copy}
+              title={`${copy.environmentLockTitle} ${environment.index}`}
+              subtitle={environment.name}
+              task={findTaskBySliceKey(tasks, RemakeSliceKeys.environmentLock(environment.index))}
+              outputUrl={
+                job.outputs.environmentLocks.find(
+                  (item) => item.environmentIndex === environment.index,
+                )?.imageUrl
+              }
+              kind="image"
+            />
+          ))}
+        </div>
+      ) : null}
       <StageActions
         copy={copy}
         status={status}
@@ -1238,6 +1274,7 @@ function getCopy(locale: 'en' | 'zh') {
       reference: '参考视频',
       productImages: '商品图',
       creatorImages: '创作者参考',
+      environmentImages: '场景参考',
       steps: ['拆解', '脚本（门1）', '形象锁定', '分镜图（门2）', '视频+口播', '成片'],
       breakdownTitle: '参考拆解',
       breakdownDesc: '把原爆款拆成 3-6 个可执行场次，包括镜头时间戳、台词和动作。',
@@ -1268,9 +1305,10 @@ function getCopy(locale: 'en' | 'zh') {
       gate1Confirmed: '脚本已确认',
       confirmGate1: '确认脚本，重算下游',
       creatorLock: '形象锁定',
-      creatorLockDesc: '锁定同一个创作者和同一件产品，后续每一帧都引用这两张锁定图。',
+      creatorLockDesc: '锁定同一个创作者、产品和场景环境，后续每一帧都引用这些锁定图。',
       creatorLockTitle: '创作者定妆照',
       productLockTitle: '产品多视图',
+      environmentLockTitle: '场景环境锁定',
       runCreatorLock: '生成形象锁定',
       nextStoryboard: '进入分镜图',
       storyboardTitle: '分镜图确认（门2）',
@@ -1305,6 +1343,7 @@ function getCopy(locale: 'en' | 'zh') {
     reference: 'Reference',
     productImages: 'Product images',
     creatorImages: 'Creator references',
+    environmentImages: 'Scene references',
     steps: [
       'Breakdown',
       'Script (Gate 1)',
@@ -1347,9 +1386,10 @@ function getCopy(locale: 'en' | 'zh') {
     confirmGate1: 'Confirm script, replan downstream',
     creatorLock: 'Identity lock',
     creatorLockDesc:
-      'Lock one creator and one product so every later frame references the same identities.',
+      'Lock one creator, one product, and reusable scene environments so every later frame references the same identities.',
     creatorLockTitle: 'Creator reference',
     productLockTitle: 'Product multi-view',
+    environmentLockTitle: 'Environment lock',
     runCreatorLock: 'Generate locks',
     nextStoryboard: 'Go to storyboards',
     storyboardTitle: 'Storyboard confirmation (Gate 2)',

@@ -1,5 +1,10 @@
 // 勿加 server-only：由 stages.ts 在 server.ts 启动链上加载。
-import type { RemakeJobCharacter, RemakeJobPlan, RemakeJobScene } from '@lumen/db';
+import type {
+  RemakeJobCharacter,
+  RemakeJobEnvironment,
+  RemakeJobPlan,
+  RemakeJobScene,
+} from '@lumen/db';
 
 import { GeminiNotConfiguredError, getStudioGoogleClient } from '../gemini';
 
@@ -26,8 +31,10 @@ interface GenerateOptions {
 }
 
 interface StoryboardOptions extends GenerateOptions {
+  environment?: RemakeJobEnvironment;
   creatorLockUrl: string | null;
   productLockUrl: string | null;
+  environmentLockUrl: string | null;
 }
 
 interface VideoOptions extends GenerateOptions {
@@ -37,17 +44,30 @@ interface VideoOptions extends GenerateOptions {
 const MAX_BYTES = 8 * 1024 * 1024;
 
 export async function generateStoryboardPrompt(opts: StoryboardOptions): Promise<string | null> {
-  const { scene, character, productName, creatorLockUrl, productLockUrl, aspectRatio } = opts;
+  const {
+    scene,
+    character,
+    productName,
+    environment,
+    creatorLockUrl,
+    productLockUrl,
+    environmentLockUrl,
+    aspectRatio,
+  } = opts;
 
   const imageParts = await Promise.all([
     fetchInlineImage(creatorLockUrl),
     fetchInlineImage(productLockUrl),
+    fetchInlineImage(environmentLockUrl),
   ]);
   const validParts = imageParts.filter((p): p is NonNullable<typeof p> => p !== null);
   if (!validParts.length) return null;
 
   const characterToken = `@${(character?.name?.trim() || 'creator').replace(/\s+/g, '_')}`;
   const productToken = `@${productName.trim().toLowerCase().replace(/\s+/g, '-')}`;
+  const environmentToken = `@${(environment?.name?.trim() || 'main-environment')
+    .toLowerCase()
+    .replace(/\s+/g, '-')}`;
 
   const meta = `Scene ${scene.index}
 - Action: ${scene.action}
@@ -55,18 +75,20 @@ export async function generateStoryboardPrompt(opts: StoryboardOptions): Promise
 - On-screen caption: ${scene.dialogue}
 - Aspect ratio: ${aspectRatio}
 - Character: ${characterToken} (${character?.gender ?? 'unspecified'}, ${character?.ageRange ?? 'adult'}, ${character?.tone ?? 'natural UGC tone'})
-- Product: ${productToken}`;
+- Product: ${productToken}
+- Environment: ${environmentToken}${environment?.description ? ` — ${environment.description}` : ''}`;
 
   const prompt = `You are writing the image-generation prompt for ONE first-frame keyframe of a UGC short ad.
 
 REFERENCE IMAGES ARE ATTACHED:
 - Image 1 = locked creator multi-view reference sheet
 - Image 2 = locked product multi-view reference sheet
+- Image 3 = locked reusable environment / scene-space reference plate
 
 CRITICAL RULES (follow exactly):
-1. The downstream image-generation node ALSO receives these same reference images as image inputs. Therefore, do NOT re-describe entity visual details in your prompt. NO character appearance (hair color, skin tone, outfit details, face shape). NO product appearance (packaging color, branding design, label, material, logo). The reference images already define their appearance — re-describing them will conflict with the references and produce incorrect results.
-2. Refer to entities by NAME TOKEN ONLY: ${characterToken} for the creator, ${productToken} for the product. Treat these as opaque identifiers — do not unpack what they look like.
-3. Focus ONLY on: scene composition, camera angle / shot type, the creator's POSE and ACTION, the product's POSITION and STATE in frame, spatial relationships, lighting and atmosphere.
+1. The downstream image-generation node ALSO receives these same reference images as image inputs. Therefore, do NOT re-describe entity visual details in your prompt. NO character appearance (hair color, skin tone, outfit details, face shape). NO product appearance (packaging color, branding design, label, material, logo). NO environment appearance (wall color, furniture style, decor details). The reference images already define their appearance — re-describing them will conflict with the references and produce incorrect results.
+2. Refer to entities by NAME TOKEN ONLY: ${characterToken} for the creator, ${productToken} for the product, ${environmentToken} for the environment. Treat these as opaque identifiers — do not unpack what they look like.
+3. Focus ONLY on: scene composition, camera angle / shot type, the creator's POSE and ACTION, the product's POSITION and STATE in frame, spatial relationships inside ${environmentToken}, lighting and atmosphere.
 4. The output must be photorealistic UGC, vertical ${aspectRatio} composition, single frame (this is one keyframe, not a sheet).
 5. NO subtitles, NO UI text, NO on-screen text overlays, NO logos that are not part of the product itself.
 
@@ -141,7 +163,7 @@ async function runGemini(
 
   try {
     const response = await client.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [...imageParts, { text: prompt }] }],
       config: { temperature: 0.3, maxOutputTokens: 1024 },
     });

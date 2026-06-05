@@ -29,8 +29,9 @@ const CreateBodySchema = z
   .object({
     videoId: z.string().trim().max(120).optional(),
     reference: ReferenceSchema,
-    productImageUrls: z.array(z.string().trim().url()).min(1).max(9),
+    productImageUrls: z.array(z.string().trim().url()).max(9).default([]),
     creatorImageUrls: z.array(z.string().trim().url()).max(2).optional(),
+    environmentImageUrls: z.array(z.string().trim().url()).max(4).optional(),
     userPrompt: z.string().trim().max(1200).optional(),
     settings: SettingsSchema.optional(),
   })
@@ -48,6 +49,7 @@ export const POST = withApiRouteSpan('POST /api/remake/jobs', async (request: Re
       reference: body.reference,
       productImageUrls: body.productImageUrls,
       creatorImageUrls: body.creatorImageUrls ?? [],
+      environmentImageUrls: body.environmentImageUrls ?? [],
       userPrompt: body.userPrompt,
       settings: {
         aspectRatio: settings?.aspectRatio ?? '9:16',

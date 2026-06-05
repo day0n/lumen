@@ -10,7 +10,7 @@ import {
 
 export const WorkflowModelCatalog = {
   text: [
-    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
     { id: 'doubao-seed-2.0-pro', label: 'Doubao Seed 2.0' },
   ],
   image: [
@@ -188,6 +188,7 @@ export function canvasNodeToWorkflowNode(node: LumenCanvasNode) {
       prompt: node.data.prompt ?? '',
       image: getSettingString(settings, 'inputImage') || null,
       lastFrameImage: getSettingString(settings, 'inputLastFrameImage') || null,
+      images: getSettingStringArray(settings, 'inputImages'),
       video: getSettingString(settings, 'inputVideo') || null,
       videos: getSettingStringArray(settings, 'inputVideos'),
       audio: getSettingString(settings, 'inputAudio') || null,
@@ -319,6 +320,7 @@ export function computeSingleNodeInput(canvas: LumenCanvas, nodeId: string) {
         });
         break;
       case 'image':
+        if (!resolved.images.includes(output)) resolved.images.push(output);
         if (!resolved.image) resolved.image = output;
         else if (!resolved.lastFrameImage && output !== resolved.image)
           resolved.lastFrameImage = output;

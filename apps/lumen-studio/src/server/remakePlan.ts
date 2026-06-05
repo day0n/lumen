@@ -1,14 +1,16 @@
 import 'server-only';
 
 import type { HotVideoRecord } from '@lumen/db';
-import type { RemakeScene } from '@lumen/shared/domain';
+import type { RemakeEnvironment, RemakeScene } from '@lumen/shared/domain';
 import { z } from 'zod';
 
 import { GeminiNotConfiguredError, generateGeminiText } from './gemini';
 import {
+  type EnvironmentAnalysis,
   type ProductAnalysis,
   type RemakeBreakdown,
   summarizeBreakdownForPlan,
+  summarizeEnvironmentAnalysis,
   summarizeProductAnalysis,
 } from './remakeAnalysis';
 
@@ -44,6 +46,8 @@ export interface RemakePlan {
   scenes: RemakeScene[];
   sellingPoints: string[];
   audienceTags: string[];
+  environments: RemakeEnvironment[];
+  sceneEnvironmentMap: Record<string, number>;
   creatorPrompt?: string;
   productPrompt?: string;
   /** 已被 generateStoryboardPrompt 取代：plan 阶段不再预生成（在 stage 跑前看图动态生成 prompt） */
@@ -61,11 +65,13 @@ export interface BuildPlanInput {
   prompt?: string;
   productImageCount: number;
   creatorImageCount: number;
+  environmentImageCount: number;
   locale: 'en' | 'zh';
   targetDurationSeconds?: number;
   breakdown: RemakeBreakdown | null;
   /** Structured product info extracted from uploaded product images. */
   productAnalysis?: ProductAnalysis | null;
+  environmentAnalysis?: EnvironmentAnalysis | null;
   /** Gate 1 重算时由用户提供的"已确认脚本"，作为强约束传给 LLM。 */
   userScriptText?: string;
   userSellingPoints?: string[];
@@ -109,6 +115,12 @@ export function buildFallbackPlan(input: {
   // 优先用 breakdown.shots 作为骨架（带真实台词/动作/运镜），其次走 analysis.structure 兜底。
   const skeleton = scenesFromBreakdown(input.breakdown, product, input.locale);
   const scenes = skeleton.length >= 3 ? skeleton : structureToScenes(input, product, hook, angle);
+  const environments = fallbackEnvironments(scenes, input.locale);
+  const sceneEnvironmentMap = buildSceneEnvironmentMap(scenes, environments);
+  const scenesWithEnvironment = scenes.map((scene) => ({
+    ...scene,
+    environmentIndex: scene.environmentIndex ?? sceneEnvironmentMap[String(scene.index)] ?? 1,
+  }));
 
   const scriptText = [
     input.locale === 'zh'
@@ -122,7 +134,7 @@ export function buildFallbackPlan(input: {
         : `User notes: ${input.prompt}`
       : '',
     '',
-    ...scenes.map((scene) =>
+    ...scenesWithEnvironment.map((scene) =>
       input.locale === 'zh'
         ? `${scene.index}. ${scene.action}\n   字幕：${scene.dialogue}\n   口播：${scene.voiceLine ?? scene.dialogue}\n   运镜：${scene.camera}`
         : `${scene.index}. ${scene.action}\n   Caption: ${scene.dialogue}\n   Voice: ${scene.voiceLine ?? scene.dialogue}\n   Camera: ${scene.camera}`,
@@ -133,7 +145,7 @@ export function buildFallbackPlan(input: {
 
   return {
     scriptText,
-    scenes,
+    scenes: scenesWithEnvironment,
     sellingPoints:
       input.locale === 'zh'
         ? ['结果先行', '真实上手', '痛点对比', '快速转化']
@@ -142,8 +154,10 @@ export function buildFallbackPlan(input: {
       input.locale === 'zh'
         ? ['TikTok Shop 买家', '价格敏感用户', '效果导向用户']
         : ['TikTok Shop buyers', 'Value seekers', 'Result-driven shoppers'],
+    environments,
+    sceneEnvironmentMap,
     creatorPrompt:
-      'A multi-panel character reference sheet on a plain white background with subtle physical shadow. Three rows: row 1 (3 panels) front, three-quarter, and side standing portraits at uniform scale; row 2 (3 panels) facial expression close-ups (neutral, smiling, speaking); row 3 (3 panels) action poses for UGC product demonstration (holding object near face, presenting object at chest, gesturing with one hand). The reference image attached defines the creator\'s exact appearance — face, hair, body shape, skin tone, outfit. Faithfully replicate that identity in every panel; do NOT invent or alter face, hair color, skin tone, or outfit. Photorealistic, soft natural lighting, neutral grey background, identity locked across all panels. No subtitles, no UI text, no name labels.',
+      "A multi-panel character reference sheet on a plain white background with subtle physical shadow. Three rows: row 1 (3 panels) front, three-quarter, and side standing portraits at uniform scale; row 2 (3 panels) facial expression close-ups (neutral, smiling, speaking); row 3 (3 panels) action poses for UGC product demonstration (holding object near face, presenting object at chest, gesturing with one hand). The reference image attached defines the creator's exact appearance — face, hair, body shape, skin tone, outfit. Faithfully replicate that identity in every panel; do NOT invent or alter face, hair color, skin tone, or outfit. Photorealistic, soft natural lighting, neutral grey background, identity locked across all panels. No subtitles, no UI text, no name labels.",
     productPrompt: `A multi-panel product reference sheet on a plain white background with subtle physical shadow. Three rows: row 1 (3 panels) front, three-quarter, and back orthographic packshots at uniform scale; row 2 (3 panels) signature material/detail close-up, label/branding close-up, and in-use or open state; row 3 (3 panels) in-hand grip, product placed on a plain surface next to a common object for size, and tabletop arrangement (cropped above wrist, no face). The reference image attached defines the product's exact identity — silhouette, proportions, material, finish, color, logo and label placement, distinctive construction details. Faithfully replicate that identity in every panel; do NOT invent or alter colors, branding, label, or shape. Photorealistic studio lighting, crisp focus, identity locked across all panels. No subtitles, no UI text, no marketing claims, no logos that are not part of the product itself.`,
     bgmPrompt:
       'Instrumental modern TikTok Shop product ad music, clean upbeat luxury feel, no vocals, steady rhythm, suitable for UGC product demonstration.',
@@ -161,11 +175,27 @@ export function normalizePlan(
   fallback: RemakePlan,
 ): RemakePlan {
   const scenes = normalizeScenes(generated?.scenes, fallback.scenes);
+  const environments = normalizeEnvironments(
+    generated?.environments,
+    fallback.environments,
+    scenes,
+  );
+  const sceneEnvironmentMap = normalizeSceneEnvironmentMap(
+    generated?.sceneEnvironmentMap,
+    scenes,
+    environments,
+  );
+  const scenesWithEnvironment = scenes.map((scene) => ({
+    ...scene,
+    environmentIndex: sceneEnvironmentMap[String(scene.index)] ?? scene.environmentIndex ?? 1,
+  }));
   return {
     scriptText: readString(generated?.scriptText) ?? fallback.scriptText,
-    scenes,
+    scenes: scenesWithEnvironment,
     sellingPoints: normalizeStringArray(generated?.sellingPoints, fallback.sellingPoints, 5),
     audienceTags: normalizeStringArray(generated?.audienceTags, fallback.audienceTags, 5),
+    environments: syncEnvironmentUsage(environments, scenesWithEnvironment),
+    sceneEnvironmentMap,
     creatorPrompt: readString(generated?.creatorPrompt) ?? fallback.creatorPrompt,
     productPrompt: readString(generated?.productPrompt) ?? fallback.productPrompt,
     bgmPrompt: readString(generated?.bgmPrompt) ?? fallback.bgmPrompt,
@@ -183,8 +213,7 @@ function normalizeCharacter(value: unknown): RemakeCharacter | undefined {
   const tone = readString(record.tone);
   const genderRaw = readString(record.gender);
   if (!name || !ageRange || !tone) return undefined;
-  const gender =
-    genderRaw === 'male' || genderRaw === 'female' ? genderRaw : 'unspecified';
+  const gender = genderRaw === 'male' || genderRaw === 'female' ? genderRaw : 'unspecified';
   return { name, gender, ageRange, tone };
 }
 
@@ -208,6 +237,9 @@ function buildGeminiPrompt(input: BuildPlanInput): string {
   const productAnalysisBlock = input.productAnalysis
     ? `\n${summarizeProductAnalysis(input.productAnalysis)}\n`
     : '';
+  const environmentAnalysisBlock = input.environmentAnalysis
+    ? `\n${summarizeEnvironmentAnalysis(input.environmentAnalysis)}\n`
+    : '';
 
   const replicationRules = breakdownText
     ? `
@@ -219,7 +251,7 @@ REPLICATION MODE HARD RULES (violation = invalid output):
    - PRODUCT → replace with the new product from uploaded images
    - DIALOGUE → rewrite voiceLine and dialogue for the new product; keep same rhythm and duration
    - CREATOR → new creator identity; preserve motion pattern
-   - ENVIRONMENT → similar environment type (kitchen stays kitchen, outdoor stays outdoor)
+   - ENVIRONMENT → similar environment type (kitchen stays kitchen, outdoor stays outdoor). If uploaded scene/environment images exist, use them as reusable spatial anchors.
 5. CROSS-CHECK: before finalising each scene, verify its action matches the skeleton row. If it doesn't, rewrite it.
 6. sceneImagePrompts and sceneVideoPrompts must each contain exactly the same number of entries as scenes.
 `
@@ -231,7 +263,7 @@ Important workflow:
 1. Break down the reference (you already have the real breakdown below — do NOT invent new shots).
 2. Produce the script + character identity card and wait for Gate 1 confirmation.
 3. Lock creator identity and product appearance (image generation).
-4. Look at the locked creator + product images to generate per-scene storyboard prompts (NOT your job — happens later).
+4. Lock reusable environment / scene-space references, then look at locked creator + product + environment images to generate per-scene storyboard prompts (NOT your job — happens later).
 5. Look at each storyboard frame to generate per-scene video prompts (NOT your job — happens later).
 6. Final deterministic edit: per-scene mix already has TTS baked in; final cut concats and adds BGM.
 
@@ -265,20 +297,29 @@ Reference:
       ? '(creator lock will i2i from these — your creatorPrompt should describe preserving the uploaded face/body)'
       : '(no creator reference — generate a generic UGC creator identity in creatorPrompt)'
   }
+- Uploaded scene/environment reference image count: ${input.environmentImageCount} ${
+    input.environmentImageCount > 0
+      ? '(environment lock will i2i from these — treat them as scene-space anchors, NOT products)'
+      : '(no environment reference — generate reusable UGC environments from the reference skeleton and script)'
+  }
 - Output language for scriptText / dialogue / voiceLine / sellingPoints / audienceTags: ${input.locale === 'zh' ? 'Chinese' : 'English'}
 - Target total video length: ${input.targetDurationSeconds ? `~${input.targetDurationSeconds}s (pick scene count and per-scene duration so the sum lands near this)` : 'flexible'}
-${breakdownBlock}${productAnalysisBlock}${replicationRules}${userScriptBlock}${userSellingBlock}${userAudienceBlock}
+${breakdownBlock}${productAnalysisBlock}${environmentAnalysisBlock}${replicationRules}${userScriptBlock}${userSellingBlock}${userAudienceBlock}
 Return this exact JSON shape, no markdown:
 {
   "scriptText": "full script users can review at Gate 1",
   "sellingPoints": ["3 to 5 product selling points"],
   "audienceTags": ["2 to 5 audience tags"],
+  "environments": [
+    {"index": 1, "name": "stable reusable environment token", "description": "space layout, lighting, mood, hero camera; no people/product visual identity", "usedSceneIndexes": [1, 2]}
+  ],
+  "sceneEnvironmentMap": {"1": 1, "2": 1},
   "creatorPrompt": "Multi-panel character reference sheet prompt. The reference image is attached to the i2i node and defines the creator's exact face/hair/body. DO NOT describe specific facial features, hair color, skin tone, or outfit details — that conflicts with the reference. Only describe sheet LAYOUT (rows, panels), camera angles, expressions, and poses. End with: 'faithfully replicating the creator's actual identity as shown in the reference'.",
   "productPrompt": "Multi-panel product reference sheet prompt. The product image is attached to the i2i node and defines the product's exact silhouette/material/color/branding. DO NOT describe specific colors, exact material finish, exact label/logo design, exact typography — that conflicts with the reference. Only describe sheet LAYOUT (3 rows: orthographic packshots / states & details / scale references), camera angles, and composition. End with: 'faithfully replicating the product's actual appearance, material, color, branding, and design as shown in the reference'.",
   "bgmPrompt": "instrumental Suno music prompt, no vocals",
   "character": {"name": "Mia", "gender": "female", "ageRange": "22-30", "tone": "warm friendly UGC creator"},
   "scenes": [
-    {"index": 1, "action": "shot action", "dialogue": "on-screen caption", "voiceLine": "exact spoken voiceover", "durationSeconds": 4, "camera": "framing"}
+    {"index": 1, "action": "shot action", "dialogue": "on-screen caption", "voiceLine": "exact spoken voiceover", "durationSeconds": 4, "camera": "framing", "environmentIndex": 1}
   ]
 }
 `.trim();
@@ -354,6 +395,12 @@ function normalizeScenes(value: unknown, fallback: RemakeScene[]): RemakeScene[]
       typeof record.durationSeconds === 'number' && Number.isFinite(record.durationSeconds)
         ? record.durationSeconds
         : 4;
+    const environmentIndex =
+      typeof record.environmentIndex === 'number' &&
+      Number.isFinite(record.environmentIndex) &&
+      record.environmentIndex >= 1
+        ? Math.floor(record.environmentIndex)
+        : undefined;
     rawScenes.push({
       index: index + 1,
       action,
@@ -361,10 +408,132 @@ function normalizeScenes(value: unknown, fallback: RemakeScene[]): RemakeScene[]
       voiceLine: voiceLine ?? dialogue,
       durationSeconds: snapDuration(rawDuration),
       camera,
+      ...(environmentIndex ? { environmentIndex } : {}),
     });
     if (rawScenes.length >= 8) break;
   }
   return rawScenes.length >= 3 ? rawScenes : fallback;
+}
+
+function fallbackEnvironments(scenes: RemakeScene[], locale: 'en' | 'zh'): RemakeEnvironment[] {
+  return [
+    {
+      index: 1,
+      name: locale === 'zh' ? '主场景' : 'Main UGC space',
+      description:
+        locale === 'zh'
+          ? '真实生活感的可复用拍摄空间，干净自然光，适合商品展示、人物口播和细节特写'
+          : 'Reusable lived-in UGC shooting space with clean natural light, suitable for product demo, creator talking beats, and detail close-ups',
+      usedSceneIndexes: scenes.map((scene) => scene.index),
+    },
+  ];
+}
+
+function normalizeEnvironments(
+  value: unknown,
+  fallback: RemakeEnvironment[],
+  scenes: RemakeScene[],
+): RemakeEnvironment[] {
+  if (!Array.isArray(value)) return syncEnvironmentUsage(fallback, scenes);
+  const environments: RemakeEnvironment[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    const name = readString(record.name);
+    const description = readString(record.description);
+    const rawIndex =
+      typeof record.index === 'number' && Number.isFinite(record.index) && record.index >= 1
+        ? Math.floor(record.index)
+        : index + 1;
+    const usedSceneIndexes = Array.isArray(record.usedSceneIndexes)
+      ? record.usedSceneIndexes
+          .filter((sceneIndex): sceneIndex is number => typeof sceneIndex === 'number')
+          .map((sceneIndex) => Math.floor(sceneIndex))
+          .filter((sceneIndex) => scenes.some((scene) => scene.index === sceneIndex))
+      : [];
+    if (!name || !description) continue;
+    environments.push({
+      index: rawIndex,
+      name,
+      description,
+      usedSceneIndexes: usedSceneIndexes.length
+        ? usedSceneIndexes
+        : scenes.map((scene) => scene.index),
+    });
+    if (environments.length >= 4) break;
+  }
+  const unique = dedupeEnvironments(environments);
+  return unique.length
+    ? syncEnvironmentUsage(unique, scenes)
+    : syncEnvironmentUsage(fallback, scenes);
+}
+
+function dedupeEnvironments(environments: RemakeEnvironment[]): RemakeEnvironment[] {
+  const seen = new Set<number>();
+  return environments
+    .filter((environment) => {
+      if (seen.has(environment.index)) return false;
+      seen.add(environment.index);
+      return true;
+    })
+    .sort((a, b) => a.index - b.index)
+    .map((environment, index) => ({ ...environment, index: index + 1 }));
+}
+
+function normalizeSceneEnvironmentMap(
+  value: unknown,
+  scenes: RemakeScene[],
+  environments: RemakeEnvironment[],
+): Record<string, number> {
+  const validEnvIndexes = new Set(environments.map((environment) => environment.index));
+  const map: Record<string, number> = {};
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    for (const scene of scenes) {
+      const raw = (value as Record<string, unknown>)[String(scene.index)];
+      if (typeof raw === 'number' && Number.isFinite(raw) && validEnvIndexes.has(Math.floor(raw))) {
+        map[String(scene.index)] = Math.floor(raw);
+      }
+    }
+  }
+  for (const scene of scenes) {
+    if (map[String(scene.index)]) continue;
+    const fromScene = scene.environmentIndex;
+    if (fromScene && validEnvIndexes.has(fromScene)) {
+      map[String(scene.index)] = fromScene;
+      continue;
+    }
+    const fromEnvironment = environments.find((environment) =>
+      environment.usedSceneIndexes.includes(scene.index),
+    );
+    map[String(scene.index)] = fromEnvironment?.index ?? environments[0]?.index ?? 1;
+  }
+  return map;
+}
+
+function buildSceneEnvironmentMap(
+  scenes: RemakeScene[],
+  environments: RemakeEnvironment[],
+): Record<string, number> {
+  return normalizeSceneEnvironmentMap(null, scenes, environments);
+}
+
+function syncEnvironmentUsage(
+  environments: RemakeEnvironment[],
+  scenes: RemakeScene[],
+): RemakeEnvironment[] {
+  if (!environments.length) return fallbackEnvironments(scenes, 'en');
+  const validIndexes = new Set(environments.map((environment) => environment.index));
+  return environments.map((environment, index) => {
+    const used = scenes
+      .filter((scene) => (scene.environmentIndex ?? 1) === environment.index)
+      .map((scene) => scene.index);
+    return {
+      ...environment,
+      index: validIndexes.has(environment.index) ? environment.index : index + 1,
+      usedSceneIndexes: used.length ? used : environment.usedSceneIndexes,
+    };
+  });
 }
 
 function normalizeStructure(value: string[] | undefined, locale: 'en' | 'zh'): string[] {

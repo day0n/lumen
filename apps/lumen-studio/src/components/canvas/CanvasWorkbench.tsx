@@ -345,8 +345,8 @@ const nodeCatalog = [
 const defaultModels: Record<NodeKind, ModelOption[]> = {
   text: [
     {
-      id: 'gemini-3.5-flash',
-      label: 'Gemini 3.5 Flash',
+      id: 'gemini-2.5-flash',
+      label: 'Gemini 2.5 Flash',
       badges: ['canvas.models.fast', 'canvas.models.general', '10 ~ 20s'],
     },
     {
@@ -792,6 +792,9 @@ function toWorkflowNodes(nodes: LumenNode[], edges: LumenEdge[]) {
         image: inputImage && !isBlobUrl(inputImage) ? inputImage : null,
         lastFrameImage:
           inputLastFrameImage && !isBlobUrl(inputLastFrameImage) ? inputLastFrameImage : null,
+        images: getSettingStringArray(node.data.settings, 'inputImages').filter(
+          (url) => !isBlobUrl(url),
+        ),
         video: inputVideo && !isBlobUrl(inputVideo) ? inputVideo : null,
         videos: getSettingStringArray(node.data.settings, 'inputVideos').filter(
           (url) => !isBlobUrl(url),

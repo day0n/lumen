@@ -29,6 +29,19 @@ export interface RemakeScene {
   durationSeconds: number;
   /** 运镜 / 景别（驱动场景视频 prompt） */
   camera: string;
+  /** 1-based 环境索引；同一个环境可被多个场次复用。 */
+  environmentIndex?: number;
+}
+
+export interface RemakeEnvironment {
+  /** 1-based 环境序号，对应 plan.sceneEnvironmentMap 和环境锁定输出。 */
+  index: number;
+  /** 给 prompt 引用的稳定环境名。 */
+  name: string;
+  /** 环境/场景空间描述，不包含人物或商品。 */
+  description: string;
+  /** 复用该环境的场次索引。 */
+  usedSceneIndexes: number[];
 }
 
 export interface RemakeSettings {

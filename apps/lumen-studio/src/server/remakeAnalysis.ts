@@ -5,7 +5,11 @@ import { z } from 'zod';
 
 import type { Locale } from '@/i18n/routing';
 import { getStudioCache } from './db';
-import { GeminiNotConfiguredError, generateGeminiMultimodalText, getStudioGoogleClient } from './gemini';
+import {
+  GeminiNotConfiguredError,
+  generateGeminiMultimodalText,
+  getStudioGoogleClient,
+} from './gemini';
 
 /**
  * 爆款复刻 —— 真拆解。
@@ -192,7 +196,9 @@ export function summarizeBreakdownForPlan(breakdown: RemakeBreakdown | null): st
     lines.push('');
     lines.push('=== REPLICATION SKELETON (LOCKED — DO NOT DEVIATE) ===');
     lines.push('Each scene in the new script MUST match the corresponding locked action pattern.');
-    lines.push('Only 4 element classes may be swapped: PRODUCT / DIALOGUE / CREATOR / ENVIRONMENT.');
+    lines.push(
+      'Only 4 element classes may be swapped: PRODUCT / DIALOGUE / CREATOR / ENVIRONMENT.',
+    );
     lines.push('Scene count must equal the number of rows below.');
     lines.push('');
     lines.push('| Scene | Time | Locked Action Pattern | Camera | Replaceable Elements |');
@@ -288,7 +294,7 @@ Rules:
 
   try {
     const response = await client.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [...imageParts, { text: prompt }] }],
       config: { temperature: 0.2, maxOutputTokens: 1024 },
     });
@@ -324,6 +330,119 @@ export function summarizeProductAnalysis(analysis: ProductAnalysis | null): stri
     lines.push(`  - ${point}`);
   }
   lines.push('=== END PRODUCT ANALYSIS ===');
+  return lines.join('\n');
+}
+
+// ============================================================
+// 场景图分析：从上传的环境图中提取可复用空间锚点
+// ============================================================
+
+const EnvironmentItemSchema = z
+  .object({
+    name: z.string().trim().max(80),
+    description: z.string().trim().max(360),
+  })
+  .strict();
+
+export const EnvironmentAnalysisSchema = z
+  .object({
+    visualStyle: z.string().trim().max(300),
+    environments: z.array(EnvironmentItemSchema).min(1).max(4),
+  })
+  .strict();
+
+export type EnvironmentAnalysis = z.infer<typeof EnvironmentAnalysisSchema>;
+
+export async function analyzeEnvironmentImages(
+  imageUrls: string[],
+  locale: 'en' | 'zh',
+): Promise<EnvironmentAnalysis | null> {
+  if (!imageUrls.length) return null;
+
+  let client: ReturnType<typeof getStudioGoogleClient>;
+  try {
+    client = getStudioGoogleClient();
+  } catch (error) {
+    if (error instanceof GeminiNotConfiguredError) return null;
+    throw error;
+  }
+
+  const imageParts: Array<Record<string, unknown>> = [];
+  for (const url of imageUrls.slice(0, 4)) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(30_000), redirect: 'follow' });
+      if (!res.ok) continue;
+      const mimeType =
+        res.headers.get('content-type')?.split(';')[0]?.trim() ?? guessImageMimeFromUrl(url);
+      if (!mimeType.startsWith('image/')) continue;
+      const bytes = Buffer.from(await res.arrayBuffer());
+      imageParts.push({ inlineData: { data: bytes.toString('base64'), mimeType } });
+    } catch {
+      // 单张图下载失败不影响整体
+    }
+  }
+
+  if (!imageParts.length) return null;
+
+  const wantZh = locale === 'zh';
+  const prompt = `You are analyzing uploaded SCENE / ENVIRONMENT reference images for a UGC video remake pipeline.
+
+These images are NOT products and NOT creator portraits. Treat them as reusable spatial anchors.
+
+Output language: ${wantZh ? 'Chinese (Simplified)' : 'English'}.
+
+Return ONE JSON object, no markdown:
+{
+  "visualStyle": "overall lighting, texture, camera mood, and spatial feel",
+  "environments": [
+    {
+      "name": "short stable environment token name",
+      "description": "space layout, surfaces, lighting direction, depth, action zones, and hero camera angle. Do not describe people, hands, products, UI text, or logos."
+    }
+  ]
+}
+
+Rules:
+- Create 1 environment if all uploads show the same space; create up to 4 only if they are clearly different spaces.
+- The description must be reusable for many scenes: wide view, medium action zone, and close-up demo surface.
+- Do not infer product selling points from these images.
+- Do not include people or product identity in the environment description.`;
+
+  try {
+    const response = await client.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [...imageParts, { text: prompt }] }],
+      config: { temperature: 0.18, maxOutputTokens: 1200 },
+    });
+
+    const text = (response.text ?? '').trim();
+    if (!text) return null;
+
+    const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
+    const parsed = JSON.parse(fenced?.[1] ?? text) as unknown;
+    const result = EnvironmentAnalysisSchema.safeParse(parsed);
+    if (!result.success) {
+      console.warn('[remake] environment analysis schema mismatch', result.error.flatten());
+      return null;
+    }
+    return result.data;
+  } catch (error) {
+    console.warn('[remake] environment image analysis failed', error);
+    return null;
+  }
+}
+
+export function summarizeEnvironmentAnalysis(analysis: EnvironmentAnalysis | null): string {
+  if (!analysis) return '';
+  const lines: string[] = [];
+  lines.push('=== ENVIRONMENT ANALYSIS (from uploaded scene reference images) ===');
+  lines.push(`Visual style: ${analysis.visualStyle}`);
+  lines.push('Reusable scene environments:');
+  for (const environment of analysis.environments) {
+    lines.push(`  - ${environment.name}: ${environment.description}`);
+  }
+  lines.push('Treat these as scene-space anchors, not product or creator references.');
+  lines.push('=== END ENVIRONMENT ANALYSIS ===');
   return lines.join('\n');
 }
 

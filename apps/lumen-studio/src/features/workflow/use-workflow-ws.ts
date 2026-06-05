@@ -18,6 +18,7 @@ export interface WorkflowNode {
     prompt: string;
     image: string | null;
     lastFrameImage: string | null;
+    images: string[];
     video: string | null;
     videos: string[];
     audio: string | null;

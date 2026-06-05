@@ -527,6 +527,7 @@ function compactNodeInput(input: NodeInput): NodeInput {
     prompt: input.prompt,
     image: compactMediaRef(input.image),
     lastFrameImage: compactMediaRef(input.lastFrameImage),
+    images: input.images.map((value) => compactMediaRef(value) ?? '').filter(Boolean),
     video: compactMediaRef(input.video),
     videos: input.videos.map((value) => compactMediaRef(value) ?? '').filter(Boolean),
     audio: compactMediaRef(input.audio),

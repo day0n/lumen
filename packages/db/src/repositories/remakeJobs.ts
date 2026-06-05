@@ -68,6 +68,7 @@ export class RemakeJobRepository {
       breakdown: parsed.breakdown,
       product_image_urls: parsed.productImageUrls,
       creator_image_urls: parsed.creatorImageUrls,
+      environment_image_urls: parsed.environmentImageUrls,
       user_prompt: parsed.userPrompt,
       stages: buildInitialStages(),
       outputs: { scenes: [] },
@@ -110,6 +111,9 @@ export class RemakeJobRepository {
     if (parsed.settings !== undefined) set.settings = parsed.settings;
     if (parsed.productImageUrls !== undefined) set.product_image_urls = parsed.productImageUrls;
     if (parsed.creatorImageUrls !== undefined) set.creator_image_urls = parsed.creatorImageUrls;
+    if (parsed.environmentImageUrls !== undefined) {
+      set.environment_image_urls = parsed.environmentImageUrls;
+    }
     if (parsed.userPrompt !== undefined) set.user_prompt = parsed.userPrompt;
     if (parsed.gate1ConfirmedAt !== undefined) set.gate1_confirmed_at = parsed.gate1ConfirmedAt;
     if (parsed.gate2ConfirmedAt !== undefined) set.gate2_confirmed_at = parsed.gate2ConfirmedAt;
@@ -134,6 +138,9 @@ export class RemakeJobRepository {
       }
       if (outputs.productLockUrl !== undefined) {
         set['outputs.productLockUrl'] = outputs.productLockUrl;
+      }
+      if (outputs.environmentLocks !== undefined) {
+        set['outputs.environmentLocks'] = outputs.environmentLocks;
       }
       if (outputs.bgmUrl !== undefined) set['outputs.bgmUrl'] = outputs.bgmUrl;
       if (outputs.finalUrl !== undefined) set['outputs.finalUrl'] = outputs.finalUrl;
@@ -175,6 +182,32 @@ export class RemakeJobRepository {
     return result ? toJobRecord(result) : null;
   }
 
+  async patchEnvironmentOutput(
+    jobId: string,
+    ownerId: string,
+    environmentIndex: number,
+    imageUrl: string,
+  ): Promise<RemakeJobRecord | null> {
+    const job = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
+    if (!job) return null;
+    const environmentLocks = [...(job.outputs?.environmentLocks ?? [])];
+    const existingIndex = environmentLocks.findIndex(
+      (item) => item.environmentIndex === environmentIndex,
+    );
+    if (existingIndex >= 0) {
+      environmentLocks[existingIndex] = { environmentIndex, imageUrl };
+    } else {
+      environmentLocks.push({ environmentIndex, imageUrl });
+    }
+    environmentLocks.sort((a, b) => a.environmentIndex - b.environmentIndex);
+    const result = await this.jobs().findOneAndUpdate(
+      { _id: jobId, owner_id: ownerId },
+      { $set: { 'outputs.environmentLocks': environmentLocks, updated_at: new Date() } },
+      { returnDocument: 'after' },
+    );
+    return result ? toJobRecord(result) : null;
+  }
+
   // ============================================================
   // Task CRUD
   // ============================================================
@@ -207,12 +240,12 @@ export class RemakeJobRepository {
       }),
     );
     // upsert by (job_id, slice_key) — replan / retry 会覆盖同 slice 的旧 task
+    const records: RemakeTaskRecord[] = [];
     for (const doc of documents) {
-      await this.tasks().updateOne(
+      const result = await this.tasks().findOneAndUpdate(
         { job_id: doc.job_id, slice_key: doc.slice_key },
         {
           $set: {
-            _id: doc._id,
             stage: doc.stage,
             handler: doc.handler,
             input: doc.input,
@@ -222,12 +255,18 @@ export class RemakeJobRepository {
             updated_at: now,
           },
           $unset: { output_url: '', output_kind: '', error: '', started_at: '', settled_at: '' },
-          $setOnInsert: { created_at: now },
+          $setOnInsert: {
+            _id: doc._id,
+            job_id: doc.job_id,
+            slice_key: doc.slice_key,
+            created_at: now,
+          },
         },
-        { upsert: true },
+        { upsert: true, returnDocument: 'after' },
       );
+      if (result) records.push(toTaskRecord(result));
     }
-    return documents.map(toTaskRecord);
+    return records;
   }
 
   async listTasksByJob(jobId: string): Promise<RemakeTaskRecord[]> {
@@ -346,6 +385,7 @@ function toJobRecord(document: RemakeJobDocument): RemakeJobRecord {
     breakdown: parsed.breakdown,
     productImageUrls: parsed.product_image_urls,
     creatorImageUrls: parsed.creator_image_urls,
+    environmentImageUrls: parsed.environment_image_urls,
     userPrompt: parsed.user_prompt,
     stages: parsed.stages,
     gate1ConfirmedAt: parsed.gate1_confirmed_at?.toISOString(),

@@ -32,9 +32,21 @@ const RemakeSceneSchema = z
     voiceLine: z.string().trim().max(400).optional(),
     durationSeconds: z.number().positive().max(60),
     camera: z.string().trim().min(1).max(280),
+    /** 绑定的可复用环境序号，对齐 plan.environments[].index。 */
+    environmentIndex: z.number().int().min(1).optional(),
   })
   .strict();
 export type RemakeJobScene = z.infer<typeof RemakeSceneSchema>;
+
+const RemakeEnvironmentSchema = z
+  .object({
+    index: z.number().int().min(1),
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(600),
+    usedSceneIndexes: z.array(z.number().int().min(1)).min(1).max(10),
+  })
+  .strict();
+export type RemakeJobEnvironment = z.infer<typeof RemakeEnvironmentSchema>;
 
 const RemakeCharacterSchema = z
   .object({
@@ -52,6 +64,8 @@ const RemakePlanSchema = z
     scenes: z.array(RemakeSceneSchema).min(1).max(10),
     sellingPoints: z.array(z.string().trim().min(1)).max(8),
     audienceTags: z.array(z.string().trim().min(1)).max(8),
+    environments: z.array(RemakeEnvironmentSchema).max(4).default([]),
+    sceneEnvironmentMap: z.record(z.string(), z.number().int().min(1)).default({}),
     creatorPrompt: z.string().trim().optional(),
     productPrompt: z.string().trim().optional(),
     bgmPrompt: z.string().trim().optional(),
@@ -161,10 +175,19 @@ const RemakeJobSceneOutputSchema = z
   .strict();
 export type RemakeJobSceneOutput = z.infer<typeof RemakeJobSceneOutputSchema>;
 
+const RemakeJobEnvironmentOutputSchema = z
+  .object({
+    environmentIndex: z.number().int().min(1),
+    imageUrl: z.string().trim().url().optional(),
+  })
+  .strict();
+export type RemakeJobEnvironmentOutput = z.infer<typeof RemakeJobEnvironmentOutputSchema>;
+
 const RemakeJobOutputsSchema = z
   .object({
     creatorLockUrl: z.string().trim().url().optional(),
     productLockUrl: z.string().trim().url().optional(),
+    environmentLocks: z.array(RemakeJobEnvironmentOutputSchema).default([]),
     scenes: z.array(RemakeJobSceneOutputSchema).default([]),
     bgmUrl: z.string().trim().url().optional(),
     finalUrl: z.string().trim().url().optional(),
@@ -198,8 +221,9 @@ export const RemakeJobDocumentSchema = z
     plan: RemakePlanSchema,
     breakdown: RemakeBreakdownSchema.optional(),
     /** 用户上传，jobs 创建时固定下来；replan 不变 */
-    product_image_urls: z.array(z.string().trim().url()).min(1).max(9),
+    product_image_urls: z.array(z.string().trim().url()).max(9).default([]),
     creator_image_urls: z.array(z.string().trim().url()).max(2).default([]),
+    environment_image_urls: z.array(z.string().trim().url()).max(4).default([]),
     /** 用户在 ReplicaConfigModal 里写的额外文字（可能影响 replan） */
     user_prompt: z.string().trim().max(1200).optional(),
     /** 6 个 stage 的状态机 */
@@ -239,6 +263,7 @@ export const RemakeJobRecordSchema = z
     breakdown: RemakeBreakdownSchema.optional(),
     productImageUrls: z.array(z.string()),
     creatorImageUrls: z.array(z.string()),
+    environmentImageUrls: z.array(z.string()).default([]),
     userPrompt: z.string().optional(),
     stages: z.object({
       breakdown: RemakeStageStateSchema,
@@ -291,6 +316,8 @@ const RemakeTaskInputSchema = z
     prompt: z.string().default(''),
     image: z.string().trim().nullable().default(null),
     lastFrameImage: z.string().trim().nullable().default(null),
+    /** 多图参考模式：creator/product/environment 等带明确角色的稳定资产。 */
+    images: z.array(z.string().trim().min(1)).default([]),
     /** 单片混音用：要混的视频源 */
     video: z.string().trim().nullable().default(null),
     /** 多片拼接用：按顺序的视频源 */
@@ -376,8 +403,9 @@ export const CreateRemakeJobInputSchema = z
     settings: RemakeJobSettingsSchema,
     plan: RemakePlanSchema,
     breakdown: RemakeBreakdownSchema.optional(),
-    productImageUrls: z.array(z.string().trim().url()).min(1).max(9),
+    productImageUrls: z.array(z.string().trim().url()).max(9).default([]),
     creatorImageUrls: z.array(z.string().trim().url()).max(2).default([]),
+    environmentImageUrls: z.array(z.string().trim().url()).max(4).default([]),
     userPrompt: z.string().trim().max(1200).optional(),
   })
   .strict();
@@ -388,8 +416,9 @@ export const UpdateRemakeJobInputSchema = z
     plan: RemakePlanSchema.optional(),
     breakdown: RemakeBreakdownSchema.optional(),
     settings: RemakeJobSettingsSchema.optional(),
-    productImageUrls: z.array(z.string().trim().url()).min(1).max(9).optional(),
+    productImageUrls: z.array(z.string().trim().url()).max(9).optional(),
     creatorImageUrls: z.array(z.string().trim().url()).max(2).optional(),
+    environmentImageUrls: z.array(z.string().trim().url()).max(4).optional(),
     userPrompt: z.string().trim().max(1200).optional(),
     /** patch 单个 stage 状态 —— jobs 内部用 */
     stagePatch: z
@@ -403,6 +432,7 @@ export const UpdateRemakeJobInputSchema = z
       .object({
         creatorLockUrl: z.string().trim().url().optional(),
         productLockUrl: z.string().trim().url().optional(),
+        environmentLocks: z.array(RemakeJobEnvironmentOutputSchema).optional(),
         scenes: z.array(RemakeJobSceneOutputSchema).optional(),
         bgmUrl: z.string().trim().url().optional(),
         finalUrl: z.string().trim().url().optional(),
@@ -428,5 +458,6 @@ export {
   RemakeStageStateSchema,
   RemakeJobOutputsSchema,
   RemakeJobSceneOutputSchema,
+  RemakeJobEnvironmentOutputSchema,
   RemakeTaskInputSchema,
 };

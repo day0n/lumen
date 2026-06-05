@@ -6,6 +6,7 @@ import type { Locale } from '@/i18n/routing';
 import { getHotVideo } from '@/server/hotVideos';
 import {
   type RemakeBreakdown,
+  analyzeEnvironmentImages,
   analyzeProductImages,
   analyzeRemakeReference,
 } from '@/server/remakeAnalysis';
@@ -28,6 +29,7 @@ export interface BuildPlanForJobInput {
   /** 源爆款视频（如果是从爆款库点进来的）；用于多模态拆解。 */
   video: HotVideoRecord | null;
   productImageUrls: string[];
+  environmentImageUrls: string[];
   creatorImageCount: number;
   locale: Locale;
   userPrompt?: string;
@@ -48,10 +50,11 @@ export interface BuildPlanForJobOutput {
 export async function buildPlanForJob(input: BuildPlanForJobInput): Promise<BuildPlanForJobOutput> {
   const locale: 'en' | 'zh' = input.locale === 'zh' ? 'zh' : 'en';
 
-  // 并行跑：参考视频多模态拆解 + 商品图结构化分析
-  const [breakdown, productAnalysis] = await Promise.all([
+  // 并行跑：参考视频多模态拆解 + 商品图结构化分析 + 场景/环境图结构化分析
+  const [breakdown, productAnalysis, environmentAnalysis] = await Promise.all([
     analyzeRemakeReference({ video: input.video, locale }),
     analyzeProductImages(input.productImageUrls, locale),
+    analyzeEnvironmentImages(input.environmentImageUrls, locale),
   ]);
 
   const fallback = buildFallbackPlan({
@@ -68,10 +71,12 @@ export async function buildPlanForJob(input: BuildPlanForJobInput): Promise<Buil
     prompt: input.userPrompt,
     productImageCount: input.productImageUrls.length,
     creatorImageCount: input.creatorImageCount,
+    environmentImageCount: input.environmentImageUrls.length,
     locale,
     targetDurationSeconds: input.targetDurationSeconds,
     breakdown,
     productAnalysis,
+    environmentAnalysis,
     userScriptText: input.gateOverrides?.scriptText,
     userSellingPoints: input.gateOverrides?.sellingPoints,
     userAudienceTags: input.gateOverrides?.audienceTags,

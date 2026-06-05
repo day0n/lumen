@@ -8,7 +8,6 @@ import type {
   RemakeStageName,
   RemakeStageStatus,
   RemakeTaskRecord,
-  RemakeTaskStatus,
 } from '@lumen/db';
 
 /**
@@ -122,45 +121,6 @@ function patchOrAppendTask(
   next[idx] = { ...next[idx]!, ...patch, updatedAt: new Date().toISOString() };
   return next;
 }
-
-// ============================================================
-// SSE event shape (与 server/remake/dispatch.ts 的 RemakeEvent 对齐)
-// ============================================================
-
-type ServerEvent =
-  | { type: 'task:queued'; taskId: string; stage: RemakeStageName; sliceKey: string }
-  | { type: 'task:start'; taskId: string; stage: RemakeStageName; sliceKey: string }
-  | {
-      type: 'task:progress';
-      taskId: string;
-      stage: RemakeStageName;
-      sliceKey: string;
-      progress: number;
-    }
-  | {
-      type: 'task:done';
-      taskId: string;
-      stage: RemakeStageName;
-      sliceKey: string;
-      outputUrl: string;
-      outputKind: 'image' | 'video' | 'audio' | 'text';
-    }
-  | {
-      type: 'task:error';
-      taskId: string;
-      stage: RemakeStageName;
-      sliceKey: string;
-      error: string;
-    }
-  | {
-      type: 'task:cancelled';
-      taskId: string;
-      stage: RemakeStageName;
-      sliceKey: string;
-      reason: string;
-    }
-  | { type: 'stage:status'; stage: RemakeStageName; status: RemakeStageStatus }
-  | { type: 'job:updated' };
 
 // ============================================================
 // Hook
@@ -352,6 +312,7 @@ export function findTaskBySliceKey(
 export const RemakeSliceKeys = {
   creatorLock: 'creator-lock',
   productLock: 'product-lock',
+  environmentLock: (index: number) => `environment-lock-${index}`,
   sceneImage: (index: number) => `scene-image-${index}`,
   sceneVideo: (index: number) => `scene-video-${index}`,
   sceneVoice: (index: number) => `scene-voice-${index}`,

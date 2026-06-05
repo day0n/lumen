@@ -11,6 +11,7 @@ export interface ResolvedInput {
   prompt: string;
   image: string | null;
   lastFrameImage: string | null;
+  images: string[];
   video: string | null;
   videos: string[];
   audio: string | null;
@@ -49,6 +50,7 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
     prompt: node.input.prompt,
     image: node.input.image,
     lastFrameImage: node.input.lastFrameImage,
+    images: [...node.input.images],
     video: node.input.video,
     videos: [...node.input.videos],
     audio: node.input.audio,
@@ -73,6 +75,7 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
         });
         break;
       case 'image':
+        if (!resolved.images.includes(upstreamOutput)) resolved.images.push(upstreamOutput);
         if (node.type === 'video') {
           upstreamImages.push(upstreamOutput);
           break;

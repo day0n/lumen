@@ -1,5 +1,6 @@
 // 勿加 server-only：server.ts 经 eventMirror/taskOutcome 在进程启动时加载本模块。
 import type {
+  RemakeJobEnvironment,
   RemakeJobRecord,
   RemakeJobSceneOutput,
   RemakeStageName,
@@ -32,6 +33,7 @@ const EMPTY_INPUT: RemakeTaskInput = {
   prompt: '',
   image: null,
   lastFrameImage: null,
+  images: [],
   video: null,
   videos: [],
   audio: null,
@@ -52,6 +54,7 @@ function makeInput(patch: Partial<RemakeTaskInput>): RemakeTaskInput {
 export const SliceKeys = {
   creatorLock: 'creator-lock',
   productLock: 'product-lock',
+  environmentLock: (index: number) => `environment-lock-${index}`,
   sceneImage: (index: number) => `scene-image-${index}`,
   sceneVideo: (index: number) => `scene-video-${index}`,
   sceneVoice: (index: number) => `scene-voice-${index}`,
@@ -68,6 +71,13 @@ export function parseSceneIndexFromSliceKey(sliceKey: string): number | null {
   return Number.isFinite(n) && n >= 1 ? n : null;
 }
 
+export function parseEnvironmentIndexFromSliceKey(sliceKey: string): number | null {
+  const match = /^environment-lock-(\d+)$/.exec(sliceKey);
+  if (!match) return null;
+  const n = Number.parseInt(match[1]!, 10);
+  return Number.isFinite(n) && n >= 1 ? n : null;
+}
+
 /** sliceKey → 它落到 job.outputs.scenes[i] 的哪个字段。 */
 export function sliceOutputField(
   sliceKey: string,
@@ -75,11 +85,13 @@ export function sliceOutputField(
   | keyof Omit<RemakeJobSceneOutput, 'sceneIndex'>
   | 'creatorLockUrl'
   | 'productLockUrl'
+  | 'environmentLockUrl'
   | 'bgmUrl'
   | 'finalUrl'
   | null {
   if (sliceKey === SliceKeys.creatorLock) return 'creatorLockUrl';
   if (sliceKey === SliceKeys.productLock) return 'productLockUrl';
+  if (sliceKey.startsWith('environment-lock-')) return 'environmentLockUrl';
   if (sliceKey === SliceKeys.bgm) return 'bgmUrl';
   if (sliceKey === SliceKeys.final) return 'finalUrl';
   if (sliceKey.startsWith('scene-image-')) return 'imageUrl';
@@ -90,13 +102,15 @@ export function sliceOutputField(
 }
 
 // ============================================================
-// Lock stage：创作者锁定 + 产品锁定
+// Lock stage：创作者锁定 + 产品锁定 + 环境锁定
 // ============================================================
 
 export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
   const aspectRatio = job.settings.aspectRatio;
   const [creator0, creator1] = job.creatorImageUrls;
   const [product0, product1] = job.productImageUrls;
+  const productName = job.reference.productName ?? job.reference.label;
+  const environments = planEnvironments(job);
 
   const creatorPrompt =
     job.plan.creatorPrompt ??
@@ -106,9 +120,11 @@ export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
 
   const productPrompt =
     job.plan.productPrompt ??
-    'A clean multi-view product reference sheet of the uploaded product on a plain white background: front, side, and three-quarter angles. Preserve the exact product shape, color, material and branding from the reference image. Studio lighting, crisp focus.';
+    (product0
+      ? 'A clean multi-view product reference sheet of the uploaded product on a plain white background: front, side, and three-quarter angles. Preserve the exact product shape, color, material and branding from the reference image. Studio lighting, crisp focus.'
+      : `A clean multi-view product reference sheet for "${productName}" on a plain white background: front, side, and three-quarter angles. Use the product description and campaign script as the source of truth. Studio lighting, crisp focus, realistic UGC commerce product asset.`);
 
-  return [
+  const tasks: PlannedTask[] = [
     {
       stage: 'lock',
       sliceKey: SliceKeys.creatorLock,
@@ -121,6 +137,7 @@ export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
         // the model more angles to lock identity. Do NOT interpret these as video frames.
         image: creator0 ?? null,
         lastFrameImage: creator1 ?? null,
+        images: compactRefs(job.creatorImageUrls.slice(0, 2)),
       }),
       settings: { aspectRatio },
     },
@@ -130,15 +147,33 @@ export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
       handler: 'nano-banana2',
       input: makeInput({
         prompt: productPrompt,
-        // Same multi-image reference mode as above — up to 2 product photos.
-        // product0/product1 are the first two uploaded product images; the rest are
-        // not passed because nano-banana2 only reads image + lastFrameImage.
+        // Same multi-image reference mode as above. Keep image/lastFrameImage for
+        // legacy consumers while images[] carries the full reference set.
         image: product0 ?? null,
         lastFrameImage: product1 ?? null,
+        images: compactRefs(job.productImageUrls.slice(0, 4)),
       }),
       settings: { aspectRatio },
     },
   ];
+
+  for (const environment of environments) {
+    const sourceImage = job.environmentImageUrls[environment.index - 1] ?? null;
+    tasks.push({
+      stage: 'lock',
+      sliceKey: SliceKeys.environmentLock(environment.index),
+      handler: 'nano-banana2',
+      input: makeInput({
+        prompt: buildEnvironmentLockPrompt(environment, Boolean(sourceImage)),
+        image: sourceImage,
+        lastFrameImage: null,
+        images: compactRefs(sourceImage ? [sourceImage] : []),
+      }),
+      settings: { aspectRatio },
+    });
+  }
+
+  return tasks;
 }
 
 // ============================================================
@@ -152,18 +187,26 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
   const creatorLock = job.outputs.creatorLockUrl ?? null;
   const productLock = job.outputs.productLockUrl ?? null;
   const productName = job.reference.productName ?? job.reference.label;
+  const environments = planEnvironments(job);
 
   const prompts = await Promise.all(
-    job.plan.scenes.map((scene) =>
-      generateStoryboardPrompt({
+    job.plan.scenes.map((scene) => {
+      const environmentIndex =
+        scene.environmentIndex ?? job.plan.sceneEnvironmentMap[String(scene.index)] ?? 1;
+      const environment =
+        environments.find((item) => item.index === environmentIndex) ?? environments[0];
+      const environmentLockUrl = findEnvironmentLockUrl(job, environment?.index ?? 1);
+      return generateStoryboardPrompt({
         scene,
         character: job.plan.character,
         productName,
+        environment,
         creatorLockUrl: creatorLock,
         productLockUrl: productLock,
+        environmentLockUrl,
         aspectRatio,
-      }),
-    ),
+      });
+    }),
   );
 
   return job.plan.scenes.map((scene, i) => {
@@ -171,7 +214,16 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
     // Fallback：不描述实体视觉细节，只用 token 引用。
     const characterToken = `@${(job.plan.character?.name ?? 'creator').replace(/\s+/g, '_')}`;
     const productToken = `@${productName.toLowerCase().replace(/\s+/g, '-')}`;
-    const fallback = `First-frame keyframe for Scene ${scene.index}. ${characterToken} performs the action: ${scene.action}. Camera: ${scene.camera}. ${productToken} is positioned naturally in the shot. Photorealistic UGC, vertical ${aspectRatio} composition. The reference images attached define the appearance of ${characterToken} and ${productToken} — do not invent appearance.`;
+    const environmentIndex =
+      scene.environmentIndex ?? job.plan.sceneEnvironmentMap[String(scene.index)] ?? 1;
+    const environment =
+      environments.find((item) => item.index === environmentIndex) ?? environments[0];
+    const environmentToken = `@${(environment?.name ?? 'main-environment')
+      .toLowerCase()
+      .replace(/\s+/g, '-')}`;
+    const environmentLockUrl = findEnvironmentLockUrl(job, environment?.index ?? 1);
+    const refs = compactRefs([creatorLock, productLock, environmentLockUrl]);
+    const fallback = `First-frame keyframe for Scene ${scene.index}. ${characterToken} performs the action: ${scene.action} inside ${environmentToken}. Camera: ${scene.camera}. ${productToken} is positioned naturally in the shot. Photorealistic UGC, vertical ${aspectRatio} composition. The reference images attached define ${characterToken}, ${productToken}, and ${environmentToken} — do not invent their appearance.`;
 
     return {
       stage: 'storyboard',
@@ -179,11 +231,11 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
       handler: 'nano-banana2',
       input: makeInput({
         prompt: generated ?? fallback,
-        // 把 product 放第一张，creator 放第二张：
-        // nano-banana2 (Gemini 3 Pro Image) 对第一张图的视觉权重更高，
-        // 让 product 主导避免商品被弱化。Lumen 靠位置补偿。
-        image: productLock,
-        lastFrameImage: creatorLock,
+        // 多图角色顺序与 promptGenerators.ts 保持一致：
+        // Image 1 = creator, Image 2 = product, Image 3 = environment。
+        image: creatorLock,
+        lastFrameImage: productLock,
+        images: refs,
       }),
       settings: { aspectRatio },
     };
@@ -320,6 +372,60 @@ export function expandFinalStage(job: RemakeJobRecord): PlannedTask | null {
   };
 }
 
+function buildEnvironmentLockPrompt(
+  environment: RemakeJobEnvironment,
+  hasReferenceImage: boolean,
+): string {
+  const referenceRule = hasReferenceImage
+    ? 'The attached location image defines the actual spatial identity. Preserve its layout, camera direction, lighting logic, surfaces, and mood. Do NOT add people, hands, products, subtitles, UI text, or logos.'
+    : 'Generate this reusable space from the description. Do NOT add people, hands, products, subtitles, UI text, or logos.';
+
+  return `Create a reusable 2x2 multi-scale ENVIRONMENT reference plate for UGC video remaking.
+
+Environment token: @${environment.name.replace(/\s+/g, '-')}
+Environment description: ${environment.description}
+Used by scenes: ${environment.usedSceneIndexes.join(', ')}
+
+${referenceRule}
+
+Grid structure:
+- Top-left: wide establishing view of the full space and spatial depth.
+- Top-right: medium framing of the main action zone.
+- Bottom-left: close-up of the surface / object area where hands or product demos can happen later.
+- Bottom-right: alternate tight composition from the SAME hero angle.
+
+All four panels must depict the SAME physical environment from the SAME hero camera direction. Only framing scale changes. Photorealistic real-life UGC texture, natural exposure, coherent lighting.`;
+}
+
+function planEnvironments(job: RemakeJobRecord): RemakeJobEnvironment[] {
+  if (job.plan.environments.length > 0) return job.plan.environments;
+  return [
+    {
+      index: 1,
+      name: 'Main UGC space',
+      description:
+        'Reusable lived-in UGC shooting space with natural light for creator talking beats, product demos, and detail close-ups.',
+      usedSceneIndexes: job.plan.scenes.map((scene) => scene.index),
+    },
+  ];
+}
+
+function findEnvironmentLockUrl(job: RemakeJobRecord, environmentIndex: number): string | null {
+  return (
+    job.outputs.environmentLocks.find((item) => item.environmentIndex === environmentIndex)
+      ?.imageUrl ?? null
+  );
+}
+
+function compactRefs(values: Array<string | null | undefined>): string[] {
+  const refs: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed && !refs.includes(trimmed)) refs.push(trimmed);
+  }
+  return refs;
+}
+
 // ============================================================
 // Stage 状态推导（纯函数）
 // ============================================================
@@ -385,8 +491,7 @@ export function deriveJobStageStatuses(
   const videoTasks = tasksOf('video');
   const videoComputed = videoTasks.length > 0 ? deriveStageStatus(videoTasks) : 'ready';
   // video stage 还需要 mix 全部 success 才能算 success
-  const videoGated: RemakeStageStatus =
-    storyboardGated !== 'success' ? 'locked' : videoComputed;
+  const videoGated: RemakeStageStatus = storyboardGated !== 'success' ? 'locked' : videoComputed;
 
   const finalTasks = tasksOf('final');
   const finalComputed = finalTasks.length > 0 ? deriveStageStatus(finalTasks) : 'ready';
