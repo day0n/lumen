@@ -77,7 +77,7 @@ import type {
 } from '@xyflow/react';
 import { AnimatePresence } from 'motion/react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import {
   createContext,
   useCallback,
@@ -901,7 +901,6 @@ export function CanvasWorkbench({ projectId, createOnMount = false }: CanvasWork
 
 function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps) {
   const isMobileCanvas = useIsMobileCanvas();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { locale, t, localePath } = useI18n();
   const { isLoaded: authReady, isSignedIn, requireLogin } = useLoginRedirect();
@@ -921,6 +920,10 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const reactFlowStore = useStoreApi<LumenNode, LumenEdge>();
   const hasRequestedCreate = useRef(false);
   const hasHydratedProject = useRef(!projectId && !createOnMount);
+  // 当 createOnMount 流程刚刚把项目存到服务器并切换到带 id 的 URL 时，
+  // 我们不希望随之触发的 load effect 再去 GET 一遍同一份数据：
+  // 数据已经是最新的，重新拉一次会让 saveState 闪一下 "loading"，并且打断 hydration overlay 的淡出。
+  const skipNextLoadAfterCreateRef = useRef(false);
   // 初次进入存量画布或新画布时，先盖一层全屏加载动画，等节点真正落到 ReactFlow 上之后再淡出，
   // 避免出现「点进去先看到空白画布，几百毫秒后节点才跳出来」的割裂感。
   const [isCanvasHydrated, setIsCanvasHydrated] = useState(!projectId && !createOnMount);
@@ -1227,6 +1230,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           signal: controller.signal,
         });
         const project = await readProjectResponse(response, t('canvas.projectFailed'));
+        skipNextLoadAfterCreateRef.current = true;
         setCurrentProjectId(project.id);
         setCurrentOwnerId(project.ownerId);
         setProjectTitle(project.title);
@@ -1240,7 +1244,15 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         if (initialPrompt) queryParams.set('prompt', initialPrompt);
         if (shouldOpenAgentChat) queryParams.set('agent', 'chat');
         const query = queryParams.toString();
-        router.replace(localePath(`/canvas/${project.id}${query ? `?${query}` : ''}`));
+        // 用 history.replaceState 取代 router.replace：
+        // 后者会触发 Next.js 完整路由切换，导致 loading.tsx 再现一次 + workbench 重挂载，
+        // 视觉上就是「加载图 → 空画布 → 加载图 → 真画布」的双闪。
+        // 我们已经把项目数据写到内部 state 里了，这里只需要把地址栏对齐到 /canvas/:id 即可，
+        // usePathname / useSearchParams 都会跟着 replaceState 同步。
+        if (typeof window !== 'undefined') {
+          const nextUrl = localePath(`/canvas/${project.id}${query ? `?${query}` : ''}`);
+          window.history.replaceState(window.history.state, '', nextUrl);
+        }
       } catch (error) {
         if (controller.signal.aborted) {
           return;
@@ -1267,7 +1279,6 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     markCanvasHydrated,
     nodes,
     projectTitle,
-    router,
     setEdges,
     setNodes,
     shouldOpenAgentChat,
@@ -1277,6 +1288,14 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
   useEffect(() => {
     if (!currentProjectId || !authReady || !isSignedIn) {
+      return;
+    }
+
+    // createOnMount 流程刚刚把刚建好的项目写进 state（包括 nodes / edges / saveState），
+    // hydration overlay 也已经在创建分支里 markCanvasHydrated() 过了，无需再 GET 一遍同一份数据。
+    // 这里把标记重置后 return，让用户后续手动切换 / 刷新页面时仍走正常的 load 路径。
+    if (skipNextLoadAfterCreateRef.current) {
+      skipNextLoadAfterCreateRef.current = false;
       return;
     }
 
@@ -1921,7 +1940,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         )}
         <ChatPanel
           projectId={currentProjectId ?? undefined}
-          initialPrompt={projectId ? initialPrompt : null}
+          initialPrompt={currentProjectId ? initialPrompt : null}
           defaultOpen={shouldOpenAgentChat}
           onWorkflowUpdate={handleAgentWorkflowUpdate}
           onWorkflowNodeStatus={handleAgentWorkflowNodeStatus}
