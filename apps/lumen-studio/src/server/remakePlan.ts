@@ -243,7 +243,7 @@ Keep every scene suitable for 4s, 6s, or 8s video generation (Veo 3.1 constraint
 
 Each scene MUST have:
 - "dialogue": short on-screen subtitle / line label (will display as caption)
-- "voiceLine": the exact words spoken in the scene's voiceover (drives fish-tts; can equal dialogue if simple)
+- "voiceLine": the exact words spoken in the scene's voiceover (the video model will speak these as native audio; can equal dialogue if simple)
 - Both MUST be short enough to fit in durationSeconds at natural speaking pace.
 
 Character identity card (CRITICAL — drives lip-sync via @Name (VO, gender) says: "..." syntax in video prompts):

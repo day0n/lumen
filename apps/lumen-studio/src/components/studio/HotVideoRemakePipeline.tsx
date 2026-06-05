@@ -801,43 +801,6 @@ function VideoStage({
         })}
       </Section>
 
-      <Section title={copy.sectionVoice}>
-        {job.plan.scenes.map((scene) => {
-          const sliceKey = RemakeSliceKeys.sceneVoice(scene.index);
-          const sceneOutput = findSceneOutput(job.outputs.scenes, scene.index);
-          return (
-            <SlicePreview
-              key={sliceKey}
-              copy={copy}
-              title={`${copy.scene} ${scene.index}`}
-              subtitle={scene.voiceLine ?? scene.dialogue}
-              task={findTaskBySliceKey(tasks, sliceKey)}
-              outputUrl={sceneOutput?.voiceUrl}
-              kind="audio"
-              icon={<IconMusic size={16} />}
-            />
-          );
-        })}
-      </Section>
-
-      <Section title={copy.sectionMix}>
-        {job.plan.scenes.map((scene) => {
-          const sliceKey = RemakeSliceKeys.sceneMix(scene.index);
-          const sceneOutput = findSceneOutput(job.outputs.scenes, scene.index);
-          return (
-            <SlicePreview
-              key={sliceKey}
-              copy={copy}
-              title={`${copy.scene} ${scene.index}`}
-              subtitle={copy.sectionMix}
-              task={findTaskBySliceKey(tasks, sliceKey)}
-              outputUrl={sceneOutput?.mixUrl}
-              kind="video"
-            />
-          );
-        })}
-      </Section>
-
       <Section title={copy.sectionBgm}>
         <SlicePreview
           copy={copy}

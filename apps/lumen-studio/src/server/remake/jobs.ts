@@ -161,13 +161,9 @@ export async function confirmGate1(input: {
   const nextSettings: RemakeJobSettings | undefined = input.voiceLanguage
     ? { ...job.settings, language: input.voiceLanguage }
     : undefined;
-  // 用户切换语言时把声线一并钉死在 plan 里，避免 stages.ts pickDefaultVoice 再去猜。
-  const planWithVoice = input.voiceLanguage
-    ? { ...plan, voice: input.voiceLanguage === 'zh' ? 'AD_Sister' : 'Rachel' }
-    : plan;
 
   const updated = await repository.updateJob(input.jobId, input.ownerId, {
-    plan: toJobPlan(planWithVoice),
+    plan: toJobPlan(plan),
     breakdown: breakdown ? toJobBreakdown(breakdown) : undefined,
     ...(nextSettings ? { settings: nextSettings } : {}),
     gate1ConfirmedAt: new Date(),

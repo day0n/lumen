@@ -183,17 +183,16 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
 }
 
 // ============================================================
-// Video stage：每场视频 (i2v 喂分镜首帧) + 每场 TTS 口播 + 全片 BGM
-// scene-mix 不在这里展开，因为它依赖 scene-video + scene-voice 完成后才能跑，
-// 由 jobs.ts 在 video stage 内某场两个输入齐了时自动 enqueue。
-// 改 async：在派发任务前用 Gemini 多模态"看着分镜首帧"生成具体的视频 prompt。
+// Video stage：每场视频 (i2v 喂分镜首帧) + 全片 BGM
+// 照搬 主流 UGC 流水线：视频模型 (veo-3.1) 原生生成音频（包含口播），
+// 不再派发独立 fish-tts task，也不需要后期 scene-mix 把 TTS 叠上去 ——
+// 视频模型一次推理同时产出嘴型和对应音频，从根本上解决口型对不上的问题。
 // ============================================================
 
 export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTask[]> {
   const { generateVideoPrompt } = await import('./promptGenerators');
   const aspectRatio = job.settings.aspectRatio;
   const videoResolution = '720p'; // veo-3.1 约束：720p 才尊重 per-scene duration
-  const voice = job.plan.voice ?? pickDefaultVoice(job.plan.scriptText, job.settings.language);
 
   const generatedVideoPrompts = await Promise.all(
     job.plan.scenes.map((scene) => {
@@ -224,8 +223,8 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
     const characterTone = character?.tone ?? 'natural UGC tone';
     const voiceLine = (scene.voiceLine ?? scene.dialogue ?? '').trim();
 
-    // Fallback 也按 标准 UGC 语法写死（@Name (VO, gender) says）以保留口型同步信号。
-    const fallback = `Continue motion from the attached first-frame keyframe. Keep creator identity and product appearance stable. Scene ${scene.index}, ~${scene.durationSeconds}s. Action: ${scene.action}. Camera: ${scene.camera}. Speaker voice: @${characterName} — ${characterGender}, ${characterAge}, ${characterTone}. @${characterName} (VO, ${characterGender}) says: "${voiceLine}". Audio will be replaced in post; the on-screen mouth shapes must match the spoken line above.`;
+    // Fallback 也按 标准 UGC 语法写死（@Name (VO, gender) says）触发 veo native audio。
+    const fallback = `Continue motion from the attached first-frame keyframe. Keep creator identity and product appearance stable. Scene ${scene.index}, ~${scene.durationSeconds}s. Action: ${scene.action}. Camera: ${scene.camera}. Speaker voice: @${characterName} — ${characterGender}, ${characterAge}, ${characterTone}. @${characterName} (VO, ${characterGender}) says: "${voiceLine}". Generate the spoken audio natively from the model, with mouth shapes precisely matching the spoken line.`;
 
     tasks.push({
       stage: 'video',
@@ -242,16 +241,10 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
       },
     });
 
-    tasks.push({
-      stage: 'video',
-      sliceKey: SliceKeys.sceneVoice(scene.index),
-      handler: 'fish-tts',
-      input: makeInput({ prompt: voiceLine }),
-      settings: { voice },
-    });
+    // 不再派发 fish-tts —— veo-3.1 自带音频。
   }
 
-  // 全片 BGM 跟视频/口播并行，挂在同一个 stage 内
+  // 全片 BGM 跟视频并行
   tasks.push({
     stage: 'video',
     sliceKey: SliceKeys.bgm,
@@ -267,51 +260,18 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
   return tasks;
 }
 
-/**
- * 单场 scene-mix 的展开 —— 由 jobs.ts 在该场 video+voice 都 success 时调用。
- * 不在 expandVideoStage 里一次性返回，是因为它的 input 字段要 wait 那两个上游的 outputUrl。
- */
-export function planSceneMixTask(job: RemakeJobRecord, sceneIndex: number): PlannedTask | null {
-  const sceneOutput = job.outputs.scenes.find((entry) => entry.sceneIndex === sceneIndex);
-  if (!sceneOutput?.videoUrl || !sceneOutput.voiceUrl) return null;
-  const scene = job.plan.scenes.find((s) => s.index === sceneIndex);
-  if (!scene) return null;
-
-  return {
-    stage: 'video', // mix 仍归在 video stage 内（UI 把视频/口播/混音视为同一阶段）
-    sliceKey: SliceKeys.sceneMix(sceneIndex),
-    handler: 'lumen-video-edit',
-    input: makeInput({
-      video: sceneOutput.videoUrl,
-      videos: [sceneOutput.videoUrl],
-      audio: sceneOutput.voiceUrl,
-      audios: [sceneOutput.voiceUrl],
-      clips: [{ url: sceneOutput.videoUrl, title: scene.dialogue }],
-    }),
-    settings: {
-      aspectRatio: job.settings.aspectRatio,
-      resolution: '720p',
-      // 静音 veo 自带音轨，只播 TTS 口播
-      defaultClipVolume: 0,
-      bgmVolume: 1,
-      trimHeadSeconds: 0,
-      flashTransition: false,
-      renderSubtitles: false,
-    },
-  };
-}
-
 // ============================================================
-// Final stage：拼场景混音 + 叠 BGM + 字幕快闪
+// Final stage：直接拼每场视频（视频自带原生音轨）+ 叠 BGM + 字幕快闪
+// 照搬 主流 UGC 流水线：视频模型 native_audio 已包含口播，不再需要 scene-mix。
 // ============================================================
 
 export function expandFinalStage(job: RemakeJobRecord): PlannedTask | null {
-  // 必须所有场次 mix 都齐 + bgm 齐才能跑
-  const orderedMixUrls: string[] = [];
+  // 必须所有场次 video 都齐 + bgm 齐才能跑
+  const orderedVideoUrls: string[] = [];
   for (const scene of job.plan.scenes) {
-    const url = job.outputs.scenes.find((entry) => entry.sceneIndex === scene.index)?.mixUrl;
+    const url = job.outputs.scenes.find((entry) => entry.sceneIndex === scene.index)?.videoUrl;
     if (!url) return null;
-    orderedMixUrls.push(url);
+    orderedVideoUrls.push(url);
   }
   const bgm = job.outputs.bgmUrl;
   if (!bgm) return null;
@@ -323,8 +283,8 @@ export function expandFinalStage(job: RemakeJobRecord): PlannedTask | null {
     sliceKey: SliceKeys.final,
     handler: 'lumen-video-edit',
     input: makeInput({
-      videos: orderedMixUrls,
-      clips: orderedMixUrls.map((url, i) => ({
+      videos: orderedVideoUrls,
+      clips: orderedVideoUrls.map((url, i) => ({
         url,
         ...(clipTitles[i] ? { title: clipTitles[i]! } : {}),
       })),
@@ -337,6 +297,7 @@ export function expandFinalStage(job: RemakeJobRecord): PlannedTask | null {
       trimHeadSeconds: 0.2,
       flashTransition: true,
       renderSubtitles: true,
+      // 视频自带口播音轨保留为主声道（默认 1）；BGM 压低到 0.28 当背景。
       bgmVolume: 0.28,
       clipTitles,
     },
@@ -409,7 +370,7 @@ export function deriveJobStageStatuses(
   const videoComputed = videoTasks.length > 0 ? deriveStageStatus(videoTasks) : 'ready';
   // video stage 还需要 mix 全部 success 才能算 success
   const videoGated: RemakeStageStatus =
-    storyboardGated !== 'success' ? 'locked' : videoFullStatus(job, videoTasks, videoComputed);
+    storyboardGated !== 'success' ? 'locked' : videoComputed;
 
   const finalTasks = tasksOf('final');
   const finalComputed = finalTasks.length > 0 ? deriveStageStatus(finalTasks) : 'ready';
@@ -423,28 +384,4 @@ export function deriveJobStageStatuses(
     video: videoGated,
     final,
   };
-}
-
-function videoFullStatus(
-  job: RemakeJobRecord,
-  videoTasks: RemakeTaskRecord[],
-  computed: RemakeStageStatus,
-): RemakeStageStatus {
-  if (computed !== 'success') return computed;
-  // computed=success 意味着已 dispatch 的 task 全 success，但 mix 可能还没全部生出来
-  const expectedMixCount = job.plan.scenes.length;
-  const mixSuccessCount = videoTasks.filter(
-    (task) => task.sliceKey.startsWith('scene-mix-') && task.status === 'success',
-  ).length;
-  return mixSuccessCount >= expectedMixCount ? 'success' : 'running';
-}
-
-// ============================================================
-// 工具：默认声线（与 buildRemakeCanvas 历史行为一致）
-// ============================================================
-
-function pickDefaultVoice(scriptText: string, language: 'zh' | 'en'): string {
-  if (language === 'zh') return 'AD_Sister';
-  if (language === 'en') return 'Rachel';
-  return /[\u4e00-\u9fff]/.test(scriptText) ? 'AD_Sister' : 'Rachel';
 }
