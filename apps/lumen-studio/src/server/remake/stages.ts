@@ -1,4 +1,4 @@
-// 勿加 server-only：由 jobs.ts 在 server.ts 启动链上加载。
+// 勿加 server-only：server.ts 经 eventMirror/taskOutcome 在进程启动时加载本模块。
 import type {
   RemakeJobRecord,
   RemakeJobSceneOutput,
@@ -8,8 +8,6 @@ import type {
   RemakeTaskInput,
   RemakeTaskRecord,
 } from '@lumen/db';
-
-import { generateStoryboardPrompt, generateVideoPrompt } from './promptGenerators';
 
 /**
  * Stage → Task 展开逻辑（纯函数）。
@@ -149,6 +147,7 @@ export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
 // ============================================================
 
 export async function expandStoryboardStage(job: RemakeJobRecord): Promise<PlannedTask[]> {
+  const { generateStoryboardPrompt } = await import('./promptGenerators');
   const aspectRatio = job.settings.aspectRatio;
   const creatorLock = job.outputs.creatorLockUrl ?? null;
   const productLock = job.outputs.productLockUrl ?? null;
@@ -191,6 +190,7 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
 // ============================================================
 
 export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTask[]> {
+  const { generateVideoPrompt } = await import('./promptGenerators');
   const aspectRatio = job.settings.aspectRatio;
   const videoResolution = '720p'; // veo-3.1 约束：720p 才尊重 per-scene duration
   const voice = job.plan.voice ?? pickDefaultVoice(job.plan.scriptText, job.settings.language);
