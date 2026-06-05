@@ -1,12 +1,12 @@
 'use client';
 
+import { VoiceInputControl } from '@/components/voice/VoiceInputControl';
+import { appendSpeechTranscript, useSpeechToText } from '@/hooks/use-speech-to-text';
 import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import {
   IconArrowUp,
   IconArrowUpRight,
-  IconMicrophone,
-  IconMicrophoneOff,
   IconPhotoPlus,
   IconPlus,
   IconSparkles,
@@ -69,6 +69,7 @@ export function Hero() {
     supported: speechSupported,
     error: speechError,
     toggle,
+    cancel,
   } = useSpeechToText({
     language: locale === 'zh' ? 'zh-CN' : 'en-US',
     errors: {
@@ -77,11 +78,7 @@ export function Hero() {
       speechFailed: t('home.speechFailed'),
     },
     onTranscript: (chunk) => {
-      setValue((current) => {
-        const trimmed = current.trimEnd();
-        const separator = trimmed.length > 0 && !/[，。！？,.!?]$/.test(trimmed) ? ' ' : '';
-        return `${trimmed}${separator}${chunk}`.trimStart();
-      });
+      setValue((current) => appendSpeechTranscript(current, chunk));
     },
   });
 
@@ -200,13 +197,6 @@ export function Hero() {
     router.push(localePath(target));
   };
 
-  const voiceLabel = !speechSupported
-    ? t('home.voiceUnsupported')
-    : speechError
-      ? speechError
-      : listening
-        ? t('home.voiceStop')
-        : t('home.voiceInput');
   const quickActions = ta('home.quickActions');
 
   const handleChatPanelPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
@@ -337,30 +327,20 @@ export function Hero() {
               >
                 <IconPhotoPlus size={17} stroke={2.1} />
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!speechSupported) return;
-                  toggle();
+              <VoiceInputControl
+                listening={listening}
+                supported={speechSupported}
+                error={speechError}
+                variant="hero"
+                labels={{
+                  voiceInput: t('home.voiceInput'),
+                  voiceStop: t('home.voiceStop'),
+                  voiceUnsupported: t('home.voiceUnsupported'),
+                  voiceCancel: t('home.voiceCancel'),
                 }}
-                disabled={!speechSupported}
-                aria-pressed={listening}
-                aria-label={voiceLabel}
-                title={voiceLabel}
-                className={
-                  listening
-                    ? 'flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-[#ff5fbf]/22 text-[#ff5fbf] ring-1 ring-[#ff5fbf]/55 transition-colors'
-                    : 'flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45'
-                }
-              >
-                {listening ? (
-                  <IconMicrophone size={17} stroke={2.1} className="animate-pulse" />
-                ) : speechSupported ? (
-                  <IconMicrophone size={17} stroke={2.1} />
-                ) : (
-                  <IconMicrophoneOff size={17} stroke={2.1} />
-                )}
-              </button>
+                onToggle={toggle}
+                onCancel={cancel}
+              />
 
               <div className="ml-auto flex items-center gap-2">
                 <button
@@ -437,137 +417,6 @@ export function Hero() {
       </motion.div>
     </section>
   );
-}
-
-interface SpeechRecognitionEventLike extends Event {
-  results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
-  resultIndex: number;
-}
-
-interface SpeechRecognitionErrorEventLike extends Event {
-  error: string;
-}
-
-interface SpeechRecognitionLike extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
-  onend: (() => void) | null;
-}
-
-interface SpeechRecognitionConstructor {
-  new (): SpeechRecognitionLike;
-}
-
-function useSpeechToText(options: {
-  language: string;
-  errors: {
-    micPermission: string;
-    noSpeech: string;
-    speechFailed: string;
-  };
-  onTranscript: (chunk: string) => void;
-}) {
-  const { errors, language, onTranscript } = options;
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const callbackRef = useRef(onTranscript);
-  const errorsRef = useRef(errors);
-  const [listening, setListening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [supported, setSupported] = useState(false);
-
-  callbackRef.current = onTranscript;
-  errorsRef.current = errors;
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const Ctor =
-      (
-        window as unknown as {
-          SpeechRecognition?: SpeechRecognitionConstructor;
-          webkitSpeechRecognition?: SpeechRecognitionConstructor;
-        }
-      ).SpeechRecognition ??
-      (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionConstructor })
-        .webkitSpeechRecognition;
-
-    if (!Ctor) {
-      setSupported(false);
-      return;
-    }
-    setSupported(true);
-
-    const recognition = new Ctor();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = language;
-
-    recognition.onresult = (event) => {
-      const results = Array.from(event.results as ArrayLike<{ 0: { transcript: string } }>);
-      const transcript = results
-        .map((result) => result[0]?.transcript ?? '')
-        .join('')
-        .trim();
-      if (transcript) callbackRef.current(transcript);
-    };
-    recognition.onerror = (event) => {
-      const code = event.error;
-      if (code === 'not-allowed' || code === 'service-not-allowed') {
-        setError(errorsRef.current.micPermission);
-      } else if (code === 'no-speech') {
-        setError(errorsRef.current.noSpeech);
-      } else if (code === 'aborted') {
-        setError(null);
-      } else {
-        setError(errorsRef.current.speechFailed);
-      }
-      setListening(false);
-    };
-    recognition.onend = () => {
-      setListening(false);
-    };
-
-    recognitionRef.current = recognition;
-
-    return () => {
-      recognition.onresult = null;
-      recognition.onerror = null;
-      recognition.onend = null;
-      try {
-        recognition.abort();
-      } catch {
-        // ignore
-      }
-      recognitionRef.current = null;
-    };
-  }, [language]);
-
-  const toggle = () => {
-    const recognition = recognitionRef.current;
-    if (!recognition) return;
-    if (listening) {
-      try {
-        recognition.stop();
-      } catch {
-        // already stopped
-      }
-      return;
-    }
-    setError(null);
-    try {
-      recognition.start();
-      setListening(true);
-    } catch {
-      // start() throws if already running
-    }
-  };
-
-  return { listening, supported, error, toggle };
 }
 
 async function blobUrlToDataUrl(blobUrl: string): Promise<string> {

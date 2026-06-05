@@ -8,7 +8,9 @@
  */
 
 import { MobileSheet } from '@/components/mobile';
+import { VoiceInputControl } from '@/components/voice/VoiceInputControl';
 import { LumenMark } from '@/components/ui/LumenMark';
+import { appendSpeechTranscript, useSpeechToText } from '@/hooks/use-speech-to-text';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
@@ -21,7 +23,6 @@ import {
   IconExternalLink,
   IconLoader2,
   IconMessages,
-  IconMicrophone,
   IconPaperclip,
   IconPhoto,
   IconPlayerStopFilled,
@@ -1746,7 +1747,20 @@ function Composer({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onStop: () => void;
 }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const { listening, supported, error: speechError, toggle, cancel } = useSpeechToText({
+    language: locale === 'zh' ? 'zh-CN' : 'en-US',
+    errors: {
+      micPermission: t('home.micPermission'),
+      noSpeech: t('home.noSpeech'),
+      speechFailed: t('home.speechFailed'),
+    },
+    onTranscript: (chunk) => {
+      onDraftChange(appendSpeechTranscript(draftRef.current, chunk));
+    },
+  });
   const canSend = Boolean(draft.trim()) || attachments.length > 0;
 
   return (
@@ -1853,14 +1867,21 @@ function Composer({
               onChange={onFileChange}
             />
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-label={t('home.voiceInput')}
-                title={t('home.voiceInput')}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-white/44 transition-colors hover:bg-white/[0.07] hover:text-white/78"
-              >
-                <IconMicrophone size={16} stroke={2.1} />
-              </button>
+              <VoiceInputControl
+                listening={listening}
+                supported={supported}
+                error={speechError}
+                disabled={busy || uploading}
+                variant="composer"
+                labels={{
+                  voiceInput: t('home.voiceInput'),
+                  voiceStop: t('home.voiceStop'),
+                  voiceUnsupported: t('home.voiceUnsupported'),
+                  voiceCancel: t('home.voiceCancel'),
+                }}
+                onToggle={toggle}
+                onCancel={cancel}
+              />
               <SendOrStopButton
                 busy={busy}
                 canSend={canSend}
