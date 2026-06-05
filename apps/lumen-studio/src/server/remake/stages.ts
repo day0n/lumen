@@ -151,12 +151,14 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
   const aspectRatio = job.settings.aspectRatio;
   const creatorLock = job.outputs.creatorLockUrl ?? null;
   const productLock = job.outputs.productLockUrl ?? null;
+  const productName = job.reference.productName ?? job.reference.label;
 
   const prompts = await Promise.all(
     job.plan.scenes.map((scene) =>
       generateStoryboardPrompt({
         scene,
         character: job.plan.character,
+        productName,
         creatorLockUrl: creatorLock,
         productLockUrl: productLock,
         aspectRatio,
@@ -166,7 +168,10 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
 
   return job.plan.scenes.map((scene, i) => {
     const generated = prompts[i];
-    const fallback = `First-frame keyframe of Scene ${scene.index}. ${scene.action}. Camera: ${scene.camera}. Feature the locked creator holding/wearing the locked product; keep their identity and the product's appearance consistent with the reference images. ${aspectRatio} vertical composition, photorealistic UGC look.`;
+    // Fallback：不描述实体视觉细节，只用 token 引用。
+    const characterToken = `@${(job.plan.character?.name ?? 'creator').replace(/\s+/g, '_')}`;
+    const productToken = `@${productName.toLowerCase().replace(/\s+/g, '-')}`;
+    const fallback = `First-frame keyframe for Scene ${scene.index}. ${characterToken} performs the action: ${scene.action}. Camera: ${scene.camera}. ${productToken} is positioned naturally in the shot. Photorealistic UGC, vertical ${aspectRatio} composition. The reference images attached define the appearance of ${characterToken} and ${productToken} — do not invent appearance.`;
 
     return {
       stage: 'storyboard',
@@ -174,8 +179,11 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
       handler: 'nano-banana2',
       input: makeInput({
         prompt: generated ?? fallback,
-        image: creatorLock,
-        lastFrameImage: productLock,
+        // 把 product 放第一张，creator 放第二张：
+        // nano-banana2 (Gemini 3 Pro Image) 对第一张图的视觉权重更高，
+        // 让 product 主导避免商品被弱化。Lumen 靠位置补偿。
+        image: productLock,
+        lastFrameImage: creatorLock,
       }),
       settings: { aspectRatio },
     };
@@ -184,7 +192,7 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
 
 // ============================================================
 // Video stage：每场视频 (i2v 喂分镜首帧) + 全片 BGM
-// 照搬 主流 UGC 流水线：视频模型 (veo-3.1) 原生生成音频（包含口播），
+// 视频模型 (veo-3.1) 原生生成音频（包含口播），
 // 不再派发独立 fish-tts task，也不需要后期 scene-mix 把 TTS 叠上去 ——
 // 视频模型一次推理同时产出嘴型和对应音频，从根本上解决口型对不上的问题。
 // ============================================================
@@ -193,6 +201,7 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
   const { generateVideoPrompt } = await import('./promptGenerators');
   const aspectRatio = job.settings.aspectRatio;
   const videoResolution = '720p'; // veo-3.1 约束：720p 才尊重 per-scene duration
+  const productName = job.reference.productName ?? job.reference.label;
 
   const generatedVideoPrompts = await Promise.all(
     job.plan.scenes.map((scene) => {
@@ -202,6 +211,7 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
       return generateVideoPrompt({
         scene,
         character: job.plan.character,
+        productName,
         storyboardUrl: sceneImageUrl ?? null,
         aspectRatio,
       });
@@ -217,14 +227,23 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
     )?.imageUrl;
 
     const character = job.plan.character;
-    const characterName = character?.name?.trim() || 'Speaker';
+    const characterName = character?.name?.trim() || 'creator';
+    const characterToken = `@${characterName.replace(/\s+/g, '_')}`;
+    const productToken = `@${productName.toLowerCase().replace(/\s+/g, '-')}`;
     const characterGender = character?.gender ?? 'unspecified';
     const characterAge = character?.ageRange ?? 'adult';
-    const characterTone = character?.tone ?? 'natural UGC tone';
+    const characterTone = character?.tone ?? 'warm friendly UGC creator';
     const voiceLine = (scene.voiceLine ?? scene.dialogue ?? '').trim();
 
-    // Fallback 也按 标准 UGC 语法写死（@Name (VO, gender) says）触发 veo native audio。
-    const fallback = `Continue motion from the attached first-frame keyframe. Keep creator identity and product appearance stable. Scene ${scene.index}, ~${scene.durationSeconds}s. Action: ${scene.action}. Camera: ${scene.camera}. Speaker voice: @${characterName} — ${characterGender}, ${characterAge}, ${characterTone}. @${characterName} (VO, ${characterGender}) says: "${voiceLine}". Generate the spoken audio natively from the model, with mouth shapes precisely matching the spoken line.`;
+    // Fallback 严格按统一语法（@-token + Speaker voice + (VO, gender) says）。
+    // 不再描述实体视觉细节 —— @keyframe 已喂图。
+    const fallback = `Continue motion forward from @keyframe. Keep ${characterToken}'s identity and ${productToken}'s appearance stable across the clip. Over ~${scene.durationSeconds}s, ${characterToken} performs: ${scene.action}. Camera: ${scene.camera}.
+
+Speaker voice: ${characterToken} — ${characterGender}, ${characterAge}, ${characterTone}.
+
+${characterToken} (VO, ${characterGender}) says: "${voiceLine}"
+
+Generate the spoken audio natively in ${characterToken}'s voice. The on-screen mouth shapes must match the spoken line above.`;
 
     tasks.push({
       stage: 'video',
@@ -240,11 +259,8 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
         duration: scene.durationSeconds,
       },
     });
-
-    // 不再派发 fish-tts —— veo-3.1 自带音频。
   }
 
-  // 全片 BGM 跟视频并行
   tasks.push({
     stage: 'video',
     sliceKey: SliceKeys.bgm,
@@ -262,7 +278,7 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
 
 // ============================================================
 // Final stage：直接拼每场视频（视频自带原生音轨）+ 叠 BGM + 字幕快闪
-// 照搬 主流 UGC 流水线：视频模型 native_audio 已包含口播，不再需要 scene-mix。
+// 视频模型 native_audio 已包含口播，不再需要 scene-mix。
 // ============================================================
 
 export function expandFinalStage(job: RemakeJobRecord): PlannedTask | null {

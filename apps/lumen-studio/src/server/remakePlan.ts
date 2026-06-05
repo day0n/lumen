@@ -46,12 +46,12 @@ export interface RemakePlan {
   audienceTags: string[];
   creatorPrompt?: string;
   productPrompt?: string;
-  /** 已被 generateStoryboardPrompt 取代：plan 阶段不再预生成（参考实现 模型是在 stage 跑前看图生成 prompt） */
+  /** 已被 generateStoryboardPrompt 取代：plan 阶段不再预生成（在 stage 跑前看图动态生成 prompt） */
   sceneImagePrompts?: string[];
   /** 已被 generateVideoPrompt 取代 */
   sceneVideoPrompts?: string[];
   bgmPrompt?: string;
-  /** 主流 UGC 风格角色身份卡，video prompt 会用它生成 @Name (VO, gender) says 语法锁口型 */
+  /** 角色身份卡，video prompt 会用它生成 @Name (VO, gender) says 语法锁口型 */
   character?: RemakeCharacter;
 }
 
@@ -143,8 +143,8 @@ export function buildFallbackPlan(input: {
         ? ['TikTok Shop 买家', '价格敏感用户', '效果导向用户']
         : ['TikTok Shop buyers', 'Value seekers', 'Result-driven shoppers'],
     creatorPrompt:
-      'Photorealistic UGC creator identity reference sheet, natural skin, consistent face, neutral background, standing pose, close-up face, hand demonstration pose.',
-    productPrompt: `Create a crisp multi-view reference sheet for the uploaded ${product} product image: front, side, three-quarter, detail macro. Preserve exact shape, color, material, and branding.`,
+      'A multi-panel character reference sheet on a plain white background with subtle physical shadow. Three rows: row 1 (3 panels) front, three-quarter, and side standing portraits at uniform scale; row 2 (3 panels) facial expression close-ups (neutral, smiling, speaking); row 3 (3 panels) action poses for UGC product demonstration (holding object near face, presenting object at chest, gesturing with one hand). The reference image attached defines the creator\'s exact appearance — face, hair, body shape, skin tone, outfit. Faithfully replicate that identity in every panel; do NOT invent or alter face, hair color, skin tone, or outfit. Photorealistic, soft natural lighting, neutral grey background, identity locked across all panels. No subtitles, no UI text, no name labels.',
+    productPrompt: `A multi-panel product reference sheet on a plain white background with subtle physical shadow. Three rows: row 1 (3 panels) front, three-quarter, and back orthographic packshots at uniform scale; row 2 (3 panels) signature material/detail close-up, label/branding close-up, and in-use or open state; row 3 (3 panels) in-hand grip, product placed on a plain surface next to a common object for size, and tabletop arrangement (cropped above wrist, no face). The reference image attached defines the product's exact identity — silhouette, proportions, material, finish, color, logo and label placement, distinctive construction details. Faithfully replicate that identity in every panel; do NOT invent or alter colors, branding, label, or shape. Photorealistic studio lighting, crisp focus, identity locked across all panels. No subtitles, no UI text, no marketing claims, no logos that are not part of the product itself.`,
     bgmPrompt:
       'Instrumental modern TikTok Shop product ad music, clean upbeat luxury feel, no vocals, steady rhythm, suitable for UGC product demonstration.',
     character: {
@@ -273,8 +273,8 @@ Return this exact JSON shape, no markdown:
   "scriptText": "full script users can review at Gate 1",
   "sellingPoints": ["3 to 5 product selling points"],
   "audienceTags": ["2 to 5 audience tags"],
-  "creatorPrompt": "photorealistic creator identity lock prompt",
-  "productPrompt": "product multi-view lock prompt using uploaded product images",
+  "creatorPrompt": "Multi-panel character reference sheet prompt. The reference image is attached to the i2i node and defines the creator's exact face/hair/body. DO NOT describe specific facial features, hair color, skin tone, or outfit details — that conflicts with the reference. Only describe sheet LAYOUT (rows, panels), camera angles, expressions, and poses. End with: 'faithfully replicating the creator's actual identity as shown in the reference'.",
+  "productPrompt": "Multi-panel product reference sheet prompt. The product image is attached to the i2i node and defines the product's exact silhouette/material/color/branding. DO NOT describe specific colors, exact material finish, exact label/logo design, exact typography — that conflicts with the reference. Only describe sheet LAYOUT (3 rows: orthographic packshots / states & details / scale references), camera angles, and composition. End with: 'faithfully replicating the product's actual appearance, material, color, branding, and design as shown in the reference'.",
   "bgmPrompt": "instrumental Suno music prompt, no vocals",
   "character": {"name": "Mia", "gender": "female", "ageRange": "22-30", "tone": "warm friendly UGC creator"},
   "scenes": [

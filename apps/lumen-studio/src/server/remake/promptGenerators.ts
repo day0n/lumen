@@ -4,22 +4,24 @@ import type { RemakeJobCharacter, RemakeJobPlan, RemakeJobScene } from '@lumen/d
 import { GeminiNotConfiguredError, getStudioGoogleClient } from '../gemini';
 
 /**
- * 主流 UGC 风格的 prompt 生成器：在 stage 跑前用 Gemini 多模态"看着图"
- * 写出具体的分镜 / 视频 prompt。
+ * Storyboard / Video prompt 生成器。
  *
- * 核心改进 vs. plan-time 一次性写死：
- * - storyboard prompt 喂 productLock + creatorLock 两张图 → 模型能写出
- *   "the white pump bottle from reference"，i2i 生成的分镜对产品保真度更高
- * - video prompt 喂分镜首帧 → 模型能写出和首帧严格对齐的运镜，并按 OC
- *   语法 `Speaker voice: @Name — [gender], [age], [tone].` +
- *   `@Name (VO, [gender]) says: "..."` 给视频模型生成对应口型
+ * 关键原则（反直觉但正确）：
+ * - reference image 已经被作为 image socket 喂进生成模型，模型会"看着图"画。
+ * - 所以 prompt 里 **不能** 再描述实体的视觉细节（脸/颜色/品牌/包装），
+ *   一描述就会和 reference image 冲突，模型在"听文字"和"看图"之间折中，
+ *   结果两边都不对。
+ * - 实体只能用 name token 引用：@Name / @keyframe / @product-name。
+ * - prompt 只描述：场景构图 / 相机 / 角色动作 / 产品位置和状态 /
+ *   空间关系 / 光影氛围。
  *
- * Gemini 不可用 / 调用失败 → 返回 null，调用方走 fallback 文字 prompt。
+ * 这两个生成器在每次 stage 跑前由 stages.ts 调用，输出的 prompt 直接喂下游模型。
  */
 
 interface GenerateOptions {
   scene: RemakeJobScene;
   character?: RemakeJobCharacter;
+  productName: string;
   aspectRatio: string;
 }
 
@@ -35,7 +37,7 @@ interface VideoOptions extends GenerateOptions {
 const MAX_BYTES = 8 * 1024 * 1024;
 
 export async function generateStoryboardPrompt(opts: StoryboardOptions): Promise<string | null> {
-  const { scene, character, creatorLockUrl, productLockUrl, aspectRatio } = opts;
+  const { scene, character, productName, creatorLockUrl, productLockUrl, aspectRatio } = opts;
 
   const imageParts = await Promise.all([
     fetchInlineImage(creatorLockUrl),
@@ -44,73 +46,83 @@ export async function generateStoryboardPrompt(opts: StoryboardOptions): Promise
   const validParts = imageParts.filter((p): p is NonNullable<typeof p> => p !== null);
   if (!validParts.length) return null;
 
-  const characterLine = character
-    ? `Character: @${character.name} — ${character.gender}, ${character.ageRange}, ${character.tone}. Use the locked creator face from the reference image.`
-    : 'Use the locked creator face from the first reference image.';
+  const characterToken = `@${(character?.name?.trim() || 'creator').replace(/\s+/g, '_')}`;
+  const productToken = `@${productName.trim().toLowerCase().replace(/\s+/g, '-')}`;
 
-  const prompt = `You are writing the image generation prompt for a single first-frame keyframe of a UGC short ad.
-
-I am attaching reference images:
-${creatorLockUrl ? '- Image 1: locked creator multi-view reference sheet (exact face / body / style to preserve)\n' : ''}${productLockUrl ? `- Image ${creatorLockUrl ? 2 : 1}: locked product multi-view reference sheet (exact shape / colour / branding to preserve)\n` : ''}
-
-Scene info:
-- Scene index: ${scene.index}
+  const meta = `Scene ${scene.index}
 - Action: ${scene.action}
 - Camera: ${scene.camera}
 - On-screen caption: ${scene.dialogue}
 - Aspect ratio: ${aspectRatio}
-${characterLine}
+- Character: ${characterToken} (${character?.gender ?? 'unspecified'}, ${character?.ageRange ?? 'adult'}, ${character?.tone ?? 'natural UGC tone'})
+- Product: ${productToken}`;
 
-Write a SINGLE image-generation prompt (3-6 sentences, English) that:
-1. Describes exactly what the first frame must look like, referencing the actual creator's face and the actual product's shape/colour/branding from the images attached.
-2. States the camera framing.
-3. Says it must be photorealistic UGC, vertical ${aspectRatio} composition, consistent identity across scenes.
-4. Does NOT mention text overlays or captions; just the visual.
+  const prompt = `You are writing the image-generation prompt for ONE first-frame keyframe of a UGC short ad.
 
-Return ONLY the prompt text, no preamble, no quotes, no markdown.`;
+REFERENCE IMAGES ARE ATTACHED:
+- Image 1 = locked creator multi-view reference sheet
+- Image 2 = locked product multi-view reference sheet
+
+CRITICAL RULES (follow exactly):
+1. The downstream image-generation node ALSO receives these same reference images as image inputs. Therefore, do NOT re-describe entity visual details in your prompt. NO character appearance (hair color, skin tone, outfit details, face shape). NO product appearance (packaging color, branding design, label, material, logo). The reference images already define their appearance — re-describing them will conflict with the references and produce incorrect results.
+2. Refer to entities by NAME TOKEN ONLY: ${characterToken} for the creator, ${productToken} for the product. Treat these as opaque identifiers — do not unpack what they look like.
+3. Focus ONLY on: scene composition, camera angle / shot type, the creator's POSE and ACTION, the product's POSITION and STATE in frame, spatial relationships, lighting and atmosphere.
+4. The output must be photorealistic UGC, vertical ${aspectRatio} composition, single frame (this is one keyframe, not a sheet).
+5. NO subtitles, NO UI text, NO on-screen text overlays, NO logos that are not part of the product itself.
+
+${meta}
+
+Write ONE compact paragraph (3-5 sentences). Return ONLY the prompt text — no preamble, no quotes, no markdown, no headings.`;
 
   return runGemini(prompt, validParts);
 }
 
 export async function generateVideoPrompt(opts: VideoOptions): Promise<string | null> {
-  const { scene, character, storyboardUrl, aspectRatio } = opts;
+  const { scene, character, productName, storyboardUrl, aspectRatio } = opts;
   if (!storyboardUrl) return null;
 
   const part = await fetchInlineImage(storyboardUrl);
   if (!part) return null;
 
-  const characterName = character?.name?.trim() || 'Speaker';
+  const characterName = character?.name?.trim() || 'creator';
+  const characterToken = `@${characterName.replace(/\s+/g, '_')}`;
+  const productToken = `@${productName.trim().toLowerCase().replace(/\s+/g, '-')}`;
   const characterGender = character?.gender ?? 'unspecified';
   const characterAge = character?.ageRange ?? 'adult';
-  const characterTone = character?.tone ?? 'natural UGC tone';
+  const characterTone = character?.tone ?? 'warm friendly UGC creator';
 
   const voiceLine = (scene.voiceLine ?? scene.dialogue ?? '').trim();
 
   const prompt = `You are writing the video-generation prompt for ONE scene of a vertical UGC short ad.
 
-I am attaching the first-frame keyframe (Image 1). The video MUST start exactly from this frame and continue motion forward.
+@keyframe IS THE STORYBOARD IMAGE ATTACHED (Image 1). The video MUST start exactly from this keyframe and continue motion forward.
 
-Scene info:
-- Scene index: ${scene.index}
-- Duration: ~${scene.durationSeconds}s
-- Action: ${scene.action}
+CRITICAL RULES:
+1. The downstream video model ALSO receives @keyframe as an image input. Do NOT re-describe what is visible in the keyframe (the creator's face, the product's shape/colour/packaging, the environment) — the keyframe already defines all of those. Re-describing will conflict with the visual reference.
+2. Refer to entities by NAME TOKEN ONLY: ${characterToken} for the creator, ${productToken} for the product. The literal token "@keyframe" refers to the input image.
+3. Describe ONLY: how motion continues from @keyframe, camera movement, ${characterToken}'s action and gesture, ${productToken}'s motion / state change, spatial dynamics. No appearance descriptions.
+4. The video model natively generates audio. The character must visibly speak the line below; the model will synthesise the matching voice in one pass.
+
+REQUIRED OUTPUT STRUCTURE (write exactly in this order, multiple short paragraphs):
+
+Paragraph 1 — opening:
+"Continue motion forward from @keyframe. Keep ${characterToken}'s identity and ${productToken}'s appearance stable across the clip."
+
+Paragraph 2 — motion description (1-2 sentences): how the action and camera evolve over ~${scene.durationSeconds}s, grounded in what the keyframe already shows.
+- Action context: ${scene.action}
 - Camera: ${scene.camera}
 - Aspect ratio: ${aspectRatio}
 
-Character voice card (use this VERBATIM in the output prompt — drives the model's lip-sync):
-- Speaker voice: @${characterName} — ${characterGender}, ${characterAge}, ${characterTone}.
+Paragraph 3 — voice identity (MANDATORY, copy this line VERBATIM with no edits):
+Speaker voice: ${characterToken} — ${characterGender}, ${characterAge}, ${characterTone}.
 
-Spoken line for this scene: "${voiceLine}"
+Paragraph 4 — spoken delivery (MANDATORY, copy VERBATIM, do not paraphrase the line in quotes):
+${characterToken} (VO, ${characterGender}) says: "${voiceLine}"
 
-Write a SINGLE video-generation prompt (4-8 sentences, English) that follows this STRICT template:
+Paragraph 5 — closing:
+"Generate the spoken audio natively in ${characterToken}'s voice. The on-screen mouth shapes must match the spoken line above."
 
-1. Open with: "Continue motion from the attached first-frame keyframe. Keep creator identity and product appearance stable."
-2. Then describe the action and camera in 1-2 sentences, grounded in what you see in the keyframe.
-3. Include this line VERBATIM (do not change punctuation): Speaker voice: @${characterName} — ${characterGender}, ${characterAge}, ${characterTone}.
-4. Include this line VERBATIM (do not change punctuation): @${characterName} (VO, ${characterGender}) says: "${voiceLine}"
-5. End with: "Audio will be replaced in post; the on-screen mouth shapes must match the spoken line above."
-
-Return ONLY the prompt text, no preamble, no quotes, no markdown.`;
+Return ONLY the prompt text built from the structure above. No preamble, no quotes around the whole thing, no markdown, no headings, no commentary.`;
 
   return runGemini(prompt, [part]);
 }
@@ -171,5 +183,4 @@ function guessMime(url: string): string | null {
   return null;
 }
 
-// 暴露 plan 类型给 stages.ts，避免它再 import packages/db 里的子类型
 export type { RemakeJobPlan };
