@@ -196,6 +196,57 @@ body::before {
       inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
 
+  .agent-composer-star {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    transition: box-shadow 180ms var(--easing-standard);
+  }
+
+  .agent-composer-star::before,
+  .agent-composer-star::after {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    width: 300%;
+    height: 54%;
+    pointer-events: none;
+    border-radius: 9999px;
+    opacity: 0;
+    background: radial-gradient(
+      circle,
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(255, 255, 255, 0.52) 10%,
+      rgba(255, 255, 255, 0) 40%
+    );
+    transition: opacity 180ms var(--easing-standard);
+  }
+
+  .agent-composer-star::before {
+    right: -250%;
+    bottom: -13px;
+  }
+
+  .agent-composer-star::after {
+    top: -13px;
+    left: -250%;
+  }
+
+  .agent-composer-star-active {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 0 22px rgba(255, 255, 255, 0.14), 0 0 46px
+      rgba(255, 255, 255, 0.08);
+  }
+
+  .agent-composer-star-active::before {
+    opacity: 0.95;
+    animation: agent-star-border-bottom 5s linear infinite alternate;
+  }
+
+  .agent-composer-star-active::after {
+    opacity: 0.72;
+    animation: agent-star-border-top 5s linear infinite alternate;
+  }
+
   .material-category-glow {
     --edge-proximity: 0;
     --cursor-angle: 45deg;
@@ -357,6 +408,28 @@ body::before {
     );
     background-size: 200% 100%;
     animation: shimmer 6s linear infinite;
+  }
+}
+
+@keyframes agent-star-border-bottom {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0.25;
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes agent-star-border-top {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0.25;
+    transform: translateX(100%);
   }
 }
 

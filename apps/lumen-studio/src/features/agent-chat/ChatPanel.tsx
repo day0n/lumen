@@ -1757,100 +1757,117 @@ function Composer({
         mobile ? 'pb-[max(12px,env(safe-area-inset-bottom))]' : 'pb-3',
       )}
     >
-      <div className="rounded-[18px] border border-white/[0.08] bg-[#202020] px-3 py-3 shadow-[0_18px_60px_-46px_rgba(0,0,0,0.92)] transition-colors focus-within:border-white/[0.16]">
-        {attachments.length > 0 ? (
-          <AttachmentStrip attachments={attachments} onRemoveAttachment={onRemoveAttachment} />
-        ) : null}
+      <div
+        className={cn(
+          'agent-composer-star rounded-[20px] p-px',
+          busy ? 'agent-composer-star-active' : '',
+        )}
+      >
+        <div
+          className={cn(
+            'relative z-10 rounded-[18px] border border-white/[0.08] bg-[#202020] px-3 py-3 shadow-[0_18px_60px_-46px_rgba(0,0,0,0.92)] transition-colors focus-within:border-white/[0.16]',
+            busy ? 'border-white/[0.14]' : '',
+          )}
+        >
+          {attachments.length > 0 ? (
+            <AttachmentStrip attachments={attachments} onRemoveAttachment={onRemoveAttachment} />
+          ) : null}
 
-        {uploadError ? (
-          <div className="mb-2 rounded-lg border border-[#ff7b8a]/18 bg-[#ff7b8a]/8 px-2.5 py-1.5 text-[12px] leading-5 text-[#ffb6bf]">
-            {uploadError}
-          </div>
-        ) : null}
+          {uploadError ? (
+            <div className="mb-2 rounded-lg border border-[#ff7b8a]/18 bg-[#ff7b8a]/8 px-2.5 py-1.5 text-[12px] leading-5 text-[#ffb6bf]">
+              {uploadError}
+            </div>
+          ) : null}
 
-        <div className="mb-3 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={busy || uploading}
-            aria-label={uploading ? t('chat.uploading') : t('chat.uploadImages')}
-            title={uploading ? t('chat.uploading') : t('chat.uploadImages')}
-            className={cn(
-              'flex min-h-11 min-w-11 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.045] transition-colors',
-              busy || uploading
-                ? 'cursor-not-allowed text-white/24'
-                : 'text-white/56 hover:bg-white/[0.08] hover:text-white',
-            )}
-          >
-            {uploading ? (
-              <IconLoader2 size={18} className="animate-spin" stroke={2.2} />
-            ) : (
-              <IconPaperclip size={17} stroke={2.1} />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={busy || uploading}
-            aria-label={t('chat.uploadImages')}
-            title={t('chat.uploadImages')}
-            className={cn(
-              'flex min-h-11 min-w-11 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.045] transition-colors',
-              busy || uploading
-                ? 'cursor-not-allowed text-white/24'
-                : 'text-white/56 hover:bg-white/[0.08] hover:text-white',
-            )}
-          >
-            <IconPhoto size={17} stroke={2.1} />
-          </button>
-        </div>
-
-        <div className="min-h-[72px]">
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={t('chat.placeholder')}
-            rows={3}
-            className="max-h-[128px] min-h-[72px] w-full resize-none bg-transparent text-[14px] leading-6 text-white outline-none placeholder:text-white/32"
-          />
-        </div>
-
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={busy || uploading}
-            aria-label={uploading ? t('chat.uploading') : t('chat.uploadImages')}
-            title={uploading ? t('chat.uploading') : t('chat.uploadImages')}
-            className={cn(
-              'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
-              busy || uploading
-                ? 'cursor-not-allowed text-white/24'
-                : 'text-white/62 hover:bg-white/[0.07] hover:text-white',
-            )}
-          >
-            <IconPlus size={21} stroke={2.1} />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={onFileChange}
-          />
-          <div className="flex items-center gap-2">
+          <div className="mb-3 flex items-center gap-2">
             <button
               type="button"
-              aria-label={t('home.voiceInput')}
-              title={t('home.voiceInput')}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-white/44 transition-colors hover:bg-white/[0.07] hover:text-white/78"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy || uploading}
+              aria-label={uploading ? t('chat.uploading') : t('chat.uploadImages')}
+              title={uploading ? t('chat.uploading') : t('chat.uploadImages')}
+              className={cn(
+                'flex min-h-11 min-w-11 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.045] transition-colors',
+                busy || uploading
+                  ? 'cursor-not-allowed text-white/24'
+                  : 'text-white/56 hover:bg-white/[0.08] hover:text-white',
+              )}
             >
-              <IconMicrophone size={16} stroke={2.1} />
+              {uploading ? (
+                <IconLoader2 size={18} className="animate-spin" stroke={2.2} />
+              ) : (
+                <IconPaperclip size={17} stroke={2.1} />
+              )}
             </button>
-            <SendOrStopButton busy={busy} canSend={canSend} disabled={uploading} onStop={onStop} />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy || uploading}
+              aria-label={t('chat.uploadImages')}
+              title={t('chat.uploadImages')}
+              className={cn(
+                'flex min-h-11 min-w-11 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.045] transition-colors',
+                busy || uploading
+                  ? 'cursor-not-allowed text-white/24'
+                  : 'text-white/56 hover:bg-white/[0.08] hover:text-white',
+              )}
+            >
+              <IconPhoto size={17} stroke={2.1} />
+            </button>
+          </div>
+
+          <div className="min-h-[72px]">
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(event) => onDraftChange(event.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={t('chat.placeholder')}
+              rows={3}
+              className="max-h-[128px] min-h-[72px] w-full resize-none bg-transparent text-[14px] leading-6 text-white outline-none placeholder:text-white/32"
+            />
+          </div>
+
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy || uploading}
+              aria-label={uploading ? t('chat.uploading') : t('chat.uploadImages')}
+              title={uploading ? t('chat.uploading') : t('chat.uploadImages')}
+              className={cn(
+                'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors',
+                busy || uploading
+                  ? 'cursor-not-allowed text-white/24'
+                  : 'text-white/62 hover:bg-white/[0.07] hover:text-white',
+              )}
+            >
+              <IconPlus size={21} stroke={2.1} />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={onFileChange}
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label={t('home.voiceInput')}
+                title={t('home.voiceInput')}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-white/44 transition-colors hover:bg-white/[0.07] hover:text-white/78"
+              >
+                <IconMicrophone size={16} stroke={2.1} />
+              </button>
+              <SendOrStopButton
+                busy={busy}
+                canSend={canSend}
+                disabled={uploading}
+                onStop={onStop}
+              />
+            </div>
           </div>
         </div>
       </div>
