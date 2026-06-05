@@ -15,7 +15,8 @@ import {
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent } from 'react';
 
 interface RecentProject {
   id: string;
@@ -58,6 +59,7 @@ export function Hero() {
   const { requireLogin } = useLoginRedirect();
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatPanelRef = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState('');
   const [recents, setRecents] = useState<RecentProject[]>([]);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
@@ -207,6 +209,32 @@ export function Hero() {
         : t('home.voiceInput');
   const quickActions = ta('home.quickActions');
 
+  const handleChatPanelPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const panel = chatPanelRef.current;
+    const rect = panel?.getBoundingClientRect();
+    if (!rect) return;
+
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const dx = x - centerX;
+    const dy = y - centerY;
+    const edgeScaleX = dx === 0 ? Number.POSITIVE_INFINITY : centerX / Math.abs(dx);
+    const edgeScaleY = dy === 0 ? Number.POSITIVE_INFINITY : centerY / Math.abs(dy);
+    const edgeProximity = Math.min(Math.max(1 / Math.min(edgeScaleX, edgeScaleY), 0), 1);
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+    panel?.style.setProperty('--edge-proximity', `${(edgeProximity * 100).toFixed(3)}`);
+    panel?.style.setProperty(
+      '--cursor-angle',
+      `${(angle < 0 ? angle + 360 : angle).toFixed(3)}deg`,
+    );
+  }, []);
+
+  const handleChatPanelPointerLeave = useCallback(() => {
+    chatPanelRef.current?.style.setProperty('--edge-proximity', '0');
+  }, []);
+
   return (
     <section className="relative mx-auto mt-8 max-w-[760px] px-6">
       <motion.div
@@ -228,106 +256,124 @@ export function Hero() {
           </h1>
         </div>
 
-        <div className="mt-5 overflow-hidden rounded-[18px] bg-[#1d1f21] shadow-[0_20px_70px_-44px_rgba(0,0,0,0.9)] ring-1 ring-white/[0.09]">
-          <textarea
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder={t('home.heroPlaceholder')}
-            className="h-[92px] w-full resize-none bg-transparent px-5 py-4 text-[14px] leading-6 text-white outline-none placeholder:text-white/34"
-          />
-
-          {attachedImages.length > 0 ? (
-            <div className="flex flex-wrap gap-2 border-t border-white/[0.06] px-4 py-3">
-              {attachedImages.map((image) => (
-                <div
-                  key={image.id}
-                  className="group/chip relative h-14 w-14 overflow-hidden rounded-xl ring-1 ring-white/[0.08]"
-                  title={image.name}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={image.previewUrl}
-                    alt={image.name}
-                    className="h-full w-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeImage(image.id)}
-                    aria-label={`${t('common.remove')} ${image.name}`}
-                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/72 text-white opacity-0 ring-1 ring-white/[0.18] transition-opacity group-hover/chip:opacity-100"
-                  >
-                    <IconX size={11} stroke={2.6} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {attachError ? (
-            <div className="border-t border-white/[0.06] px-4 py-2 text-[12px] text-[#f5c76a]">
-              {attachError}
-            </div>
-          ) : null}
-
-          <div className="flex items-center gap-2 border-t border-white/[0.06] px-3 py-3">
-            <input
-              ref={fileInputRef}
-              id={fileInputId}
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              onChange={(event) => {
-                void handleFiles(event.target.files);
-                event.currentTarget.value = '';
-              }}
+        <div
+          ref={chatPanelRef}
+          onPointerMove={handleChatPanelPointerMove}
+          onPointerLeave={handleChatPanelPointerLeave}
+          className="material-category-glow home-chat-glow mt-5 rounded-[18px]"
+          style={
+            {
+              '--lumen-border-glow-hsl': '40 80 80',
+              '--lumen-border-glow-one': '#c084fc',
+              '--lumen-border-glow-two': '#f472b6',
+              '--lumen-border-glow-three': '#38bdf8',
+              '--lumen-border-glow-mask': '#1d1f21',
+              '--lumen-border-fill-opacity': '0',
+            } as CSSProperties
+          }
+        >
+          <span aria-hidden className="material-category-edge-light" />
+          <div className="relative z-[2] overflow-hidden rounded-[inherit] bg-[#1d1f21] shadow-[0_20px_70px_-44px_rgba(0,0,0,0.9)] ring-1 ring-white/[0.09]">
+            <textarea
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              placeholder={t('home.heroPlaceholder')}
+              className="h-[92px] w-full resize-none bg-transparent px-5 py-4 text-[14px] leading-6 text-white outline-none placeholder:text-white/34"
             />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              aria-label={t('home.uploadImage')}
-              title={t('home.uploadImageTitle', { count: MAX_IMAGES })}
-              disabled={attachedImages.length >= MAX_IMAGES}
-              className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <IconPhotoPlus size={17} stroke={2.1} />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!speechSupported) return;
-                toggle();
-              }}
-              disabled={!speechSupported}
-              aria-pressed={listening}
-              aria-label={voiceLabel}
-              title={voiceLabel}
-              className={
-                listening
-                  ? 'flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-[#ff5fbf]/22 text-[#ff5fbf] ring-1 ring-[#ff5fbf]/55 transition-colors'
-                  : 'flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45'
-              }
-            >
-              {listening ? (
-                <IconMicrophone size={17} stroke={2.1} className="animate-pulse" />
-              ) : speechSupported ? (
-                <IconMicrophone size={17} stroke={2.1} />
-              ) : (
-                <IconMicrophoneOff size={17} stroke={2.1} />
-              )}
-            </button>
 
-            <div className="ml-auto flex items-center gap-2">
+            {attachedImages.length > 0 ? (
+              <div className="flex flex-wrap gap-2 border-t border-white/[0.06] px-4 py-3">
+                {attachedImages.map((image) => (
+                  <div
+                    key={image.id}
+                    className="group/chip relative h-14 w-14 overflow-hidden rounded-xl ring-1 ring-white/[0.08]"
+                    title={image.name}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={image.previewUrl}
+                      alt={image.name}
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(image.id)}
+                      aria-label={`${t('common.remove')} ${image.name}`}
+                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/72 text-white opacity-0 ring-1 ring-white/[0.18] transition-opacity group-hover/chip:opacity-100"
+                    >
+                      <IconX size={11} stroke={2.6} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {attachError ? (
+              <div className="border-t border-white/[0.06] px-4 py-2 text-[12px] text-[#f5c76a]">
+                {attachError}
+              </div>
+            ) : null}
+
+            <div className="flex items-center gap-2 border-t border-white/[0.06] px-3 py-3">
+              <input
+                ref={fileInputRef}
+                id={fileInputId}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(event) => {
+                  void handleFiles(event.target.files);
+                  event.currentTarget.value = '';
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label={t('home.uploadImage')}
+                title={t('home.uploadImageTitle', { count: MAX_IMAGES })}
+                disabled={attachedImages.length >= MAX_IMAGES}
+                className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <IconPhotoPlus size={17} stroke={2.1} />
+              </button>
               <button
                 type="button"
                 onClick={() => {
-                  void goCreate();
+                  if (!speechSupported) return;
+                  toggle();
                 }}
-                aria-label={t('home.sendGenerate')}
-                className="flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_10px_28px_-16px_rgba(255,255,255,0.7)] transition-transform active:scale-[0.96]"
+                disabled={!speechSupported}
+                aria-pressed={listening}
+                aria-label={voiceLabel}
+                title={voiceLabel}
+                className={
+                  listening
+                    ? 'flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-[#ff5fbf]/22 text-[#ff5fbf] ring-1 ring-[#ff5fbf]/55 transition-colors'
+                    : 'flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45'
+                }
               >
-                <IconArrowUp size={18} stroke={2.6} />
+                {listening ? (
+                  <IconMicrophone size={17} stroke={2.1} className="animate-pulse" />
+                ) : speechSupported ? (
+                  <IconMicrophone size={17} stroke={2.1} />
+                ) : (
+                  <IconMicrophoneOff size={17} stroke={2.1} />
+                )}
               </button>
+
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void goCreate();
+                  }}
+                  aria-label={t('home.sendGenerate')}
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_10px_28px_-16px_rgba(255,255,255,0.7)] transition-transform active:scale-[0.96]"
+                >
+                  <IconArrowUp size={18} stroke={2.6} />
+                </button>
+              </div>
             </div>
           </div>
         </div>

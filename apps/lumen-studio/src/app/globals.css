@@ -196,6 +196,148 @@ body::before {
       inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
 
+  .material-category-glow {
+    --edge-proximity: 0;
+    --cursor-angle: 45deg;
+    --edge-sensitivity: 24;
+    --color-sensitivity: calc(var(--edge-sensitivity) + 18);
+    --glow-padding: 38px;
+    --cone-spread: 25;
+
+    isolation: isolate;
+    transform: translate3d(0, 0, 0.01px);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    background: linear-gradient(
+        180deg,
+        var(--lumen-border-glow-bg, rgba(8, 10, 12, 0.36)),
+        rgba(5, 6, 8, 0.14)
+      ), rgba(5, 7, 9, 0.2);
+    box-shadow: rgba(0, 0, 0, 0.12) 0 1px 2px, rgba(0, 0, 0, 0.12) 0 2px 4px, rgba(0, 0, 0, 0.12) 0
+      6px 16px, inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  }
+
+  .material-category-glow::before,
+  .material-category-glow::after,
+  .material-category-edge-light {
+    content: "";
+    position: absolute;
+    border-radius: inherit;
+    pointer-events: none;
+    transition: opacity 0.25s ease-out;
+  }
+
+  .material-category-glow::before {
+    inset: 0;
+    z-index: 4;
+    border: 1px solid transparent;
+    background:
+      linear-gradient(
+        var(--lumen-border-glow-mask, var(--lumen-border-glow-bg, rgba(8, 10, 12, 0.78))) 0 100%
+      )
+      padding-box,
+      linear-gradient(rgb(255 255 255 / 0%) 0 100%) border-box,
+      radial-gradient(at 80% 55%, var(--lumen-border-glow-one, #c084fc) 0, transparent 50%) border-box,
+      radial-gradient(at 69% 34%, var(--lumen-border-glow-two, #f472b6) 0, transparent 50%) border-box,
+      radial-gradient(at 8% 6%, var(--lumen-border-glow-three, #38bdf8) 0, transparent 50%) border-box,
+      radial-gradient(at 41% 38%, var(--lumen-border-glow-one, #c084fc) 0, transparent 50%) border-box,
+      radial-gradient(at 86% 85%, var(--lumen-border-glow-two, #f472b6) 0, transparent 50%) border-box,
+      radial-gradient(at 82% 18%, var(--lumen-border-glow-three, #38bdf8) 0, transparent 50%) border-box;
+    mask-image: conic-gradient(
+      from var(--cursor-angle) at center,
+      black calc(var(--cone-spread) * 1%),
+      transparent calc((var(--cone-spread) + 15) * 1%),
+      transparent calc((100 - var(--cone-spread) - 15) * 1%),
+      black calc((100 - var(--cone-spread)) * 1%)
+    );
+    opacity: calc(
+      (var(--edge-proximity) - var(--color-sensitivity)) /
+      (100 - var(--color-sensitivity))
+    );
+  }
+
+  .material-category-glow::after {
+    inset: 0;
+    z-index: 1;
+    background: radial-gradient(
+        at 80% 55%,
+        var(--lumen-border-glow-one, #c084fc) 0,
+        transparent 50%
+      ), radial-gradient(at 69% 34%, var(--lumen-border-glow-two, #f472b6) 0, transparent 50%),
+      radial-gradient(at 8% 6%, var(--lumen-border-glow-three, #38bdf8) 0, transparent 50%),
+      radial-gradient(at 41% 38%, var(--lumen-border-glow-one, #c084fc) 0, transparent 50%),
+      radial-gradient(at 86% 85%, var(--lumen-border-glow-two, #f472b6) 0, transparent 50%);
+    mask-image: radial-gradient(ellipse at 50% 50%, transparent 38%, black 68%),
+      conic-gradient(
+        from var(--cursor-angle) at center,
+        transparent 5%,
+        black 15%,
+        black 85%,
+        transparent 95%
+      );
+    mask-composite: intersect;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 50%, transparent 38%, black 68%),
+      conic-gradient(
+        from var(--cursor-angle) at center,
+        transparent 5%,
+        black 15%,
+        black 85%,
+        transparent 95%
+      );
+    -webkit-mask-composite: source-in;
+    mix-blend-mode: soft-light;
+    opacity: calc(
+      var(--lumen-border-fill-opacity, 0.28) *
+      (var(--edge-proximity) - var(--color-sensitivity)) /
+      (100 - var(--color-sensitivity))
+    );
+  }
+
+  .material-category-edge-light {
+    inset: calc(var(--glow-padding) * -1);
+    z-index: 5;
+    mask-image: conic-gradient(
+      from var(--cursor-angle) at center,
+      black 2.5%,
+      transparent 10%,
+      transparent 90%,
+      black 97.5%
+    );
+    -webkit-mask-image: conic-gradient(
+      from var(--cursor-angle) at center,
+      black 2.5%,
+      transparent 10%,
+      transparent 90%,
+      black 97.5%
+    );
+    mix-blend-mode: plus-lighter;
+    opacity: calc(
+      (var(--edge-proximity) - var(--edge-sensitivity)) /
+      (100 - var(--edge-sensitivity))
+    );
+  }
+
+  .material-category-edge-light::before {
+    content: "";
+    position: absolute;
+    inset: var(--glow-padding);
+    border-radius: inherit;
+    box-shadow:
+      inset 0 0 0 1px hsl(var(--lumen-border-glow-hsl, 40 80 80) / 92%),
+      inset 0 0 3px 0 hsl(var(--lumen-border-glow-hsl, 40 80 80) / 44%),
+      inset 0 0 12px 0 hsl(var(--lumen-border-glow-hsl, 40 80 80) / 28%),
+      inset 0 0 30px 2px hsl(var(--lumen-border-glow-hsl, 40 80 80) / 16%),
+      0 0 2px 0 hsl(var(--lumen-border-glow-hsl, 40 80 80) / 50%),
+      0 0 10px 0 hsl(var(--lumen-border-glow-hsl, 40 80 80) / 32%),
+      0 0 28px 2px hsl(var(--lumen-border-glow-hsl, 40 80 80) / 18%),
+      0 0 58px 3px hsl(var(--lumen-border-glow-hsl, 40 80 80) / 10%);
+  }
+
+  .home-chat-glow {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
   /* gradient text */
   .text-flame {
     background: linear-gradient(135deg, #f5c76a 0%, #79e4ff 48%, #9da8ff 100%);

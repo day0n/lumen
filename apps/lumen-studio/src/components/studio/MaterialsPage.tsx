@@ -95,6 +95,8 @@ const MAX_UPLOAD_IMAGES = 9;
 type MaterialCategoryConfig = {
   id: MaterialAssetCategory;
   accent: string;
+  glowColor: string;
+  glowColors: readonly [string, string, string];
   showcaseImages: readonly string[];
 };
 
@@ -134,6 +136,8 @@ const materialCategories = [
   {
     id: 'item',
     accent: '#79e4ff',
+    glowColor: '193 100 74',
+    glowColors: ['#79e4ff', '#f5c76a', '#c084fc'],
     showcaseImages: buildShowcaseImages([
       'character-01',
       'character-03',
@@ -150,6 +154,8 @@ const materialCategories = [
   {
     id: 'character',
     accent: '#ff5fbf',
+    glowColor: '323 100 69',
+    glowColors: ['#ff5fbf', '#c084fc', '#38bdf8'],
     showcaseImages: buildShowcaseImages([
       'ai-model-01',
       'ai-model-02',
@@ -166,6 +172,8 @@ const materialCategories = [
   {
     id: 'scene',
     accent: '#f5c76a',
+    glowColor: '42 90 69',
+    glowColors: ['#f5c76a', '#38bdf8', '#f472b6'],
     showcaseImages: buildShowcaseImages([
       'character-10',
       'character-11',
@@ -448,10 +456,29 @@ function CategoryCard({
   const cardRef = useRef<HTMLButtonElement | null>(null);
   const [spot, setSpot] = useState<{ x: number; y: number } | null>(null);
 
-  const handleMove = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    const rect = cardRef.current?.getBoundingClientRect();
+  const handleMove = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    const card = cardRef.current;
+    const rect = card?.getBoundingClientRect();
     if (!rect) return;
-    setSpot({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    setSpot({ x, y });
+
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const dx = x - centerX;
+    const dy = y - centerY;
+    const edgeScaleX = dx === 0 ? Number.POSITIVE_INFINITY : centerX / Math.abs(dx);
+    const edgeScaleY = dy === 0 ? Number.POSITIVE_INFINITY : centerY / Math.abs(dy);
+    const edgeProximity = Math.min(Math.max(1 / Math.min(edgeScaleX, edgeScaleY), 0), 1);
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+    card?.style.setProperty('--edge-proximity', `${(edgeProximity * 100).toFixed(3)}`);
+    card?.style.setProperty('--cursor-angle', `${(angle < 0 ? angle + 360 : angle).toFixed(3)}deg`);
+  }, []);
+
+  const handleLeave = useCallback(() => {
+    setSpot(null);
+    cardRef.current?.style.setProperty('--edge-proximity', '0');
   }, []);
 
   return (
@@ -459,17 +486,29 @@ function CategoryCard({
       ref={cardRef}
       type="button"
       onClick={onSelect}
-      onMouseMove={handleMove}
-      onMouseLeave={() => setSpot(null)}
+      onPointerMove={handleMove}
+      onPointerLeave={handleLeave}
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, delay: index * 0.06, ease: [0.32, 0.72, 0, 1] }}
       data-testid={`material-category-${category.id}`}
       className={cn(
-        'group relative z-10 min-h-[560px] overflow-visible border-0 bg-transparent p-0 text-left transition-transform duration-300 will-change-transform hover:-translate-y-1 focus:outline-none',
+        'material-category-glow group relative z-10 min-h-[560px] overflow-visible rounded-[28px] p-0 text-left transition-transform duration-300 will-change-transform hover:-translate-y-1 focus:outline-none',
         !active && 'opacity-[0.72] hover:opacity-100',
       )}
+      style={
+        {
+          '--lumen-border-glow-hsl': category.glowColor,
+          '--lumen-border-glow-one': category.glowColors[0],
+          '--lumen-border-glow-two': category.glowColors[1],
+          '--lumen-border-glow-three': category.glowColors[2],
+          '--lumen-border-glow-bg': active ? 'rgba(9, 12, 15, 0.44)' : 'rgba(7, 9, 12, 0.28)',
+          '--lumen-border-glow-mask': active ? 'rgba(9, 12, 15, 0.78)' : 'rgba(7, 9, 12, 0.66)',
+          '--lumen-border-fill-opacity': '0.24',
+        } as React.CSSProperties
+      }
     >
+      <span aria-hidden className="material-category-edge-light" />
       <span
         aria-hidden
         className="pointer-events-none absolute inset-x-[-40px] top-[40px] h-[430px] opacity-80 blur-3xl transition-opacity duration-500 group-hover:opacity-100"
