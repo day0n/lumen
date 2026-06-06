@@ -31,7 +31,7 @@ function warmAppData() {
     fetch('/api/projects'),
     fetch('/api/folders'),
     fetch('/api/material-assets'),
-    fetch('/api/hot-videos'),
+    fetch('/api/hot-videos?limit=24'),
   ]);
   return dataWarmup;
 }
