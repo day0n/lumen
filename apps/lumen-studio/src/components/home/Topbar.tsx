@@ -12,27 +12,67 @@ import { UserButton } from '@clerk/nextjs';
 import { IconChartBar, IconDeviceTv, IconFolder, IconHome, IconPhoto } from '@tabler/icons-react';
 import { motion } from 'motion/react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import type { MouseEvent } from 'react';
 
 const navItems = [
-  { labelKey: 'nav.home', href: '/home', icon: IconHome },
-  { labelKey: 'nav.studio', href: '/canvas/projects', activePrefix: '/canvas', icon: IconFolder },
-  { labelKey: 'nav.materials', href: '/materials', icon: IconPhoto },
-  { labelKey: 'nav.hotVideos', href: '/hot-videos', icon: IconDeviceTv },
-  { labelKey: 'nav.dashboard', href: '/dashboard', icon: IconChartBar },
+  {
+    labelKey: 'nav.home',
+    href: '/home',
+    appHref: '/app/home',
+    activePaths: ['/home', '/app/home'],
+    icon: IconHome,
+  },
+  {
+    labelKey: 'nav.studio',
+    href: '/canvas/projects',
+    appHref: '/app/projects',
+    activePaths: ['/canvas', '/projects', '/app/projects', '/app/canvas'],
+    icon: IconFolder,
+  },
+  {
+    labelKey: 'nav.materials',
+    href: '/materials',
+    appHref: '/app/materials',
+    activePaths: ['/materials', '/app/materials'],
+    icon: IconPhoto,
+  },
+  {
+    labelKey: 'nav.hotVideos',
+    href: '/hot-videos',
+    appHref: '/app/hot-videos',
+    activePaths: ['/hot-videos', '/app/hot-videos'],
+    icon: IconDeviceTv,
+  },
+  {
+    labelKey: 'nav.dashboard',
+    href: '/dashboard',
+    appHref: '/app/dashboard',
+    activePaths: ['/dashboard', '/app/dashboard'],
+    icon: IconChartBar,
+  },
 ];
 
 export function Topbar() {
+  const router = useRouter();
   const pathname = usePathname();
   const normalizedPath = stripLocalePrefix(pathname || '/');
   const { t, localePath } = useI18n();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const authRedirect = encodeURIComponent(pathname || '/');
+  const inAppShell = normalizedPath === '/app' || normalizedPath.startsWith('/app/');
 
   const handleProtectedNavClick = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
     if (!authLoaded || !isLoginRequiredPath(href)) return;
     if (!requireLogin(href)) event.preventDefault();
+  };
+
+  const handleNavIntent = (href: string) => {
+    if ('prefetch' in router) {
+      try {
+        router.prefetch(href);
+      } catch {}
+    }
   };
 
   return (
@@ -54,18 +94,20 @@ export function Topbar() {
           <nav className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-white/[0.035] p-1 ring-1 ring-white/[0.06] lg:flex">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const active =
-                item.href === '/'
-                  ? normalizedPath === '/'
-                  : normalizedPath.startsWith(item.activePrefix ?? item.href);
+              const href = inAppShell ? item.appHref : item.href;
+              const active = isNavItemActive(normalizedPath, item.activePaths);
               const label = t(item.labelKey);
 
               return (
                 <Link
-                  key={item.href}
-                  href={localePath(item.href)}
+                  key={href}
+                  href={localePath(href)}
                   prefetch={false}
-                  onClick={(event) => handleProtectedNavClick(event, item.href)}
+                  onClick={(event) => handleProtectedNavClick(event, href)}
+                  onFocus={() => handleNavIntent(href)}
+                  onMouseDown={() => handleNavIntent(href)}
+                  onPointerEnter={() => handleNavIntent(href)}
+                  onTouchStart={() => handleNavIntent(href)}
                   className={cn(
                     'relative flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium transition-colors',
                     active ? 'text-white' : 'text-white/55 hover:text-white',
@@ -124,19 +166,21 @@ export function Topbar() {
       <nav className="fixed inset-x-4 bottom-4 z-50 grid grid-cols-5 gap-1 rounded-2xl bg-[#111315]/92 p-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] ring-1 ring-white/[0.08] backdrop-blur-xl lg:hidden">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const active =
-            item.href === '/'
-              ? normalizedPath === '/'
-              : normalizedPath.startsWith(item.activePrefix ?? item.href);
+          const href = inAppShell ? item.appHref : item.href;
+          const active = isNavItemActive(normalizedPath, item.activePaths);
           const label = t(item.labelKey);
 
           return (
             <Link
-              key={item.href}
-              href={localePath(item.href)}
+              key={href}
+              href={localePath(href)}
               prefetch={false}
               aria-label={label}
-              onClick={(event) => handleProtectedNavClick(event, item.href)}
+              onClick={(event) => handleProtectedNavClick(event, href)}
+              onFocus={() => handleNavIntent(href)}
+              onMouseDown={() => handleNavIntent(href)}
+              onPointerEnter={() => handleNavIntent(href)}
+              onTouchStart={() => handleNavIntent(href)}
               className={cn(
                 'relative flex min-h-11 min-w-11 items-center justify-center rounded-xl transition-colors',
                 active ? 'text-[#111315]' : 'text-white/58 hover:text-white',
@@ -156,4 +200,8 @@ export function Topbar() {
       </nav>
     </header>
   );
+}
+
+function isNavItemActive(pathname: string, activePaths: string[]) {
+  return activePaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }

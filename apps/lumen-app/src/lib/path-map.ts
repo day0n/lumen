@@ -7,8 +7,10 @@ export function toAppPath(href: string): string {
   const pathname = stripLocalePrefix(url.pathname);
   let nextPath = pathname;
 
-  if (pathname === '/dashboard') nextPath = '/app/dashboard';
+  if (pathname === '/home') nextPath = '/app/home';
+  else if (pathname === '/dashboard') nextPath = '/app/dashboard';
   else if (pathname === '/materials') nextPath = '/app/materials';
+  else if (pathname === '/hot-videos') nextPath = '/app/hot-videos';
   else if (pathname === '/agent-chat') {
     nextPath = '/app/canvas/new';
     url.searchParams.set('agent', 'chat');

@@ -4,36 +4,6 @@ import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
 import { MobileSheet } from '@/components/mobile';
 import {
-  DashboardCommandPalette,
-  useDashboardCommandPalette,
-  type DashboardCommand,
-} from '@/components/studio/dashboard/DashboardCommandPalette';
-import { DashboardInsightBar, type DashboardInsight } from '@/components/studio/dashboard/DashboardInsightBar';
-import { DashboardTimeScrubber } from '@/components/studio/dashboard/DashboardTimeScrubber';
-import {
-  CHANNEL_OPTIONS,
-  OBJECTIVE_OPTIONS,
-  RANGE_OPTIONS,
-  REGION_OPTIONS,
-  SORT_LABEL_KEYS,
-  type DashboardSectionTarget,
-} from '@/components/studio/dashboard/constants';
-import {
-  applyCampaignEdit,
-  buildPolylinePoints,
-  campaignMatchesFactor,
-  factorToFunnelStageIndex,
-  formatCompact,
-  formatCurrency,
-  formatDate,
-  formatNumber,
-  readSortValue,
-  type CampaignEdit,
-  type CampaignSortKey,
-  type SortDirection,
-  type SortState,
-} from '@/components/studio/dashboard/utils';
-import {
   BlurText,
   CountUp,
   DashboardPanel,
@@ -44,10 +14,44 @@ import {
   ShinyText,
   SpotlightCard,
 } from '@/components/studio/dashboard-motion';
+import {
+  type DashboardCommand,
+  DashboardCommandPalette,
+  useDashboardCommandPalette,
+} from '@/components/studio/dashboard/DashboardCommandPalette';
+import {
+  type DashboardInsight,
+  DashboardInsightBar,
+} from '@/components/studio/dashboard/DashboardInsightBar';
+import { DashboardTimeScrubber } from '@/components/studio/dashboard/DashboardTimeScrubber';
+import {
+  CHANNEL_OPTIONS,
+  type DashboardSectionTarget,
+  OBJECTIVE_OPTIONS,
+  RANGE_OPTIONS,
+  REGION_OPTIONS,
+  SORT_LABEL_KEYS,
+} from '@/components/studio/dashboard/constants';
+import {
+  type CampaignEdit,
+  type CampaignSortKey,
+  type SortDirection,
+  type SortState,
+  applyCampaignEdit,
+  buildPolylinePoints,
+  campaignMatchesFactor,
+  factorToFunnelStageIndex,
+  formatCompact,
+  formatCurrency,
+  formatDate,
+  formatNumber,
+  readSortValue,
+} from '@/components/studio/dashboard/utils';
 import '@/components/studio/dashboard-motion/dashboard-shell.css';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
+import { useAppShellChrome } from '@/lib/app-shell-chrome';
 import { cn } from '@/lib/cn';
 import { useDashboardReducedMotion, useElectricPulse } from '@/lib/dashboard-motion';
 import type {
@@ -81,10 +85,10 @@ import {
   IconEye,
   IconFilter,
   IconGauge,
-  IconPlayerPause,
-  IconPlayerPlay,
   IconPin,
   IconPinned,
+  IconPlayerPause,
+  IconPlayerPlay,
   IconRefresh,
   IconSearch,
   IconSettings,
@@ -96,7 +100,7 @@ import {
 } from '@tabler/icons-react';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import type { ReactNode, RefObject } from 'react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 type DashboardStatus = 'idle' | 'loading' | 'ready' | 'error';
 type TFunction = ReturnType<typeof useI18n>['t'];
@@ -115,6 +119,7 @@ const SECTION_OFFSET = 112;
 export function DashboardPage() {
   const isMobile = useIsMobile();
   const { locale, t } = useI18n();
+  const appShellChrome = useAppShellChrome();
   const reducedMotion = useDashboardReducedMotion();
   const { active: electricActive, pulse: electricPulse } = useElectricPulse();
   const { open: commandOpen, setOpen: setCommandOpen } = useDashboardCommandPalette();
@@ -323,7 +328,7 @@ export function DashboardPage() {
     setActivityMessage({ key: 'dashboard.boosted', params: { name: campaign.name } });
   };
 
-  const handleOptimizeBudget = () => {
+  const handleOptimizeBudget = useCallback(() => {
     if (!campaigns.length) return;
     const sorted = [...campaigns].sort((a, b) => b.metrics.roas - a.metrics.roas);
     const winner = sorted[0];
@@ -349,22 +354,25 @@ export function DashboardPage() {
       key: 'dashboard.optimized',
       params: { from: laggard.product, to: winner.product },
     });
-  };
+  }, [campaigns, electricPulse]);
 
-  const scrollToSection = (target: DashboardSectionTarget) => {
-    const map: Record<DashboardSectionTarget, RefObject<HTMLDivElement | null>> = {
-      trend: trendRef,
-      funnel: funnelRef,
-      factors: factorRef,
-      campaigns: campaignRef,
-      recommendations: recommendationRef,
-    };
-    const node = map[target].current;
-    if (!node) return;
-    setActiveInsightTarget(target);
-    const top = node.getBoundingClientRect().top + window.scrollY - SECTION_OFFSET;
-    window.scrollTo({ top, behavior: reducedMotion ? 'auto' : 'smooth' });
-  };
+  const scrollToSection = useCallback(
+    (target: DashboardSectionTarget) => {
+      const map: Record<DashboardSectionTarget, RefObject<HTMLDivElement | null>> = {
+        trend: trendRef,
+        funnel: funnelRef,
+        factors: factorRef,
+        campaigns: campaignRef,
+        recommendations: recommendationRef,
+      };
+      const node = map[target].current;
+      if (!node) return;
+      setActiveInsightTarget(target);
+      const top = node.getBoundingClientRect().top + window.scrollY - SECTION_OFFSET;
+      window.scrollTo({ top, behavior: reducedMotion ? 'auto' : 'smooth' });
+    },
+    [reducedMotion],
+  );
 
   const insights = useMemo((): DashboardInsight[] => {
     if (!data) return [];
@@ -478,12 +486,10 @@ export function DashboardPage() {
     ];
 
     return [...actionCommands, ...navCommands, ...campaignCommands, ...factorCommands];
-  }, [campaigns, data, t]);
+  }, [campaigns, data, handleOptimizeBudget, scrollToSection, t]);
 
   const highlightedFunnelStageIndex =
-    selectedFactor && data
-      ? factorToFunnelStageIndex(selectedFactor, data.funnel)
-      : null;
+    selectedFactor && data ? factorToFunnelStageIndex(selectedFactor, data.funnel) : null;
   const highlightedGeoRegion = selectedCampaign?.regionLabel ?? null;
   const linkedFactorKeys = selectedCampaign?.factors ?? [];
 
@@ -529,8 +535,8 @@ export function DashboardPage() {
 
   return (
     <div className="relative min-h-screen text-white">
-      <AuroraBackdrop />
-      <Topbar />
+      {!appShellChrome && <AuroraBackdrop />}
+      {!appShellChrome && <Topbar />}
       <DashboardCommandPalette
         open={commandOpen}
         onClose={() => setCommandOpen(false)}
@@ -546,7 +552,11 @@ export function DashboardPage() {
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="dashboard-analytics-pill-glow inline-flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-[12px] font-semibold ring-1 ring-white/[0.08]">
                 <IconChartDots3 size={15} stroke={2.2} className="text-[#79e4ff]" />
-                <ShinyText text={t('dashboard.attribution')} color="rgba(255,255,255,0.62)" shineColor="#79e4ff" />
+                <ShinyText
+                  text={t('dashboard.attribution')}
+                  color="rgba(255,255,255,0.62)"
+                  shineColor="#79e4ff"
+                />
               </span>
               <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#10252b] px-3 text-[12px] font-semibold text-[#79e4ff] ring-1 ring-[#79e4ff]/20">
                 <IconCheck size={15} stroke={2.4} />
@@ -572,7 +582,9 @@ export function DashboardPage() {
               >
                 <IconSearch size={13} stroke={2.2} />
                 {t('dashboard.commandHint')}
-                <kbd className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-white/32">⌘K</kbd>
+                <kbd className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-white/32">
+                  ⌘K
+                </kbd>
               </button>
             ) : null}
           </div>
@@ -724,7 +736,11 @@ export function DashboardPage() {
                         : 'bg-white/[0.05] text-white/42 ring-white/[0.08] hover:bg-white/[0.08] hover:text-white/62',
                     )}
                   >
-                    {kpiPinned ? <IconPinned size={14} stroke={2.2} /> : <IconPin size={14} stroke={2.2} />}
+                    {kpiPinned ? (
+                      <IconPinned size={14} stroke={2.2} />
+                    ) : (
+                      <IconPin size={14} stroke={2.2} />
+                    )}
                     {kpiPinned ? t('dashboard.unpinKpi') : t('dashboard.pinKpi')}
                   </button>
                 </div>
@@ -778,7 +794,9 @@ export function DashboardPage() {
                     reducedMotion={reducedMotion}
                     formatCount={(value) => `${value.toFixed(2)}%`}
                     delta={data.summary.cvrDelta}
-                    meta={t('dashboard.orders', { count: formatNumber(data.summary.orders, locale) })}
+                    meta={t('dashboard.orders', {
+                      count: formatNumber(data.summary.orders, locale),
+                    })}
                     accent="#8dd9a3"
                     sparkline={data.timeseries.map((point) => point.cvr)}
                   />
@@ -825,196 +843,199 @@ export function DashboardPage() {
                 transition={{ duration: 0.35 }}
                 className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(360px,0.8fr)]"
               >
-              <div className="space-y-4">
-                <div ref={trendRef}>
-                <DashboardPanel delay={0.05} spotlight>
-                  <SectionHeader
-                    icon={IconChartBar}
-                    title={t('dashboard.trend')}
-                    meta={t('dashboard.refreshed', {
-                      date: formatDate(data.generatedAt, locale),
-                    })}
-                    action={
-                      <span className="text-[12px] text-white/40">
-                        {t('dashboard.trendMeta', {
-                          range:
-                            RANGE_OPTIONS.find((option) => option.value === range)?.label ?? range,
+                <div className="space-y-4">
+                  <div ref={trendRef}>
+                    <DashboardPanel delay={0.05} spotlight>
+                      <SectionHeader
+                        icon={IconChartBar}
+                        title={t('dashboard.trend')}
+                        meta={t('dashboard.refreshed', {
+                          date: formatDate(data.generatedAt, locale),
                         })}
-                      </span>
-                    }
-                  />
-                  <PerformanceChart
-                    points={data.timeseries}
-                    highlightIndex={scrubIndex}
-                    reducedMotion={reducedMotion}
-                    t={t}
-                  />
-                  <DashboardTimeScrubber
-                    points={data.timeseries}
-                    index={scrubIndex}
-                    locale={locale}
-                    label={t('dashboard.scrubber')}
-                    onChange={setScrubIndex}
-                    reducedMotion={reducedMotion}
-                  />
-                </DashboardPanel>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-                  <div ref={funnelRef}>
-                  <DashboardPanel delay={0.1}>
-                    <SectionHeader
-                      icon={IconChartPie}
-                      title={t('dashboard.funnel')}
-                      meta={t('dashboard.funnelMeta')}
-                    />
-                    <FunnelChart
-                      stages={data.funnel}
-                      locale={locale}
-                      highlightedStageIndex={highlightedFunnelStageIndex}
-                      reducedMotion={reducedMotion}
-                      t={t}
-                    />
-                  </DashboardPanel>
-                  </div>
-
-                  <DashboardPanel delay={0.14}>
-                    <SectionHeader icon={IconWorld} title={t('dashboard.geo')} meta="GMV share" />
-                    <GeoBreakdownChart
-                      items={data.geoBreakdown}
-                      locale={locale}
-                      highlightedRegion={highlightedGeoRegion}
-                      reducedMotion={reducedMotion}
-                      t={t}
-                    />
-                  </DashboardPanel>
-                </div>
-
-                <div ref={factorRef}>
-                <DashboardPanel delay={0.08}>
-                  <SectionHeader
-                    icon={IconSparkles}
-                    title={t('dashboard.factorTitle')}
-                    meta={selectedFactor ? selectedFactor.factor : t('dashboard.factorEmpty')}
-                  />
-                  <FactorMatrix
-                    factors={data.factorMatrix}
-                    selectedKey={selectedFactorKey}
-                    linkedKeys={linkedFactorKeys}
-                    reducedMotion={reducedMotion}
-                    t={t}
-                    onSelect={(factor) =>
-                      setSelectedFactorKey((current) =>
-                        current === factor.key ? null : factor.key,
-                      )
-                    }
-                  />
-                  {selectedFactor ? (
-                    <motion.div
-                      initial={reducedMotion ? false : { opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="mt-3 overflow-hidden rounded-lg bg-white/[0.035] px-3 py-2 text-[12px] leading-5 text-white/52 ring-1 ring-white/[0.05]"
-                    >
-                      <span className="font-semibold text-white/78">{selectedFactor.factor}</span>
-                      <span className="mx-2 text-white/22">/</span>
-                      {selectedFactor.diagnosis}
-                    </motion.div>
-                  ) : null}
-                </DashboardPanel>
-                </div>
-
-                <div ref={campaignRef}>
-                <DashboardPanel delay={0.12}>
-                  <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <SectionHeader
-                      icon={IconAdjustments}
-                      title={t('dashboard.campaignConsole')}
-                      meta={t('dashboard.campaignMeta')}
-                    />
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg bg-white/[0.05] px-3 text-white/42 ring-1 ring-white/[0.08] sm:w-[260px]">
-                        <IconSearch size={15} stroke={2.2} />
-                        <input
-                          value={searchQuery}
-                          onChange={(event) => setSearchQuery(event.target.value)}
-                          className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/32"
-                          placeholder={t('dashboard.searchPlaceholder')}
-                        />
-                      </label>
-                      <motion.button
-                        type="button"
-                        onClick={handleOptimizeBudget}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#79e4ff] px-3 text-[12px] font-bold text-[#071316] shadow-[0_0_24px_rgba(121,228,255,0.25)]"
-                      >
-                        <IconBolt size={15} stroke={2.5} />
-                        {t('dashboard.smartBudget')}
-                      </motion.button>
-                    </div>
-                  </div>
-                  <div className="lg:hidden">
-                    <CampaignCards
-                      campaigns={campaigns}
-                      selectedCampaignId={selectedCampaign?.id ?? null}
-                      onSelect={(campaign) => setSelectedCampaignId(campaign.id)}
-                      onToggle={handleToggleCampaign}
-                      onBoost={handleBoostCampaign}
-                      locale={locale}
-                      t={t}
-                    />
-                  </div>
-                  <div className="hidden lg:block">
-                    <LayoutGroup>
-                      <CampaignTable
-                        campaigns={campaigns}
-                        sort={sort}
-                        selectedCampaignId={selectedCampaign?.id ?? null}
-                        selectedFactorKey={selectedFactorKey}
-                        pulsedCampaignIds={pulsedCampaignIds}
+                        action={
+                          <span className="text-[12px] text-white/40">
+                            {t('dashboard.trendMeta', {
+                              range:
+                                RANGE_OPTIONS.find((option) => option.value === range)?.label ??
+                                range,
+                            })}
+                          </span>
+                        }
+                      />
+                      <PerformanceChart
+                        points={data.timeseries}
+                        highlightIndex={scrubIndex}
                         reducedMotion={reducedMotion}
-                        onSort={handleSort}
-                        onSelect={(campaign) => setSelectedCampaignId(campaign.id)}
-                        onToggle={handleToggleCampaign}
-                        onBoost={handleBoostCampaign}
-                        locale={locale}
                         t={t}
                       />
-                    </LayoutGroup>
+                      <DashboardTimeScrubber
+                        points={data.timeseries}
+                        index={scrubIndex}
+                        locale={locale}
+                        label={t('dashboard.scrubber')}
+                        onChange={setScrubIndex}
+                        reducedMotion={reducedMotion}
+                      />
+                    </DashboardPanel>
                   </div>
-                </DashboardPanel>
-                </div>
-              </div>
 
-              <aside className="space-y-4">
-                <DashboardPanel delay={0.06} electric={electricActive} skipReveal>
-                  <CampaignInspector
-                    campaign={selectedCampaign}
-                    tests={selectedCampaignTests}
-                    locale={locale}
-                    t={t}
-                    onCopyTracking={handleCopyTracking}
-                    onToggle={
-                      selectedCampaign ? () => handleToggleCampaign(selectedCampaign) : undefined
-                    }
-                    onBoost={
-                      selectedCampaign ? () => handleBoostCampaign(selectedCampaign) : undefined
-                    }
-                  />
-                </DashboardPanel>
-                <div ref={recommendationRef}>
-                <DashboardPanel delay={0.1} skipReveal>
-                  <RecommendationPanel
-                    items={data.recommendations}
-                    onApply={handleOptimizeBudget}
-                    t={t}
-                  />
-                </DashboardPanel>
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                    <div ref={funnelRef}>
+                      <DashboardPanel delay={0.1}>
+                        <SectionHeader
+                          icon={IconChartPie}
+                          title={t('dashboard.funnel')}
+                          meta={t('dashboard.funnelMeta')}
+                        />
+                        <FunnelChart
+                          stages={data.funnel}
+                          locale={locale}
+                          highlightedStageIndex={highlightedFunnelStageIndex}
+                          reducedMotion={reducedMotion}
+                          t={t}
+                        />
+                      </DashboardPanel>
+                    </div>
+
+                    <DashboardPanel delay={0.14}>
+                      <SectionHeader icon={IconWorld} title={t('dashboard.geo')} meta="GMV share" />
+                      <GeoBreakdownChart
+                        items={data.geoBreakdown}
+                        locale={locale}
+                        highlightedRegion={highlightedGeoRegion}
+                        reducedMotion={reducedMotion}
+                        t={t}
+                      />
+                    </DashboardPanel>
+                  </div>
+
+                  <div ref={factorRef}>
+                    <DashboardPanel delay={0.08}>
+                      <SectionHeader
+                        icon={IconSparkles}
+                        title={t('dashboard.factorTitle')}
+                        meta={selectedFactor ? selectedFactor.factor : t('dashboard.factorEmpty')}
+                      />
+                      <FactorMatrix
+                        factors={data.factorMatrix}
+                        selectedKey={selectedFactorKey}
+                        linkedKeys={linkedFactorKeys}
+                        reducedMotion={reducedMotion}
+                        t={t}
+                        onSelect={(factor) =>
+                          setSelectedFactorKey((current) =>
+                            current === factor.key ? null : factor.key,
+                          )
+                        }
+                      />
+                      {selectedFactor ? (
+                        <motion.div
+                          initial={reducedMotion ? false : { opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="mt-3 overflow-hidden rounded-lg bg-white/[0.035] px-3 py-2 text-[12px] leading-5 text-white/52 ring-1 ring-white/[0.05]"
+                        >
+                          <span className="font-semibold text-white/78">
+                            {selectedFactor.factor}
+                          </span>
+                          <span className="mx-2 text-white/22">/</span>
+                          {selectedFactor.diagnosis}
+                        </motion.div>
+                      ) : null}
+                    </DashboardPanel>
+                  </div>
+
+                  <div ref={campaignRef}>
+                    <DashboardPanel delay={0.12}>
+                      <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <SectionHeader
+                          icon={IconAdjustments}
+                          title={t('dashboard.campaignConsole')}
+                          meta={t('dashboard.campaignMeta')}
+                        />
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg bg-white/[0.05] px-3 text-white/42 ring-1 ring-white/[0.08] sm:w-[260px]">
+                            <IconSearch size={15} stroke={2.2} />
+                            <input
+                              value={searchQuery}
+                              onChange={(event) => setSearchQuery(event.target.value)}
+                              className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/32"
+                              placeholder={t('dashboard.searchPlaceholder')}
+                            />
+                          </label>
+                          <motion.button
+                            type="button"
+                            onClick={handleOptimizeBudget}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#79e4ff] px-3 text-[12px] font-bold text-[#071316] shadow-[0_0_24px_rgba(121,228,255,0.25)]"
+                          >
+                            <IconBolt size={15} stroke={2.5} />
+                            {t('dashboard.smartBudget')}
+                          </motion.button>
+                        </div>
+                      </div>
+                      <div className="lg:hidden">
+                        <CampaignCards
+                          campaigns={campaigns}
+                          selectedCampaignId={selectedCampaign?.id ?? null}
+                          onSelect={(campaign) => setSelectedCampaignId(campaign.id)}
+                          onToggle={handleToggleCampaign}
+                          onBoost={handleBoostCampaign}
+                          locale={locale}
+                          t={t}
+                        />
+                      </div>
+                      <div className="hidden lg:block">
+                        <LayoutGroup>
+                          <CampaignTable
+                            campaigns={campaigns}
+                            sort={sort}
+                            selectedCampaignId={selectedCampaign?.id ?? null}
+                            selectedFactorKey={selectedFactorKey}
+                            pulsedCampaignIds={pulsedCampaignIds}
+                            reducedMotion={reducedMotion}
+                            onSort={handleSort}
+                            onSelect={(campaign) => setSelectedCampaignId(campaign.id)}
+                            onToggle={handleToggleCampaign}
+                            onBoost={handleBoostCampaign}
+                            locale={locale}
+                            t={t}
+                          />
+                        </LayoutGroup>
+                      </div>
+                    </DashboardPanel>
+                  </div>
                 </div>
-                <DashboardPanel delay={0.14} skipReveal>
-                  <TracePanel events={data.trace} t={t} />
-                </DashboardPanel>
-              </aside>
+
+                <aside className="space-y-4">
+                  <DashboardPanel delay={0.06} electric={electricActive} skipReveal>
+                    <CampaignInspector
+                      campaign={selectedCampaign}
+                      tests={selectedCampaignTests}
+                      locale={locale}
+                      t={t}
+                      onCopyTracking={handleCopyTracking}
+                      onToggle={
+                        selectedCampaign ? () => handleToggleCampaign(selectedCampaign) : undefined
+                      }
+                      onBoost={
+                        selectedCampaign ? () => handleBoostCampaign(selectedCampaign) : undefined
+                      }
+                    />
+                  </DashboardPanel>
+                  <div ref={recommendationRef}>
+                    <DashboardPanel delay={0.1} skipReveal>
+                      <RecommendationPanel
+                        items={data.recommendations}
+                        onApply={handleOptimizeBudget}
+                        t={t}
+                      />
+                    </DashboardPanel>
+                  </div>
+                  <DashboardPanel delay={0.14} skipReveal>
+                    <TracePanel events={data.trace} t={t} />
+                  </DashboardPanel>
+                </aside>
               </motion.div>
             </AnimatePresence>
           </>
@@ -1198,11 +1219,7 @@ function MetricCard({
         </motion.span>
       </div>
       <div className="relative text-[12px] font-semibold text-white/42">
-        {featured ? (
-          <GradientText className="font-semibold">{label}</GradientText>
-        ) : (
-          label
-        )}
+        {featured ? <GradientText className="font-semibold">{label}</GradientText> : label}
       </div>
       <div
         className={cn(
@@ -1327,9 +1344,7 @@ function PerformanceChart({
     height - padding.bottom
   } Z`;
   const markerIndex =
-    highlightIndex === null || highlightIndex === undefined
-      ? points.length - 1
-      : highlightIndex;
+    highlightIndex === null || highlightIndex === undefined ? points.length - 1 : highlightIndex;
   const markerPoint = points[markerIndex];
 
   return (
@@ -1371,9 +1386,7 @@ function PerformanceChart({
               }
               width={barWidth}
               rx="3"
-              fill={
-                index === markerIndex ? 'rgba(121,228,255,0.55)' : 'rgba(245,199,106,0.38)'
-              }
+              fill={index === markerIndex ? 'rgba(121,228,255,0.55)' : 'rgba(245,199,106,0.38)'}
             />
           );
         })}
@@ -1392,7 +1405,9 @@ function PerformanceChart({
           strokeLinecap="round"
           initial={reducedMotion ? false : { pathLength: 0, opacity: 0.5 }}
           animate={{ pathLength: 1, opacity: 1 }}
-          transition={reducedMotion ? { duration: 0.01 } : { duration: 1.25, ease: [0.22, 1, 0.36, 1] }}
+          transition={
+            reducedMotion ? { duration: 0.01 } : { duration: 1.25, ease: [0.22, 1, 0.36, 1] }
+          }
         />
         {markerPoint ? (
           <>
@@ -1467,11 +1482,19 @@ function FunnelChart({
             key={stage.key}
             initial={reducedMotion ? false : { opacity: 0, x: -16 }}
             animate={{
-              opacity: linked ? 1 : highlightedStageIndex === null || highlightedStageIndex === undefined ? 1 : 0.42,
+              opacity: linked
+                ? 1
+                : highlightedStageIndex === null || highlightedStageIndex === undefined
+                  ? 1
+                  : 0.42,
               x: 0,
               scale: linked ? 1.02 : 1,
             }}
-            transition={{ delay: reducedMotion ? 0 : index * 0.07, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            transition={{
+              delay: reducedMotion ? 0 : index * 0.07,
+              duration: 0.4,
+              ease: [0.22, 1, 0.36, 1],
+            }}
             className={cn(
               'rounded-lg bg-white/[0.035] p-3 ring-1',
               linked ? 'ring-[#79e4ff]/30 bg-[#14313a]/60' : 'ring-white/[0.04]',
@@ -1525,34 +1548,34 @@ function GeoBreakdownChart({
       {items.map((item, index) => {
         const linked = highlightedRegion ? item.region === highlightedRegion : false;
         return (
-        <motion.div
-          key={item.region}
-          initial={reducedMotion ? false : { opacity: 0, y: 10 }}
-          animate={{
-            opacity: linked ? 1 : highlightedRegion ? 0.38 : 1,
-            y: 0,
-            scale: linked ? 1.02 : 1,
-          }}
-          transition={{ delay: reducedMotion ? 0 : index * 0.06, duration: 0.35 }}
-          className={cn(linked && 'rounded-lg ring-1 ring-[#79e4ff]/24 px-1 py-1')}
-        >
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <span className="text-[12px] font-semibold text-white/78">{item.region}</span>
-            <span className="text-[11px] text-white/38">
-              {formatCurrency(item.revenue, locale)} · {item.roas.toFixed(2)}x
-            </span>
-          </div>
-          <div className="h-9 overflow-hidden rounded-lg bg-white/[0.035] ring-1 ring-white/[0.04]">
-            <motion.div
-              className="flex h-full items-center justify-end rounded-lg bg-gradient-to-r from-[#19414b] via-[#79e4ff] to-[#f5c76a] px-2 text-[11px] font-bold text-[#071316]"
-              initial={{ width: 0 }}
-              animate={{ width: `${Math.max(12, (item.revenue / maxRevenue) * 100)}%` }}
-              transition={{ delay: 0.1 + index * 0.07, duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
-            >
-              {item.share}%
-            </motion.div>
-          </div>
-        </motion.div>
+          <motion.div
+            key={item.region}
+            initial={reducedMotion ? false : { opacity: 0, y: 10 }}
+            animate={{
+              opacity: linked ? 1 : highlightedRegion ? 0.38 : 1,
+              y: 0,
+              scale: linked ? 1.02 : 1,
+            }}
+            transition={{ delay: reducedMotion ? 0 : index * 0.06, duration: 0.35 }}
+            className={cn(linked && 'rounded-lg ring-1 ring-[#79e4ff]/24 px-1 py-1')}
+          >
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="text-[12px] font-semibold text-white/78">{item.region}</span>
+              <span className="text-[11px] text-white/38">
+                {formatCurrency(item.revenue, locale)} · {item.roas.toFixed(2)}x
+              </span>
+            </div>
+            <div className="h-9 overflow-hidden rounded-lg bg-white/[0.035] ring-1 ring-white/[0.04]">
+              <motion.div
+                className="flex h-full items-center justify-end rounded-lg bg-gradient-to-r from-[#19414b] via-[#79e4ff] to-[#f5c76a] px-2 text-[11px] font-bold text-[#071316]"
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.max(12, (item.revenue / maxRevenue) * 100)}%` }}
+                transition={{ delay: 0.1 + index * 0.07, duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+              >
+                {item.share}%
+              </motion.div>
+            </div>
+          </motion.div>
         );
       })}
       {items.length === 0 ? <EmptyState text={t('dashboard.noCampaigns')} /> : null}

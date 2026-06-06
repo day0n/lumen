@@ -3,6 +3,7 @@
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
 import { useI18n } from '@/i18n/provider';
+import { useAppShellChrome } from '@/lib/app-shell-chrome';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import {
@@ -203,6 +204,7 @@ const subcategoryOptions: Record<MaterialAssetCategory, string[]> = {
 
 export function MaterialsPage() {
   const { locale, t } = useI18n();
+  const appShellChrome = useAppShellChrome();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [activeCategory, setActiveCategory] = useState<MaterialAssetCategory>('item');
   const [assetsByCategory, setAssetsByCategory] = useState<
@@ -311,8 +313,8 @@ export function MaterialsPage() {
 
   return (
     <div className="relative min-h-screen text-white">
-      <AuroraBackdrop />
-      <Topbar />
+      {!appShellChrome && <AuroraBackdrop />}
+      {!appShellChrome && <Topbar />}
 
       <main className="relative z-10 mx-auto max-w-[1200px] px-4 pb-nav-mobile pt-24 sm:px-6 sm:pt-28">
         <div

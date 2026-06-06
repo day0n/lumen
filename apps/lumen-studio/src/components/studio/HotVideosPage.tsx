@@ -6,6 +6,7 @@ import { HotVideoRemakePipeline } from '@/components/studio/HotVideoRemakePipeli
 import { RemakeJobsDrawer } from '@/components/studio/RemakeJobsDrawer';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
+import { useAppShellChrome } from '@/lib/app-shell-chrome';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { useUser } from '@clerk/nextjs';
@@ -282,6 +283,7 @@ function toView(record: HotVideoRecord, locale: Locale): HotVideoView {
 
 export function HotVideosPage() {
   const { locale, t } = useI18n();
+  const appShellChrome = useAppShellChrome();
   const { user } = useUser();
   const { isSignedIn, requireLogin } = useLoginRedirect();
   const currentClerkUserId = isSignedIn ? user?.id : undefined;
@@ -464,8 +466,8 @@ export function HotVideosPage() {
   if (remakeJobId) {
     return (
       <div className="relative min-h-screen text-white">
-        <AuroraBackdrop />
-        <Topbar />
+        {!appShellChrome && <AuroraBackdrop />}
+        {!appShellChrome && <Topbar />}
         <HotVideoRemakePipeline jobId={remakeJobId} onBack={() => setRemakeJobId(null)} />
       </div>
     );
@@ -473,8 +475,8 @@ export function HotVideosPage() {
 
   return (
     <div className="relative min-h-screen text-white">
-      <AuroraBackdrop />
-      <Topbar />
+      {!appShellChrome && <AuroraBackdrop />}
+      {!appShellChrome && <Topbar />}
 
       <main className="relative z-10 mx-auto max-w-[1260px] px-4 pb-nav-mobile pt-24 sm:px-6 sm:pt-28">
         <motion.section

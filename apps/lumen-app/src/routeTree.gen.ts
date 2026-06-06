@@ -2,6 +2,8 @@ import { Route as rootRouteImport } from './routes/__root';
 import { Route as CanvasProjectIdRouteImport } from './routes/canvas.$projectId';
 import { Route as CanvasNewRouteImport } from './routes/canvas.new';
 import { Route as DashboardRouteImport } from './routes/dashboard';
+import { Route as HomeRouteImport } from './routes/home';
+import { Route as HotVideosRouteImport } from './routes/hot-videos';
 import { Route as IndexRouteImport } from './routes/index';
 import { Route as MaterialsRouteImport } from './routes/materials';
 import { Route as ProjectsRouteImport } from './routes/projects';
@@ -21,6 +23,16 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as unknown as Parameters<typeof DashboardRouteImport.update>[0]);
+const HomeRoute = HomeRouteImport.update({
+  id: '/home',
+  path: '/home',
+  getParentRoute: () => rootRouteImport,
+} as unknown as Parameters<typeof HomeRouteImport.update>[0]);
+const HotVideosRoute = HotVideosRouteImport.update({
+  id: '/hot-videos',
+  path: '/hot-videos',
+  getParentRoute: () => rootRouteImport,
+} as unknown as Parameters<typeof HotVideosRouteImport.update>[0]);
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -40,6 +52,8 @@ const CanvasProjectIdRoute = CanvasProjectIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
   '/dashboard': typeof DashboardRoute;
+  '/home': typeof HomeRoute;
+  '/hot-videos': typeof HotVideosRoute;
   '/materials': typeof MaterialsRoute;
   '/projects': typeof ProjectsRoute;
   '/canvas/$projectId': typeof CanvasProjectIdRoute;
@@ -48,6 +62,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute;
   '/dashboard': typeof DashboardRoute;
+  '/home': typeof HomeRoute;
+  '/hot-videos': typeof HotVideosRoute;
   '/materials': typeof MaterialsRoute;
   '/projects': typeof ProjectsRoute;
   '/canvas/$projectId': typeof CanvasProjectIdRoute;
@@ -57,6 +73,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   '/': typeof IndexRoute;
   '/dashboard': typeof DashboardRoute;
+  '/home': typeof HomeRoute;
+  '/hot-videos': typeof HotVideosRoute;
   '/materials': typeof MaterialsRoute;
   '/projects': typeof ProjectsRoute;
   '/canvas/$projectId': typeof CanvasProjectIdRoute;
@@ -64,13 +82,31 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: '/' | '/dashboard' | '/materials' | '/projects' | '/canvas/$projectId' | '/canvas/new';
+  fullPaths:
+    | '/'
+    | '/dashboard'
+    | '/home'
+    | '/hot-videos'
+    | '/materials'
+    | '/projects'
+    | '/canvas/$projectId'
+    | '/canvas/new';
   fileRoutesByTo: FileRoutesByTo;
-  to: '/' | '/dashboard' | '/materials' | '/projects' | '/canvas/$projectId' | '/canvas/new';
+  to:
+    | '/'
+    | '/dashboard'
+    | '/home'
+    | '/hot-videos'
+    | '/materials'
+    | '/projects'
+    | '/canvas/$projectId'
+    | '/canvas/new';
   id:
     | '__root__'
     | '/'
     | '/dashboard'
+    | '/home'
+    | '/hot-videos'
     | '/materials'
     | '/projects'
     | '/canvas/$projectId'
@@ -80,6 +116,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   DashboardRoute: typeof DashboardRoute;
+  HomeRoute: typeof HomeRoute;
+  HotVideosRoute: typeof HotVideosRoute;
   MaterialsRoute: typeof MaterialsRoute;
   ProjectsRoute: typeof ProjectsRoute;
   CanvasProjectIdRoute: typeof CanvasProjectIdRoute;
@@ -109,6 +147,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    '/home': {
+      id: '/home';
+      path: '/home';
+      fullPath: '/home';
+      preLoaderRoute: typeof HomeRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/hot-videos': {
+      id: '/hot-videos';
+      path: '/hot-videos';
+      fullPath: '/hot-videos';
+      preLoaderRoute: typeof HotVideosRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/': {
       id: '/';
       path: '/';
@@ -136,6 +188,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
+  HomeRoute: HomeRoute,
+  HotVideosRoute: HotVideosRoute,
   MaterialsRoute: MaterialsRoute,
   ProjectsRoute: ProjectsRoute,
   CanvasProjectIdRoute: CanvasProjectIdRoute,

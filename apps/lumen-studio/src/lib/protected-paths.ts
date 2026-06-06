@@ -1,6 +1,6 @@
 import { stripLocalePrefix } from '@/i18n/routing';
 
-const LOGIN_REQUIRED_PREFIXES = ['/agent-chat', '/canvas', '/materials'] as const;
+const LOGIN_REQUIRED_PREFIXES = ['/agent-chat', '/app', '/canvas', '/materials'] as const;
 
 export function isLoginRequiredPath(href: string): boolean {
   const pathname = readPathname(href);

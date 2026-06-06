@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { Provider as JotaiProvider } from 'jotai';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { installApiFetchInterceptor, setApiTokenGetter } from '../lib/api-client';
+import { scheduleAppWarmup } from '../lib/app-warmup';
 import { createQueryClient } from '../lib/query-client';
 import { MinimalProviders } from './minimal-providers';
 
@@ -15,6 +16,18 @@ function ApiTokenBridge() {
     installApiFetchInterceptor();
     return () => setApiTokenGetter(null);
   }, [getToken]);
+
+  return null;
+}
+
+function AppWarmup() {
+  const { isLoaded, isSignedIn } = useAuth();
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    const timeoutId = globalThis.setTimeout(scheduleAppWarmup, 150);
+    return () => globalThis.clearTimeout(timeoutId);
+  }, [isLoaded, isSignedIn]);
 
   return null;
 }
@@ -47,6 +60,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
           <QueryClientProvider client={queryClient}>
             <I18nProvider>
               <ApiTokenBridge />
+              <AppWarmup />
               {children}
             </I18nProvider>
           </QueryClientProvider>

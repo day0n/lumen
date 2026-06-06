@@ -5,6 +5,7 @@ import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
+import { useAppShellChrome } from '@/lib/app-shell-chrome';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import {
@@ -92,6 +93,7 @@ type SelectedScope = null | 'uncategorized' | string;
 
 export function WorkspacePage() {
   const { locale, t, localePath } = useI18n();
+  const appShellChrome = useAppShellChrome();
   const router = useRouter();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const [projects, setProjects] = useState<StudioProject[]>([]);
@@ -407,8 +409,8 @@ export function WorkspacePage() {
 
   return (
     <div className="relative min-h-screen text-white">
-      <AuroraBackdrop />
-      <Topbar />
+      {!appShellChrome && <AuroraBackdrop />}
+      {!appShellChrome && <Topbar />}
 
       <main className="relative z-10 mx-auto max-w-[1320px] px-4 pb-nav-mobile pt-24 sm:px-6 sm:pt-28">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">

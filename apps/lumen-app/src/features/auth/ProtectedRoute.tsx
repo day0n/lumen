@@ -2,6 +2,7 @@ import { useAuth } from '@clerk/react';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { currentAppRedirectUrl } from '../../lib/path-map';
+import { AppRouteFallback } from '../routing/AppRouteFallback';
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
@@ -12,11 +13,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   }, [isLoaded, isSignedIn]);
 
   if (!isLoaded || !isSignedIn) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-[#0c0d0f] text-sm text-white/60">
-        Loading Studio...
-      </div>
-    );
+    return <AppRouteFallback />;
   }
 
   return children;
