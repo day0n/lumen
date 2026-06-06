@@ -908,6 +908,16 @@ function withCurrentAppRoutePrefix(localizedPath: string) {
   return `${appPrefix}${appPath.startsWith('/') ? appPath : `/${appPath}`}`;
 }
 
+function readCanvasEntrySearchParam(
+  searchParams: URLSearchParams | null | undefined,
+  key: string,
+) {
+  const routedValue = searchParams?.get(key);
+  if (routedValue) return routedValue;
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get(key);
+}
+
 export function CanvasWorkbench({ projectId, createOnMount = false }: CanvasWorkbenchProps) {
   return (
     <ReactFlowProvider>
@@ -921,8 +931,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const searchParams = useSearchParams();
   const { locale, t, localePath } = useI18n();
   const { isLoaded: authReady, isSignedIn, requireLogin } = useLoginRedirect();
-  const initialPrompt = useMemo(() => searchParams?.get('prompt') ?? null, [searchParams]);
-  const agentChatParam = searchParams?.get('agent') ?? null;
+  const [initialPrompt] = useState(() => readCanvasEntrySearchParam(searchParams, 'prompt'));
+  const [agentChatParam] = useState(() => readCanvasEntrySearchParam(searchParams, 'agent'));
   const shouldOpenAgentChat = agentChatParam !== 'closed';
   const [activeKind, setActiveKind] = useState<NodeKind>('text');
   const [nodeMenuOpen, setNodeMenuOpen] = useState(false);
