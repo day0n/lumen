@@ -5,6 +5,7 @@ import { type LumenCanvas, computeSingleNodeInput } from '@lumen/shared/domain';
 
 import {
   SliceKeys,
+  buildBgmPrompt,
   estimateFinalDurationSeconds,
   expandLockStage,
   parseEnvironmentIndexFromSliceKey,
@@ -133,6 +134,16 @@ assert.equal(
   3.8,
   'BGM task is trimmed to estimated final short duration',
 );
+const bgmPrompt = buildBgmPrompt(job, estimateFinalDurationSeconds(job));
+assert.ok(
+  bgmPrompt.includes('Target duration: 3.8 seconds'),
+  'BGM prompt includes target duration',
+);
+assert.ok(
+  bgmPrompt.includes('Average scene duration: 3.8 seconds across 1 scene'),
+  'BGM prompt includes scene pacing',
+);
+assert.ok(bgmPrompt.includes('No vocals, no lyrics, no spoken words.'));
 
 const referencedJob = RemakeJobRecordSchema.parse({
   ...job,

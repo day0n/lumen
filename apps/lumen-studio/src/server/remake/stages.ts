@@ -42,6 +42,8 @@ const EMPTY_INPUT: RemakeTaskInput = {
 };
 
 const FINAL_CLIP_HEAD_TRIM_SECONDS = 0.2;
+const DEFAULT_BGM_BRIEF =
+  'Instrumental luxury UGC product ad background music, modern, clean, upbeat but not distracting, no vocals, suitable for a vertical social product video.';
 
 function makeInput(patch: Partial<RemakeTaskInput>): RemakeTaskInput {
   return { ...EMPTY_INPUT, ...patch };
@@ -321,9 +323,7 @@ Generate the spoken audio natively in ${characterToken}'s voice. The on-screen m
     sliceKey: SliceKeys.bgm,
     handler: 'suno-music',
     input: makeInput({
-      prompt:
-        job.plan.bgmPrompt ??
-        'Instrumental luxury UGC product ad background music, modern, clean, upbeat but not distracting, no vocals, suitable for a vertical TikTok Shop product video.',
+      prompt: buildBgmPrompt(job, bgmDurationSeconds),
     }),
     settings: { instrumental: true, suno_model: 'V5', durationSeconds: bgmDurationSeconds },
   });
@@ -381,6 +381,27 @@ export function estimateFinalDurationSeconds(job: RemakeJobRecord): number {
     if (!Number.isFinite(duration) || duration <= 0) return sum;
     return sum + Math.max(0.1, duration - FINAL_CLIP_HEAD_TRIM_SECONDS);
   }, 0);
+}
+
+export function buildBgmPrompt(job: RemakeJobRecord, targetDurationSeconds: number): string {
+  const duration = Math.max(1, targetDurationSeconds);
+  const sceneCount = Math.max(1, job.plan.scenes.length);
+  const averageSeconds = duration / sceneCount;
+  const sceneLabel = sceneCount === 1 ? 'scene' : 'scenes';
+  const brief = job.plan.bgmPrompt?.trim() || DEFAULT_BGM_BRIEF;
+
+  return [
+    'Generate one continuous instrumental BGM track for the final editing stage of this short product video.',
+    'No vocals, no lyrics, no spoken words.',
+    `Target duration: ${formatPromptSeconds(duration)} seconds; a short extra tail is okay because editing will trim the track.`,
+    `Average scene duration: ${formatPromptSeconds(averageSeconds)} seconds across ${sceneCount} ${sceneLabel}. Choose a BPM and phrase structure that let scene cuts land on strong beats or 4/8-beat phrase boundaries.`,
+    'Keep the intro fast enough for short-form editing, with a clean loop-friendly ending.',
+    `Music brief: ${brief}`,
+  ].join('\n');
+}
+
+function formatPromptSeconds(value: number): string {
+  return Math.max(0, value).toFixed(1).replace(/\.0$/, '');
 }
 
 function buildEnvironmentLockPrompt(
