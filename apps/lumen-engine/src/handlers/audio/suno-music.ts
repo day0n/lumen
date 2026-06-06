@@ -1,5 +1,15 @@
+import { spawn } from 'node:child_process';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { config } from '../../config.js';
-import { sleep, throwIfCancelled } from '../../engine/cancellation.js';
+import {
+  WorkflowCancelledError,
+  cancellationReason,
+  sleep,
+  throwIfCancelled,
+} from '../../engine/cancellation.js';
 import type { ResolvedInput } from '../../engine/resolver.js';
 import { logger } from '../../utils/logger.js';
 import type { ExecutionContext, NodeOutput } from '../base.js';
@@ -57,6 +67,7 @@ export async function execute(
 
   const instrumental = readBooleanSetting(settings, 'instrumental', 'make_instrumental');
   const model = readStringSetting(settings, 'suno_model') ?? 'V5';
+  const durationSeconds = readDurationSetting(settings);
 
   const taskId = await submitMusicTask({
     apiKey,
@@ -70,9 +81,90 @@ export async function execute(
 
   const audioUrl = await pollMusicResult(apiKey, taskId, signal);
 
+  if (durationSeconds !== null) {
+    const trimmedAudioUrl = await trimGeneratedAudio(audioUrl, durationSeconds, signal);
+    logger.info(
+      { taskId, audioUrl, trimmedAudioUrl, durationSeconds },
+      'suno-music audio generated and trimmed',
+    );
+    return { type: 'audio', value: trimmedAudioUrl };
+  }
+
   logger.info({ taskId, audioUrl }, 'suno-music audio generated');
 
   return { type: 'audio', value: audioUrl };
+}
+
+async function trimGeneratedAudio(
+  sourceUrl: string,
+  durationSeconds: number,
+  signal?: AbortSignal,
+): Promise<string> {
+  throwIfCancelled(signal);
+  const workdir = await mkdtemp(join(tmpdir(), 'lumen-suno-music-'));
+  const inputPath = await downloadAudio(sourceUrl, workdir, signal);
+  const outputPath = join(workdir, 'bgm-trimmed.m4a');
+  const duration = clampNumber(durationSeconds, 0.5, config.VIDEO_EDIT_MAX_DURATION_SECONDS);
+
+  await runCommand(
+    config.VIDEO_EDIT_FFMPEG_PATH,
+    [
+      '-y',
+      '-hide_banner',
+      '-i',
+      inputPath,
+      '-t',
+      formatSeconds(duration),
+      '-vn',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '160k',
+      '-movflags',
+      '+faststart',
+      outputPath,
+    ],
+    5 * 60 * 1000,
+    signal,
+  );
+
+  return pathToFileURL(outputPath).toString();
+}
+
+async function downloadAudio(url: string, workdir: string, signal?: AbortSignal): Promise<string> {
+  throwIfCancelled(signal);
+  if (!isHttpUrl(url)) {
+    throw new Error('suno-music returned an unsupported audio URL');
+  }
+
+  const response = await fetch(url, {
+    redirect: 'follow',
+    headers: {
+      'user-agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+      accept: 'audio/*,*/*',
+    },
+    signal: timeoutSignal(300_000, signal),
+  });
+
+  if (!response.ok) {
+    throw new Error(`failed to download suno audio: HTTP ${response.status}`);
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  throwIfCancelled(signal);
+  const maxBytes = config.VIDEO_EDIT_MAX_INPUT_MB * 1024 * 1024;
+  if (bytes.byteLength > maxBytes) {
+    throw new Error(
+      `suno audio is too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB > ${config.VIDEO_EDIT_MAX_INPUT_MB}MB)`,
+    );
+  }
+
+  const contentType = response.headers.get('content-type')?.split(';')[0]?.trim() ?? '';
+  const extension = audioExtensionFor(contentType, url);
+  const path = join(workdir, `bgm-source.${extension}`);
+  await writeFile(path, bytes);
+  return path;
 }
 
 async function submitMusicTask(args: {
@@ -214,6 +306,14 @@ function readStringSetting(settings: Record<string, unknown>, key: string): stri
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function readDurationSetting(settings: Record<string, unknown>): number | null {
+  const value = settings.durationSeconds;
+  const parsed =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
 function readBooleanSetting(settings: Record<string, unknown>, ...keys: string[]): boolean {
   for (const key of keys) {
     const value = settings[key];
@@ -225,4 +325,116 @@ function readBooleanSetting(settings: Record<string, unknown>, ...keys: string[]
     }
   }
   return false;
+}
+
+function audioExtensionFor(contentType: string, url: string): string {
+  switch (contentType.toLowerCase()) {
+    case 'audio/mpeg':
+    case 'audio/mp3':
+      return 'mp3';
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return 'wav';
+    case 'audio/ogg':
+      return 'ogg';
+    case 'audio/aac':
+      return 'aac';
+    case 'audio/mp4':
+    case 'audio/x-m4a':
+      return 'm4a';
+    case 'audio/flac':
+      return 'flac';
+  }
+
+  try {
+    const ext = new URL(url).pathname.split('.').pop()?.toLowerCase();
+    if (ext && ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'].includes(ext)) return ext;
+  } catch {
+    // Fall through to mp3.
+  }
+  return 'mp3';
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function timeoutSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(value, max));
+}
+
+function formatSeconds(value: number): string {
+  return Math.max(0, value)
+    .toFixed(3)
+    .replace(/\.?0+$/, '');
+}
+
+function runCommand(
+  command: string,
+  args: string[],
+  timeoutMs = 60_000,
+  signal?: AbortSignal,
+): Promise<{ stdout: string; stderr: string }> {
+  throwIfCancelled(signal);
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGKILL');
+      cleanup();
+      reject(new WorkflowCancelledError(cancellationReason(signal)));
+    };
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGKILL');
+      cleanup();
+      reject(new Error(`${command} timed out after ${Math.round(timeoutMs / 1000)}s`));
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const out = Buffer.concat(stdout).toString('utf8');
+      const err = Buffer.concat(stderr).toString('utf8');
+      if (code === 0) {
+        resolve({ stdout: out, stderr: err });
+        return;
+      }
+      reject(new Error(`${command} exited with code ${code}: ${err.slice(-2000)}`));
+    });
+  });
 }

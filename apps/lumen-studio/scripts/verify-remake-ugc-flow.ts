@@ -5,6 +5,7 @@ import { type LumenCanvas, computeSingleNodeInput } from '@lumen/shared/domain';
 
 import {
   SliceKeys,
+  estimateFinalDurationSeconds,
   expandLockStage,
   parseEnvironmentIndexFromSliceKey,
   sliceOutputField,
@@ -126,6 +127,11 @@ assert.deepEqual(
   productTask.input.images,
   [],
   'product can be generated from prompt when no image exists',
+);
+assert.equal(
+  estimateFinalDurationSeconds(job),
+  3.8,
+  'BGM task is trimmed to estimated final short duration',
 );
 
 const referencedJob = RemakeJobRecordSchema.parse({

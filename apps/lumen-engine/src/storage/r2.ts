@@ -1,11 +1,11 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import type { NodeType } from '@lumen/shared/domain';
-import * as Sentry from '@sentry/node';
 import { createReadStream } from 'node:fs';
 import { rm, stat, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import type { NodeType } from '@lumen/shared/domain';
+import * as Sentry from '@sentry/node';
 import { customAlphabet } from 'nanoid';
 
 import { config } from '../config.js';
@@ -394,7 +394,10 @@ function safeTempFilePath(value: string): string {
 async function cleanupTempFile(localPath: string): Promise<void> {
   try {
     const parent = dirname(localPath);
-    if (parent.startsWith(resolve(tmpdir())) && parent.includes('lumen-video-edit-')) {
+    if (
+      parent.startsWith(resolve(tmpdir())) &&
+      (parent.includes('lumen-video-edit-') || parent.includes('lumen-suno-music-'))
+    ) {
       await rm(parent, { recursive: true, force: true });
       return;
     }

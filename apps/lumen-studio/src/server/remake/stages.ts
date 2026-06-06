@@ -41,6 +41,8 @@ const EMPTY_INPUT: RemakeTaskInput = {
   clips: [],
 };
 
+const FINAL_CLIP_HEAD_TRIM_SECONDS = 0.2;
+
 function makeInput(patch: Partial<RemakeTaskInput>): RemakeTaskInput {
   return { ...EMPTY_INPUT, ...patch };
 }
@@ -254,6 +256,7 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
   const aspectRatio = job.settings.aspectRatio;
   const videoResolution = '720p'; // veo-3.1 约束：720p 才尊重 per-scene duration
   const productName = job.reference.productName ?? job.reference.label;
+  const bgmDurationSeconds = estimateFinalDurationSeconds(job);
 
   const generatedVideoPrompts = await Promise.all(
     job.plan.scenes.map((scene) => {
@@ -322,7 +325,7 @@ Generate the spoken audio natively in ${characterToken}'s voice. The on-screen m
         job.plan.bgmPrompt ??
         'Instrumental luxury UGC product ad background music, modern, clean, upbeat but not distracting, no vocals, suitable for a vertical TikTok Shop product video.',
     }),
-    settings: { instrumental: true, suno_model: 'V5' },
+    settings: { instrumental: true, suno_model: 'V5', durationSeconds: bgmDurationSeconds },
   });
 
   return tasks;
@@ -362,7 +365,7 @@ export function expandFinalStage(job: RemakeJobRecord): PlannedTask | null {
     settings: {
       aspectRatio: job.settings.aspectRatio,
       resolution: job.settings.resolution,
-      trimHeadSeconds: 0.2,
+      trimHeadSeconds: FINAL_CLIP_HEAD_TRIM_SECONDS,
       flashTransition: true,
       renderSubtitles: true,
       // 视频自带口播音轨保留为主声道（默认 1）；BGM 压低到 0.28 当背景。
@@ -370,6 +373,14 @@ export function expandFinalStage(job: RemakeJobRecord): PlannedTask | null {
       clipTitles,
     },
   };
+}
+
+export function estimateFinalDurationSeconds(job: RemakeJobRecord): number {
+  return job.plan.scenes.reduce((sum, scene) => {
+    const duration = Number(scene.durationSeconds);
+    if (!Number.isFinite(duration) || duration <= 0) return sum;
+    return sum + Math.max(0.1, duration - FINAL_CLIP_HEAD_TRIM_SECONDS);
+  }, 0);
 }
 
 function buildEnvironmentLockPrompt(
