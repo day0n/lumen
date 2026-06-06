@@ -1,6 +1,7 @@
 'use client';
 
 import { preloadCanvasHydrationOverlay } from '@/components/canvas/preload-canvas-hydration';
+import { withCanvasEntryLoader } from '@/components/canvas/canvas-entry-loader';
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
 import { useI18n } from '@/i18n/provider';
@@ -114,7 +115,7 @@ export function WorkspacePage() {
   const warmCanvasDestination = useCallback(
     (href?: string) => {
       void preloadCanvasHydrationOverlay();
-      if (href) router.prefetch(href);
+      if (href) router.prefetch(withCanvasEntryLoader(href));
     },
     [router],
   );
@@ -594,13 +595,16 @@ export function WorkspacePage() {
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {trimmedQuery || selectedScope !== null ? null : (
-                  <NewProjectCard href={localePath('/canvas/new')} onWarm={warmCanvasDestination} />
+                  <NewProjectCard
+                    href={withCanvasEntryLoader(localePath('/canvas/new'))}
+                    onWarm={warmCanvasDestination}
+                  />
                 )}
                 {visibleProjects.map((project) => (
                   <ProjectCard
                     key={project.id}
                     project={project}
-                    href={localePath(`/canvas/${project.id}`)}
+                    href={withCanvasEntryLoader(localePath(`/canvas/${project.id}`))}
                     folders={sortedFolders}
                     onMove={(folderId) => moveProject(project.id, folderId)}
                     onDelete={() => deleteProject(project)}

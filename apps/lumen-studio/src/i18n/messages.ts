@@ -249,6 +249,11 @@ const en = {
       preparing: 'Lighting up canvas',
       hint: 'Loading workflow nodes…',
     },
+    entry: {
+      opening: 'Opening workflow…',
+      loadingNodes: 'Loading workflow nodes…',
+      preparingCanvas: 'Preparing canvas…',
+    },
     toolbar: {
       addNode: 'Add node',
       materials: 'Assets',
@@ -930,6 +935,11 @@ const zh: typeof en = {
     hydration: {
       preparing: '正在唤醒画布',
       hint: '正在把工作流节点装载到画布…',
+    },
+    entry: {
+      opening: '正在打开工作流…',
+      loadingNodes: '正在加载节点…',
+      preparingCanvas: '正在准备画布…',
     },
     toolbar: {
       addNode: '添加节点',

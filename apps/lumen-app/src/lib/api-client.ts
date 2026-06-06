@@ -13,11 +13,13 @@ let tokenGetter: TokenGetter | null = null;
 const apiCache = new Map<string, CachedApiResponse>();
 
 const apiCacheTtlByPath: Array<[prefix: string, ttlMs: number]> = [
+  ['/api/home/featured', 30 * 60_000],
   ['/api/projects/', 5 * 60_000],
   ['/api/projects', 60_000],
   ['/api/material-assets', 5 * 60_000],
   ['/api/folders', 5 * 60_000],
   ['/api/hot-videos', 30 * 60_000],
+  ['/api/tiktok-dashboard', 60_000],
   ['/api/me', 60_000],
 ];
 
@@ -58,7 +60,7 @@ export function installApiFetchInterceptor() {
     }
 
     const response = await nativeFetch(request);
-    if (response.status === 401 || response.status === 403) {
+    if ((response.status === 401 || response.status === 403) && !isPrefetchRequest(request)) {
       const redirectUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       window.location.assign(`/sign-in?redirect_url=${encodeURIComponent(redirectUrl)}`);
     }
@@ -69,6 +71,10 @@ export function installApiFetchInterceptor() {
     }
     return response;
   };
+}
+
+function isPrefetchRequest(request: Request) {
+  return request.headers.get('x-lumen-prefetch') === '1';
 }
 
 function normalizeRequest(input: RequestInfo | URL, init: RequestInit) {

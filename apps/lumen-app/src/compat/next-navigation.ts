@@ -1,5 +1,6 @@
 import { useLocation } from '@tanstack/react-router';
 import { useMemo } from 'react';
+import { warmAppRouteResources } from '../lib/app-warmup';
 import { toRouterPath } from '../lib/path-map';
 import { router } from '../router';
 
@@ -19,6 +20,7 @@ export function useRouter() {
           to: target.to as never,
           search: target.search as never,
         });
+        void warmAppRouteResources(href);
       },
       back: () => window.history.back(),
       refresh: () => window.location.reload(),

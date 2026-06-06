@@ -1,4 +1,8 @@
-import { Suspense, lazy } from 'react';
+'use client';
+
+import { stripCanvasEntryLoaderSearch } from '@/components/canvas/canvas-entry-loader';
+import { CanvasEntryLoader } from '@/components/canvas/CanvasEntryLoader';
+import { Suspense, lazy, useEffect } from 'react';
 import { StudioProviders } from '../../providers/studio-providers';
 
 const CanvasWorkbench = lazy(() =>
@@ -14,15 +18,15 @@ export function CanvasRoute({
   projectId?: string;
   createOnMount?: boolean;
 }) {
+  useEffect(() => {
+    stripCanvasEntryLoaderSearch();
+  }, []);
+
   return (
     <StudioProviders>
-      <Suspense fallback={<CanvasShellFallback />}>
+      <Suspense fallback={<CanvasEntryLoader />}>
         <CanvasWorkbench projectId={projectId} createOnMount={createOnMount} />
       </Suspense>
     </StudioProviders>
   );
-}
-
-function CanvasShellFallback() {
-  return <div className="min-h-dvh bg-[#0b0d10]" />;
 }

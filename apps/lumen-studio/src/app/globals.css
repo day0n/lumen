@@ -409,6 +409,40 @@ body::before {
     background-size: 200% 100%;
     animation: shimmer 6s linear infinite;
   }
+
+  /* canvas entry loader label shimmer */
+  .canvas-entry-label {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(255, 255, 255, 0.72) 40%,
+      rgba(255, 255, 255, 0.28) 60%,
+      rgba(255, 255, 255, 0.72) 80%,
+      rgba(255, 255, 255, 0.72) 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: canvas-entry-shimmer 5s linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .canvas-entry-label {
+      animation: none;
+      background: none;
+      color: rgba(255, 255, 255, 0.72);
+    }
+  }
+}
+
+@keyframes canvas-entry-shimmer {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
 }
 
 @keyframes agent-star-border-bottom {
