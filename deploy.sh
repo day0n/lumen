@@ -41,14 +41,20 @@ if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; 
 fi
 
 echo "==> Ensuring CJK subtitle font..."
-if [ ! -f /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc ]; then
+SUBTITLE_FONT_FILE=/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+if [ ! -f "$SUBTITLE_FONT_FILE" ]; then
   if [ "$(id -u)" -eq 0 ] && command -v apt-get >/dev/null 2>&1; then
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y fonts-noto-cjk
     fc-cache -f >/dev/null 2>&1 || true
   else
-    echo "CJK font missing; Chinese subtitles may render as squares."
+    echo "CJK font missing; install fonts-noto-cjk before deploying subtitle rendering."
+    exit 1
   fi
+fi
+if [ ! -f "$SUBTITLE_FONT_FILE" ]; then
+  echo "CJK font install did not produce $SUBTITLE_FONT_FILE"
+  exit 1
 fi
 
 echo "==> Installing dependencies..."
