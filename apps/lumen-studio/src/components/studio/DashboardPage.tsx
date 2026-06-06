@@ -24,7 +24,6 @@ import {
   DashboardInsightBar,
 } from '@/components/studio/dashboard/DashboardInsightBar';
 import { DashboardTimeScrubber } from '@/components/studio/dashboard/DashboardTimeScrubber';
-import { GlassSegmentedControl } from '@/components/ui/glass/GlassSegmentedControl';
 import {
   CHANNEL_OPTIONS,
   type DashboardSectionTarget,
@@ -615,7 +614,6 @@ export function DashboardPage() {
                 onChannelChange={setChannel}
                 onRefresh={() => setRefreshNonce((current) => current + 1)}
                 onExport={handleExport}
-                reducedMotion={reducedMotion}
                 t={t}
               />
             </div>
@@ -641,7 +639,6 @@ export function DashboardPage() {
                 setFiltersOpen(false);
               }}
               onExport={handleExport}
-              reducedMotion={reducedMotion}
               t={t}
               stacked
             />
@@ -649,13 +646,12 @@ export function DashboardPage() {
         </div>
 
         <div className="mb-4 grid grid-cols-1 gap-2 lg:grid-cols-[1fr_auto] lg:items-center">
-          <GlassSegmentedControl
+          <SegmentedControl
             options={objectiveOptions}
             value={objective}
             onChange={setObjective}
             ariaLabel={t('dashboard.objective')}
             spacious
-            reducedMotion={reducedMotion}
           />
 
           <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl bg-[#151719]/78 px-3 py-2 text-[12px] text-white/46 ring-1 ring-white/[0.08]">
@@ -1070,6 +1066,52 @@ function SectionHeader({
         {meta ? <p className="mt-0.5 truncate text-[11px] text-white/34">{meta}</p> : null}
       </div>
       {action ? <div className="ml-auto">{action}</div> : null}
+    </div>
+  );
+}
+
+function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+  spacious = false,
+}: {
+  options: { label: string; value: T }[];
+  value: T;
+  onChange: (value: T) => void;
+  ariaLabel: string;
+  spacious?: boolean;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cn(
+        'grid rounded-lg bg-white/[0.045] p-1 ring-1 ring-white/[0.06]',
+        spacious ? 'grid-cols-2 gap-1 md:grid-cols-4' : 'grid-cols-4',
+      )}
+    >
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              'min-h-11 rounded-md px-3 text-[12px] font-semibold transition-colors',
+              active
+                ? 'bg-white text-[#111315]'
+                : 'text-white/48 hover:bg-white/[0.05] hover:text-white/80',
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1670,7 +1712,6 @@ function DashboardFilterControls({
   onChannelChange,
   onRefresh,
   onExport,
-  reducedMotion,
   t,
   stacked = false,
 }: {
@@ -1686,7 +1727,6 @@ function DashboardFilterControls({
   onChannelChange: (value: TiktokDashboardChannel) => void;
   onRefresh: () => void;
   onExport: () => void;
-  reducedMotion: boolean;
   t: TFunction;
   stacked?: boolean;
 }) {
@@ -1694,13 +1734,12 @@ function DashboardFilterControls({
 
   return (
     <div className={wrap}>
-      <GlassSegmentedControl
+      <SegmentedControl
         options={RANGE_OPTIONS}
         value={range}
         onChange={onRangeChange}
         ariaLabel={t('dashboard.range')}
         spacious={stacked}
-        reducedMotion={reducedMotion}
       />
       <SelectControl
         icon={IconWorld}
