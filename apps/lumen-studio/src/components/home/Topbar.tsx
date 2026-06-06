@@ -13,6 +13,7 @@ import { IconChartBar, IconDeviceTv, IconFolder, IconHome, IconPhoto } from '@ta
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
 
 const navItems = [
@@ -57,17 +58,33 @@ export function Topbar() {
   const router = useRouter();
   const pathname = usePathname();
   const normalizedPath = stripLocalePrefix(pathname || '/');
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
   const { t, localePath } = useI18n();
   const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
   const authRedirect = encodeURIComponent(pathname || '/');
   const inAppShell = normalizedPath === '/app' || normalizedPath.startsWith('/app/');
+  const activePath = pendingPath ?? normalizedPath;
+
+  useEffect(() => {
+    if (!pendingPath) return;
+    const timeoutId = window.setTimeout(() => setPendingPath(null), 1500);
+    return () => window.clearTimeout(timeoutId);
+  }, [pendingPath]);
 
   const handleProtectedNavClick = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
     if (!authLoaded || !isLoginRequiredPath(href)) return;
-    if (!requireLogin(href)) event.preventDefault();
+    if (!requireLogin(href)) {
+      event.preventDefault();
+      return;
+    }
+    setPendingPath(readNavPath(href));
+    handleNavIntent(href);
   };
 
-  const handleNavIntent = (href: string) => {
+  const handleNavIntent = (href: string, activate = false) => {
+    if (activate && (isSignedIn || !isLoginRequiredPath(href))) {
+      setPendingPath(readNavPath(href));
+    }
     if ('prefetch' in router) {
       try {
         router.prefetch(href);
@@ -95,7 +112,7 @@ export function Topbar() {
             {navItems.map((item) => {
               const Icon = item.icon;
               const href = inAppShell ? item.appHref : item.href;
-              const active = isNavItemActive(normalizedPath, item.activePaths);
+              const active = isNavItemActive(activePath, item.activePaths);
               const label = t(item.labelKey);
 
               return (
@@ -105,9 +122,9 @@ export function Topbar() {
                   prefetch={false}
                   onClick={(event) => handleProtectedNavClick(event, href)}
                   onFocus={() => handleNavIntent(href)}
-                  onMouseDown={() => handleNavIntent(href)}
+                  onMouseDown={() => handleNavIntent(href, true)}
                   onPointerEnter={() => handleNavIntent(href)}
-                  onTouchStart={() => handleNavIntent(href)}
+                  onTouchStart={() => handleNavIntent(href, true)}
                   className={cn(
                     'relative flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium transition-colors',
                     active ? 'text-white' : 'text-white/55 hover:text-white',
@@ -167,7 +184,7 @@ export function Topbar() {
         {navItems.map((item) => {
           const Icon = item.icon;
           const href = inAppShell ? item.appHref : item.href;
-          const active = isNavItemActive(normalizedPath, item.activePaths);
+          const active = isNavItemActive(activePath, item.activePaths);
           const label = t(item.labelKey);
 
           return (
@@ -178,9 +195,9 @@ export function Topbar() {
               aria-label={label}
               onClick={(event) => handleProtectedNavClick(event, href)}
               onFocus={() => handleNavIntent(href)}
-              onMouseDown={() => handleNavIntent(href)}
+              onMouseDown={() => handleNavIntent(href, true)}
               onPointerEnter={() => handleNavIntent(href)}
-              onTouchStart={() => handleNavIntent(href)}
+              onTouchStart={() => handleNavIntent(href, true)}
               className={cn(
                 'relative flex min-h-11 min-w-11 items-center justify-center rounded-xl transition-colors',
                 active ? 'text-[#111315]' : 'text-white/58 hover:text-white',
@@ -204,4 +221,12 @@ export function Topbar() {
 
 function isNavItemActive(pathname: string, activePaths: string[]) {
   return activePaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+
+function readNavPath(href: string) {
+  try {
+    return stripLocalePrefix(new URL(href, 'https://lumen.local').pathname);
+  } catch {
+    return href;
+  }
 }

@@ -2,15 +2,16 @@ let routeWarmup: Promise<unknown> | null = null;
 let dataWarmup: Promise<unknown> | null = null;
 
 export function scheduleAppWarmup() {
-  const run = () => {
-    void warmAppRoutes();
+  void warmAppRoutes();
+
+  const runDataWarmup = () => {
     void warmAppData();
   };
 
   if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(run, { timeout: 1200 });
+    window.requestIdleCallback(runDataWarmup, { timeout: 1200 });
   } else {
-    globalThis.setTimeout(run, 350);
+    globalThis.setTimeout(runDataWarmup, 350);
   }
 }
 
