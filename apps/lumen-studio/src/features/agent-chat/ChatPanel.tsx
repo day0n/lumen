@@ -306,9 +306,10 @@ export function ChatPanel({
     interactionStartedRef.current = true;
     setOpen(true);
     void send(trimmed).finally(() => {
-      void loadSessions();
+      void loadSessions().finally(() => {
+        clearInitialPromptFromUrl();
+      });
     });
-    clearInitialPromptFromUrl();
   }, [initialPrompt, projectId, send, authReady, isSignedIn, requireLogin, loadSessions]);
 
   const streamKey = useMemo(
