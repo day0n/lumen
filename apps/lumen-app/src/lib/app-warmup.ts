@@ -1,8 +1,32 @@
 let routeWarmup: Promise<unknown> | null = null;
 let dataWarmup: Promise<unknown> | null = null;
 
-export function scheduleAppWarmup() {
+export function warmCurrentAppRoute(pathname = window.location.pathname) {
+  const routePath = pathname.replace(/^\/app(?=\/|$)/, '') || '/home';
+
+  if (routePath === '/' || routePath.startsWith('/home')) {
+    return import('@/app/home/page');
+  }
+  if (routePath.startsWith('/dashboard')) {
+    return import('@/components/studio/DashboardPage');
+  }
+  if (routePath.startsWith('/hot-videos')) {
+    return import('@/components/studio/HotVideosPage');
+  }
+  if (routePath.startsWith('/materials')) {
+    return import('@/components/studio/MaterialsPage');
+  }
+  if (routePath.startsWith('/projects')) {
+    return import('@/components/studio/WorkspacePage');
+  }
+
+  return Promise.resolve();
+}
+
+export function scheduleAppWarmup({ includeData = true }: { includeData?: boolean } = {}) {
   void warmAppRoutes();
+
+  if (!includeData) return;
 
   const runDataWarmup = () => {
     void warmAppData();

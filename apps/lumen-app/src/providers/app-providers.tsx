@@ -24,6 +24,11 @@ function AppWarmup() {
   const { isLoaded, isSignedIn } = useAuth();
 
   useEffect(() => {
+    const timeoutId = globalThis.setTimeout(() => scheduleAppWarmup({ includeData: false }), 0);
+    return () => globalThis.clearTimeout(timeoutId);
+  }, []);
+
+  useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
     const timeoutId = globalThis.setTimeout(scheduleAppWarmup, 150);
     return () => globalThis.clearTimeout(timeoutId);
