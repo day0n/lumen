@@ -1,8 +1,8 @@
 'use client';
 
+import { APP_HOME_ROUTE } from '@/components/landing/useHomeRoutePreload';
 import { useI18n } from '@/i18n/provider';
 import { IconArrowRight } from '@tabler/icons-react';
-import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 type SceneKey = 'filming' | 'night' | 'sunbath';
@@ -71,7 +71,7 @@ interface ParticleStoryProps {
 }
 
 export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
-  const { t, ta, localePath } = useI18n();
+  const { t, ta } = useI18n();
   const sectionRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const progressRef = useRef(0);
@@ -310,17 +310,17 @@ export function ParticleStory({ onHomeIntent }: ParticleStoryProps) {
               {t('landing.particleSummary')}
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-2.5">
-              <Link
-                href={localePath('/home')}
-                prefetch
+              <a
+                href={APP_HOME_ROUTE}
                 onFocus={() => onHomeIntent?.()}
                 onPointerEnter={() => onHomeIntent?.()}
                 onTouchStart={() => onHomeIntent?.()}
+                onMouseDown={() => onHomeIntent?.()}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#79e4ff] px-4 text-[13px] font-bold tracking-normal text-[#071316] transition-transform active:scale-[0.98]"
               >
                 {t('landing.cta')}
                 <IconArrowRight size={16} stroke={2.4} />
-              </Link>
+              </a>
             </div>
           </div>
         </div>

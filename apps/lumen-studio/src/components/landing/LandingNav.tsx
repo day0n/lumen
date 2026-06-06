@@ -1,6 +1,7 @@
 'use client';
 
 import { LanguageToggle } from '@/components/i18n/LanguageToggle';
+import { APP_HOME_ROUTE } from '@/components/landing/useHomeRoutePreload';
 import { LumenWordmark } from '@/components/ui/LumenWordmark';
 import { useI18n } from '@/i18n/provider';
 import { cn } from '@/lib/cn';
@@ -46,17 +47,17 @@ export function LandingNav({ onHomeIntent }: LandingNavProps) {
 
         <div className="flex items-center gap-2">
           <LanguageToggle compact />
-          <Link
-            href={localePath('/home')}
-            prefetch
+          <a
+            href={APP_HOME_ROUTE}
             onFocus={() => onHomeIntent?.()}
             onPointerEnter={() => onHomeIntent?.()}
             onTouchStart={() => onHomeIntent?.()}
+            onMouseDown={() => onHomeIntent?.()}
             className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-white px-4 text-[12.5px] font-bold tracking-normal text-[#0b0d0e] shadow-[0_10px_26px_rgba(0,0,0,0.22)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
           >
             {t('landing.cta')}
             <IconArrowRight size={13} stroke={2.4} />
-          </Link>
+          </a>
         </div>
       </div>
     </header>

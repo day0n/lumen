@@ -64,6 +64,7 @@ export function Topbar() {
   const authRedirect = encodeURIComponent(pathname || '/');
   const inAppShell = normalizedPath === '/app' || normalizedPath.startsWith('/app/');
   const activePath = pendingPath ?? normalizedPath;
+  const homeHref = inAppShell ? '/app/home' : '/home';
 
   useEffect(() => {
     if (!pendingPath) return;
@@ -97,7 +98,7 @@ export function Topbar() {
       <div className="border-b border-white/[0.06] bg-[#111315]/95 backdrop-blur-xl">
         <div className="relative flex h-16 w-full min-w-0 items-center gap-2 px-3 sm:h-20 sm:gap-4 sm:px-6">
           <Link
-            href={localePath('/home')}
+            href={inAppShell ? homeHref : localePath(homeHref)}
             prefetch={false}
             className="flex min-h-11 min-w-11 shrink-0 items-center gap-2 sm:gap-3"
           >
@@ -118,7 +119,7 @@ export function Topbar() {
               return (
                 <Link
                   key={href}
-                  href={localePath(href)}
+                  href={inAppShell ? href : localePath(href)}
                   prefetch={false}
                   onClick={(event) => handleProtectedNavClick(event, href)}
                   onFocus={() => handleNavIntent(href)}
@@ -190,7 +191,7 @@ export function Topbar() {
           return (
             <Link
               key={href}
-              href={localePath(href)}
+              href={inAppShell ? href : localePath(href)}
               prefetch={false}
               aria-label={label}
               onClick={(event) => handleProtectedNavClick(event, href)}

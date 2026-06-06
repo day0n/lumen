@@ -2,34 +2,38 @@
 
 import { LandingNav } from '@/components/landing/LandingNav';
 import { ParticleStory } from '@/components/landing/ParticleStory';
-import { useHomeRoutePreload } from '@/components/landing/useHomeRoutePreload';
+import {
+  APP_HOME_ROUTE,
+  APP_HOT_VIDEOS_ROUTE,
+  APP_PROJECTS_ROUTE,
+  useHomeRoutePreload,
+} from '@/components/landing/useHomeRoutePreload';
 import { LumenWordmark } from '@/components/ui/LumenWordmark';
 import { useI18n } from '@/i18n/provider';
 import { IconArrowRight } from '@tabler/icons-react';
-import Link from 'next/link';
 
 const footerGroups = [
   {
     titleKey: 'landing.footerGroups.product',
     links: [
-      { href: '/home', labelKey: 'landing.footerGroups.studio' },
-      { href: '/canvas/projects', labelKey: 'landing.footerGroups.canvas' },
-      { href: '/hot-videos', labelKey: 'landing.footerGroups.hotAssets' },
+      { href: APP_HOME_ROUTE, labelKey: 'landing.footerGroups.studio' },
+      { href: APP_PROJECTS_ROUTE, labelKey: 'landing.footerGroups.canvas' },
+      { href: APP_HOT_VIDEOS_ROUTE, labelKey: 'landing.footerGroups.hotAssets' },
     ],
   },
   {
     titleKey: 'landing.footerGroups.workflow',
     links: [
-      { href: '/canvas/projects', labelKey: 'landing.footerGroups.script' },
-      { href: '/canvas/projects', labelKey: 'landing.footerGroups.shots' },
-      { href: '/canvas/projects', labelKey: 'landing.footerGroups.review' },
+      { href: APP_PROJECTS_ROUTE, labelKey: 'landing.footerGroups.script' },
+      { href: APP_PROJECTS_ROUTE, labelKey: 'landing.footerGroups.shots' },
+      { href: APP_PROJECTS_ROUTE, labelKey: 'landing.footerGroups.review' },
     ],
   },
 ] as const;
 
 export function LandingPage() {
   const warmHomeRoute = useHomeRoutePreload();
-  const { t, ta, localePath } = useI18n();
+  const { t, ta } = useI18n();
   const pillars = ta('landing.pillars');
 
   return (
@@ -69,17 +73,17 @@ export function LandingPage() {
                   </span>
                 ))}
               </div>
-              <Link
-                href={localePath('/home')}
-                prefetch
+              <a
+                href={APP_HOME_ROUTE}
                 onFocus={() => warmHomeRoute()}
                 onPointerEnter={() => warmHomeRoute()}
                 onTouchStart={() => warmHomeRoute()}
+                onMouseDown={() => warmHomeRoute()}
                 className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#101214] px-6 text-[14px] font-bold tracking-normal text-white transition-transform hover:scale-[1.02] active:scale-[0.98]"
               >
                 {t('landing.cta')}
                 <IconArrowRight size={16} stroke={2.4} />
-              </Link>
+              </a>
             </div>
           </div>
         </section>
@@ -102,23 +106,16 @@ export function LandingPage() {
                 </p>
                 <div className="space-y-3">
                   {group.links.map((item) => (
-                    <Link
+                    <a
                       key={`${group.titleKey}-${item.labelKey}`}
-                      href={localePath(item.href)}
-                      prefetch={item.href === '/home' ? true : undefined}
-                      onFocus={() => {
-                        if (item.href === '/home') warmHomeRoute();
-                      }}
-                      onPointerEnter={() => {
-                        if (item.href === '/home') warmHomeRoute();
-                      }}
-                      onTouchStart={() => {
-                        if (item.href === '/home') warmHomeRoute();
-                      }}
+                      href={item.href}
+                      onFocus={() => warmHomeRoute()}
+                      onPointerEnter={() => warmHomeRoute()}
+                      onTouchStart={() => warmHomeRoute()}
                       className="block text-[14px] font-medium tracking-normal text-white/[0.64] transition-colors hover:text-white"
                     >
                       {t(item.labelKey)}
-                    </Link>
+                    </a>
                   ))}
                 </div>
               </div>
@@ -128,17 +125,17 @@ export function LandingPage() {
 
         <div className="mt-16 flex flex-col gap-5 border-t border-white/[0.08] pt-7 text-[12px] tracking-normal text-white/[0.38] sm:flex-row sm:items-center sm:justify-between">
           <p>© 2026 Lumen</p>
-          <Link
-            href={localePath('/home')}
-            prefetch
+          <a
+            href={APP_HOME_ROUTE}
             onFocus={() => warmHomeRoute()}
             onPointerEnter={() => warmHomeRoute()}
             onTouchStart={() => warmHomeRoute()}
+            onMouseDown={() => warmHomeRoute()}
             className="inline-flex h-10 w-fit items-center justify-center gap-2 self-end rounded-full border border-white/[0.12] px-4 text-[13px] font-bold tracking-normal text-white transition-colors hover:border-white/[0.28] hover:bg-white/[0.06] sm:self-auto"
           >
             {t('landing.cta')}
             <IconArrowRight size={15} stroke={2.4} />
-          </Link>
+          </a>
         </div>
       </footer>
     </div>
