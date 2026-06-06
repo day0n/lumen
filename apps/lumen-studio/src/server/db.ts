@@ -3,6 +3,7 @@
 // 条件下解析为一个直接 throw 的模块，会导致启动崩溃。本模块本就只在服务端用。
 import {
   HomeFeaturedRepository,
+  HomeWorkflowTemplateRepository,
   HotVideoRepository,
   JsonCache,
   MaterialAssetRepository,
@@ -77,6 +78,13 @@ export const getHomeFeaturedRepository = createRepositoryLoader(async () => {
   return repository;
 });
 
+export const getHomeWorkflowTemplateRepository = createRepositoryLoader(async () => {
+  const db = await getDb();
+  const repository = new HomeWorkflowTemplateRepository(db);
+  await repository.ensureIndexes();
+  return repository;
+});
+
 export const getHotVideoRepository = createRepositoryLoader(async () => {
   const db = await getDb();
   const repository = new HotVideoRepository(db);
@@ -132,6 +140,7 @@ export async function warmupRepositories(): Promise<void> {
     getProjectFolderRepository(),
     getProjectHistoryRepository(),
     getHomeFeaturedRepository(),
+    getHomeWorkflowTemplateRepository(),
     getHotVideoRepository(),
     getNotificationRepository(),
     getMaterialAssetRepository(),

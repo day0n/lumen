@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "verify:remake-flow": "tsx scripts/verify-remake-ugc-flow.ts",
     "seed": "tsx scripts/seed-mock.ts",
+    "seed:home-templates": "tsx scripts/seed-home-workflow-templates.ts",
     "seed:tiktok": "tsx scripts/seed-tiktok.ts"
   },
   "dependencies": {

@@ -7,6 +7,7 @@ export const APP_PROJECTS_ROUTE = '/app/projects';
 export const APP_HOT_VIDEOS_ROUTE = '/app/hot-videos';
 
 const HOME_FEATURED_ENDPOINT = '/api/home/featured';
+const HOME_TEMPLATES_ENDPOINT = '/api/home/templates';
 
 const HOME_POSTERS = [
   '/home-posters/selected/agent-pop.png',
@@ -44,6 +45,10 @@ export function useHomeRoutePreload() {
       .catch(() => undefined);
 
     void fetch(HOME_FEATURED_ENDPOINT, {
+      credentials: 'include',
+    }).catch(() => undefined);
+
+    void fetch(HOME_TEMPLATES_ENDPOINT, {
       credentials: 'include',
     }).catch(() => undefined);
 

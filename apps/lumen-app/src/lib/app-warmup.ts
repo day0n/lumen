@@ -95,7 +95,7 @@ function warmAppRouteData(routePath: string) {
 
 function dataUrlsForRoute(routePath: string) {
   if (routePath === '/' || routePath.startsWith('/home')) {
-    return ['/api/home/featured', '/api/projects?limit=3'];
+    return ['/api/home/featured', '/api/home/templates', '/api/projects?limit=3'];
   }
   if (routePath.startsWith('/projects')) {
     return ['/api/folders', '/api/projects'];

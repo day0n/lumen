@@ -1,6 +1,7 @@
 export * from './mongo';
 export * from './redis';
 export * from './repositories/homeFeatured';
+export * from './repositories/homeWorkflowTemplates';
 export * from './repositories/hotVideos';
 export * from './repositories/materialAssets';
 export * from './repositories/notifications';
@@ -10,6 +11,7 @@ export * from './repositories/projects';
 export * from './repositories/remakeJobs';
 export * from './repositories/users';
 export * from './schema/homeFeatured';
+export * from './schema/homeWorkflowTemplate';
 export * from './schema/hotVideos';
 export * from './schema/materialAsset';
 export * from './schema/notifications';

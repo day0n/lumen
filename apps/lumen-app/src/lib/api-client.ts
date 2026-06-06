@@ -14,6 +14,7 @@ const apiCache = new Map<string, CachedApiResponse>();
 
 const apiCacheTtlByPath: Array<[prefix: string, ttlMs: number]> = [
   ['/api/home/featured', 30 * 60_000],
+  ['/api/home/templates', 30 * 60_000],
   ['/api/projects/', 5 * 60_000],
   ['/api/projects', 60_000],
   ['/api/material-assets', 5 * 60_000],
@@ -146,7 +147,9 @@ function apiCacheKey(url: URL, headers: Headers) {
 
 function clearApiCacheForMutation(pathname: string) {
   const projectTouched =
-    pathname.startsWith('/api/projects') || pathname.startsWith('/api/folders');
+    pathname.startsWith('/api/projects') ||
+    pathname.startsWith('/api/folders') ||
+    (pathname.startsWith('/api/home/templates/') && pathname.endsWith('/clone'));
   const materialTouched = pathname.startsWith('/api/material-assets');
   for (const key of apiCache.keys()) {
     if (projectTouched && (key.includes('|/api/projects') || key.includes('|/api/folders'))) {
