@@ -1179,13 +1179,25 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       const eventProjectId = readEventString(data.project_id);
       if (!currentProjectId || eventProjectId !== currentProjectId) return;
       try {
-        await refreshProject({ silent: true });
+        const project = await refreshProject({ silent: true });
+        if (project && readEventString(data.reason) === 'write_canvas') {
+          // agent 改写画布结构后基于刚拉到的 nodes/edges 算布局，
+          // 不读 reactFlow.getEdges() 以避开 React/Flow 内部 store 的同步时机。
+          const arranged = arrangeCanvasNodes(
+            withCanvasNodeLayering(project.canvas.nodes),
+            project.canvas.edges,
+          );
+          setNodes(arranged);
+          window.requestAnimationFrame(() => {
+            reactFlow.fitView({ padding: 0.28, duration: 320, maxZoom: 1 });
+          });
+        }
       } catch (error) {
         console.error(error);
         setSaveState('error');
       }
     },
-    [currentProjectId, refreshProject],
+    [currentProjectId, reactFlow, refreshProject, setNodes],
   );
 
   const handleAgentWorkflowNodeStatus = useCallback(
