@@ -116,6 +116,7 @@ export default defineConfig(({ mode }) => {
       port: 3002,
       proxy: {
         '/api': 'http://localhost:3000',
+        '/icon.svg': 'http://localhost:3000',
         '/ws': {
           target: 'ws://localhost:3000',
           ws: true,

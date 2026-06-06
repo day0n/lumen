@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ['@mantine/core', '@mantine/hooks', '@tabler/icons-react'],
   },
   transpilePackages: ['@lumen/shared', '@lumen/db'],
+  async redirects() {
+    return [{ source: '/favicon.ico', destination: '/icon.svg', permanent: true }];
+  },
 };
 
 export default withSentryConfig(nextConfig, {
