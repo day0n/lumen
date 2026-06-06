@@ -431,7 +431,7 @@ function buildSubtitleFilter(
   bottomOffset: number,
   fontFile: string | null,
 ): string {
-  const parts = ['drawtext'];
+  const parts: string[] = [];
   if (fontFile) parts.push(`fontfile='${escapeDrawtextText(fontFile)}'`);
   parts.push(
     `text='${escapeDrawtextText(text)}'`,
@@ -443,7 +443,7 @@ function buildSubtitleFilter(
     'boxcolor=black@0.42',
     'boxborderw=18',
   );
-  return parts.join(':');
+  return `drawtext=${parts.join(':')}`;
 }
 
 function resolveSubtitleFontFile(settings: Record<string, unknown>): string | null {
