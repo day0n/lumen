@@ -137,6 +137,9 @@ export async function warmupRepositories(): Promise<void> {
     getMaterialAssetRepository(),
     getRemakeJobRepository(),
   ]);
+  try {
+    getStudioCache();
+  } catch {}
 }
 
 export function getStudioCache(): JsonCache {

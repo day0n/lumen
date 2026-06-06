@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { Db, Filter, UpdateFilter } from 'mongodb';
+import type { AnyBulkWriteOperation, Db, Filter, UpdateFilter } from 'mongodb';
 
 import {
   type CreateRemakeJobInput,
@@ -240,34 +240,63 @@ export class RemakeJobRepository {
         updated_at: now,
       }),
     );
-    // upsert by (job_id, slice_key) — replan / retry 会覆盖同 slice 的旧 task
-    const records: RemakeTaskRecord[] = [];
-    for (const doc of documents) {
-      const result = await this.tasks().findOneAndUpdate(
-        { job_id: doc.job_id, slice_key: doc.slice_key },
-        {
-          $set: {
-            stage: doc.stage,
-            handler: doc.handler,
-            input: doc.input,
-            settings: doc.settings,
-            status: 'queued',
-            progress: 0,
-            updated_at: now,
-          },
-          $unset: { output_url: '', output_kind: '', error: '', started_at: '', settled_at: '' },
-          $setOnInsert: {
-            _id: doc._id,
-            job_id: doc.job_id,
-            slice_key: doc.slice_key,
-            created_at: now,
-          },
+    const keyFor = (jobId: string, sliceKey: string) => `${jobId}:${sliceKey}`;
+    const filters = documents.map((doc) => ({ job_id: doc.job_id, slice_key: doc.slice_key }));
+    const existing = await this.tasks()
+      .find({ $or: filters }, { projection: { _id: 1, job_id: 1, slice_key: 1 } })
+      .toArray();
+    const existingIds = new Map(
+      existing.map((doc) => [keyFor(doc.job_id, doc.slice_key), doc._id] as const),
+    );
+
+    const operations: AnyBulkWriteOperation<RemakeTaskDocument>[] = documents.map((doc) => {
+      const existingId = existingIds.get(keyFor(doc.job_id, doc.slice_key));
+      const update: UpdateFilter<RemakeTaskDocument> = {
+        $set: {
+          stage: doc.stage,
+          handler: doc.handler,
+          input: doc.input,
+          settings: doc.settings,
+          status: 'queued',
+          progress: 0,
+          updated_at: now,
         },
-        { upsert: true, returnDocument: 'after' },
-      );
-      if (result) records.push(toTaskRecord(result));
-    }
-    return records;
+        $unset: { output_url: '', output_kind: '', error: '', started_at: '', settled_at: '' },
+      };
+
+      if (existingId) {
+        return {
+          updateOne: {
+            filter: { _id: existingId },
+            update,
+          },
+        };
+      }
+
+      return {
+        updateOne: {
+          filter: { job_id: doc.job_id, slice_key: doc.slice_key },
+          update: {
+            ...update,
+            $setOnInsert: {
+              _id: doc._id,
+              job_id: doc.job_id,
+              slice_key: doc.slice_key,
+              created_at: now,
+            },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    await this.tasks().bulkWrite(operations, { ordered: false });
+    const updated = await this.tasks().find({ $or: filters }).toArray();
+    const byKey = new Map(updated.map((doc) => [keyFor(doc.job_id, doc.slice_key), doc] as const));
+    return documents
+      .map((doc) => byKey.get(keyFor(doc.job_id, doc.slice_key)))
+      .filter((doc): doc is RemakeTaskDocument => Boolean(doc))
+      .map(toTaskRecord);
   }
 
   async listTasksByJob(jobId: string): Promise<RemakeTaskRecord[]> {

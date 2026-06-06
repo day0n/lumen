@@ -5,14 +5,23 @@ import type {
   ProjectFolderSystemKey,
   UpdateProjectFolderInput,
 } from '@lumen/db';
+import { ProjectFolderRecordSchema } from '@lumen/db';
+import { z } from 'zod';
 
 import { requireStudioUser } from './auth';
-import { getProjectFolderRepository, getProjectRepository } from './db';
+import { getProjectFolderRepository, getProjectRepository, getStudioCache } from './db';
 
 /** 系统文件夹的默认 name；前端可按系统 key 翻译为本地化文案。 */
 const SYSTEM_FOLDER_DEFAULTS: Record<ProjectFolderSystemKey, string> = {
   viral_remix: 'Viral remix',
 };
+const FOLDER_LIST_CACHE_TTL_SECONDS = 30;
+const FolderListWithCountsSchema = z
+  .object({
+    folders: z.array(ProjectFolderRecordSchema),
+    counts: z.record(z.number().int().nonnegative()),
+  })
+  .strict();
 
 export interface FolderListWithCounts {
   folders: ProjectFolderRecord[];
@@ -22,6 +31,11 @@ export interface FolderListWithCounts {
 
 export async function listStudioFolders(): Promise<FolderListWithCounts> {
   const user = await requireStudioUser();
+  const cache = getStudioCache();
+  const cacheKey = folderListCacheKey(user.id);
+  const cached = await cache.get(cacheKey, FolderListWithCountsSchema);
+  if (cached) return cached;
+
   const folderRepo = await getProjectFolderRepository();
   const projectRepo = await getProjectRepository();
 
@@ -34,13 +48,17 @@ export async function listStudioFolders(): Promise<FolderListWithCounts> {
     folderRepo.list({ ownerId: user.id }),
     projectRepo.countByFolder(user.id),
   ]);
-  return { folders, counts };
+  const result = { folders, counts };
+  await cache.set(cacheKey, result, FOLDER_LIST_CACHE_TTL_SECONDS);
+  return result;
 }
 
 export async function createStudioFolder(name: string): Promise<ProjectFolderRecord> {
   const user = await requireStudioUser();
   const folderRepo = await getProjectFolderRepository();
-  return folderRepo.create({ ownerId: user.id, name });
+  const folder = await folderRepo.create({ ownerId: user.id, name });
+  await invalidateFolderListCache(user.id);
+  return folder;
 }
 
 export async function updateStudioFolder(
@@ -49,7 +67,9 @@ export async function updateStudioFolder(
 ): Promise<ProjectFolderRecord | null> {
   const user = await requireStudioUser();
   const folderRepo = await getProjectFolderRepository();
-  return folderRepo.update(user.id, folderId, input);
+  const folder = await folderRepo.update(user.id, folderId, input);
+  if (folder) await invalidateFolderListCache(user.id);
+  return folder;
 }
 
 /**
@@ -61,7 +81,9 @@ export async function deleteStudioFolder(folderId: string): Promise<boolean> {
   const folderRepo = await getProjectFolderRepository();
   const projectRepo = await getProjectRepository();
   await projectRepo.deleteAllInFolder(user.id, folderId);
-  return folderRepo.delete(user.id, folderId);
+  const deleted = await folderRepo.delete(user.id, folderId);
+  if (deleted) await invalidateFolderListCache(user.id);
+  return deleted;
 }
 
 /**
@@ -73,5 +95,19 @@ export async function ensureStudioSystemFolder(
 ): Promise<ProjectFolderRecord> {
   const user = await requireStudioUser();
   const folderRepo = await getProjectFolderRepository();
-  return folderRepo.ensureSystemFolder(user.id, systemKey, SYSTEM_FOLDER_DEFAULTS[systemKey]);
+  const folder = await folderRepo.ensureSystemFolder(
+    user.id,
+    systemKey,
+    SYSTEM_FOLDER_DEFAULTS[systemKey],
+  );
+  await invalidateFolderListCache(user.id);
+  return folder;
+}
+
+function folderListCacheKey(ownerId: string) {
+  return `folders:${ownerId}:list:v1`;
+}
+
+async function invalidateFolderListCache(ownerId: string) {
+  await getStudioCache().delete(folderListCacheKey(ownerId));
 }

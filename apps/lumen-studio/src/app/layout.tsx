@@ -1,10 +1,10 @@
-import { ClerkProvider } from '@clerk/nextjs';
+import { localePath } from '@/i18n/routing';
+import { getRequestLocale } from '@/i18n/server';
 import { zhCN } from '@clerk/localizations';
+import { ClerkProvider } from '@clerk/nextjs';
 import { ColorSchemeScript } from '@mantine/core';
 import type { Metadata, Viewport } from 'next';
 import { Inter, Manrope } from 'next/font/google';
-import { getRequestLocale } from '@/i18n/server';
-import { localePath } from '@/i18n/routing';
 import { Providers } from './providers';
 import '@mantine/core/styles.css';
 import '@xyflow/react/dist/style.css';
@@ -45,8 +45,22 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+function getExternalResourceOrigins(): string[] {
+  const origins = new Set(['https://clerk.lumenstudio.tech', 'https://img.clerk.com']);
+  const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim();
+
+  if (r2PublicBaseUrl) {
+    try {
+      origins.add(new URL(r2PublicBaseUrl).origin);
+    } catch {}
+  }
+
+  return [...origins];
+}
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getRequestLocale();
+  const externalOrigins = getExternalResourceOrigins();
 
   return (
     <html
@@ -56,6 +70,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     >
       <head>
         <ColorSchemeScript defaultColorScheme="dark" forceColorScheme="dark" />
+        {externalOrigins.map((origin) => (
+          <link key={`dns-prefetch:${origin}`} rel="dns-prefetch" href={origin} />
+        ))}
+        {externalOrigins.map((origin) => (
+          <link key={`preconnect:${origin}`} rel="preconnect" href={origin} crossOrigin="" />
+        ))}
       </head>
       <body>
         <ClerkProvider

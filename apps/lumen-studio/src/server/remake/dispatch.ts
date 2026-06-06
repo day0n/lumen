@@ -63,9 +63,9 @@ export interface DispatchTaskPayload {
 export async function dispatchTasks(payloads: DispatchTaskPayload[]): Promise<string[]> {
   if (payloads.length === 0) return [];
   const redis = getRedis();
-  const messageIds: string[] = [];
+  const pipeline = redis.pipeline();
   for (const payload of payloads) {
-    const id = await redis.xadd(
+    pipeline.xadd(
       REMAKE_TASKS_STREAM,
       '*',
       'taskId',
@@ -85,7 +85,14 @@ export async function dispatchTasks(payloads: DispatchTaskPayload[]): Promise<st
       'settingsJson',
       payload.settingsJson,
     );
-    if (id) messageIds.push(id);
+  }
+  const results = await pipeline.exec();
+  if (!results) return [];
+
+  const messageIds: string[] = [];
+  for (const [error, id] of results) {
+    if (error) throw error;
+    if (typeof id === 'string') messageIds.push(id);
   }
   return messageIds;
 }

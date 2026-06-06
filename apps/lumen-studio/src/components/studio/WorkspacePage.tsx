@@ -193,16 +193,11 @@ export function WorkspacePage() {
   useEffect(() => {
     if (!authLoaded || !isSignedIn || isInitialLoading) return;
 
-    const hrefs = [
-      localePath('/canvas/new'),
-      ...projects.slice(0, 6).map((project) => localePath(`/canvas/${project.id}`)),
-    ];
     let cancelled = false;
 
     const warm = () => {
       if (cancelled) return;
       void preloadCanvasHydrationOverlay();
-      for (const href of hrefs) router.prefetch(href);
     };
 
     const requestIdle = window.requestIdleCallback;
@@ -220,7 +215,7 @@ export function WorkspacePage() {
       cancelled = true;
       globalThis.clearTimeout(timeoutId);
     };
-  }, [authLoaded, isInitialLoading, isSignedIn, localePath, projects, router]);
+  }, [authLoaded, isInitialLoading, isSignedIn]);
 
   const trimmedQuery = searchQuery.trim().toLowerCase();
   const scopedProjects = useMemo(() => {
@@ -597,10 +592,7 @@ export function WorkspacePage() {
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {trimmedQuery || selectedScope !== null ? null : (
-                  <NewProjectCard
-                    href={localePath('/canvas/new')}
-                    onWarm={warmCanvasDestination}
-                  />
+                  <NewProjectCard href={localePath('/canvas/new')} onWarm={warmCanvasDestination} />
                 )}
                 {visibleProjects.map((project) => (
                   <ProjectCard
@@ -775,7 +767,7 @@ function NewProjectCard({ href, onWarm }: { href: string; onWarm: (href: string)
   return (
     <Link
       href={href}
-      prefetch={true}
+      prefetch={false}
       onFocus={() => onWarm(href)}
       onMouseDown={() => onWarm(href)}
       onPointerEnter={() => onWarm(href)}
@@ -853,7 +845,7 @@ function ProjectCard({
     <div ref={containerRef} className="relative">
       <Link
         href={href}
-        prefetch={true}
+        prefetch={false}
         onFocus={() => onWarm(href)}
         onMouseDown={() => onWarm(href)}
         onPointerEnter={() => onWarm(href)}
@@ -868,6 +860,8 @@ function ProjectCard({
               <img
                 src={project.thumbnail}
                 alt=""
+                decoding="async"
+                loading="lazy"
                 className="absolute inset-0 h-full w-full object-cover"
               />
               <div className="absolute inset-0 opacity-40 mix-blend-soft-light [background-image:linear-gradient(120deg,transparent_20%,rgba(255,255,255,0.35)_48%,transparent_62%)]" />
@@ -1010,7 +1004,11 @@ function toStudioProject(
     updatedAt: formatUpdatedAt(project.updatedAt, locale, t),
     cover: coverForProject(project.id),
     thumbnail: project.thumbnail,
-    coverMode: project.thumbnail ? undefined : project.id.charCodeAt(0) % 3 === 0 ? 'soft' : undefined,
+    coverMode: project.thumbnail
+      ? undefined
+      : project.id.charCodeAt(0) % 3 === 0
+        ? 'soft'
+        : undefined,
     folderId: project.folderId,
   };
 }

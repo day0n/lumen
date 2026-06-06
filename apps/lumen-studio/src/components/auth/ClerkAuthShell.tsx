@@ -21,8 +21,16 @@ type FailureKind = 'timeout' | 'network';
 export function ClerkAuthShell({ children }: { children: React.ReactNode }) {
   const { t, ta } = useI18n();
   const [failure, setFailure] = useState<FailureKind | null>(null);
+  const [clerkReady, setClerkReady] = useState(false);
+
+  const markClerkReady = useCallback(() => {
+    setClerkReady(true);
+    setFailure(null);
+  }, []);
 
   useEffect(() => {
+    if (clerkReady) return;
+
     const timer = window.setTimeout(() => {
       setFailure((prev) => prev ?? 'timeout');
     }, TIMEOUT_MS);
@@ -69,16 +77,16 @@ export function ClerkAuthShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener('unhandledrejection', onUnhandledRejection);
       window.removeEventListener('error', onError);
     };
-  }, []);
+  }, [clerkReady]);
 
   useEffect(() => {
-    if (failure) {
+    if (failure && !clerkReady) {
       Sentry.captureMessage(`Clerk auth shell triggered fallback (${failure})`, {
         level: 'warning',
         tags: { feature: 'clerk-auth-shell', failure },
       });
     }
-  }, [failure]);
+  }, [clerkReady, failure]);
 
   const reload = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -86,7 +94,7 @@ export function ClerkAuthShell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  if (failure) {
+  if (failure && !clerkReady) {
     return (
       <TroubleshootCard
         title={t('auth.troubleshoot.title')}
@@ -104,9 +112,25 @@ export function ClerkAuthShell({ children }: { children: React.ReactNode }) {
       <ClerkLoading>
         <Spinner label={t('auth.troubleshoot.title')} loadingLabel={t('auth.loading')} />
       </ClerkLoading>
-      <ClerkLoaded>{children}</ClerkLoaded>
+      <ClerkLoaded>
+        <ClerkReadyMarker onReady={markClerkReady}>{children}</ClerkReadyMarker>
+      </ClerkLoaded>
     </div>
   );
+}
+
+function ClerkReadyMarker({
+  children,
+  onReady,
+}: {
+  children: React.ReactNode;
+  onReady: () => void;
+}) {
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+
+  return <>{children}</>;
 }
 
 function Spinner({ label, loadingLabel }: { label: string; loadingLabel: string }) {
