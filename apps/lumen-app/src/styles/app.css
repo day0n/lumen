@@ -1,0 +1,14 @@
+@import "@mantine/core/styles.css";
+@import "@xyflow/react/dist/style.css";
+@import "@/app/globals.css";
+
+:root {
+  --font-inter: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue",
+    sans-serif;
+  --font-display: Manrope, Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue",
+    sans-serif;
+}
+
+#root {
+  min-height: 100dvh;
+}

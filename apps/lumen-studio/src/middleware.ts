@@ -13,6 +13,12 @@ import {
 } from '@/i18n/routing';
 
 const PROTECTED_PREFIXES = ['/agent-chat', '/canvas', '/materials'] as const;
+const LEGACY_APP_ROUTES = new Map<string, string>([
+  ['/dashboard', '/app/dashboard'],
+  ['/materials', '/app/materials'],
+  ['/canvas/projects', '/app/projects'],
+  ['/canvas/new', '/app/canvas/new'],
+]);
 
 export default clerkMiddleware(
   async (auth, request) => {
@@ -26,6 +32,21 @@ export default clerkMiddleware(
 
     const locale = resolveMiddlewareLocale(request);
     const normalizedPath = stripLocalePrefix(pathname);
+    const appRedirectPath = getLegacyAppRedirectPath(normalizedPath);
+    if (appRedirectPath) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = appRedirectPath;
+      if (normalizedPath === '/agent-chat') {
+        redirectUrl.searchParams.set('agent', 'chat');
+      }
+      const redirectResponse = NextResponse.redirect(redirectUrl);
+      redirectResponse.cookies.set(LUMEN_LOCALE_COOKIE, locale, {
+        path: '/',
+        maxAge: 60 * 60 * 24 * 365,
+        sameSite: 'lax',
+      });
+      return redirectResponse;
+    }
 
     if (isProtectedPath(normalizedPath)) {
       const { userId } = await auth();
@@ -82,6 +103,14 @@ function isProtectedPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
+}
+
+function getLegacyAppRedirectPath(pathname: string): string | null {
+  const exactTarget = LEGACY_APP_ROUTES.get(pathname);
+  if (exactTarget) return exactTarget;
+  if (pathname === '/agent-chat') return '/app/canvas/new';
+  if (pathname.startsWith('/canvas/')) return `/app${pathname}`;
+  return null;
 }
 
 function resolveMiddlewareLocale(request: Request) {

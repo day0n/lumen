@@ -1,5 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { extname, resolve } from 'node:path';
 import { parse } from 'node:url';
 
 import { WebSocketServer } from 'ws';
@@ -27,6 +29,7 @@ type GlobalWithAsyncLocalStorage = typeof globalThis & {
 const dev = process.env.NODE_ENV !== 'production';
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const hostname = process.env.HOSTNAME ?? '0.0.0.0';
+const appDistDir = resolve(process.cwd(), '../lumen-app/dist');
 
 let captureException = (_err: unknown) => {};
 let logProcessError = (err: unknown, message: string) => {
@@ -64,9 +67,11 @@ async function main() {
   const handle = app.getRequestHandler();
   await app.prepare();
   const upgradeHandler = app.getUpgradeHandler();
+  let isShuttingDown = false;
 
   const server = createServer((req, res) => {
     const parsedUrl = parse(req.url ?? '/', true);
+    if (serveStudioApp(req.url ?? '/', res)) return;
     handle(req, res, parsedUrl);
   });
 
@@ -113,6 +118,8 @@ async function main() {
   });
 
   const shutdown = async (signal: string) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
     logger.info({ signal }, 'shutting down');
     await stopFlowGateway();
     await stopRemakeEventMirror();
@@ -123,6 +130,78 @@ async function main() {
 
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
+}
+
+function serveStudioApp(rawUrl: string, res: import('node:http').ServerResponse) {
+  const { pathname } = parse(rawUrl);
+  const appPathname = normalizeStudioAppPath(pathname ?? '');
+  if (!appPathname) return false;
+  if (!existsSync(appDistDir)) {
+    res.statusCode = 503;
+    res.setHeader('content-type', 'text/plain; charset=utf-8');
+    res.end('Studio app build is not available.');
+    return true;
+  }
+
+  if (appPathname.startsWith('/app/assets/')) {
+    const assetPath = resolve(appDistDir, appPathname.slice('/app/'.length));
+    if (
+      !assetPath.startsWith(appDistDir) ||
+      !existsSync(assetPath) ||
+      !statSync(assetPath).isFile()
+    ) {
+      res.statusCode = 404;
+      res.end('Not found');
+      return true;
+    }
+    res.setHeader('cache-control', 'public,max-age=31536000,immutable');
+    res.setHeader('content-type', contentTypeFor(assetPath));
+    createReadStream(assetPath).pipe(res);
+    return true;
+  }
+
+  const indexPath = resolve(appDistDir, 'index.html');
+  if (!existsSync(indexPath)) {
+    res.statusCode = 503;
+    res.setHeader('content-type', 'text/plain; charset=utf-8');
+    res.end('Studio app index is not available.');
+    return true;
+  }
+  res.setHeader('cache-control', 'no-cache');
+  res.setHeader('content-type', 'text/html; charset=utf-8');
+  createReadStream(indexPath).pipe(res);
+  return true;
+}
+
+function normalizeStudioAppPath(pathname: string) {
+  if (pathname === '/app' || pathname.startsWith('/app/')) return pathname;
+  if (pathname === '/zh/app' || pathname.startsWith('/zh/app/')) return pathname.slice(3) || '/app';
+  if (pathname === '/en/app' || pathname.startsWith('/en/app/')) return pathname.slice(3) || '/app';
+  return null;
+}
+
+function contentTypeFor(filePath: string) {
+  switch (extname(filePath)) {
+    case '.js':
+      return 'text/javascript; charset=utf-8';
+    case '.css':
+      return 'text/css; charset=utf-8';
+    case '.json':
+      return 'application/json; charset=utf-8';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.webp':
+      return 'image/webp';
+    case '.woff2':
+      return 'font/woff2';
+    default:
+      return 'application/octet-stream';
+  }
 }
 
 main().catch((err) => {
@@ -153,7 +232,8 @@ async function loadRuntime(): Promise<Runtime> {
     import('./src/server/ws/flow-gateway'),
   ]);
 
-  captureException = Sentry.captureException;
+  captureException =
+    typeof Sentry.captureException === 'function' ? Sentry.captureException : (_err: unknown) => {};
   logProcessError = (err, message) => loggerModule.logger.error({ err }, message);
 
   return {

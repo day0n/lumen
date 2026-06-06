@@ -1,5 +1,5 @@
-import { WorkspacePage } from '@/components/studio/WorkspacePage';
+import { redirect } from 'next/navigation';
 
 export default function CanvasProjectsPage() {
-  return <WorkspacePage />;
+  redirect('/app/projects');
 }

@@ -1,0 +1,33 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowJs": true,
+    "baseUrl": ".",
+    "types": ["vite/client"],
+    "paths": {
+      "@/*": ["../lumen-studio/src/*"],
+      "@app/*": ["./src/*"],
+      "next/link": ["./src/compat/next-link.tsx"],
+      "next/navigation": ["./src/compat/next-navigation.ts"],
+      "@clerk/nextjs": ["./src/compat/clerk-next.ts"],
+      "@sentry/nextjs": ["./src/compat/sentry-next.ts"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "../lumen-studio/src/components/**/*.ts",
+    "../lumen-studio/src/components/**/*.tsx",
+    "../lumen-studio/src/features/**/*.ts",
+    "../lumen-studio/src/features/**/*.tsx",
+    "../lumen-studio/src/hooks/**/*.ts",
+    "../lumen-studio/src/hooks/**/*.tsx",
+    "../lumen-studio/src/i18n/**/*.ts",
+    "../lumen-studio/src/i18n/**/*.tsx",
+    "../lumen-studio/src/lib/**/*.ts",
+    "../lumen-studio/src/lib/**/*.tsx"
+  ],
+  "exclude": ["node_modules", "dist", "../lumen-studio/src/i18n/server.ts"]
+}

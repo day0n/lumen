@@ -63,6 +63,9 @@ pnpm install --frozen-lockfile
 echo "==> Building shared..."
 pnpm build:shared
 
+echo "==> Building studio app..."
+pnpm build:app
+
 echo "==> Building studio..."
 STUDIO_RELEASE_ID="$(git rev-parse --short HEAD)-$(date +%Y%m%d%H%M%S)"
 STUDIO_BUILD_DIR=".next-build-${STUDIO_RELEASE_ID}"

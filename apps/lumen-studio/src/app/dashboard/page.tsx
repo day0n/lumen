@@ -1,5 +1,5 @@
-import { DashboardPage } from '@/components/studio/DashboardPage';
+import { redirect } from 'next/navigation';
 
 export default function DashboardRoutePage() {
-  return <DashboardPage />;
+  redirect('/app/dashboard');
 }

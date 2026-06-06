@@ -1,5 +1,5 @@
-import { MaterialsPage } from '@/components/studio/MaterialsPage';
+import { redirect } from 'next/navigation';
 
 export default function MaterialsRoutePage() {
-  return <MaterialsPage />;
+  redirect('/app/materials');
 }

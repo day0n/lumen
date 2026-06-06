@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
 export default function AgentChatPage() {
-  redirect('/canvas/new?agent=chat');
+  redirect('/app/canvas/new?agent=chat');
 }

@@ -1,11 +1,5 @@
-import { Suspense } from 'react';
-
-import { CanvasWorkbench } from '@/components/canvas/CanvasWorkbench';
+import { redirect } from 'next/navigation';
 
 export default function CanvasNewPage() {
-  return (
-    <Suspense fallback={null}>
-      <CanvasWorkbench createOnMount />
-    </Suspense>
-  );
+  redirect('/app/canvas/new');
 }
