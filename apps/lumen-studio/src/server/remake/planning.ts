@@ -45,6 +45,8 @@ export interface BuildPlanForJobInput {
 export interface BuildPlanForJobOutput {
   plan: RemakePlan;
   breakdown: RemakeBreakdown | null;
+  targetProductName?: string;
+  targetProductCategory?: string;
 }
 
 export async function buildPlanForJob(input: BuildPlanForJobInput): Promise<BuildPlanForJobOutput> {
@@ -61,8 +63,10 @@ export async function buildPlanForJob(input: BuildPlanForJobInput): Promise<Buil
     video: input.video,
     reference: input.reference,
     prompt: input.userPrompt,
+    productImageCount: input.productImageUrls.length,
     locale,
     breakdown,
+    productAnalysis,
   });
 
   const generated = await tryGenerateRemakePlan({
@@ -95,7 +99,12 @@ export async function buildPlanForJob(input: BuildPlanForJobInput): Promise<Buil
     plan.audienceTags = input.gateOverrides.audienceTags;
   }
 
-  return { plan, breakdown };
+  return {
+    plan,
+    breakdown,
+    targetProductName: productAnalysis?.name,
+    targetProductCategory: productAnalysis?.category,
+  };
 }
 
 /**

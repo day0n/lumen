@@ -273,7 +273,7 @@ export async function analyzeProductImages(
 
   const wantZh = locale === 'zh';
   const prompt = `You are analyzing uploaded product images for a short-video UGC ad scriptwriter.
-Extract structured product information that will help write specific, compelling voiceover lines.
+Extract concise structured product information that will help write specific, compelling voiceover lines.
 
 Output language: ${wantZh ? 'Chinese (Simplified)' : 'English'}.
 
@@ -282,28 +282,28 @@ Return ONE JSON object, no markdown:
   "name": "product name as shown or inferred",
   "category": "product category (skincare / electronics / food / apparel / etc.)",
   "sellingPoints": ["3 to 5 specific selling points visible or clearly inferable from the images — be concrete, not generic"],
-  "appearance": "brief visual description: color, material, form factor, packaging",
-  "useCase": "primary use scenario in one sentence",
-  "targetAudience": "inferred target audience in one phrase"
+  "appearance": "brief visual description under 35 Chinese characters or 25 English words",
+  "useCase": "primary use scenario in one short sentence",
+  "targetAudience": "inferred target audience in one short phrase"
 }
 
 Rules:
 - sellingPoints must be SPECIFIC (e.g. "含烟酰胺提亮成分" not "效果好")
 - If text/labels are visible in the image, extract them
-- If unsure about a field, make a reasonable inference from visual cues`;
+- If unsure about a field, make a reasonable inference from visual cues
+- Keep every string concise; output valid complete JSON only`;
 
   try {
     const response = await client.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [...imageParts, { text: prompt }] }],
-      config: { temperature: 0.2, maxOutputTokens: 1024 },
+      config: { temperature: 0.2, maxOutputTokens: 2048 },
     });
 
     const text = (response.text ?? '').trim();
     if (!text) return null;
 
-    const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
-    const parsed = JSON.parse(fenced?.[1] ?? text) as unknown;
+    const parsed = parseJsonLike(text);
     const result = ProductAnalysisSchema.safeParse(parsed);
     if (!result.success) {
       console.warn('[remake] product analysis schema mismatch', result.error.flatten());
@@ -418,8 +418,7 @@ Rules:
     const text = (response.text ?? '').trim();
     if (!text) return null;
 
-    const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
-    const parsed = JSON.parse(fenced?.[1] ?? text) as unknown;
+    const parsed = parseJsonLike(text);
     const result = EnvironmentAnalysisSchema.safeParse(parsed);
     if (!result.success) {
       console.warn('[remake] environment analysis schema mismatch', result.error.flatten());
@@ -453,4 +452,13 @@ function guessImageMimeFromUrl(url: string): string {
   if (ext === 'webp') return 'image/webp';
   if (ext === 'gif') return 'image/gif';
   return 'image/png';
+}
+
+function parseJsonLike(text: string): unknown {
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
+  if (fenced?.[1]) return JSON.parse(fenced[1]);
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) return JSON.parse(text.slice(start, end + 1));
+  return JSON.parse(text);
 }

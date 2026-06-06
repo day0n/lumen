@@ -106,6 +106,7 @@ export class RemakeJobRepository {
   ): Promise<RemakeJobRecord | null> {
     const parsed = UpdateRemakeJobInputSchema.parse(patch);
     const set: Record<string, unknown> = { updated_at: new Date() };
+    if (parsed.reference !== undefined) set.reference = parsed.reference;
     if (parsed.plan !== undefined) set.plan = parsed.plan;
     if (parsed.breakdown !== undefined) set.breakdown = parsed.breakdown;
     if (parsed.settings !== undefined) set.settings = parsed.settings;

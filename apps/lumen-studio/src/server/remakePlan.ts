@@ -30,6 +30,12 @@ export const RemakeReferenceSchema = z
     label: z.string().trim().min(1).max(180),
     value: z.string().trim().min(1).max(500),
     source: z.enum(['link', 'video']),
+    title: z.string().trim().max(240).optional(),
+    productName: z.string().trim().max(120).optional(),
+    category: z.string().trim().max(40).optional(),
+    region: z.string().trim().max(40).optional(),
+    thumbnailUrl: z.string().trim().url().optional(),
+    previewUrl: z.string().trim().url().optional(),
   })
   .strict();
 export type RemakeReference = z.infer<typeof RemakeReferenceSchema>;
@@ -84,7 +90,13 @@ export async function tryGenerateRemakePlan(
   try {
     const text = await generateGeminiText(buildGeminiPrompt(input));
     const parsed = parseJsonObject(text);
-    return parsed ? (parsed as Partial<RemakePlan>) : null;
+    if (!parsed) return null;
+    const generated = parsed as Partial<RemakePlan>;
+    if (shouldRejectGeneratedPlan(input, generated)) {
+      console.warn('[hot-videos/remake] generated plan ignored: uploaded product was not used');
+      return null;
+    }
+    return generated;
   } catch (error) {
     if (error instanceof GeminiNotConfiguredError) return null;
     console.warn('[hot-videos/remake] Gemini plan generation failed', error);
@@ -96,10 +108,12 @@ export function buildFallbackPlan(input: {
   video: HotVideoRecord | null;
   reference: RemakeReference;
   prompt?: string;
+  productImageCount?: number;
   locale: 'en' | 'zh';
   breakdown: RemakeBreakdown | null;
+  productAnalysis?: ProductAnalysis | null;
 }): RemakePlan {
-  const product = input.video?.productName ?? input.reference.label;
+  const product = resolveTargetProductName(input);
   const hook =
     input.breakdown?.hook ??
     input.video?.analysis.hook ??
@@ -146,19 +160,21 @@ export function buildFallbackPlan(input: {
   return {
     scriptText,
     scenes: scenesWithEnvironment,
-    sellingPoints:
-      input.locale === 'zh'
+    sellingPoints: input.productAnalysis?.sellingPoints.length
+      ? input.productAnalysis.sellingPoints
+      : input.locale === 'zh'
         ? ['结果先行', '真实上手', '痛点对比', '快速转化']
         : ['Result first', 'Real hands-on demo', 'Pain-point contrast', 'Fast conversion'],
-    audienceTags:
-      input.locale === 'zh'
+    audienceTags: input.productAnalysis?.targetAudience
+      ? [input.productAnalysis.targetAudience]
+      : input.locale === 'zh'
         ? ['TikTok Shop 买家', '价格敏感用户', '效果导向用户']
         : ['TikTok Shop buyers', 'Value seekers', 'Result-driven shoppers'],
     environments,
     sceneEnvironmentMap,
     creatorPrompt:
       "A multi-panel character reference sheet on a plain white background with subtle physical shadow. Three rows: row 1 (3 panels) front, three-quarter, and side standing portraits at uniform scale; row 2 (3 panels) facial expression close-ups (neutral, smiling, speaking); row 3 (3 panels) action poses for UGC product demonstration (holding object near face, presenting object at chest, gesturing with one hand). The reference image attached defines the creator's exact appearance — face, hair, body shape, skin tone, outfit. Faithfully replicate that identity in every panel; do NOT invent or alter face, hair color, skin tone, or outfit. Photorealistic, soft natural lighting, neutral grey background, identity locked across all panels. No subtitles, no UI text, no name labels.",
-    productPrompt: `A multi-panel product reference sheet on a plain white background with subtle physical shadow. Three rows: row 1 (3 panels) front, three-quarter, and back orthographic packshots at uniform scale; row 2 (3 panels) signature material/detail close-up, label/branding close-up, and in-use or open state; row 3 (3 panels) in-hand grip, product placed on a plain surface next to a common object for size, and tabletop arrangement (cropped above wrist, no face). The reference image attached defines the product's exact identity — silhouette, proportions, material, finish, color, logo and label placement, distinctive construction details. Faithfully replicate that identity in every panel; do NOT invent or alter colors, branding, label, or shape. Photorealistic studio lighting, crisp focus, identity locked across all panels. No subtitles, no UI text, no marketing claims, no logos that are not part of the product itself.`,
+    productPrompt: buildFallbackProductPrompt(product, input.productAnalysis),
     bgmPrompt:
       'Instrumental modern TikTok Shop product ad music, clean upbeat luxury feel, no vocals, steady rhythm, suitable for UGC product demonstration.',
     character: {
@@ -219,7 +235,9 @@ function normalizeCharacter(value: unknown): RemakeCharacter | undefined {
 
 function buildGeminiPrompt(input: BuildPlanInput): string {
   const video = input.video;
-  const product = video?.productName ?? input.reference.label;
+  const sourceProduct = video?.productName ?? input.reference.productName ?? input.reference.label;
+  const product = resolveTargetProductName(input);
+  const hasUploadedProduct = input.productImageCount > 0;
   const breakdownText = summarizeBreakdownForPlan(input.breakdown);
   const userScriptBlock = input.userScriptText
     ? `\nGATE-1 USER-CONFIRMED SCRIPT (authoritative — your scriptText output MUST equal this verbatim, and every scene.voiceLine MUST be drawn from this script):\n"""\n${input.userScriptText}\n"""\n`
@@ -253,7 +271,8 @@ REPLICATION MODE HARD RULES (violation = invalid output):
    - CREATOR → new creator identity; preserve motion pattern
    - ENVIRONMENT → similar environment type (kitchen stays kitchen, outdoor stays outdoor). If uploaded scene/environment images exist, use them as reusable spatial anchors.
 5. CROSS-CHECK: before finalising each scene, verify its action matches the skeleton row. If it doesn't, rewrite it.
-6. sceneImagePrompts and sceneVideoPrompts must each contain exactly the same number of entries as scenes.
+6. NEVER carry over the source product name, ingredients, body part, usage area, or benefits into the output when an uploaded product image exists. Keep the motion pattern, replace the product semantics.
+7. sceneImagePrompts and sceneVideoPrompts must each contain exactly the same number of entries as scenes.
 `
     : '';
   return `
@@ -287,7 +306,8 @@ Character identity card (CRITICAL — drives lip-sync via @Name (VO, gender) say
 
 Reference:
 - Title: ${video?.title ?? input.reference.value}
-- Product: ${product}
+- Source/reference product: ${sourceProduct}
+- Target product to advertise: ${product}
 - Category: ${video?.category ?? 'unknown'}
 - Region: ${video?.region ?? 'unknown'}
 - User product/request notes: ${input.prompt ?? ''}
@@ -305,6 +325,16 @@ Reference:
 - Output language for scriptText / dialogue / voiceLine / sellingPoints / audienceTags: ${input.locale === 'zh' ? 'Chinese' : 'English'}
 - Target total video length: ${input.targetDurationSeconds ? `~${input.targetDurationSeconds}s (pick scene count and per-scene duration so the sum lands near this)` : 'flexible'}
 ${breakdownBlock}${productAnalysisBlock}${environmentAnalysisBlock}${replicationRules}${userScriptBlock}${userSellingBlock}${userAudienceBlock}
+${
+  hasUploadedProduct
+    ? `CRITICAL TARGET PRODUCT RULE:
+- The uploaded product image defines the NEW product being advertised.
+- The source/reference product (${sourceProduct}) is only part of the old video's motion skeleton.
+- Every scriptText, sellingPoint, scene.action, scene.dialogue, scene.voiceLine, and productPrompt MUST be about the target product (${product}).
+- Do NOT mention, apply, demonstrate, or visually generate the source/reference product unless it is also the uploaded product.
+`
+    : ''
+}
 Return this exact JSON shape, no markdown:
 {
   "scriptText": "full script users can review at Gate 1",
@@ -339,11 +369,15 @@ function scenesFromBreakdown(
       (line) => line.startSec < shot.endSec && line.endSec > shot.startSec,
     );
     const voiceLine =
-      (shot.dialogue ?? overlap?.text ?? '').trim() || fallbackVoice(product, locale);
-    const dialogue = shot.visual.length <= 80 ? shot.visual : shot.action.slice(0, 80);
+      rewriteSourceLineForProduct(shot.dialogue ?? overlap?.text, product, locale) ??
+      fallbackVoice(product, locale);
+    const dialogue = fallbackCaption(product, sceneNumber, locale);
     return {
       index: sceneNumber,
-      action: shot.action,
+      action:
+        locale === 'zh'
+          ? `复刻原镜头动作模式：${shot.action}。但把原商品完全替换为用户上传商品图中的 ${product}，不要出现参考视频商品。`
+          : `Replicate the source shot motion pattern: ${shot.action}. Replace the source product completely with ${product} from the uploaded product images; do not show the reference video's product.`,
       dialogue,
       voiceLine,
       durationSeconds: duration,
@@ -580,6 +614,86 @@ function fallbackVoice(product: string, locale: 'en' | 'zh'): string {
   return locale === 'zh'
     ? `这就是 ${product} 的真实使用效果`
     : `This is what ${product} actually does for you`;
+}
+
+function fallbackCaption(product: string, scene: number, locale: 'en' | 'zh'): string {
+  if (locale === 'zh') {
+    const lines = [
+      `${product} 上脸看质感`,
+      `${product} 的颜色很提气`,
+      `${product} 细节很适合日常`,
+      `这样用 ${product} 更自然`,
+      `${product} 直接完成妆感`,
+      `${product} 今天就可以入`,
+    ];
+    return lines[scene - 1] ?? `${product} 实拍效果`;
+  }
+  const lines = [
+    `${product} texture check`,
+    `${product} gives instant color`,
+    `${product} detail for everyday wear`,
+    `Use ${product} like this`,
+    `${product} completes the look`,
+    `${product} is the one to try`,
+  ];
+  return lines[scene - 1] ?? `${product} real demo`;
+}
+
+function rewriteSourceLineForProduct(
+  value: string | undefined,
+  product: string,
+  locale: 'en' | 'zh',
+): string | null {
+  const line = value?.trim();
+  if (!line) return null;
+  if (locale === 'zh') {
+    return `把原视频节奏换成 ${product}：先看真实质感，再看颜色和上妆效果。`;
+  }
+  return `Keep the source pacing, but make it about ${product}: show the real texture, color payoff, and usage result.`;
+}
+
+function resolveTargetProductName(input: {
+  reference: RemakeReference;
+  video: HotVideoRecord | null;
+  productImageCount?: number;
+  locale?: 'en' | 'zh';
+  productAnalysis?: ProductAnalysis | null;
+}): string {
+  const fromAnalysis = readString(input.productAnalysis?.name);
+  if (fromAnalysis) return fromAnalysis;
+  if ((input.productImageCount ?? 0) > 0) {
+    return input.locale === 'zh' ? '上传商品' : 'uploaded product';
+  }
+  return input.reference.productName ?? input.video?.productName ?? input.reference.label;
+}
+
+function buildFallbackProductPrompt(
+  product: string,
+  analysis: ProductAnalysis | null | undefined,
+): string {
+  const details = analysis
+    ? ` Inferred product: ${analysis.name}. Category: ${analysis.category}. Appearance: ${analysis.appearance}. Use case: ${analysis.useCase}.`
+    : '';
+  return `A multi-panel product reference sheet for ${product}.${details} The attached uploaded product image defines the product's exact identity — silhouette, proportions, material, finish, color, logo and label placement, and distinctive construction details. Faithfully replicate the uploaded product, not the reference video's product. Three rows: row 1 front, three-quarter, and side packshots at uniform scale; row 2 signature material/detail close-up, label or form-factor close-up, and in-use state; row 3 in-hand grip, product placed on a plain surface next to a common object for size, and tabletop arrangement. Photorealistic studio lighting, crisp focus, identity locked across all panels. No subtitles, no UI text, no marketing claims, no logos that are not part of the product itself.`;
+}
+
+function shouldRejectGeneratedPlan(input: BuildPlanInput, plan: Partial<RemakePlan>): boolean {
+  if (input.productImageCount <= 0 || !input.productAnalysis) return false;
+  const text = [
+    plan.scriptText,
+    plan.productPrompt,
+    ...(plan.sellingPoints ?? []),
+    ...(plan.scenes ?? []).flatMap((scene) => [scene.action, scene.dialogue, scene.voiceLine]),
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .join('\n')
+    .toLowerCase();
+  if (!text) return true;
+
+  const requiredTerms = [input.productAnalysis.name, input.productAnalysis.category]
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length >= 2);
+  return requiredTerms.length > 0 && !requiredTerms.some((term) => text.includes(term));
 }
 
 function fallbackChineseLine(scene: number, product: string, hook: string, angle: string): string {

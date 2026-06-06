@@ -13,6 +13,12 @@ const ReferenceSchema = z
     label: z.string().trim().min(1).max(180),
     value: z.string().trim().min(1).max(500),
     source: z.enum(['link', 'video']),
+    title: z.string().trim().max(240).optional(),
+    productName: z.string().trim().max(120).optional(),
+    category: z.string().trim().max(40).optional(),
+    region: z.string().trim().max(40).optional(),
+    thumbnailUrl: z.string().trim().url().optional(),
+    previewUrl: z.string().trim().url().optional(),
   })
   .strict();
 

@@ -64,7 +64,7 @@ export interface RemakeJobView {
 
 export async function createRemakeJob(options: CreateRemakeJobOptions): Promise<RemakeJobView> {
   const video = await resolveReferenceVideo(options.videoId, options.locale);
-  const { plan, breakdown } = await buildPlanForJob({
+  const { plan, breakdown, targetProductName, targetProductCategory } = await buildPlanForJob({
     reference: options.reference,
     video,
     productImageUrls: options.productImageUrls,
@@ -76,10 +76,14 @@ export async function createRemakeJob(options: CreateRemakeJobOptions): Promise<
   });
 
   const repository = await getRemakeJobRepository();
+  const reference = applyTargetProductToReference(options.reference, {
+    productName: targetProductName,
+    category: targetProductCategory,
+  });
   const job = await repository.createJob({
     ownerId: options.ownerId,
     videoId: options.videoId,
-    reference: options.reference,
+    reference,
     settings: options.settings,
     plan: toJobPlan(plan),
     breakdown: breakdown ? toJobBreakdown(breakdown) : undefined,
@@ -143,7 +147,7 @@ export async function confirmGate1(input: {
   }
 
   const video = await resolveReferenceVideo(job.videoId, input.locale);
-  const { plan, breakdown } = await buildPlanForJob({
+  const { plan, breakdown, targetProductName, targetProductCategory } = await buildPlanForJob({
     reference: job.reference,
     video,
     productImageUrls: job.productImageUrls,
@@ -167,6 +171,10 @@ export async function confirmGate1(input: {
     : undefined;
 
   const updated = await repository.updateJob(input.jobId, input.ownerId, {
+    reference: applyTargetProductToReference(job.reference, {
+      productName: targetProductName,
+      category: targetProductCategory,
+    }),
     plan: toJobPlan(plan),
     breakdown: breakdown ? toJobBreakdown(breakdown) : undefined,
     ...(nextSettings ? { settings: nextSettings } : {}),
@@ -326,6 +334,19 @@ function composeView(job: RemakeJobRecord, tasks: RemakeTaskRecord[]): RemakeJob
     job,
     tasks,
     stageStatuses: deriveJobStageStatuses(job, tasks),
+  };
+}
+
+function applyTargetProductToReference(
+  reference: RemakeReference,
+  target: { productName?: string; category?: string },
+): RemakeReference {
+  const productName = target.productName?.trim();
+  if (!productName) return reference;
+  return {
+    ...reference,
+    productName,
+    ...(target.category?.trim() ? { category: target.category.trim() } : {}),
   };
 }
 

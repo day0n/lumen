@@ -76,6 +76,12 @@ interface ReferenceItem {
   label: string;
   value: string;
   source: 'link' | 'video';
+  title?: string;
+  productName?: string;
+  category?: string;
+  region?: string;
+  thumbnailUrl?: string;
+  previewUrl?: string;
 }
 
 interface UploadedProductImage {
@@ -1884,6 +1890,12 @@ function createVideoReference(video: HotVideoView): ReferenceItem {
     label: video.product,
     value: video.sourceUrl ?? video.title,
     source: 'video',
+    title: video.title,
+    productName: video.product,
+    category: video.category,
+    region: video.region,
+    thumbnailUrl: video.thumbnailUrl,
+    previewUrl: video.previewUrl,
   };
 }
 

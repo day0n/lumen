@@ -413,6 +413,7 @@ export type CreateRemakeJobInput = z.infer<typeof CreateRemakeJobInputSchema>;
 
 export const UpdateRemakeJobInputSchema = z
   .object({
+    reference: RemakeReferenceSchema.optional(),
     plan: RemakePlanSchema.optional(),
     breakdown: RemakeBreakdownSchema.optional(),
     settings: RemakeJobSettingsSchema.optional(),
