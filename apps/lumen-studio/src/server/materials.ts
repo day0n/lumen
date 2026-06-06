@@ -6,10 +6,13 @@ import type {
   MaterialAssetKind,
   MaterialAssetRecord,
 } from '@lumen/db';
+import { MaterialAssetRecordSchema } from '@lumen/db';
 
 import { requireStudioUser } from './auth';
-import { getMaterialAssetRepository, getProjectRepository } from './db';
+import { getMaterialAssetRepository, getProjectRepository, getStudioCache } from './db';
 import { traceStudioStep } from './telemetry';
+
+const MATERIAL_ASSET_LIST_CACHE_TTL_SECONDS = 60;
 
 export interface ListStudioMaterialAssetsOptions {
   workflowId?: string;
@@ -28,6 +31,29 @@ export async function listStudioMaterialAssets(
   const ownerId = user.id;
   const limit = options.limit ?? 200;
   const workflowId = options.workflowId;
+  const cache = getStudioCache();
+  const canUseCache = !workflowId;
+  const cacheKey = materialAssetListCacheKey(ownerId, {
+    workflowId,
+    category: options.category,
+    kind: options.kind,
+    limit,
+  });
+
+  const cached = canUseCache
+    ? await traceStudioStep(
+        'studio.material_assets.list.cache_get',
+        'cache.get',
+        () => cache.get(cacheKey, MaterialAssetRecordSchema.array()),
+        {
+          has_category: Boolean(options.category),
+          has_kind: Boolean(options.kind),
+          limit,
+        },
+      )
+    : null;
+
+  if (cached) return cached;
 
   if (workflowId) {
     const projectRepository = await getProjectRepository();
@@ -78,7 +104,18 @@ export async function listStudioMaterialAssets(
       : Promise.resolve([]),
   ]);
 
-  return mergeMaterialAssets(workflowResultAssets, storedAssets, query.limit);
+  const assets = mergeMaterialAssets(workflowResultAssets, storedAssets, query.limit);
+
+  if (canUseCache) {
+    await traceStudioStep(
+      'studio.material_assets.list.cache_set',
+      'cache.set',
+      () => cache.set(cacheKey, assets, MATERIAL_ASSET_LIST_CACHE_TTL_SECONDS),
+      { result_count: assets.length, limit },
+    );
+  }
+
+  return assets;
 }
 
 async function listStoredMaterialAssets(
@@ -152,7 +189,7 @@ export async function createStudioMaterialAssetForOwner(
     getMaterialAssetRepository(),
   );
 
-  return traceStudioStep(
+  const asset = await traceStudioStep(
     'studio.material_assets.create_user_upload.db',
     'db.query',
     () => repository.createUserUpload({ ...input, ownerId }),
@@ -161,6 +198,9 @@ export async function createStudioMaterialAssetForOwner(
       kind: input.kind,
     },
   );
+
+  await invalidateMaterialAssetListCache(ownerId);
+  return asset;
 }
 
 export async function deleteStudioMaterialAsset(assetId: string): Promise<boolean> {
@@ -169,12 +209,15 @@ export async function deleteStudioMaterialAsset(assetId: string): Promise<boolea
     getMaterialAssetRepository(),
   );
 
-  return traceStudioStep(
+  const deleted = await traceStudioStep(
     'studio.material_assets.delete_user_upload.db',
     'db.query',
     () => repository.deleteUserUpload(user.id, assetId),
     { asset_id: assetId },
   );
+
+  if (deleted) await invalidateMaterialAssetListCache(user.id);
+  return deleted;
 }
 
 function mergeMaterialAssets(
@@ -200,4 +243,29 @@ function materialAssetDedupeKey(asset: MaterialAssetRecord) {
   }
 
   return `asset:${asset.id}`;
+}
+
+function materialAssetListCacheKey(
+  ownerId: string,
+  query: {
+    workflowId?: string;
+    category?: MaterialAssetCategory;
+    kind?: MaterialAssetKind;
+    limit: number;
+  },
+) {
+  return [
+    'materials',
+    ownerId,
+    'list',
+    'v1',
+    query.workflowId ?? 'all-workflows',
+    query.category ?? 'all-categories',
+    query.kind ?? 'all-kinds',
+    query.limit,
+  ].join(':');
+}
+
+async function invalidateMaterialAssetListCache(ownerId: string) {
+  await getStudioCache().deletePattern(`materials:${ownerId}:list:v1:*`, 'lumen:studio:');
 }
