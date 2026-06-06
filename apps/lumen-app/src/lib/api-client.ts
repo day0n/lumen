@@ -121,6 +121,8 @@ async function writeCachedApiResponse(url: URL, headers: Headers, response: Resp
   const ttlMs = ttlForApiPath(url.pathname);
   if (!ttlMs) return;
   const cloned = response.clone();
+  const contentType = cloned.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) return;
   const body = await cloned.text();
   apiCache.set(apiCacheKey(url, headers), {
     body,

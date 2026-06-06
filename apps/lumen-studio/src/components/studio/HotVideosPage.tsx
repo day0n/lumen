@@ -9,6 +9,7 @@ import type { Locale } from '@/i18n/routing';
 import { useAppShellChrome } from '@/lib/app-shell-chrome';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
+import { readClientApiJson } from '@/lib/read-api-json';
 import { useUser } from '@clerk/nextjs';
 import type { HotVideoRecord } from '@lumen/db';
 import {
@@ -350,7 +351,10 @@ export function HotVideosPage() {
           signal: controller.signal,
           headers: { 'x-lumen-locale': locale },
         });
-        const payload = (await response.json()) as ListHotVideosApiResponse;
+        const payload = await readClientApiJson<ListHotVideosApiResponse>(
+          response,
+          t('hotVideos.apiUnavailable'),
+        );
         if (!response.ok || !payload.ok || !payload.data) {
           throw new Error(payload.error?.message ?? t('hotVideos.loadFailed'));
         }
@@ -415,11 +419,11 @@ export function HotVideosPage() {
         headers: { 'content-type': 'application/json', 'x-lumen-locale': locale },
         body: JSON.stringify({ url: value }),
       });
-      const payload = (await response.json()) as {
+      const payload = await readClientApiJson<{
         ok: boolean;
         data?: HotVideoRecord;
         error?: { message?: string };
-      };
+      }>(response, t('hotVideos.apiUnavailable'));
 
       if (!response.ok || !payload.ok || !payload.data) {
         setInputError(payload.error?.message ?? t('hotVideos.parseFailed'));
@@ -1326,7 +1330,10 @@ function ReplicaConfigModal({
       body: form,
       signal,
     });
-    const payload = (await response.json()) as CanvasUploadApiResponse;
+    const payload = await readClientApiJson<CanvasUploadApiResponse>(
+      response,
+      t('hotVideos.apiUnavailable'),
+    );
     if (!response.ok || !payload.ok || !payload.data) {
       throw new Error(payload.error?.message ?? t('materials.uploadFailed'));
     }
@@ -1428,7 +1435,10 @@ function ReplicaConfigModal({
         }),
         signal: controller.signal,
       });
-      const payload = (await response.json()) as CreateRemakeJobResponse;
+      const payload = await readClientApiJson<CreateRemakeJobResponse>(
+        response,
+        t('hotVideos.apiUnavailable'),
+      );
       if (controller.signal.aborted) return;
       if (!response.ok || !payload.ok || !payload.data?.job?.id) {
         throw new Error(payload.error?.message ?? t('hotVideos.parseFailed'));

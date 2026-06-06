@@ -174,10 +174,18 @@ function serveStudioApp(rawUrl: string, res: import('node:http').ServerResponse)
 }
 
 function normalizeStudioAppPath(pathname: string) {
-  if (pathname === '/app' || pathname.startsWith('/app/')) return pathname;
-  if (pathname === '/zh/app' || pathname.startsWith('/zh/app/')) return pathname.slice(3) || '/app';
-  if (pathname === '/en/app' || pathname.startsWith('/en/app/')) return pathname.slice(3) || '/app';
-  return null;
+  const appPath =
+    pathname === '/app' || pathname.startsWith('/app/')
+      ? pathname
+      : pathname === '/zh/app' || pathname.startsWith('/zh/app/')
+        ? pathname.slice(3) || '/app'
+        : pathname === '/en/app' || pathname.startsWith('/en/app/')
+          ? pathname.slice(3) || '/app'
+          : null;
+  if (!appPath) return null;
+  // /app/api/* must reach Next.js handlers — serving SPA index.html here breaks JSON clients.
+  if (appPath.startsWith('/app/api/')) return null;
+  return appPath;
 }
 
 function contentTypeFor(filePath: string) {

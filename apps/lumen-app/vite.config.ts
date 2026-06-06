@@ -115,6 +115,11 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3002,
       proxy: {
+        '/app/api': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/app/, ''),
+        },
         '/api': 'http://localhost:3000',
         '/icon.svg': 'http://localhost:3000',
         '/ws': {
