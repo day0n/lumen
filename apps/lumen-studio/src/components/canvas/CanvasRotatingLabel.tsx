@@ -29,7 +29,7 @@ export function CanvasRotatingLabel({
 
   return (
     <div className={cn('relative', className)}>
-      <span className="invisible whitespace-nowrap text-sm font-medium">{longestMessage}</span>
+      <span className="invisible whitespace-nowrap text-base font-medium">{longestMessage}</span>
       <AnimatePresence initial={false} mode="wait">
         <motion.span
           key={reducedMotion ? messages[0] : messages[index]}
@@ -37,7 +37,7 @@ export function CanvasRotatingLabel({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
-          className="canvas-entry-label absolute inset-0 whitespace-nowrap text-sm font-medium"
+          className="canvas-entry-label absolute inset-0 whitespace-nowrap text-base font-medium"
         >
           {reducedMotion ? messages[0] : messages[index]}
         </motion.span>

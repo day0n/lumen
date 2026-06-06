@@ -59,7 +59,7 @@ const FRAME_INTERVAL_MS = 200;
 
 const sizeClasses = {
   sm: 'size-[18px] gap-px',
-  md: 'size-6 gap-px',
+  md: 'size-7 gap-0.5',
   lg: 'size-9 gap-0.5',
 } as const;
 

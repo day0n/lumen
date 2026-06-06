@@ -30,7 +30,7 @@ export function CanvasEntryLoader({
       aria-live="polite"
       aria-label={ariaLabel ?? messages[0]}
     >
-      <div className="flex animate-in fade-in items-center justify-center gap-2.5 duration-300 ease-out">
+      <div className="flex animate-in fade-in items-center justify-center gap-3 duration-300 ease-out">
         <CanvasDotLogo size="md" />
         <CanvasRotatingLabel messages={messages} />
       </div>
