@@ -40,6 +40,17 @@ if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; 
   fi
 fi
 
+echo "==> Ensuring CJK subtitle font..."
+if [ ! -f /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc ]; then
+  if [ "$(id -u)" -eq 0 ] && command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y fonts-noto-cjk
+    fc-cache -f >/dev/null 2>&1 || true
+  else
+    echo "CJK font missing; Chinese subtitles may render as squares."
+  fi
+fi
+
 echo "==> Installing dependencies..."
 pnpm install --frozen-lockfile
 

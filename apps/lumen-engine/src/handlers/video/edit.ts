@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -40,6 +41,14 @@ interface ProbeResult {
 }
 
 const SUPPORTED_ASPECT_RATIOS = new Set(['9:16', '16:9', '1:1', '4:5']);
+const SUBTITLE_FONT_CANDIDATES = [
+  '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+  '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc',
+  '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+  '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+  '/System/Library/Fonts/PingFang.ttc',
+  '/System/Library/Fonts/STHeiti Light.ttc',
+];
 
 export async function execute(
   input: ResolvedInput,
@@ -358,6 +367,7 @@ function buildFilterComplex(input: {
   const renderSubtitles = readBooleanSetting(input.settings, 'renderSubtitles');
   const flashTransition = readBooleanSetting(input.settings, 'flashTransition');
   const bgmVolume = readNumberSetting(input.settings, 'bgmVolume') ?? 0.28;
+  const subtitleFontFile = resolveSubtitleFontFile(input.settings);
 
   for (const clip of input.clips) {
     const trim = `start=${formatSeconds(clip.start)}:duration=${formatSeconds(clip.duration)}`;
@@ -383,9 +393,7 @@ function buildFilterComplex(input: {
     if (renderSubtitles && clip.title?.trim()) {
       const fontSize = Math.max(24, Math.round(input.height * 0.032));
       const bottomOffset = Math.max(96, Math.round(input.height * 0.145));
-      videoFilters.push(
-        `drawtext=text='${escapeDrawtextText(clip.title)}':x=(w-text_w)/2:y=h-${bottomOffset}:fontsize=${fontSize}:fontcolor=white:box=1:boxcolor=black@0.42:boxborderw=18`,
-      );
+      videoFilters.push(buildSubtitleFilter(clip.title, fontSize, bottomOffset, subtitleFontFile));
     }
 
     videoFilters.push('format=yuv420p');
@@ -415,6 +423,39 @@ function buildFilterComplex(input: {
   );
   chains.push('[acat][bgm]amix=inputs=2:duration=first:dropout_transition=0[a]');
   return chains.join(';');
+}
+
+function buildSubtitleFilter(
+  text: string,
+  fontSize: number,
+  bottomOffset: number,
+  fontFile: string | null,
+): string {
+  const parts = ['drawtext'];
+  if (fontFile) parts.push(`fontfile='${escapeDrawtextText(fontFile)}'`);
+  parts.push(
+    `text='${escapeDrawtextText(text)}'`,
+    'x=(w-text_w)/2',
+    `y=h-${bottomOffset}`,
+    `fontsize=${fontSize}`,
+    'fontcolor=white',
+    'box=1',
+    'boxcolor=black@0.42',
+    'boxborderw=18',
+  );
+  return parts.join(':');
+}
+
+function resolveSubtitleFontFile(settings: Record<string, unknown>): string | null {
+  const configured = readStringSetting(settings, 'fontFile') ?? config.VIDEO_EDIT_FONT_FILE;
+  const candidates = [configured, ...SUBTITLE_FONT_CANDIDATES]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 function resolveOutputDimensions(settings: Record<string, unknown>): {

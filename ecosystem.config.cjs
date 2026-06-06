@@ -38,6 +38,9 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PATH: runtimePath,
+        VIDEO_EDIT_FONT_FILE:
+          process.env.VIDEO_EDIT_FONT_FILE ||
+          '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
       },
     },
   ],

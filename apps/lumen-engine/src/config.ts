@@ -26,6 +26,7 @@ const EnvSchema = z.object({
   KIE_CALLBACK_URL: z.string().optional().default(''),
   VIDEO_EDIT_FFMPEG_PATH: z.string().default('ffmpeg'),
   VIDEO_EDIT_FFPROBE_PATH: z.string().default('ffprobe'),
+  VIDEO_EDIT_FONT_FILE: z.string().optional().default(''),
   VIDEO_EDIT_MAX_CLIPS: z.coerce.number().int().min(1).max(20).default(8),
   VIDEO_EDIT_MAX_DURATION_SECONDS: z.coerce.number().int().min(5).max(600).default(180),
   VIDEO_EDIT_MAX_INPUT_MB: z.coerce.number().int().min(10).max(2048).default(350),
