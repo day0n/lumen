@@ -1,5 +1,6 @@
 'use client';
 
+import { GlassSliderThumb } from '@/components/ui/glass/GlassSliderThumb';
 import { cn } from '@/lib/cn';
 import type { Locale } from '@/i18n/routing';
 import { DASHBOARD_FADE } from '@/lib/dashboard-motion';
@@ -28,6 +29,8 @@ export function DashboardTimeScrubber({
   const activePoint = points[activeIndex];
   if (!activePoint) return null;
 
+  const percent = (activeIndex / (points.length - 1)) * 100;
+
   return (
     <div className="mt-3 rounded-lg bg-white/[0.03] px-3 py-3 ring-1 ring-white/[0.05]">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -45,25 +48,39 @@ export function DashboardTimeScrubber({
           {activePoint.roas.toFixed(2)}x
         </motion.span>
       </div>
-      <input
-        type="range"
-        min={0}
-        max={points.length - 1}
-        value={activeIndex}
-        onChange={(event) => {
-          const next = Number.parseInt(event.target.value, 10);
-          onChange(next >= points.length - 1 ? null : next);
-        }}
-        className={cn(
-          'h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/[0.08]',
-          '[&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none',
-          '[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#79e4ff]',
-          '[&::-webkit-slider-thumb]:shadow-[0_0_12px_rgba(121,228,255,0.55)]',
-          '[&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:rounded-full',
-          '[&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-[#79e4ff]',
-        )}
-        aria-valuetext={`${activePoint.label} ${formatCurrency(activePoint.revenue, locale)}`}
-      />
+
+      <div className="relative py-2">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-white/[0.08]"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-[#79e4ff]/35 to-[#79e4ff]/75"
+          style={{ width: `${percent}%` }}
+        />
+        <GlassSliderThumb percent={percent} reducedMotion={reducedMotion} />
+        <input
+          type="range"
+          min={0}
+          max={points.length - 1}
+          value={activeIndex}
+          onChange={(event) => {
+            const next = Number.parseInt(event.target.value, 10);
+            onChange(next >= points.length - 1 ? null : next);
+          }}
+          className={cn(
+            'relative z-[2] h-6 w-full cursor-pointer appearance-none bg-transparent',
+            '[&::-webkit-slider-thumb]:h-[22px] [&::-webkit-slider-thumb]:w-[22px] [&::-webkit-slider-thumb]:appearance-none',
+            '[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-transparent',
+            '[&::-webkit-slider-thumb]:shadow-none',
+            '[&::-moz-range-thumb]:h-[22px] [&::-moz-range-thumb]:w-[22px] [&::-moz-range-thumb]:rounded-full',
+            '[&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-transparent',
+          )}
+          aria-valuetext={`${activePoint.label} ${formatCurrency(activePoint.revenue, locale)}`}
+        />
+      </div>
+
       <div className="mt-2 flex justify-between text-[10px] text-white/28">
         <span>{points[0]?.label}</span>
         <span>{points[points.length - 1]?.label}</span>
