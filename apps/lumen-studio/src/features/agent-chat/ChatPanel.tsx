@@ -33,7 +33,6 @@ import {
 } from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { nanoid } from 'nanoid';
-import { usePathname } from 'next/navigation';
 import {
   type ChangeEvent,
   type FormEvent,
@@ -97,6 +96,14 @@ function clampPanelWidth(value: number): number {
   return Math.max(PANEL_MIN_WIDTH, Math.min(max, value));
 }
 
+function clearInitialPromptFromUrl() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('prompt');
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  window.history.replaceState(window.history.state, '', nextUrl);
+}
+
 export function ChatPanel({
   projectId,
   sessionId,
@@ -146,7 +153,6 @@ export function ChatPanel({
   const autoSentRef = useRef(false);
   const initialPromptRef = useRef(initialPrompt);
   initialPromptRef.current = initialPrompt;
-  const pathname = usePathname();
   const busy = isBusy(status);
 
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
@@ -165,6 +171,10 @@ export function ChatPanel({
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
 
   const handleResizeMove = useCallback((event: PointerEvent) => {
     const state = resizeStateRef.current;
@@ -289,6 +299,7 @@ export function ChatPanel({
       requireLogin();
       return;
     }
+    if (!projectId) return;
     const trimmed = initialPrompt?.trim();
     if (!trimmed) return;
     autoSentRef.current = true;
@@ -297,8 +308,8 @@ export function ChatPanel({
     void send(trimmed).finally(() => {
       void loadSessions();
     });
-    window.history.replaceState(window.history.state, '', pathname);
-  }, [initialPrompt, send, pathname, authReady, isSignedIn, requireLogin, loadSessions]);
+    clearInitialPromptFromUrl();
+  }, [initialPrompt, projectId, send, authReady, isSignedIn, requireLogin, loadSessions]);
 
   const streamKey = useMemo(
     () =>

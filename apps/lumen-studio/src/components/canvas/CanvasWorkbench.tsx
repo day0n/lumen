@@ -894,6 +894,20 @@ function hasEquivalentEdge(edges: LumenEdge[], connection: Connection) {
   );
 }
 
+function withCurrentAppRoutePrefix(localizedPath: string) {
+  if (typeof window === 'undefined') return localizedPath;
+  const { pathname } = window.location;
+  const appPrefix =
+    pathname === '/zh/app' || pathname.startsWith('/zh/app/')
+      ? '/zh/app'
+      : pathname === '/app' || pathname.startsWith('/app/')
+        ? '/app'
+        : null;
+  if (!appPrefix) return localizedPath;
+  const appPath = localizedPath.startsWith('/zh/') ? localizedPath.slice(3) : localizedPath;
+  return `${appPrefix}${appPath.startsWith('/') ? appPath : `/${appPath}`}`;
+}
+
 export function CanvasWorkbench({ projectId, createOnMount = false }: CanvasWorkbenchProps) {
   return (
     <ReactFlowProvider>
@@ -908,7 +922,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const { locale, t, localePath } = useI18n();
   const { isLoaded: authReady, isSignedIn, requireLogin } = useLoginRedirect();
   const initialPrompt = useMemo(() => searchParams?.get('prompt') ?? null, [searchParams]);
-  const shouldOpenAgentChat = searchParams?.get('agent') === 'chat';
+  const agentChatParam = searchParams?.get('agent') ?? null;
+  const shouldOpenAgentChat = agentChatParam !== 'closed';
   const [activeKind, setActiveKind] = useState<NodeKind>('text');
   const [nodeMenuOpen, setNodeMenuOpen] = useState(false);
   const [materialPanelOpen, setMaterialPanelOpen] = useState(false);
@@ -1257,15 +1272,17 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         markCanvasHydrated();
         const queryParams = new URLSearchParams();
         if (initialPrompt) queryParams.set('prompt', initialPrompt);
-        if (shouldOpenAgentChat) queryParams.set('agent', 'chat');
+        if (agentChatParam) queryParams.set('agent', agentChatParam);
         const query = queryParams.toString();
         // 用 history.replaceState 取代 router.replace：
         // 后者会触发 Next.js 完整路由切换，导致 loading.tsx 再现一次 + workbench 重挂载，
         // 视觉上就是「加载图 → 空画布 → 加载图 → 真画布」的双闪。
-        // 我们已经把项目数据写到内部 state 里了，这里只需要把地址栏对齐到 /canvas/:id 即可，
-        // usePathname / useSearchParams 都会跟着 replaceState 同步。
+        // 我们已经把项目数据写到内部 state 里了，这里只需要把地址栏对齐到真实项目地址。
+        // SPA 入口要保留 /app 前缀，避免后续清理 query 时退回旧的 /canvas/new。
         if (typeof window !== 'undefined') {
-          const nextUrl = localePath(`/canvas/${project.id}${query ? `?${query}` : ''}`);
+          const nextUrl = withCurrentAppRoutePrefix(
+            localePath(`/canvas/${project.id}${query ? `?${query}` : ''}`),
+          );
           window.history.replaceState(window.history.state, '', nextUrl);
         }
       } catch (error) {
@@ -1288,6 +1305,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     createOnMount,
     currentProjectId,
     edges,
+    agentChatParam,
     initialPrompt,
     locale,
     localePath,
@@ -1296,7 +1314,6 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     projectTitle,
     setEdges,
     setNodes,
-    shouldOpenAgentChat,
     isSignedIn,
     t,
   ]);
@@ -1955,7 +1972,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         )}
         <ChatPanel
           projectId={currentProjectId ?? undefined}
-          initialPrompt={currentProjectId ? initialPrompt : null}
+          initialPrompt={initialPrompt}
           defaultOpen={shouldOpenAgentChat}
           onWorkflowUpdate={handleAgentWorkflowUpdate}
           onWorkflowNodeStatus={handleAgentWorkflowNodeStatus}

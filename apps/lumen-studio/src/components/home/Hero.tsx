@@ -171,7 +171,9 @@ export function Hero() {
 
   const goCreate = async () => {
     const prompt = value.trim();
-    const target = prompt ? `/canvas/new?prompt=${encodeURIComponent(prompt)}` : '/canvas/new';
+    const params = new URLSearchParams({ agent: 'chat' });
+    if (prompt) params.set('prompt', prompt);
+    const target = `/canvas/new?${params.toString()}`;
 
     if (attachedImages.length > 0 && typeof window !== 'undefined') {
       try {
