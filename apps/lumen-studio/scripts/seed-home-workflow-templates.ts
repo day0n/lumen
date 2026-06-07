@@ -12,12 +12,15 @@ import {
 } from '@lumen/db';
 import { config as dotenvConfig } from 'dotenv';
 
+import { arrangeCanvasNodes } from '../src/lib/canvas/auto-layout';
+
 const envFile = resolve(process.cwd(), '.env.local');
 if (existsSync(envFile)) {
   dotenvConfig({ path: envFile });
 }
 
 type MediaType = 'image' | 'video';
+type NodeKind = 'text' | 'image' | 'video' | 'audio';
 type WorkflowShape = 'hook' | 'visual' | 'script' | 'kit';
 
 interface WorkflowResultDocument {
@@ -95,6 +98,7 @@ const CATEGORIES = [
 const TEMPLATE_PUBLIC_BASE_URL = (
   process.env.NEXT_PUBLIC_APP_URL || 'https://lumenstudio.tech'
 ).replace(/\/$/, '');
+const TEMPLATE_ASSET_VERSION = '20260607-trim-layout';
 
 const PRODUCT_INPUTS: ProductInputAsset[] = [
   productInput('serum-bottle', 'Serum bottle', '精华瓶', 'transparent serum, dropper bottle'),
@@ -1081,16 +1085,35 @@ function buildCanvas(
   result: ResultSeed,
   assets: TemplateAssets,
 ): ProjectCanvas {
+  let canvas: ProjectCanvas;
   switch (item.shape) {
     case 'hook':
-      return buildHookCanvas(item, result, assets);
+      canvas = buildHookCanvas(item, result, assets);
+      break;
     case 'script':
-      return buildScriptCanvas(item, result, assets);
+      canvas = buildScriptCanvas(item, result, assets);
+      break;
     case 'visual':
-      return buildVisualCanvas(item, result, assets);
+      canvas = buildVisualCanvas(item, result, assets);
+      break;
     case 'kit':
-      return buildKitCanvas(item, result, assets);
+      canvas = buildKitCanvas(item, result, assets);
+      break;
   }
+  return arrangeTemplateCanvas(canvas);
+}
+
+type TemplateLayoutNode = ProjectCanvas['nodes'][number] & {
+  data: {
+    kind: NodeKind;
+  };
+};
+
+function arrangeTemplateCanvas(canvas: ProjectCanvas): ProjectCanvas {
+  return {
+    ...canvas,
+    nodes: arrangeCanvasNodes(canvas.nodes as TemplateLayoutNode[], canvas.edges),
+  };
 }
 
 function buildHookCanvas(
@@ -1641,7 +1664,7 @@ function productInput(
 }
 
 function publicAssetUrl(path: string) {
-  return `${TEMPLATE_PUBLIC_BASE_URL}/${path.replace(/^\//, '')}`;
+  return `${TEMPLATE_PUBLIC_BASE_URL}/${path.replace(/^\//, '')}?v=${TEMPLATE_ASSET_VERSION}`;
 }
 
 function productPromptZh(product: ProductInputAsset) {
