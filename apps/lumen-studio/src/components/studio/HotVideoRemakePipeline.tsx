@@ -51,7 +51,9 @@ export function HotVideoRemakePipeline({
 }) {
   const { locale } = useI18n();
   const copy = getCopy(locale);
-  const { state, runStage, confirmGate1, confirmGate2, cancel } = useRemakeJob(jobId, { locale });
+  const { state, runStage, updateScene, confirmGate1, confirmGate2, cancel } = useRemakeJob(jobId, {
+    locale,
+  });
 
   if (state.phase === 'loading') {
     return (
@@ -87,6 +89,7 @@ export function HotVideoRemakePipeline({
       copy={copy}
       onBack={onBack}
       onRunStage={runStage}
+      onUpdateScene={updateScene}
       onConfirmGate1={confirmGate1}
       onConfirmGate2={confirmGate2}
       onCancel={cancel}
@@ -104,6 +107,7 @@ function PipelineView({
   copy,
   onBack,
   onRunStage,
+  onUpdateScene,
   onConfirmGate1,
   onConfirmGate2,
   onCancel,
@@ -113,6 +117,13 @@ function PipelineView({
   copy: ReturnType<typeof getCopy>;
   onBack: () => void;
   onRunStage: (input: { stage: RemakeStageName; sliceKeys?: string[] }) => Promise<void>;
+  onUpdateScene: (input: {
+    sceneIndex: number;
+    action?: string;
+    dialogue?: string;
+    voiceLine?: string;
+    videoPrompt?: string | null;
+  }) => Promise<void>;
   onConfirmGate1: (input: {
     scriptText: string;
     sellingPoints: string[];
@@ -332,7 +343,9 @@ function PipelineView({
               tasks={tasks}
               status={stageStatuses.video}
               busy={stageBusy === 'video'}
-              onRun={() => handleRunStage('video')}
+              onRunAll={() => handleRunStage('video')}
+              onRunOne={(sliceKey) => handleRunStage('video', [sliceKey])}
+              onUpdateScene={onUpdateScene}
               onNext={() => setActiveStep(5)}
             />
           )}
@@ -805,7 +818,9 @@ function VideoStage({
   tasks,
   status,
   busy,
-  onRun,
+  onRunAll,
+  onRunOne,
+  onUpdateScene,
   onNext,
 }: {
   copy: ReturnType<typeof getCopy>;
@@ -813,30 +828,41 @@ function VideoStage({
   tasks: RemakeTaskRecord[];
   status: RemakeStageStatus;
   busy: boolean;
-  onRun: () => void;
+  onRunAll: () => void;
+  onRunOne: (sliceKey: string) => void;
+  onUpdateScene: (input: {
+    sceneIndex: number;
+    action?: string;
+    dialogue?: string;
+    voiceLine?: string;
+    videoPrompt?: string | null;
+  }) => Promise<void>;
   onNext: () => void;
 }) {
   return (
     <div>
       <StageHeader title={copy.videoTitle} description={copy.videoDesc} status={status} />
 
-      <Section title={copy.sectionScene}>
-        {job.plan.scenes.map((scene) => {
+      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {job.plan.scenes.map((scene, sceneArrayIndex) => {
           const sliceKey = RemakeSliceKeys.sceneVideo(scene.index);
           const sceneOutput = findSceneOutput(job.outputs.scenes, scene.index);
           return (
-            <SlicePreview
+            <SceneVideoCard
               key={sliceKey}
               copy={copy}
-              title={`${copy.scene} ${scene.index}`}
-              subtitle={scene.dialogue}
+              scene={scene}
+              sceneArrayIndex={sceneArrayIndex}
+              videoPromptOverride={job.plan.sceneVideoPrompts?.[sceneArrayIndex] ?? ''}
               task={findTaskBySliceKey(tasks, sliceKey)}
               outputUrl={sceneOutput?.videoUrl}
-              kind="video"
+              busy={busy}
+              onSave={onUpdateScene}
+              onRerun={() => onRunOne(sliceKey)}
             />
           );
         })}
-      </Section>
+      </div>
 
       <Section title={copy.sectionBgm}>
         <SlicePreview
@@ -855,9 +881,186 @@ function VideoStage({
         busy={busy}
         runLabel={copy.runVideos}
         nextLabel={copy.nextFinal}
-        onRun={onRun}
+        onRun={onRunAll}
         onNext={onNext}
       />
+    </div>
+  );
+}
+
+function SceneVideoCard({
+  copy,
+  scene,
+  videoPromptOverride,
+  task,
+  outputUrl,
+  busy,
+  onSave,
+  onRerun,
+}: {
+  copy: ReturnType<typeof getCopy>;
+  scene: RemakeJobRecord['plan']['scenes'][number];
+  sceneArrayIndex: number;
+  videoPromptOverride: string;
+  task?: RemakeTaskRecord;
+  outputUrl?: string | null;
+  busy: boolean;
+  onSave: (input: {
+    sceneIndex: number;
+    action?: string;
+    dialogue?: string;
+    voiceLine?: string;
+    videoPrompt?: string | null;
+  }) => Promise<void>;
+  onRerun: () => Promise<void> | void;
+}) {
+  const [voiceLine, setVoiceLine] = useState(scene.voiceLine ?? scene.dialogue);
+  const [dialogue, setDialogue] = useState(scene.dialogue);
+  const [action, setAction] = useState(scene.action);
+  const [videoPrompt, setVideoPrompt] = useState(videoPromptOverride);
+  const [showAdvanced, setShowAdvanced] = useState(Boolean(videoPromptOverride.trim()));
+  const [saving, setSaving] = useState(false);
+  const [rerunning, setRerunning] = useState(false);
+
+  useEffect(() => {
+    setVoiceLine(scene.voiceLine ?? scene.dialogue);
+    setDialogue(scene.dialogue);
+    setAction(scene.action);
+    setVideoPrompt(videoPromptOverride);
+    setShowAdvanced(Boolean(videoPromptOverride.trim()));
+  }, [scene, videoPromptOverride]);
+
+  const dirty =
+    voiceLine.trim() !== (scene.voiceLine ?? scene.dialogue).trim() ||
+    dialogue.trim() !== scene.dialogue.trim() ||
+    action.trim() !== scene.action.trim() ||
+    videoPrompt.trim() !== videoPromptOverride.trim();
+
+  const taskRunning = task?.status === 'queued' || task?.status === 'running';
+  const disabled = busy || taskRunning || saving || rerunning;
+
+  const buildPayload = () => ({
+    sceneIndex: scene.index,
+    voiceLine: voiceLine.trim(),
+    dialogue: dialogue.trim(),
+    action: action.trim(),
+    videoPrompt: videoPrompt.trim() ? videoPrompt.trim() : null,
+  });
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(buildPayload());
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRerun = async () => {
+    setRerunning(true);
+    try {
+      if (dirty) {
+        await onSave(buildPayload());
+      }
+      await onRerun();
+    } finally {
+      setRerunning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <SlicePreview
+        copy={copy}
+        title={`${copy.scene} ${scene.index}`}
+        subtitle={dialogue}
+        task={task}
+        outputUrl={outputUrl}
+        kind="video"
+      />
+
+      <div className="rounded-[16px] bg-white/[0.04] p-3 ring-1 ring-white/[0.07]">
+        <label className="block">
+          <span className="text-[11px] font-bold text-white/52">{copy.voiceLine}</span>
+          <textarea
+            value={voiceLine}
+            onChange={(event) => setVoiceLine(event.target.value)}
+            rows={2}
+            disabled={disabled}
+            className="mt-1.5 w-full resize-none rounded-xl bg-black/28 px-3 py-2.5 text-[12px] leading-5 text-white outline-none ring-1 ring-white/[0.08] focus:ring-[#79e4ff]/30 disabled:opacity-55"
+          />
+        </label>
+        <label className="mt-2.5 block">
+          <span className="text-[11px] font-bold text-white/52">{copy.dialogueLabel}</span>
+          <textarea
+            value={dialogue}
+            onChange={(event) => setDialogue(event.target.value)}
+            rows={2}
+            disabled={disabled}
+            className="mt-1.5 w-full resize-none rounded-xl bg-black/28 px-3 py-2.5 text-[12px] leading-5 text-white outline-none ring-1 ring-white/[0.08] focus:ring-[#79e4ff]/30 disabled:opacity-55"
+          />
+        </label>
+
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((value) => !value)}
+          className="mt-2.5 text-[11px] font-semibold text-white/42 transition-colors hover:text-white/68"
+        >
+          {showAdvanced ? copy.hideAdvanced : copy.showAdvanced}
+        </button>
+
+        {showAdvanced ? (
+          <div className="mt-2.5 space-y-2.5">
+            <label className="block">
+              <span className="text-[11px] font-bold text-white/52">{copy.action}</span>
+              <textarea
+                value={action}
+                onChange={(event) => setAction(event.target.value)}
+                rows={2}
+                disabled={disabled}
+                className="mt-1.5 w-full resize-none rounded-xl bg-black/28 px-3 py-2.5 text-[12px] leading-5 text-white outline-none ring-1 ring-white/[0.08] focus:ring-[#79e4ff]/30 disabled:opacity-55"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-bold text-white/52">{copy.videoPromptLabel}</span>
+              <textarea
+                value={videoPrompt}
+                onChange={(event) => setVideoPrompt(event.target.value)}
+                rows={4}
+                disabled={disabled}
+                placeholder={copy.videoPromptPlaceholder}
+                className="mt-1.5 w-full resize-none rounded-xl bg-black/28 px-3 py-2.5 text-[12px] leading-5 text-white outline-none ring-1 ring-white/[0.08] focus:ring-[#79e4ff]/30 disabled:opacity-55"
+              />
+            </label>
+          </div>
+        ) : null}
+
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={disabled || !dirty}
+            className="h-9 flex-1 rounded-xl bg-white/[0.06] text-[12px] font-bold text-white/58 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {saving ? copy.savingScene : copy.saveScene}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleRerun()}
+            disabled={disabled}
+            className="h-9 flex-1 rounded-xl bg-[#79e4ff]/12 text-[12px] font-bold text-[#79e4ff] ring-1 ring-[#79e4ff]/22 transition-colors hover:bg-[#79e4ff]/20 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {rerunning || taskRunning ? (
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <IconLoader2 size={13} className="animate-spin" />
+                {copy.generating}
+              </span>
+            ) : (
+              copy.rerunSceneVideo
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1317,8 +1520,17 @@ function getCopy(locale: 'en' | 'zh') {
       rerunOne: '重跑这一张',
       confirmGate2: '确认分镜，进入视频阶段',
       videoTitle: '视频 + 口播 + 混音 + BGM',
-      videoDesc: '逐场出 veo 视频、按场次跑 TTS 口播、混音把口播盖在视频上，同时生成全片 BGM。',
+      videoDesc:
+        '逐场生成 veo 视频。若某场失败，可直接改口播/字幕后单场重跑，无需回到脚本步骤。',
       sectionScene: '场景视频',
+      dialogueLabel: '字幕文案',
+      showAdvanced: '展开高级参数',
+      hideAdvanced: '收起高级参数',
+      videoPromptLabel: '视频 prompt（覆盖自动生成）',
+      videoPromptPlaceholder: '留空则按上方口播自动生成；填写后将直接提交给 veo。',
+      saveScene: '保存修改',
+      savingScene: '保存中...',
+      rerunSceneVideo: '重跑这一场',
       sectionVoice: '场景口播',
       sectionMix: '场景混音',
       sectionBgm: '全片 BGM',
@@ -1400,8 +1612,16 @@ function getCopy(locale: 'en' | 'zh') {
     confirmGate2: 'Confirm storyboards, go to video stage',
     videoTitle: 'Video + Voice + Mix + BGM',
     videoDesc:
-      'Generate per-scene veo videos, per-scene TTS voiceover, per-scene mix, and the full-film BGM.',
+      'Generate per-scene veo videos. If one scene fails, edit its voice line and rerun just that scene.',
     sectionScene: 'Scene videos',
+    dialogueLabel: 'On-screen caption',
+    showAdvanced: 'Show advanced params',
+    hideAdvanced: 'Hide advanced params',
+    videoPromptLabel: 'Video prompt (override auto-generation)',
+    videoPromptPlaceholder: 'Leave empty to auto-generate from the voice line above.',
+    saveScene: 'Save changes',
+    savingScene: 'Saving...',
+    rerunSceneVideo: 'Rerun this scene',
     sectionVoice: 'Scene voiceover',
     sectionMix: 'Scene mix',
     sectionBgm: 'Full-film BGM',

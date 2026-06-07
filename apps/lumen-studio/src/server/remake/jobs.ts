@@ -221,6 +221,48 @@ export async function confirmGate2(input: {
 }
 
 // ============================================================
+// 单场参数编辑（视频阶段）
+// ============================================================
+
+export async function updateSceneParams(input: {
+  jobId: string;
+  ownerId: string;
+  sceneIndex: number;
+  action?: string;
+  dialogue?: string;
+  voiceLine?: string;
+  videoPrompt?: string | null;
+}): Promise<RemakeJobView | null> {
+  const repository = await getRemakeJobRepository();
+  const job = await repository.getJob(input.jobId, input.ownerId);
+  if (!job) return null;
+
+  const tasks = await repository.listTasksByJob(input.jobId);
+  const statuses = deriveJobStageStatuses(job, tasks);
+  if (statuses.video === 'locked') {
+    throw new Error('Video stage is locked. Confirm storyboards first.');
+  }
+  if (statuses.video === 'running' || statuses.final === 'running') {
+    throw new Error('Cannot edit scene params while video or final stage is running.');
+  }
+
+  const sceneExists = job.plan.scenes.some((scene) => scene.index === input.sceneIndex);
+  if (!sceneExists) {
+    throw new Error(`Scene ${input.sceneIndex} not found.`);
+  }
+
+  const updated = await repository.patchScenePlan(input.jobId, input.ownerId, input.sceneIndex, {
+    ...(input.action !== undefined ? { action: input.action } : {}),
+    ...(input.dialogue !== undefined ? { dialogue: input.dialogue } : {}),
+    ...(input.voiceLine !== undefined ? { voiceLine: input.voiceLine } : {}),
+    ...(input.videoPrompt !== undefined ? { videoPrompt: input.videoPrompt } : {}),
+  });
+  if (!updated) return null;
+
+  return getRemakeJobView(input.jobId, input.ownerId);
+}
+
+// ============================================================
 // Stage 触发
 // ============================================================
 
@@ -265,6 +307,29 @@ export async function runStage(input: {
   }
 
   if (planned.length === 0) return composeView(job, tasks);
+
+  if (input.stage === 'video' && input.sliceKeys?.length) {
+    const sceneIndexes = input.sliceKeys
+      .map((sliceKey) => {
+        const match = /^scene-video-(\d+)$/.exec(sliceKey);
+        return match ? Number(match[1]) : null;
+      })
+      .filter((value): value is number => value !== null);
+    if (sceneIndexes.length > 0) {
+      const nextScenes = job.outputs.scenes.map((scene) => {
+        if (!sceneIndexes.includes(scene.sceneIndex)) return scene;
+        const { videoUrl: _videoUrl, ...rest } = scene;
+        return rest;
+      });
+      await repository.updateJob(input.jobId, input.ownerId, {
+        outputsPatch: { scenes: nextScenes },
+        stagePatch: {
+          name: 'final',
+          state: { status: 'ready' },
+        },
+      });
+    }
+  }
 
   // 1. 创建 task 文档（upsert by sliceKey）
   const created = await repository.createTasks(

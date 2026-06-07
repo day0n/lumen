@@ -135,6 +135,13 @@ export interface UseRemakeJobResult {
   /** 强制重新拉一次 job —— 在 mutate API 之后调用，确保拿到 job.outputs 最新值。 */
   refresh: () => Promise<void>;
   runStage: (input: { stage: RemakeStageName; sliceKeys?: string[] }) => Promise<void>;
+  updateScene: (input: {
+    sceneIndex: number;
+    action?: string;
+    dialogue?: string;
+    voiceLine?: string;
+    videoPrompt?: string | null;
+  }) => Promise<void>;
   confirmGate1: (input: {
     scriptText: string;
     sellingPoints: string[];
@@ -239,6 +246,36 @@ export function useRemakeJob(
     [locale],
   );
 
+  const patch = useCallback(
+    async <T>(path: string, body: unknown): Promise<RemakeJobView | null> => {
+      try {
+        const response = await fetch(path, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', 'x-lumen-locale': locale },
+          body: JSON.stringify(body),
+        });
+        const payload = (await response.json()) as ApiResp<T>;
+        if (!response.ok || !payload.ok) {
+          dispatch({
+            type: 'set-error',
+            error: payload.ok ? 'request failed' : payload.error.message,
+          });
+          return null;
+        }
+        const view = payload.data as unknown as RemakeJobView;
+        dispatch({ type: 'set-view', view });
+        return view;
+      } catch (error) {
+        dispatch({
+          type: 'set-error',
+          error: error instanceof Error ? error.message : 'request failed',
+        });
+        return null;
+      }
+    },
+    [locale],
+  );
+
   const runStage = useCallback(
     async (input: { stage: RemakeStageName; sliceKeys?: string[] }) => {
       if (!jobId) return;
@@ -249,6 +286,26 @@ export function useRemakeJob(
       });
     },
     [jobId, post],
+  );
+
+  const updateScene = useCallback(
+    async (input: {
+      sceneIndex: number;
+      action?: string;
+      dialogue?: string;
+      voiceLine?: string;
+      videoPrompt?: string | null;
+    }) => {
+      if (!jobId) return;
+      dispatch({ type: 'set-error', error: null });
+      await patch(`/api/remake/jobs/${jobId}/scenes/${input.sceneIndex}`, {
+        ...(input.action !== undefined ? { action: input.action } : {}),
+        ...(input.dialogue !== undefined ? { dialogue: input.dialogue } : {}),
+        ...(input.voiceLine !== undefined ? { voiceLine: input.voiceLine } : {}),
+        ...(input.videoPrompt !== undefined ? { videoPrompt: input.videoPrompt } : {}),
+      });
+    },
+    [jobId, patch],
   );
 
   const confirmGate1 = useCallback(
@@ -290,6 +347,7 @@ export function useRemakeJob(
     state,
     refresh: fetchView,
     runStage,
+    updateScene,
     confirmGate1,
     confirmGate2,
     cancel,

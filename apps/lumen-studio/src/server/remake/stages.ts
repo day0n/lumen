@@ -279,6 +279,7 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
 
   for (const [i, scene] of job.plan.scenes.entries()) {
     const generated = generatedVideoPrompts[i];
+    const promptOverride = job.plan.sceneVideoPrompts?.[i]?.trim();
     const sceneImageOutput = job.outputs.scenes.find(
       (entry) => entry.sceneIndex === scene.index,
     )?.imageUrl;
@@ -307,7 +308,7 @@ Generate the spoken audio natively in ${characterToken}'s voice. The on-screen m
       sliceKey: SliceKeys.sceneVideo(scene.index),
       handler: 'veo-3.1',
       input: makeInput({
-        prompt: generated ?? fallback,
+        prompt: promptOverride || generated || fallback,
         image: sceneImageOutput ?? null,
       }),
       settings: {

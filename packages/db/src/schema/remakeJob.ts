@@ -70,7 +70,8 @@ const RemakePlanSchema = z
     productPrompt: z.string().trim().optional(),
     bgmPrompt: z.string().trim().optional(),
     sceneImagePrompts: z.array(z.string().trim().min(1)).optional(),
-    sceneVideoPrompts: z.array(z.string().trim().min(1)).optional(),
+    /** 与 scenes 数组下标对齐；空串表示该场不覆盖，走自动生成。 */
+    sceneVideoPrompts: z.array(z.string().trim().max(4000)).optional(),
     /** TTS 声线 id（fish-tts voice 名）；前端选了语言后由后端解析 */
     voice: z.string().trim().optional(),
     /** 角色身份卡，用于视频 prompt 里 @Name (VO, gender) says 语法锁口型。 */

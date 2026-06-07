@@ -156,6 +156,62 @@ export class RemakeJobRepository {
   }
 
   /**
+   * 更新 plan.scenes 里某一场的可编辑字段（口播 / 字幕 / 动作 / 视频 prompt 覆盖）。
+   * sceneIndex 为 plan.scenes[].index（从 1 起）。
+   */
+  async patchScenePlan(
+    jobId: string,
+    ownerId: string,
+    sceneIndex: number,
+    patch: {
+      action?: string;
+      dialogue?: string;
+      voiceLine?: string;
+      /** 非 null = 写入覆盖；null / 空串 = 清除覆盖，回退到自动生成。 */
+      videoPrompt?: string | null;
+    },
+  ): Promise<RemakeJobRecord | null> {
+    const job = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
+    if (!job?.plan?.scenes?.length) return null;
+
+    const scenes = [...job.plan.scenes];
+    const idx = scenes.findIndex((scene) => scene.index === sceneIndex);
+    if (idx < 0) return null;
+
+    const current = scenes[idx]!;
+    scenes[idx] = {
+      ...current,
+      ...(patch.action !== undefined ? { action: patch.action } : {}),
+      ...(patch.dialogue !== undefined ? { dialogue: patch.dialogue } : {}),
+      ...(patch.voiceLine !== undefined ? { voiceLine: patch.voiceLine } : {}),
+    };
+
+    const nextPlan = { ...job.plan, scenes };
+    const touchesGenerationInput =
+      patch.action !== undefined || patch.dialogue !== undefined || patch.voiceLine !== undefined;
+
+    if (patch.videoPrompt !== undefined) {
+      const prompts = [...(job.plan.sceneVideoPrompts ?? [])];
+      while (prompts.length < scenes.length) prompts.push('');
+      const trimmed = patch.videoPrompt?.trim() ?? '';
+      prompts[idx] = trimmed;
+      nextPlan.sceneVideoPrompts = prompts.some((entry) => entry.trim()) ? prompts : undefined;
+    } else if (touchesGenerationInput && job.plan.sceneVideoPrompts?.[idx]?.trim()) {
+      const prompts = [...(job.plan.sceneVideoPrompts ?? [])];
+      while (prompts.length < scenes.length) prompts.push('');
+      prompts[idx] = '';
+      nextPlan.sceneVideoPrompts = prompts.some((entry) => entry.trim()) ? prompts : undefined;
+    }
+
+    const result = await this.jobs().findOneAndUpdate(
+      { _id: jobId, owner_id: ownerId },
+      { $set: { plan: nextPlan, updated_at: new Date() } },
+      { returnDocument: 'after' },
+    );
+    return result ? toJobRecord(result) : null;
+  }
+
+  /**
    * 原子地把 scene N 的某一字段（image/video/voice/mix Url）写进 outputs.scenes 数组。
    * 找不到对应 sceneIndex 就 push 一个新条目；找得到就 patch。
    */
