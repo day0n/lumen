@@ -322,7 +322,7 @@ function WorkflowTemplateCard({
 
 function TemplateCover({ template }: { template: WorkflowTemplate }) {
   const coverMediaClass =
-    'absolute -inset-8 h-[calc(100%+4rem)] w-[calc(100%+4rem)] object-cover transition-transform duration-500 group-hover:scale-[1.02]';
+    'absolute inset-0 h-full w-full scale-[1.18] object-cover transition-transform duration-500 will-change-transform group-hover:scale-[1.21]';
 
   if (template.mediaType === 'video' && !isStaticImageUrl(template.coverUrl)) {
     return (
