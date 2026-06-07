@@ -320,12 +320,15 @@ function WorkflowTemplateCard({
 }
 
 function TemplateCover({ template }: { template: WorkflowTemplate }) {
+  const coverMediaClass =
+    'absolute -inset-1.5 h-[calc(100%+0.75rem)] w-[calc(100%+0.75rem)] object-cover transition-transform duration-500 group-hover:scale-[1.04]';
+
   if (template.mediaType === 'video' && !isStaticImageUrl(template.coverUrl)) {
     return (
       <video
         aria-label={template.title}
         autoPlay
-        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+        className={coverMediaClass}
         loop
         muted
         playsInline
@@ -338,7 +341,7 @@ function TemplateCover({ template }: { template: WorkflowTemplate }) {
   return (
     <img
       alt={template.title}
-      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+      className={coverMediaClass}
       draggable={false}
       loading="lazy"
       src={template.coverUrl}

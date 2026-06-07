@@ -448,11 +448,70 @@ function withCanvasNodeLayering(nodes: LumenNode[]) {
   }));
 }
 
+function withCanvasProjectNodeLayering(nodes: LumenNode[], edges: LumenEdge[]) {
+  const layeredNodes = withCanvasNodeLayering(nodes);
+  if (!isCollapsedLegacyTemplateCanvas(layeredNodes, edges)) return layeredNodes;
+
+  return layeredNodes.map((node) => {
+    const laneY = getTemplateNodeLaneY(node.id);
+    if (laneY === null) return node;
+
+    return {
+      ...node,
+      position: {
+        ...node.position,
+        y: laneY,
+      },
+    };
+  });
+}
+
 function withCanvasEdgeLayering(edges: LumenEdge[]) {
   return edges.map((edge) => ({
     ...edge,
+    type: 'lumenSmooth' as const,
+    selectable: edge.selectable ?? true,
+    reconnectable: edge.reconnectable ?? true,
     zIndex: 0,
   }));
+}
+
+const TEMPLATE_NODE_LANES: Array<[string, number]> = [
+  ['product-', -144],
+  ['insight-', 336],
+  ['hook-script-', -168],
+  ['keyframe-', 312],
+  ['persona-', 336],
+  ['talk-', -120],
+  ['creator-cover-', 360],
+  ['scene-', -168],
+  ['prompt-', 312],
+  ['visual-', -72],
+  ['variant-', 192],
+  ['board-', -120],
+  ['kit-', 360],
+  ['reuse-', 24],
+  ['final-', -24],
+  ['checklist-', 264],
+  ['captions-', 264],
+  ['publish-', 264],
+];
+
+function isCollapsedLegacyTemplateCanvas(nodes: LumenNode[], edges: LumenEdge[]) {
+  if (nodes.length < 4 || edges.length === 0) return false;
+  const hasLegacyEdge = edges.some((edge) => String(edge.type ?? '') === 'smoothstep');
+  if (!hasLegacyEdge) return false;
+  const hasTemplateNode = nodes.some((node) => getTemplateNodeLaneY(node.id) !== null);
+  if (!hasTemplateNode) return false;
+
+  const yValues = nodes.map((node) => node.position.y);
+  const minY = Math.min(...yValues);
+  const maxY = Math.max(...yValues);
+  return Number.isFinite(minY) && Number.isFinite(maxY) && maxY - minY < 120;
+}
+
+function getTemplateNodeLaneY(nodeId: string) {
+  return TEMPLATE_NODE_LANES.find(([prefix]) => nodeId.startsWith(prefix))?.[1] ?? null;
 }
 
 function createEdge(source: string, target: string, connection?: Partial<Connection>): LumenEdge {
@@ -908,10 +967,7 @@ function withCurrentAppRoutePrefix(localizedPath: string) {
   return `${appPrefix}${appPath.startsWith('/') ? appPath : `/${appPath}`}`;
 }
 
-function readCanvasEntrySearchParam(
-  searchParams: URLSearchParams | null | undefined,
-  key: string,
-) {
+function readCanvasEntrySearchParam(searchParams: URLSearchParams | null | undefined, key: string) {
   const routedValue = searchParams?.get(key);
   if (routedValue) return routedValue;
   if (typeof window === 'undefined') return null;
@@ -1189,7 +1245,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       const project = await readProjectResponse(response, t('canvas.projectFailed'));
       setCurrentOwnerId(project.ownerId);
       setProjectTitle(project.title);
-      setNodes(withCanvasNodeLayering(project.canvas.nodes));
+      setNodes(withCanvasProjectNodeLayering(project.canvas.nodes, project.canvas.edges));
       setEdges(withCanvasEdgeLayering(project.canvas.edges));
       lastSavedCanvas.current = JSON.stringify(project.canvas);
       hasHydratedProject.current = true;
@@ -1274,7 +1330,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         setCurrentProjectId(project.id);
         setCurrentOwnerId(project.ownerId);
         setProjectTitle(project.title);
-        setNodes(withCanvasNodeLayering(project.canvas.nodes));
+        setNodes(withCanvasProjectNodeLayering(project.canvas.nodes, project.canvas.edges));
         setEdges(withCanvasEdgeLayering(project.canvas.edges));
         lastSavedCanvas.current = JSON.stringify(project.canvas);
         hasHydratedProject.current = true;
@@ -1781,7 +1837,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       }
 
       setProjectTitle(snapshot.title);
-      setNodes(withCanvasNodeLayering(snapshot.canvas.nodes));
+      setNodes(withCanvasProjectNodeLayering(snapshot.canvas.nodes, snapshot.canvas.edges));
       setEdges(withCanvasEdgeLayering(snapshot.canvas.edges));
       setHistoryPanelOpen(false);
     },

@@ -3,6 +3,7 @@ import 'server-only';
 import {
   type HomeWorkflowTemplateListRecord,
   HomeWorkflowTemplateListRecordSchema,
+  type ProjectCanvas,
   type ProjectRecord,
 } from '@lumen/db';
 import { z } from 'zod';
@@ -59,7 +60,7 @@ export async function cloneHomeWorkflowTemplate(
     title: template.title,
     description: template.description,
     thumbnail: template.coverUrl,
-    canvas: template.canvas,
+    canvas: normalizeTemplateCanvas(template.canvas),
   });
 
   await repository.incrementUsage(parsedTemplateId);
@@ -72,4 +73,17 @@ export async function invalidateHomeWorkflowTemplatesCache(): Promise<void> {
     getStudioCache().delete(`${HOME_WORKFLOW_TEMPLATES_CACHE_KEY_PREFIX}:en`),
     getStudioCache().delete(`${HOME_WORKFLOW_TEMPLATES_CACHE_KEY_PREFIX}:zh`),
   ]);
+}
+
+function normalizeTemplateCanvas(canvas: ProjectCanvas): ProjectCanvas {
+  return {
+    ...canvas,
+    edges: canvas.edges.map((edge) => ({
+      ...edge,
+      type: 'lumenSmooth',
+      selectable: typeof edge.selectable === 'boolean' ? edge.selectable : true,
+      reconnectable: typeof edge.reconnectable === 'boolean' ? edge.reconnectable : true,
+      data: edge.data ?? {},
+    })),
+  };
 }

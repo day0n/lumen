@@ -1110,10 +1110,22 @@ type TemplateLayoutNode = ProjectCanvas['nodes'][number] & {
 };
 
 function arrangeTemplateCanvas(canvas: ProjectCanvas): ProjectCanvas {
+  const laneYByNodeId = new Map(canvas.nodes.map((node) => [node.id, node.position.y]));
+
   return {
     ...canvas,
-    nodes: arrangeCanvasNodes(canvas.nodes as TemplateLayoutNode[], canvas.edges),
+    nodes: arrangeCanvasNodes(canvas.nodes as TemplateLayoutNode[], canvas.edges).map((node) => ({
+      ...node,
+      position: {
+        ...node.position,
+        y: snapTemplateLayoutValue(laneYByNodeId.get(node.id) ?? node.position.y),
+      },
+    })),
   };
+}
+
+function snapTemplateLayoutValue(value: number, gridSize = 24) {
+  return Math.round(value / gridSize) * gridSize;
 }
 
 function buildHookCanvas(
@@ -1588,7 +1600,9 @@ function createEdge(source: string, target: string) {
     id: `edge-${source}-${target}`,
     source,
     target,
-    type: 'smoothstep',
+    type: 'lumenSmooth',
+    selectable: true,
+    reconnectable: true,
     data: {},
   };
 }
