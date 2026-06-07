@@ -272,10 +272,11 @@ function WorkflowTemplateCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, delay: index * 0.018, ease: [0.32, 0.72, 0, 1] }}
-      className="group overflow-hidden rounded-xl bg-[#1d1f21] text-left ring-1 ring-white/[0.06] transition-colors hover:bg-[#24272a]"
+      className="group overflow-hidden rounded-xl bg-[#1d1f21] text-left ring-1 ring-black/45 transition-colors hover:bg-[#24272a]"
     >
-      <div className="relative aspect-[4/3] overflow-hidden bg-[#111315]">
+      <div className="relative aspect-[4/3] overflow-hidden bg-black">
         <TemplateCover template={template} />
+        <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.62),inset_0_0_30px_rgba(0,0,0,0.3)]" />
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.06)_0%,transparent_38%,rgba(0,0,0,0.76)_100%)]" />
         <div className="absolute left-3 top-3 max-w-[calc(100%-5.5rem)] truncate rounded-full bg-black/46 px-2.5 py-1 text-[11px] font-semibold text-white/86 backdrop-blur">
           {template.badge}
@@ -321,7 +322,7 @@ function WorkflowTemplateCard({
 
 function TemplateCover({ template }: { template: WorkflowTemplate }) {
   const coverMediaClass =
-    'absolute -inset-1.5 h-[calc(100%+0.75rem)] w-[calc(100%+0.75rem)] object-cover transition-transform duration-500 group-hover:scale-[1.04]';
+    'absolute -inset-8 h-[calc(100%+4rem)] w-[calc(100%+4rem)] object-cover transition-transform duration-500 group-hover:scale-[1.02]';
 
   if (template.mediaType === 'video' && !isStaticImageUrl(template.coverUrl)) {
     return (
