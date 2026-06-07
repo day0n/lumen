@@ -682,6 +682,8 @@ const en = {
   auth: {
     signInPath: '/sign-in',
     signUpPath: '/sign-up',
+    noAccount: "Don't have an account?",
+    signUpLink: 'Sign up',
     loading: 'Loading sign-in…',
     troubleshoot: {
       title: 'Sign-in is taking longer than expected',
@@ -1370,6 +1372,8 @@ const zh: typeof en = {
   auth: {
     signInPath: '/sign-in',
     signUpPath: '/sign-up',
+    noAccount: '还没有账号？',
+    signUpLink: '注册',
     loading: '正在加载登录组件…',
     troubleshoot: {
       title: '登录加载得有点慢',
