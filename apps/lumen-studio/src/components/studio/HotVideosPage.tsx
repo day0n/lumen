@@ -9,6 +9,7 @@ import type { Locale } from '@/i18n/routing';
 import { useAppShellChrome } from '@/lib/app-shell-chrome';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
+import { toHotVideoMediaUrl } from '@/lib/hot-video-media-url';
 import { readClientApiJson } from '@/lib/read-api-json';
 import { useUser } from '@clerk/nextjs';
 import type { HotVideoRecord } from '@lumen/db';
@@ -27,6 +28,7 @@ import {
   IconLink,
   IconLoader2,
   IconLock,
+  IconMaximize,
   IconPlayerPlay,
   IconPlus,
   IconRefresh,
@@ -747,6 +749,7 @@ function HotVideoCard({
   const stop = (event: React.MouseEvent) => {
     event.stopPropagation();
   };
+  const canPreview = Boolean(video.previewUrl || video.thumbnailUrl);
 
   return (
     <motion.article
@@ -755,20 +758,33 @@ function HotVideoCard({
       transition={{ duration: 0.42, delay: index * 0.035, ease: [0.32, 0.72, 0, 1] }}
       onMouseEnter={startPreview}
       onMouseLeave={stopPreview}
+      onPointerEnter={startPreview}
+      onPointerLeave={stopPreview}
       className="group overflow-hidden rounded-[18px] bg-[#1c1e20] ring-1 ring-white/[0.07] transition-colors hover:bg-[#222528]"
     >
       <div className="relative aspect-[3/4] w-full overflow-hidden bg-black text-left">
-        <button
-          type="button"
-          onClick={() => {
-            stopPreview();
-            onPreview();
-          }}
-          aria-label={t('hotVideos.originalPreview')}
-          className="absolute inset-0 text-left focus:outline-none"
-        >
-          <VideoStill video={video} autoPlay={playPreview} muted={playPreview} />
-        </button>
+        <VideoStill
+          video={video}
+          autoPlay={playPreview}
+          controls={playPreview}
+          muted={playPreview}
+        />
+
+        {canPreview ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              stop(event);
+              stopPreview();
+              onPreview();
+            }}
+            aria-label={t('hotVideos.originalPreview')}
+            title={t('hotVideos.originalPreview')}
+            className="absolute right-3 top-12 flex h-9 w-9 items-center justify-center rounded-xl bg-black/58 text-white/78 opacity-100 ring-1 ring-white/[0.12] backdrop-blur transition hover:bg-white hover:text-[#111315] md:opacity-0 md:group-hover:opacity-100"
+          >
+            <IconMaximize size={17} stroke={2.2} />
+          </button>
+        ) : null}
 
         <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
           <span
@@ -883,6 +899,7 @@ function VideoPreviewModal({
 }) {
   const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewUrl = toHotVideoMediaUrl(video.previewUrl);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -921,10 +938,10 @@ function VideoPreviewModal({
         </button>
 
         <div className="relative aspect-[9/16] w-full bg-black">
-          {video.previewUrl ? (
+          {previewUrl ? (
             <video
               ref={videoRef}
-              src={video.previewUrl}
+              src={previewUrl}
               poster={video.thumbnailUrl}
               autoPlay
               loop
@@ -1806,17 +1823,18 @@ function VideoStill({
   muted?: boolean;
 }) {
   const hasVideo = Boolean(video.previewUrl);
+  const previewUrl = toHotVideoMediaUrl(video.previewUrl);
   const cover = video.thumbnailUrl;
 
-  if (hasVideo && (autoPlay || controls)) {
+  if (hasVideo && previewUrl && (autoPlay || controls)) {
     return (
       <div className="absolute inset-0" style={{ background: video.paletteCss }}>
         <video
-          src={video.previewUrl}
+          src={previewUrl}
           poster={cover}
           autoPlay={autoPlay}
           controls={controls}
-          loop={autoPlay && !controls}
+          loop={autoPlay}
           muted={muted}
           playsInline
           preload="metadata"

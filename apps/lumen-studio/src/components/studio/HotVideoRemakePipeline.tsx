@@ -8,6 +8,7 @@ import {
 } from '@/features/remake/use-remake-job';
 import { useI18n } from '@/i18n/provider';
 import { cn } from '@/lib/cn';
+import { toHotVideoMediaUrl } from '@/lib/hot-video-media-url';
 import type {
   RemakeJobRecord,
   RemakeJobSceneOutput,
@@ -1111,12 +1112,13 @@ function ReferencePreview({
   copy: ReturnType<typeof getCopy>;
 }) {
   const { reference } = job;
+  const previewUrl = toHotVideoMediaUrl(reference.previewUrl);
   return (
     <div className="overflow-hidden rounded-[18px] bg-[#15171a]/88 ring-1 ring-white/[0.08]">
       <div className="relative aspect-[9/16] bg-black">
-        {reference.previewUrl ? (
+        {previewUrl ? (
           <video
-            src={reference.previewUrl}
+            src={previewUrl}
             poster={reference.thumbnailUrl}
             autoPlay
             muted
