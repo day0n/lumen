@@ -25,7 +25,7 @@ async function proxyMedia(request: Request, method: 'GET' | 'HEAD'): Promise<Res
     const upstream = await fetch(target, {
       method,
       redirect: 'follow',
-      headers: buildUpstreamHeaders(request, method),
+      headers: buildUpstreamHeaders(request),
       signal: AbortSignal.timeout(180_000),
     });
 
@@ -75,17 +75,13 @@ function parseAllowedMediaUrl(value: string | null): URL | null {
   return null;
 }
 
-function buildUpstreamHeaders(request: Request, method: 'GET' | 'HEAD'): HeadersInit {
+function buildUpstreamHeaders(request: Request): HeadersInit {
   const headers: Record<string, string> = {
     accept: request.headers.get('accept') ?? '*/*',
   };
 
   const range = request.headers.get('range');
-  if (range) {
-    headers.range = range;
-  } else if (method === 'GET') {
-    headers.range = 'bytes=0-1048575';
-  }
+  if (range) headers.range = range;
 
   const ifNoneMatch = request.headers.get('if-none-match');
   if (ifNoneMatch) headers['if-none-match'] = ifNoneMatch;
