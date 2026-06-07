@@ -4,6 +4,8 @@ import { preloadCanvasHydrationOverlay } from '@/components/canvas/preload-canva
 import { withCanvasEntryLoader } from '@/components/canvas/canvas-entry-loader';
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { PromptDialog } from '@/components/ui/PromptDialog';
 import { useI18n } from '@/i18n/provider';
 import type { Locale } from '@/i18n/routing';
 import { useAppShellChrome } from '@/lib/app-shell-chrome';
@@ -92,6 +94,10 @@ type FoldersApiResponse =
 /** 侧栏选中的范围：`null` = 全部，字符串 = 某文件夹 id，`'uncategorized'` = 未分类。 */
 type SelectedScope = null | 'uncategorized' | string;
 
+type WorkspaceConfirmState =
+  | { kind: 'deleteProject'; project: StudioProject }
+  | { kind: 'deleteFolder'; folder: FolderRecord; workflowCount: number };
+
 export function WorkspacePage() {
   const { locale, t, localePath } = useI18n();
   const appShellChrome = useAppShellChrome();
@@ -111,6 +117,8 @@ export function WorkspacePage() {
   // 首次抓 projects/folders 时铺一层骨架卡，避免用户先看到「空白 + 新建卡」再瞬间跳出真实数据。
   // 只在初次加载时为 true；后续刷新（移动、删除、重命名）走乐观更新，不再回到骨架态。
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [confirmState, setConfirmState] = useState<WorkspaceConfirmState | null>(null);
+  const [renameFolder, setRenameFolder] = useState<FolderRecord | null>(null);
 
   const warmCanvasDestination = useCallback(
     (href?: string) => {
@@ -270,13 +278,12 @@ export function WorkspacePage() {
     [projects, locale, t, loadFolders],
   );
 
-  const deleteProject = useCallback(
-    async (project: StudioProject) => {
-      const ok = window.confirm(
-        t('workspace.folders.confirmDeleteWorkflow', { name: project.name }),
-      );
-      if (!ok) return;
+  const deleteProject = useCallback((project: StudioProject) => {
+    setConfirmState({ kind: 'deleteProject', project });
+  }, []);
 
+  const executeDeleteProject = useCallback(
+    async (project: StudioProject) => {
       const previous = projects;
       setProjects((current) => current.filter((item) => item.id !== project.id));
 
@@ -337,9 +344,12 @@ export function WorkspacePage() {
     }
   };
 
-  const handleRenameFolder = async (folder: FolderRecord) => {
-    const next = window.prompt(t('workspace.folders.rename'), folder.name)?.trim();
-    if (!next || next === folder.name) return;
+  const handleRenameFolder = (folder: FolderRecord) => {
+    setRenameFolder(folder);
+  };
+
+  const executeRenameFolder = async (folder: FolderRecord, next: string) => {
+    if (next === folder.name) return;
 
     try {
       const response = await fetch(`/api/folders/${folder.id}`, {
@@ -363,18 +373,15 @@ export function WorkspacePage() {
     }
   };
 
-  const handleDeleteFolder = async (folder: FolderRecord) => {
-    const workflowCount = counts[folder.id] ?? 0;
-    const ok = window.confirm(
-      workflowCount > 0
-        ? t('workspace.folders.confirmDeleteWithWorkflows', {
-            name: folderDisplayName(folder, t),
-            count: workflowCount,
-          })
-        : t('workspace.folders.confirmDelete', { name: folderDisplayName(folder, t) }),
-    );
-    if (!ok) return;
+  const handleDeleteFolder = (folder: FolderRecord) => {
+    setConfirmState({
+      kind: 'deleteFolder',
+      folder,
+      workflowCount: counts[folder.id] ?? 0,
+    });
+  };
 
+  const executeDeleteFolder = async (folder: FolderRecord) => {
     try {
       const response = await fetch(`/api/folders/${folder.id}`, {
         method: 'DELETE',
@@ -396,6 +403,20 @@ export function WorkspacePage() {
       );
     }
   };
+
+  const confirmMessage = useMemo(() => {
+    if (!confirmState) return '';
+    if (confirmState.kind === 'deleteProject') {
+      return t('workspace.folders.confirmDeleteWorkflow', { name: confirmState.project.name });
+    }
+    const folderName = folderDisplayName(confirmState.folder, t);
+    return confirmState.workflowCount > 0
+      ? t('workspace.folders.confirmDeleteWithWorkflows', {
+          name: folderName,
+          count: confirmState.workflowCount,
+        })
+      : t('workspace.folders.confirmDelete', { name: folderName });
+  }, [confirmState, t]);
 
   const sortedFolders = useMemo(() => {
     // 系统文件夹永远在前
@@ -620,6 +641,41 @@ export function WorkspacePage() {
           </div>
         </div>
       </main>
+
+      <ConfirmDialog
+        open={confirmState !== null}
+        message={confirmMessage}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        variant="danger"
+        onCancel={() => setConfirmState(null)}
+        onConfirm={() => {
+          if (!confirmState) return;
+          const pending = confirmState;
+          setConfirmState(null);
+          if (pending.kind === 'deleteProject') {
+            void executeDeleteProject(pending.project);
+            return;
+          }
+          void executeDeleteFolder(pending.folder);
+        }}
+      />
+
+      <PromptDialog
+        open={renameFolder !== null}
+        title={t('workspace.folders.rename')}
+        defaultValue={renameFolder?.name ?? ''}
+        placeholder={t('workspace.folders.newFolderPlaceholder')}
+        confirmLabel={t('common.confirm')}
+        cancelLabel={t('common.cancel')}
+        onCancel={() => setRenameFolder(null)}
+        onConfirm={(next) => {
+          if (!renameFolder) return;
+          const folder = renameFolder;
+          setRenameFolder(null);
+          void executeRenameFolder(folder, next);
+        }}
+      />
     </div>
   );
 }

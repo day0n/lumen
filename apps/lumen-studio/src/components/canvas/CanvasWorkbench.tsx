@@ -7,6 +7,7 @@ import {
 } from '@/components/canvas/canvas-mobile';
 import { NotificationsPopover } from '@/components/home/NotificationsPopover';
 import { MobileSheet } from '@/components/mobile';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LumenMark } from '@/components/ui/LumenMark';
 import { useIsMobileCanvas } from '@/hooks/use-is-mobile';
 import { cn } from '@/lib/cn';
@@ -1026,6 +1027,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const lastSavedCanvas = useRef('');
   const pendingCanvasUploads = useRef(0);
   const [canvasMediaUploading, setCanvasMediaUploading] = useState(false);
+  const [cancelGroupId, setCancelGroupId] = useState<string | null>(null);
   const selectedElementCount = useMemo(
     () =>
       nodes.filter((node) => node.selected).length + edges.filter((edge) => edge.selected).length,
@@ -1143,11 +1145,17 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     (groupId: string) => {
       const nodeIds = getGroupedNodeIds(nodes, groupId);
       if (nodeIds.length === 0) return;
-      if (!window.confirm(t('canvas.node.cancelConfirm'))) return;
-      cancelNodes(nodeIds);
+      setCancelGroupId(groupId);
     },
-    [cancelNodes, nodes, t],
+    [nodes],
   );
+
+  const confirmCancelGroup = useCallback(() => {
+    if (!cancelGroupId) return;
+    const nodeIds = getGroupedNodeIds(nodes, cancelGroupId);
+    cancelNodes(nodeIds);
+    setCancelGroupId(null);
+  }, [cancelGroupId, cancelNodes, nodes]);
 
   const groupSelectedNodes = useCallback(() => {
     if (selectedNodes.length < 2) return;
@@ -2062,6 +2070,16 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           />
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        open={cancelGroupId !== null}
+        message={t('canvas.node.cancelConfirm')}
+        confirmLabel={t('canvas.node.stop')}
+        cancelLabel={t('common.cancel')}
+        variant="danger"
+        onCancel={() => setCancelGroupId(null)}
+        onConfirm={confirmCancelGroup}
+      />
     </main>
   );
 }
@@ -3436,6 +3454,7 @@ function ParamPills<T extends string | number>({
 function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const { t } = useI18n();
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const {
     runSingleNode,
     cancelNodes,
@@ -3636,11 +3655,15 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
     (event: MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
       if (!isNodeBusy) return;
-      if (!window.confirm(t('canvas.node.cancelConfirm'))) return;
-      cancelNodes([id]);
+      setCancelConfirmOpen(true);
     },
-    [cancelNodes, id, isNodeBusy, t],
+    [isNodeBusy],
   );
+
+  const confirmStopNode = useCallback(() => {
+    cancelNodes([id]);
+    setCancelConfirmOpen(false);
+  }, [cancelNodes, id]);
 
   const handlePromptKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -3923,6 +3946,16 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
         type="source"
         position={Position.Right}
         className="!right-[-7px] !z-[70] !h-3 !w-3 !cursor-crosshair !rounded-full !border-[2px] !border-white/72 !bg-[#202123] !shadow-none hover:!scale-[1.35] !transition-transform"
+      />
+
+      <ConfirmDialog
+        open={cancelConfirmOpen}
+        message={t('canvas.node.cancelConfirm')}
+        confirmLabel={t('canvas.node.stop')}
+        cancelLabel={t('common.cancel')}
+        variant="danger"
+        onCancel={() => setCancelConfirmOpen(false)}
+        onConfirm={confirmStopNode}
       />
     </div>
   );
