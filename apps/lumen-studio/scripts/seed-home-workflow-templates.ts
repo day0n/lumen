@@ -40,6 +40,7 @@ interface WorkflowResultDocument {
 
 interface ResultSeed {
   id: string;
+  rank: number;
   runId: string;
   projectId: string;
   nodeId: string;
@@ -70,12 +71,96 @@ interface CatalogEntry {
   visualPrompt: string;
 }
 
+interface TemplateAssets {
+  coverUrl: string;
+  productInput: ProductInputAsset;
+}
+
+interface ProductInputAsset {
+  id: string;
+  labelEn: string;
+  labelZh: string;
+  url: string;
+  detailEn: string;
+  detailZh: string;
+}
+
 const CATEGORIES = [
   { id: 'sales-openers', sortOrder: 0, zh: '带货开场', en: 'Sales Openers' },
   { id: 'product-scenes', sortOrder: 1, zh: '商品场景', en: 'Product Scenes' },
   { id: 'creator-scripts', sortOrder: 2, zh: '口播脚本', en: 'Creator Scripts' },
   { id: 'asset-kits', sortOrder: 3, zh: '素材套组', en: 'Asset Kits' },
 ] as const;
+
+const TEMPLATE_PUBLIC_BASE_URL = (
+  process.env.NEXT_PUBLIC_APP_URL || 'https://lumenstudio.tech'
+).replace(/\/$/, '');
+
+const PRODUCT_INPUTS: ProductInputAsset[] = [
+  productInput('serum-bottle', 'Serum bottle', '精华瓶', 'transparent serum, dropper bottle'),
+  productInput('earbuds-case', 'Earbuds case', '无线耳机', 'compact white earbuds and case'),
+  productInput('travel-tumbler', 'Travel tumbler', '随行杯', 'insulated tumbler for daily carry'),
+  productInput('running-shoe', 'Running shoe', '跑鞋', 'minimal knit running shoe'),
+  productInput(
+    'fragrance-diffuser',
+    'Fragrance diffuser',
+    '香薰瓶',
+    'reed diffuser and glass bottle',
+  ),
+  productInput('baby-lotion', 'Baby lotion', '婴儿乳霜', 'gentle lotion tube'),
+  productInput('desk-lamp', 'Desk lamp', '桌面台灯', 'minimal adjustable desk lamp'),
+  productInput('snack-pouch', 'Snack pouch', '坚果零食袋', 'kraft pouch of mixed nuts'),
+  productInput('pet-brush', 'Pet grooming brush', '宠物梳', 'soft grooming brush for pets'),
+];
+
+const PRODUCT_INPUT_BY_ID = new Map(PRODUCT_INPUTS.map((item) => [item.id, item]));
+
+const PRODUCT_ORDER_BY_CATEGORY: Record<(typeof CATEGORIES)[number]['id'], string[]> = {
+  'sales-openers': [
+    'serum-bottle',
+    'earbuds-case',
+    'travel-tumbler',
+    'desk-lamp',
+    'running-shoe',
+    'snack-pouch',
+    'fragrance-diffuser',
+    'baby-lotion',
+    'pet-brush',
+  ],
+  'product-scenes': [
+    'serum-bottle',
+    'earbuds-case',
+    'travel-tumbler',
+    'snack-pouch',
+    'running-shoe',
+    'baby-lotion',
+    'fragrance-diffuser',
+    'pet-brush',
+    'desk-lamp',
+  ],
+  'creator-scripts': [
+    'serum-bottle',
+    'earbuds-case',
+    'travel-tumbler',
+    'snack-pouch',
+    'desk-lamp',
+    'baby-lotion',
+    'running-shoe',
+    'fragrance-diffuser',
+    'pet-brush',
+  ],
+  'asset-kits': [
+    'serum-bottle',
+    'earbuds-case',
+    'travel-tumbler',
+    'running-shoe',
+    'fragrance-diffuser',
+    'baby-lotion',
+    'desk-lamp',
+    'snack-pouch',
+    'pet-brush',
+  ],
+};
 
 const CATALOG: CatalogEntry[] = [
   entry(
@@ -732,7 +817,10 @@ async function main() {
     throw new Error(`Need ${CATALOG.length} distinct workflow results, found ${results.length}`);
   }
 
-  const documents = CATALOG.map((item, index) => toTemplateInput(item, results[index], index));
+  const assignments = assignResultsToCatalog(CATALOG, results);
+  const documents = assignments.map(({ item, result }, index) =>
+    toTemplateInput(item, result, index),
+  );
 
   console.log(
     JSON.stringify(
@@ -747,6 +835,7 @@ async function main() {
           category: document.category_label,
           title: document.title,
           mediaType: document.media_type,
+          sourceProjectId: document.source_project_id,
           sourceRunId: document.source_run_id,
           resultNodeId: document.result_node_id,
           coverUrl: document.cover_url,
@@ -797,7 +886,7 @@ async function loadResultSeeds(workflowDb: Awaited<ReturnType<typeof getMongoDat
 
   const seenUrls = new Set<string>();
   const seeds: ResultSeed[] = [];
-  for (const document of documents) {
+  for (const [rank, document] of documents.entries()) {
     const url = normalizeUrl(document.asset?.url) ?? normalizeUrl(document.output_value);
     const mediaType = document.output_type === 'video' ? 'video' : 'image';
     const runId = document.run_id?.trim();
@@ -807,6 +896,7 @@ async function loadResultSeeds(workflowDb: Awaited<ReturnType<typeof getMongoDat
     seenUrls.add(url);
     seeds.push({
       id: document._id,
+      rank,
       runId,
       projectId,
       nodeId,
@@ -819,11 +909,116 @@ async function loadResultSeeds(workflowDb: Awaited<ReturnType<typeof getMongoDat
   return seeds;
 }
 
+function assignResultsToCatalog(items: CatalogEntry[], seeds: ResultSeed[]) {
+  const usedSeedIds = new Set<string>();
+  const globalProjectUse = new Map<string, number>();
+  const assignments: Array<{ item: CatalogEntry; result: ResultSeed }> = [];
+
+  for (const category of CATEGORIES) {
+    const categoryItems = items.filter((item) => item.categoryId === category.id);
+    const categoryProjectUse = new Map<string, number>();
+    let previousProjectId = '';
+
+    for (const item of categoryItems) {
+      const result = pickResultForItem({
+        item,
+        seeds,
+        usedSeedIds,
+        categoryProjectUse,
+        globalProjectUse,
+        previousProjectId,
+      });
+      if (!result) throw new Error(`No workflow result available for ${item.slug}`);
+      usedSeedIds.add(result.id);
+      categoryProjectUse.set(result.projectId, (categoryProjectUse.get(result.projectId) ?? 0) + 1);
+      globalProjectUse.set(result.projectId, (globalProjectUse.get(result.projectId) ?? 0) + 1);
+      previousProjectId = result.projectId;
+      assignments.push({ item, result });
+    }
+  }
+
+  if (assignments.length !== items.length) {
+    throw new Error(`Expected ${items.length} assignments, found ${assignments.length}`);
+  }
+
+  return assignments;
+}
+
+function pickResultForItem({
+  item,
+  seeds,
+  usedSeedIds,
+  categoryProjectUse,
+  globalProjectUse,
+  previousProjectId,
+}: {
+  item: CatalogEntry;
+  seeds: ResultSeed[];
+  usedSeedIds: Set<string>;
+  categoryProjectUse: Map<string, number>;
+  globalProjectUse: Map<string, number>;
+  previousProjectId: string;
+}) {
+  let selected: ResultSeed | null = null;
+  let selectedScore = Number.POSITIVE_INFINITY;
+
+  for (const seed of seeds) {
+    if (usedSeedIds.has(seed.id)) continue;
+    const score = scoreResultForItem({
+      item,
+      seed,
+      categoryProjectUse,
+      globalProjectUse,
+      previousProjectId,
+    });
+    if (score < selectedScore) {
+      selected = seed;
+      selectedScore = score;
+    }
+  }
+
+  return selected;
+}
+
+function scoreResultForItem({
+  item,
+  seed,
+  categoryProjectUse,
+  globalProjectUse,
+  previousProjectId,
+}: {
+  item: CatalogEntry;
+  seed: ResultSeed;
+  categoryProjectUse: Map<string, number>;
+  globalProjectUse: Map<string, number>;
+  previousProjectId: string;
+}) {
+  const categoryProjectPenalty = (categoryProjectUse.get(seed.projectId) ?? 0) * 1200;
+  const adjacentProjectPenalty = seed.projectId === previousProjectId ? 800 : 0;
+  const globalProjectPenalty = (globalProjectUse.get(seed.projectId) ?? 0) * 80;
+  const mediaPenalty = mediaPreferenceScore(item.categoryId, seed.mediaType);
+  return (
+    categoryProjectPenalty +
+    adjacentProjectPenalty +
+    globalProjectPenalty +
+    mediaPenalty +
+    seed.rank
+  );
+}
+
+function mediaPreferenceScore(categoryId: CatalogEntry['categoryId'], mediaType: MediaType) {
+  if (categoryId === 'sales-openers' || categoryId === 'creator-scripts') {
+    return mediaType === 'video' ? 0 : 90;
+  }
+  return mediaType === 'image' ? 0 : 90;
+}
+
 function toTemplateInput(
   item: CatalogEntry,
   result: ResultSeed,
   index: number,
 ): UpsertHomeWorkflowTemplateInput {
+  const assets = resolveTemplateAssets(item, index);
   const searchText = [
     item.titleZh,
     item.titleEn,
@@ -866,7 +1061,7 @@ function toTemplateInput(
       },
     },
     tags: item.tags,
-    cover_url: result.url,
+    cover_url: assets.coverUrl,
     media_type: result.mediaType,
     source_project_id: result.projectId,
     source_run_id: result.runId,
@@ -877,103 +1072,491 @@ function toTemplateInput(
     sort_order: index % 9,
     status: 'active',
     search_text: searchText,
-    canvas: buildCanvas(item, result),
+    canvas: buildCanvas(item, result, assets),
   };
 }
 
-function buildCanvas(item: CatalogEntry, result: ResultSeed): ProjectCanvas {
-  const briefNodeId = `brief-${item.slug}`;
-  const scriptNodeId = `script-${item.slug}`;
-  const mediaNodeId = `result-${item.slug}`;
-  const notesNodeId = `notes-${item.slug}`;
-  const mediaPrompt = result.prompt || item.visualPrompt;
-  const mediaTitle =
-    result.mediaType === 'video' ? 'Generated video result' : 'Generated image result';
-  const nodes: ProjectCanvas['nodes'] = [
-    {
-      id: briefNodeId,
-      type: 'lumenNode',
-      position: { x: 0, y: 40 },
-      data: {
-        kind: 'text',
-        title: 'Template brief',
-        prompt: item.briefZh,
-        output: item.briefEn,
-        modelId: 'gemini-2.5-flash',
-        settings: {},
-        status: 'success',
-        progress: 1,
-      },
-    },
-  ];
-  const edges: ProjectCanvas['edges'] = [];
-
-  if (item.shape === 'hook' || item.shape === 'script') {
-    nodes.push({
-      id: scriptNodeId,
-      type: 'lumenNode',
-      position: { x: 360, y: item.shape === 'hook' ? -80 : 40 },
-      data: {
-        kind: 'text',
-        title: item.shape === 'hook' ? 'Hook script' : 'Talking script',
-        prompt: item.briefEn,
-        output: item.descriptionEn,
-        modelId: 'gemini-2.5-flash',
-        settings: {},
-        status: 'success',
-        progress: 1,
-      },
-    });
-    edges.push(createEdge(briefNodeId, scriptNodeId));
+function buildCanvas(
+  item: CatalogEntry,
+  result: ResultSeed,
+  assets: TemplateAssets,
+): ProjectCanvas {
+  switch (item.shape) {
+    case 'hook':
+      return buildHookCanvas(item, result, assets);
+    case 'script':
+      return buildScriptCanvas(item, result, assets);
+    case 'visual':
+      return buildVisualCanvas(item, result, assets);
+    case 'kit':
+      return buildKitCanvas(item, result, assets);
   }
+}
 
-  const mediaSourceId =
-    item.shape === 'hook' || item.shape === 'script' ? scriptNodeId : briefNodeId;
-  nodes.push({
-    id: mediaNodeId,
+function buildHookCanvas(
+  item: CatalogEntry,
+  result: ResultSeed,
+  assets: TemplateAssets,
+): ProjectCanvas {
+  const productNodeId = `product-${item.slug}`;
+  const insightNodeId = `insight-${item.slug}`;
+  const scriptNodeId = `hook-script-${item.slug}`;
+  const keyframeNodeId = `keyframe-${item.slug}`;
+  const finalNodeId = `final-${item.slug}`;
+  const checklistNodeId = `checklist-${item.slug}`;
+  const nodes: ProjectCanvas['nodes'] = [
+    imageNode({
+      id: productNodeId,
+      title: 'Uploaded product photo',
+      prompt: productPromptZh(assets.productInput),
+      output: assets.productInput.url,
+      x: 0,
+      y: -140,
+      settings: { assetRole: 'product_input' },
+    }),
+    textNode({
+      id: insightNodeId,
+      title: 'Buyer trigger map',
+      prompt: `分析这个商品图，提炼一个适合「${item.titleZh}」的开场角度。`,
+      output: [
+        `商品：${assets.productInput.labelZh}`,
+        `模板目标：${item.subtitleZh}`,
+        '第一秒任务：用一个真实困扰或使用场景让用户停下来。',
+        `视觉承接：保留商品外观，用画面证明 ${item.badgeZh} 这个角度。`,
+      ].join('\n'),
+      x: 0,
+      y: 330,
+    }),
+    textNode({
+      id: scriptNodeId,
+      title: 'Hook script',
+      prompt: item.briefZh,
+      output: [
+        '0-2s：提出具体问题，避免泛泛而谈。',
+        `2-5s：让 ${assets.productInput.labelZh} 进入画面，展示最容易理解的动作。`,
+        '5-9s：给出一个可见结果，并用一句话收束购买理由。',
+        item.descriptionZh,
+      ].join('\n'),
+      x: 430,
+      y: -170,
+    }),
+    imageNode({
+      id: keyframeNodeId,
+      title: 'Generated key visual',
+      prompt: `${item.visualPrompt} Use the product image as the identity reference. No logos, no readable text.`,
+      output: assets.coverUrl,
+      x: 430,
+      y: 300,
+      settings: {
+        inputImage: assets.productInput.url,
+        inputImages: [assets.productInput.url],
+        aspectRatio: '9:16',
+        aspect_ratio: '9:16',
+      },
+    }),
+    mediaResultNode({
+      id: finalNodeId,
+      title: result.mediaType === 'video' ? 'Runnable video result' : 'Runnable image result',
+      prompt: result.prompt || item.visualPrompt,
+      output: result.mediaType === 'video' ? result.url : assets.coverUrl,
+      result,
+      x: 860,
+      y: -40,
+      inputImage: assets.coverUrl,
+    }),
+    textNode({
+      id: checklistNodeId,
+      title: 'Edit checklist',
+      prompt: '把这个开场变成可复用的剪辑检查清单。',
+      output: [
+        '保留一个强钩子，不要同时讲太多卖点。',
+        '镜头里必须出现商品图定义的外观，不替换成其他产品。',
+        '结尾只保留一个行动方向，方便继续生成不同版本。',
+      ].join('\n'),
+      x: 1290,
+      y: 250,
+    }),
+  ];
+
+  const edges = [
+    createEdge(productNodeId, insightNodeId),
+    createEdge(insightNodeId, scriptNodeId),
+    createEdge(productNodeId, keyframeNodeId),
+    createEdge(scriptNodeId, keyframeNodeId),
+    createEdge(keyframeNodeId, finalNodeId),
+    createEdge(scriptNodeId, finalNodeId),
+    createEdge(finalNodeId, checklistNodeId),
+  ];
+
+  return { nodes, edges, viewport: { x: 60, y: 150, zoom: 0.58 } };
+}
+
+function buildVisualCanvas(
+  item: CatalogEntry,
+  _result: ResultSeed,
+  assets: TemplateAssets,
+): ProjectCanvas {
+  const productNodeId = `product-${item.slug}`;
+  const sceneNodeId = `scene-${item.slug}`;
+  const promptNodeId = `prompt-${item.slug}`;
+  const visualNodeId = `visual-${item.slug}`;
+  const variantNodeId = `variant-${item.slug}`;
+  const nodes: ProjectCanvas['nodes'] = [
+    imageNode({
+      id: productNodeId,
+      title: 'Product input',
+      prompt: productPromptZh(assets.productInput),
+      output: assets.productInput.url,
+      x: 0,
+      y: 0,
+      settings: { assetRole: 'product_input' },
+    }),
+    textNode({
+      id: sceneNodeId,
+      title: 'Scene plan',
+      prompt: item.briefZh,
+      output: [
+        `主体商品：${assets.productInput.labelZh}`,
+        `场景方向：${item.subtitleZh}`,
+        `画面重点：${item.descriptionZh}`,
+        '生成时先锁定产品形态，再改背景、光线和使用动作。',
+      ].join('\n'),
+      x: 420,
+      y: -170,
+    }),
+    textNode({
+      id: promptNodeId,
+      title: 'Image prompt',
+      prompt: '把场景计划改写成图像生成 prompt。',
+      output: `${item.visualPrompt} Reference the uploaded product image exactly. Keep the product unbranded and commercially usable.`,
+      x: 420,
+      y: 300,
+    }),
+    imageNode({
+      id: visualNodeId,
+      title: 'Generated scene',
+      prompt: item.visualPrompt,
+      output: assets.coverUrl,
+      x: 850,
+      y: -60,
+      settings: {
+        inputImage: assets.productInput.url,
+        inputImages: [assets.productInput.url],
+        aspectRatio: '9:16',
+        aspect_ratio: '9:16',
+      },
+    }),
+    textNode({
+      id: variantNodeId,
+      title: 'Variant directions',
+      prompt: '给这个画面生成三个可继续运行的变体方向。',
+      output: [
+        '变体 A：保留商品角度，替换为更强生活场景。',
+        '变体 B：保留背景和光线，生成一个细节近景。',
+        '变体 C：保留构图，改成适合封面裁切的主视觉。',
+      ].join('\n'),
+      x: 1280,
+      y: 180,
+    }),
+  ];
+  const edges = [
+    createEdge(productNodeId, sceneNodeId),
+    createEdge(sceneNodeId, promptNodeId),
+    createEdge(productNodeId, visualNodeId),
+    createEdge(promptNodeId, visualNodeId),
+    createEdge(visualNodeId, variantNodeId),
+  ];
+  return { nodes, edges, viewport: { x: 80, y: 150, zoom: 0.62 } };
+}
+
+function buildScriptCanvas(
+  item: CatalogEntry,
+  result: ResultSeed,
+  assets: TemplateAssets,
+): ProjectCanvas {
+  const productNodeId = `product-${item.slug}`;
+  const personaNodeId = `persona-${item.slug}`;
+  const scriptNodeId = `talk-${item.slug}`;
+  const coverNodeId = `creator-cover-${item.slug}`;
+  const finalNodeId = `final-${item.slug}`;
+  const captionNodeId = `captions-${item.slug}`;
+  const nodes: ProjectCanvas['nodes'] = [
+    imageNode({
+      id: productNodeId,
+      title: 'Product reference',
+      prompt: productPromptZh(assets.productInput),
+      output: assets.productInput.url,
+      x: 0,
+      y: -120,
+      settings: { assetRole: 'product_input' },
+    }),
+    textNode({
+      id: personaNodeId,
+      title: 'Creator angle',
+      prompt: `为「${item.titleZh}」选择一个口播人设和语气。`,
+      output: [
+        `商品：${assets.productInput.labelZh}`,
+        '人设：像真实使用者，而不是主持人。',
+        '语气：先讲体验，再讲理由，最后轻转化。',
+        '边界：不要虚构品牌、认证或夸张功效。',
+      ].join('\n'),
+      x: 0,
+      y: 350,
+    }),
+    textNode({
+      id: scriptNodeId,
+      title: 'Talking script',
+      prompt: item.briefZh,
+      output: [
+        '开场：一句具体场景，把用户带入。',
+        `主体：围绕 ${assets.productInput.labelZh} 讲 2-3 个可见利益点。`,
+        '证明：配合手部展示或使用动作，避免只念文案。',
+        `收束：${item.subtitleZh}`,
+      ].join('\n'),
+      x: 430,
+      y: -120,
+    }),
+    imageNode({
+      id: coverNodeId,
+      title: 'Creator keyframe',
+      prompt: `${item.visualPrompt} Use the product reference image as the product identity. Natural creator-style framing.`,
+      output: assets.coverUrl,
+      x: 430,
+      y: 350,
+      settings: {
+        inputImage: assets.productInput.url,
+        inputImages: [assets.productInput.url],
+        aspectRatio: '9:16',
+        aspect_ratio: '9:16',
+      },
+    }),
+    mediaResultNode({
+      id: finalNodeId,
+      title: result.mediaType === 'video' ? 'Talking video result' : 'Script visual result',
+      prompt: result.prompt || item.visualPrompt,
+      output: result.mediaType === 'video' ? result.url : assets.coverUrl,
+      result,
+      x: 860,
+      y: -20,
+      inputImage: assets.coverUrl,
+    }),
+    textNode({
+      id: captionNodeId,
+      title: 'Caption beats',
+      prompt: '生成适合短视频字幕的节奏点。',
+      output: [
+        '字幕 1：先复述用户困扰。',
+        '字幕 2：把商品动作讲具体。',
+        '字幕 3：收束为一个可记住的购买理由。',
+      ].join('\n'),
+      x: 1290,
+      y: 260,
+    }),
+  ];
+  const edges = [
+    createEdge(productNodeId, personaNodeId),
+    createEdge(personaNodeId, scriptNodeId),
+    createEdge(productNodeId, coverNodeId),
+    createEdge(scriptNodeId, coverNodeId),
+    createEdge(coverNodeId, finalNodeId),
+    createEdge(scriptNodeId, finalNodeId),
+    createEdge(finalNodeId, captionNodeId),
+  ];
+  return { nodes, edges, viewport: { x: 70, y: 160, zoom: 0.58 } };
+}
+
+function buildKitCanvas(
+  item: CatalogEntry,
+  result: ResultSeed,
+  assets: TemplateAssets,
+): ProjectCanvas {
+  const productNodeId = `product-${item.slug}`;
+  const boardNodeId = `board-${item.slug}`;
+  const kitNodeId = `kit-${item.slug}`;
+  const reuseNodeId = `reuse-${item.slug}`;
+  const publishNodeId = `publish-${item.slug}`;
+  const nodes: ProjectCanvas['nodes'] = [
+    imageNode({
+      id: productNodeId,
+      title: 'Product source',
+      prompt: productPromptZh(assets.productInput),
+      output: assets.productInput.url,
+      x: 0,
+      y: -100,
+      settings: { assetRole: 'product_input' },
+    }),
+    imageNode({
+      id: boardNodeId,
+      title: 'Generated asset board',
+      prompt: `${item.visualPrompt} Turn the product into a reusable asset board.`,
+      output: assets.coverUrl,
+      x: 420,
+      y: -120,
+      settings: {
+        inputImage: assets.productInput.url,
+        inputImages: [assets.productInput.url],
+        aspectRatio: '9:16',
+        aspect_ratio: '9:16',
+      },
+    }),
+    textNode({
+      id: kitNodeId,
+      title: 'Reusable rules',
+      prompt: item.briefZh,
+      output: [
+        `资产对象：${assets.productInput.labelZh}`,
+        `套组目标：${item.subtitleZh}`,
+        '保留：产品轮廓、材质、主视觉光线。',
+        '可变：背景、平台裁切、字幕安全区、促销氛围。',
+      ].join('\n'),
+      x: 0,
+      y: 360,
+    }),
+    mediaResultNode({
+      id: reuseNodeId,
+      title: result.mediaType === 'video' ? 'Reusable motion result' : 'Reusable image result',
+      prompt: result.prompt || item.visualPrompt,
+      output: result.mediaType === 'video' ? result.url : assets.coverUrl,
+      result,
+      x: 850,
+      y: 20,
+      inputImage: assets.coverUrl,
+    }),
+    textNode({
+      id: publishNodeId,
+      title: 'Next run plan',
+      prompt: '把素材套组改成下一次可执行的生产计划。',
+      output: [
+        '1. 用产品源图重新生成主视觉。',
+        '2. 用资产板保持风格一致。',
+        '3. 按平台裁切输出主图、详情图和短视频封面。',
+        item.descriptionZh,
+      ].join('\n'),
+      x: 1280,
+      y: 260,
+    }),
+  ];
+  const edges = [
+    createEdge(productNodeId, boardNodeId),
+    createEdge(productNodeId, kitNodeId),
+    createEdge(kitNodeId, boardNodeId),
+    createEdge(boardNodeId, reuseNodeId),
+    createEdge(reuseNodeId, publishNodeId),
+  ];
+  return { nodes, edges, viewport: { x: 80, y: 150, zoom: 0.6 } };
+}
+
+function textNode({
+  id,
+  title,
+  prompt,
+  output,
+  x,
+  y,
+}: {
+  id: string;
+  title: string;
+  prompt: string;
+  output: string;
+  x: number;
+  y: number;
+}) {
+  return {
+    id,
     type: 'lumenNode',
-    position: { x: item.shape === 'visual' || item.shape === 'kit' ? 360 : 720, y: 40 },
+    position: { x, y },
     data: {
-      kind: result.mediaType,
-      title: mediaTitle,
-      prompt: mediaPrompt,
-      output: result.url,
-      modelId: result.mediaType === 'video' ? 'seedance-1.5-pro' : 'nano-banana2',
+      kind: 'text',
+      title,
+      prompt,
+      output,
+      modelId: 'gemini-2.5-flash',
+      settings: {},
+      status: 'success',
+      progress: 1,
+    },
+  };
+}
+
+function imageNode({
+  id,
+  title,
+  prompt,
+  output,
+  x,
+  y,
+  settings = {},
+}: {
+  id: string;
+  title: string;
+  prompt: string;
+  output: string;
+  x: number;
+  y: number;
+  settings?: Record<string, unknown>;
+}) {
+  return {
+    id,
+    type: 'lumenNode',
+    position: { x, y },
+    data: {
+      kind: 'image',
+      title,
+      prompt,
+      output,
+      modelId: 'nano-banana2',
       settings: {
         aspectRatio: '9:16',
         aspect_ratio: '9:16',
+        ...settings,
+      },
+      status: 'success',
+      progress: 1,
+    },
+  };
+}
+
+function mediaResultNode({
+  id,
+  title,
+  prompt,
+  output,
+  result,
+  x,
+  y,
+  inputImage,
+}: {
+  id: string;
+  title: string;
+  prompt: string;
+  output: string;
+  result: ResultSeed;
+  x: number;
+  y: number;
+  inputImage: string;
+}) {
+  const kind = result.mediaType;
+  return {
+    id,
+    type: 'lumenNode',
+    position: { x, y },
+    data: {
+      kind,
+      title,
+      prompt,
+      output,
+      modelId: kind === 'video' ? 'seedance-1.5-pro' : 'nano-banana2',
+      settings: {
+        aspectRatio: '9:16',
+        aspect_ratio: '9:16',
+        inputImage,
+        inputImages: [inputImage],
         sourceRunId: result.runId,
         sourceResultNodeId: result.nodeId,
       },
       status: 'success',
       progress: 1,
     },
-  });
-  edges.push(createEdge(mediaSourceId, mediaNodeId));
-
-  if (item.shape === 'kit') {
-    nodes.push({
-      id: notesNodeId,
-      type: 'lumenNode',
-      position: { x: 720, y: 40 },
-      data: {
-        kind: 'text',
-        title: 'Reuse notes',
-        prompt: 'Summarize how this result can be reused in the next asset run.',
-        output: item.descriptionEn,
-        modelId: 'gemini-2.5-flash',
-        settings: {},
-        status: 'success',
-        progress: 1,
-      },
-    });
-    edges.push(createEdge(mediaNodeId, notesNodeId));
-  }
-
-  return {
-    nodes,
-    edges,
-    viewport: { x: 80, y: 120, zoom: 0.72 },
   };
 }
 
@@ -1026,6 +1609,43 @@ function entry(
     briefEn,
     visualPrompt,
   };
+}
+
+function resolveTemplateAssets(item: CatalogEntry, index: number): TemplateAssets {
+  const categoryIndex = index % 9;
+  const productId = PRODUCT_ORDER_BY_CATEGORY[item.categoryId][categoryIndex];
+  const productInputAsset = productId ? PRODUCT_INPUT_BY_ID.get(productId) : undefined;
+  if (!productInputAsset) {
+    throw new Error(`Missing product input for ${item.categoryId} at ${categoryIndex}`);
+  }
+  return {
+    coverUrl: publicAssetUrl(`home-templates/covers/${item.categoryId}/${item.slug}.webp`),
+    productInput: productInputAsset,
+  };
+}
+
+function productInput(
+  id: string,
+  labelEn: string,
+  labelZh: string,
+  detail: string,
+): ProductInputAsset {
+  return {
+    id,
+    labelEn,
+    labelZh,
+    detailEn: detail,
+    detailZh: detail,
+    url: publicAssetUrl(`home-templates/products/${id}.webp`),
+  };
+}
+
+function publicAssetUrl(path: string) {
+  return `${TEMPLATE_PUBLIC_BASE_URL}/${path.replace(/^\//, '')}`;
+}
+
+function productPromptZh(product: ProductInputAsset) {
+  return `模拟用户上传的商品图：${product.labelZh}。保持商品外观、比例、材质和无品牌特征，作为后续图像/视频节点的输入参考。`;
 }
 
 function normalizeUrl(value: unknown): string | null {

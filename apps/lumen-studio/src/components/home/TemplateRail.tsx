@@ -320,7 +320,7 @@ function WorkflowTemplateCard({
 }
 
 function TemplateCover({ template }: { template: WorkflowTemplate }) {
-  if (template.mediaType === 'video') {
+  if (template.mediaType === 'video' && !isStaticImageUrl(template.coverUrl)) {
     return (
       <video
         aria-label={template.title}
@@ -344,6 +344,10 @@ function TemplateCover({ template }: { template: WorkflowTemplate }) {
       src={template.coverUrl}
     />
   );
+}
+
+function isStaticImageUrl(value: string) {
+  return /\.(avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(value);
 }
 
 function TemplateSkeletonGrid() {
