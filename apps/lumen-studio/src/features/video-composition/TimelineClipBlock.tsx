@@ -1,7 +1,11 @@
 'use client';
 
 import type { CompositionTimelineClip } from '@lumen/shared/domain';
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
 
 function resolveDropIndex(pointerX: number, pointerY: number, fallbackIndex: number): number {
   const hit = document
@@ -88,7 +92,7 @@ export function TimelineClipBlock({
     window.addEventListener('pointercancel', handleEnd);
   };
 
-  const beginReorder = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const beginReorder = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     if ((event.target as HTMLElement).closest('[data-composition-trim-handle]')) return;
 
@@ -98,16 +102,15 @@ export function TimelineClipBlock({
     let moved = false;
 
     const cleanup = () => {
-      window.removeEventListener('pointermove', handleMove);
-      window.removeEventListener('pointerup', handleEnd);
-      window.removeEventListener('pointercancel', handleEnd);
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleEnd);
       element.style.pointerEvents = '';
       element.style.transform = '';
       element.style.zIndex = '';
       element.style.opacity = '';
     };
 
-    const handleMove = (moveEvent: PointerEvent) => {
+    const handleMove = (moveEvent: MouseEvent) => {
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
       if (!moved && Math.hypot(deltaX, deltaY) < 6) return;
@@ -120,7 +123,7 @@ export function TimelineClipBlock({
       element.style.opacity = '0.78';
     };
 
-    const handleEnd = (endEvent: PointerEvent) => {
+    const handleEnd = (endEvent: MouseEvent) => {
       const wasMoved = moved;
       const targetIndex = wasMoved
         ? resolveDropIndex(endEvent.clientX, endEvent.clientY, index)
@@ -136,9 +139,8 @@ export function TimelineClipBlock({
       if (targetIndex !== index) onMoveToIndex(targetIndex);
     };
 
-    window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', handleEnd);
-    window.addEventListener('pointercancel', handleEnd);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleEnd);
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -161,7 +163,7 @@ export function TimelineClipBlock({
       }`}
       style={{ width }}
       onKeyDown={handleKeyDown}
-      onPointerDown={beginReorder}
+      onMouseDown={beginReorder}
       onClick={(event) => {
         if (event.currentTarget.dataset.compositionWasDragged === 'true') {
           event.preventDefault();
