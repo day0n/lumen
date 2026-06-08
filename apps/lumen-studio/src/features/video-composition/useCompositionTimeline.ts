@@ -13,6 +13,10 @@ function normalizeOrders(clips: CompositionTimelineClip[]): CompositionTimelineC
     .map((clip, index) => ({ ...clip, order: index }));
 }
 
+function assignOrders(clips: CompositionTimelineClip[]): CompositionTimelineClip[] {
+  return clips.map((clip, index) => ({ ...clip, order: index }));
+}
+
 export function useCompositionTimeline(initial: CompositionTimeline) {
   const [timeline, setTimeline] = useState<CompositionTimeline>(initial);
   const [playhead, setPlayhead] = useState(0);
@@ -56,7 +60,7 @@ export function useCompositionTimeline(initial: CompositionTimeline) {
       const [item] = next.splice(index, 1);
       if (!item) return current;
       next.splice(target, 0, item);
-      return { ...current, clips: normalizeOrders(next) };
+      return { ...current, clips: assignOrders(next) };
     });
   }, []);
 
@@ -71,7 +75,7 @@ export function useCompositionTimeline(initial: CompositionTimeline) {
       const [item] = next.splice(index, 1);
       if (!item) return current;
       next.splice(clampedTarget, 0, item);
-      return { ...current, clips: normalizeOrders(next) };
+      return { ...current, clips: assignOrders(next) };
     });
   }, []);
 
