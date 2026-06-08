@@ -21,6 +21,16 @@ export const WORKFLOW_NODE_RESULTS_COLLECTION = 'workflow_node_results';
 const WORKFLOW_RESULT_MATERIAL_KINDS = ['image', 'video', 'audio'] as const;
 type WorkflowResultMaterialKind = (typeof WORKFLOW_RESULT_MATERIAL_KINDS)[number];
 
+export interface WorkflowNodeResultSnapshot {
+  nodeId: string;
+  runId: string;
+  status: string;
+  output: string | null;
+  error: string | null;
+  progress: number;
+  updatedAt: string;
+}
+
 interface WorkflowNodeResultDocument {
   _id: string;
   run_id: string;
@@ -33,6 +43,7 @@ interface WorkflowNodeResultDocument {
   input?: Record<string, unknown>;
   output_type?: string;
   output_value?: string;
+  error?: string;
   asset?: {
     key?: string;
     url?: string;
@@ -204,6 +215,36 @@ export class MaterialAssetRepository {
     return toMaterialAssetRecord(document);
   }
 
+  async getLatestNodeResultsForProject(
+    projectId: string,
+    nodeIds: string[],
+  ): Promise<WorkflowNodeResultSnapshot[]> {
+    const ids = [...new Set(nodeIds.map((id) => id.trim()).filter(Boolean))];
+    if (ids.length === 0) return [];
+
+    const documents = await this.workflowResultCollection()
+      .aggregate<{ doc: WorkflowNodeResultDocument }>([
+        {
+          $match: {
+            node_id: { $in: ids },
+            $or: [{ project_id: projectId }, { workflow_id: projectId }],
+          },
+        },
+        { $sort: { updated_at: -1, completed_at: -1, created_at: -1 } },
+        {
+          $group: {
+            _id: '$node_id',
+            doc: { $first: '$$ROOT' },
+          },
+        },
+      ])
+      .toArray();
+
+    return documents
+      .map((entry) => toWorkflowNodeResultSnapshot(entry.doc))
+      .filter((entry): entry is WorkflowNodeResultSnapshot => Boolean(entry));
+  }
+
   async deleteUserUpload(ownerId: string, assetId: string): Promise<boolean> {
     const result = await this.collection().deleteOne({
       _id: assetId,
@@ -220,6 +261,35 @@ export class MaterialAssetRepository {
   private workflowResultCollection() {
     return this.db.collection<WorkflowNodeResultDocument>(WORKFLOW_NODE_RESULTS_COLLECTION);
   }
+}
+
+function toWorkflowNodeResultSnapshot(
+  document: WorkflowNodeResultDocument,
+): WorkflowNodeResultSnapshot | null {
+  const nodeId = normalizedString(document.node_id);
+  const runId = normalizedString(document.run_id);
+  if (!nodeId || !runId) return null;
+
+  const status = normalizedString(document.status) ?? 'idle';
+  const output =
+    normalizedString(document.asset?.url) ?? normalizedString(document.output_value) ?? null;
+  const error = normalizedString(document.error) ?? null;
+  const updatedAt = (
+    document.updated_at ??
+    document.completed_at ??
+    document.created_at ??
+    new Date()
+  ).toISOString();
+
+  return {
+    nodeId,
+    runId,
+    status,
+    output,
+    error,
+    progress: status === 'success' ? 1 : status === 'running' ? 0.45 : 0,
+    updatedAt,
+  };
 }
 
 function toMaterialAssetRecord(document: MaterialAssetDocument): MaterialAssetRecord {

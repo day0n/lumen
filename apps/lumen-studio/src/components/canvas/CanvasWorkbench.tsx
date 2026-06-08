@@ -98,6 +98,7 @@ import type {
 
 import { CanvasHydrationOverlay } from '@/components/canvas/CanvasHydrationOverlay';
 import { ChatPanel } from '@/features/agent-chat/ChatPanel';
+import { useWorkflowReconcile } from '@/features/workflow/use-workflow-reconcile';
 import { useWorkflowWs } from '@/features/workflow/use-workflow-ws';
 import type { NodeState } from '@/features/workflow/use-workflow-ws';
 import { useI18n } from '@/i18n/provider';
@@ -1146,6 +1147,23 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     workflowId: currentProjectId,
     userId: currentOwnerId,
     locale,
+    onNodeStateChange: handleNodeStateChange,
+  });
+
+  const workflowNodeSnapshots = useMemo(
+    () =>
+      nodes.map((node) => ({
+        id: node.id,
+        status: node.data.status,
+        output: node.data.output,
+      })),
+    [nodes],
+  );
+
+  useWorkflowReconcile({
+    projectId: currentProjectId,
+    nodes: workflowNodeSnapshots,
+    enabled: isCanvasHydrated && Boolean(currentProjectId),
     onNodeStateChange: handleNodeStateChange,
   });
 

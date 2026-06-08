@@ -334,11 +334,11 @@ export function useWorkflowWs({
             run.flowSpan?.setStatus({ code: run.flowDone || run.cancelled ? 1 : 2 });
             run.flowSpan?.end();
             if (run.flowDone || run.cancelled) return;
+            // 断线时不要把节点直接标成 error：engine 可能仍在跑，交给 workflow-status 轮询恢复。
             const error = run.opened
               ? translate(locale, 'canvas.connectionClosed')
               : translate(locale, 'canvas.engineConnectionFailed');
             setConnectionError(error);
-            markRunConnectionFailed(targetNodeIds, error);
           };
         })
         .catch((err) => {
