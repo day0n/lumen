@@ -44,8 +44,16 @@ Default production-backed models:
 
 - `text`: `gemini-3.5-flash`
 - `image`: `nano-banana2`
-- `video`: `veo-3.1` or `seedance-1.5-pro` (supports first/last frame i2v)
+- `video`: `veo-3.1` or `seedance-1.5-pro` (Volcengine Ark; supports first/last frame i2v)
 - `audio`: `fish-tts`
+
+Video model selection:
+
+- `veo-3.1`: Google Veo; `aspectRatio` `1:1|4:5|16:9|9:16`, `duration` `4|6|8`,
+  `resolution` `720p|1080p|4k` (1080p/4k require 8s).
+- `seedance-1.5-pro`: Volcengine Ark; `aspectRatio` `16:9|9:16|1:1|4:3|3:4|21:9`,
+  `duration` `4-12`, `resolution` `480p|720p|1080p`. First/last frame via
+  `settings.inputImage` / `settings.inputLastFrameImage` or paired upstream images.
 
 Avoid placeholder / non-production models such as `doubao-seed-2.0-pro`,
 `doubao-seedream-3.0`, and `doubao-tts` unless the user explicitly asks for

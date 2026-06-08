@@ -44,8 +44,20 @@ Default production-backed models:
 
 - `text`: `gemini-3.5-flash`
 - `image`: `nano-banana2`
-- `video`: `veo-3.1`
+- `video`: `veo-3.1` or `seedance-1.5-pro` (Volcengine Ark; supports first/last frame i2v)
 - `audio`: `fish-tts`
+
+Video model selection:
+
+- `veo-3.1`: Google Veo; best for high-fidelity cinematic shots. Settings:
+  `aspectRatio` in `1:1|4:5|16:9|9:16`, `duration` in `4|6|8`, `resolution` in
+  `720p|1080p|4k` (1080p/4k require 8s). Optional first/last frame via
+  `settings.inputImage` / `settings.inputLastFrameImage` or upstream image nodes.
+- `seedance-1.5-pro`: ByteDance Seedance via Volcengine Ark; strong prompt
+  following and camera control. Settings: `aspectRatio` in
+  `16:9|9:16|1:1|4:3|3:4|21:9`, `duration` in `4-12`, `resolution` in
+  `480p|720p|1080p` (default `1080p`). Supports first/last frame i2v the same
+  way as Veo. Typical run time ~30-120s.
 
 Audio node models:
 
