@@ -1,11 +1,38 @@
 'use client';
 
 import type { CompositionTimelineClip } from '@lumen/shared/domain';
-import type {
-  DragEvent as ReactDragEvent,
-  KeyboardEvent as ReactKeyboardEvent,
-  PointerEvent as ReactPointerEvent,
-} from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+
+function resolveDropIndex(pointerX: number, pointerY: number, fallbackIndex: number): number {
+  const hit = document
+    .elementFromPoint(pointerX, pointerY)
+    ?.closest<HTMLElement>('[data-composition-clip-index]');
+  const hitIndex = Number(hit?.dataset.compositionClipIndex);
+  if (Number.isInteger(hitIndex)) return hitIndex;
+
+  const clips = Array.from(document.querySelectorAll<HTMLElement>('[data-composition-clip-index]'))
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        index: Number(element.dataset.compositionClipIndex),
+        left: rect.left,
+        right: rect.right,
+        center: rect.left + rect.width / 2,
+      };
+    })
+    .filter((item) => Number.isInteger(item.index))
+    .sort((a, b) => a.index - b.index);
+
+  if (clips.length === 0) return fallbackIndex;
+  const first = clips[0];
+  const last = clips[clips.length - 1];
+  if (first && pointerX <= first.left) return first.index;
+  if (last && pointerX >= last.right) return last.index;
+
+  return clips.reduce((best, item) =>
+    Math.abs(item.center - pointerX) < Math.abs(best.center - pointerX) ? item : best,
+  ).index;
+}
 
 export function TimelineClipBlock({
   clip,
@@ -13,12 +40,8 @@ export function TimelineClipBlock({
   pixelsPerSecond,
   url,
   selected,
-  dragging,
   onSelect,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDrop,
+  onMoveToIndex,
   onTrimLeft,
   onTrimRight,
 }: {
@@ -27,21 +50,14 @@ export function TimelineClipBlock({
   pixelsPerSecond: number;
   url: string;
   selected: boolean;
-  dragging: boolean;
   onSelect: () => void;
-  onDragStart: (event: ReactDragEvent<HTMLDivElement>) => void;
-  onDragEnd: () => void;
-  onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void;
-  onDrop: (event: ReactDragEvent<HTMLDivElement>) => void;
+  onMoveToIndex: (targetIndex: number) => void;
   onTrimLeft: (deltaSeconds: number) => void;
   onTrimRight: (deltaSeconds: number) => void;
 }) {
   const width = Math.max(64, clip.duration * pixelsPerSecond);
 
-  const beginTrim = (
-    side: 'left' | 'right',
-    event: ReactPointerEvent<HTMLSpanElement>,
-  ) => {
+  const beginTrim = (side: 'left' | 'right', event: ReactPointerEvent<HTMLSpanElement>) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -72,6 +88,59 @@ export function TimelineClipBlock({
     window.addEventListener('pointercancel', handleEnd);
   };
 
+  const beginReorder = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement).closest('[data-composition-trim-handle]')) return;
+
+    const element = event.currentTarget;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let moved = false;
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleEnd);
+      window.removeEventListener('pointercancel', handleEnd);
+      element.style.pointerEvents = '';
+      element.style.transform = '';
+      element.style.zIndex = '';
+      element.style.opacity = '';
+    };
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+      if (!moved && Math.hypot(deltaX, deltaY) < 6) return;
+      moved = true;
+      moveEvent.preventDefault();
+      element.dataset.compositionDragging = 'true';
+      element.style.pointerEvents = 'none';
+      element.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0)`;
+      element.style.zIndex = '40';
+      element.style.opacity = '0.78';
+    };
+
+    const handleEnd = (endEvent: PointerEvent) => {
+      const wasMoved = moved;
+      const targetIndex = wasMoved
+        ? resolveDropIndex(endEvent.clientX, endEvent.clientY, index)
+        : index;
+      cleanup();
+      if (!wasMoved) return;
+      endEvent.preventDefault();
+      element.dataset.compositionWasDragged = 'true';
+      window.setTimeout(() => {
+        delete element.dataset.compositionWasDragged;
+        delete element.dataset.compositionDragging;
+      }, 0);
+      if (targetIndex !== index) onMoveToIndex(targetIndex);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleEnd);
+    window.addEventListener('pointercancel', handleEnd);
+  };
+
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
@@ -79,34 +148,38 @@ export function TimelineClipBlock({
   };
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: timeline clips need custom pointer drag and trim handles.
     <div
       role="button"
       tabIndex={0}
-      draggable
+      data-composition-clip-index={index}
       aria-label={`${clip.label ?? 'Clip'} ${index + 1}`}
       className={`group relative h-16 shrink-0 cursor-grab overflow-hidden rounded-[7px] border text-left shadow-[0_10px_24px_rgba(0,0,0,0.22)] transition-colors active:cursor-grabbing ${
         selected
           ? 'border-[#9beaff] bg-[#9beaff]/16 ring-2 ring-[#9beaff]/28'
           : 'border-white/[0.12] bg-[#2a2c31] hover:border-white/[0.24]'
-      } ${dragging ? 'opacity-45' : ''}`}
+      }`}
       style={{ width }}
       onKeyDown={handleKeyDown}
+      onPointerDown={beginReorder}
       onClick={(event) => {
+        if (event.currentTarget.dataset.compositionWasDragged === 'true') {
+          event.preventDefault();
+          return;
+        }
         event.stopPropagation();
         onSelect();
       }}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
     >
       <span
         aria-hidden="true"
+        data-composition-trim-handle="left"
         className="absolute inset-y-1 left-0 z-20 w-3 cursor-ew-resize rounded-r-[4px] bg-white/16 transition-colors group-hover:bg-[#9beaff]/62"
         onPointerDown={(event) => beginTrim('left', event)}
       />
       <span
         aria-hidden="true"
+        data-composition-trim-handle="right"
         className="absolute inset-y-1 right-0 z-20 w-3 cursor-ew-resize rounded-l-[4px] bg-white/16 transition-colors group-hover:bg-[#9beaff]/62"
         onPointerDown={(event) => beginTrim('right', event)}
       />

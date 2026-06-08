@@ -1,7 +1,6 @@
 'use client';
 
 import type { CompositionTimelineClip } from '@lumen/shared/domain';
-import { useState } from 'react';
 
 import { TimelineClipBlock } from './TimelineClipBlock';
 
@@ -28,8 +27,6 @@ export function VideoTrack({
   resolveClipUrl: (clip: CompositionTimelineClip) => string;
   emptyLabel: string;
 }) {
-  const [draggingClipId, setDraggingClipId] = useState<string | null>(null);
-
   if (clips.length === 0) {
     return (
       <div className="flex h-20 items-center rounded-[8px] bg-[#202124] px-4 text-[12px] font-bold text-white/28 ring-1 ring-white/[0.04]">
@@ -49,26 +46,8 @@ export function VideoTrack({
             pixelsPerSecond={pixelsPerSecond}
             url={resolveClipUrl(clip)}
             selected={selectedClipId === clip.id}
-            dragging={draggingClipId === clip.id}
             onSelect={() => onSelectClip(clip.id)}
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = 'move';
-              event.dataTransfer.setData('text/plain', clip.id);
-              setDraggingClipId(clip.id);
-              onSelectClip(clip.id);
-            }}
-            onDragEnd={() => setDraggingClipId(null)}
-            onDragOver={(event) => {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = 'move';
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              const clipId = event.dataTransfer.getData('text/plain') || draggingClipId;
-              setDraggingClipId(null);
-              if (!clipId || clipId === clip.id) return;
-              onMoveClipToIndex(clipId, index);
-            }}
+            onMoveToIndex={(targetIndex) => onMoveClipToIndex(clip.id, targetIndex)}
             onTrimLeft={(deltaSeconds) => onTrimClipLeft(clip.id, deltaSeconds)}
             onTrimRight={(deltaSeconds) => onTrimClipRight(clip.id, deltaSeconds)}
           />
