@@ -3668,6 +3668,8 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       : aspectRatioOptions;
   const videoDurationOptionList = isSeedance ? seedanceDurationOptions : videoDurationOptions;
   const videoResolutionOptionList = isSeedance ? seedanceResolutionOptions : videoResolutionOptions;
+  const outputUploadKind: MaterialAssetKind | null =
+    data.kind === 'image' || data.kind === 'video' || data.kind === 'audio' ? data.kind : null;
 
   // 读取上游图片节点的输出；上游图片只有成对时才展示为首/尾帧。
   const incomingConnections = useNodeConnections({ handleType: 'target' });
@@ -3885,6 +3887,14 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       >
         {upstreamOutputCount}
       </div>
+      {outputUploadKind ? (
+        <MediaOutputUploadButton
+          kind={outputUploadKind}
+          onUpload={handleOutputMediaUpload}
+          showLabel
+          className="-top-4 right-14 z-[90] h-8 w-auto rounded-full bg-white px-3 text-[#111315] shadow-[0_12px_30px_rgba(0,0,0,0.32)] ring-transparent hover:scale-[1.03] hover:bg-white"
+        />
+      ) : null}
       <Handle
         type="target"
         position={Position.Left}
@@ -4344,8 +4354,8 @@ function MediaOutputUpload({
         ) : (
           <Icon size={30} stroke={1.6} className="opacity-70" />
         )}
-        <span className="text-[12px] font-bold">
-          {uploading ? t('materials.uploading') : t('canvas.node.upload')}
+        <span className="text-[12px] font-bold text-white/38">
+          {uploading ? t('materials.uploading') : t('canvas.node.output')}
         </span>
       </div>
       <MediaOutputUploadButton kind={kind} onUpload={onUpload} onUploadingChange={setUploading} />
@@ -4379,13 +4389,17 @@ function toCssAspectRatio(value: string): string {
 }
 
 function MediaOutputUploadButton({
+  className,
   kind,
   onUpload,
   onUploadingChange,
+  showLabel = false,
 }: {
+  className?: string;
   kind: MaterialAssetKind;
   onUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
   onUploadingChange?: (uploading: boolean) => void;
+  showLabel?: boolean;
 }) {
   const { t } = useI18n();
   const [uploading, setUploading] = useState(false);
@@ -4418,7 +4432,11 @@ function MediaOutputUploadButton({
     <>
       <button
         type="button"
-        className="nodrag nopan absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/45 text-white/68 ring-1 ring-white/[0.12] transition-colors hover:bg-black/62 hover:text-white"
+        className={cn(
+          'nodrag nopan absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/45 text-white/68 ring-1 ring-white/[0.12] transition-colors hover:bg-black/62 hover:text-white disabled:cursor-not-allowed disabled:opacity-60',
+          showLabel ? 'gap-1.5 px-2.5 text-[11px] font-black' : '',
+          className,
+        )}
         aria-label={t('canvas.node.upload')}
         disabled={uploading}
         onClick={(event) => {
@@ -4432,6 +4450,9 @@ function MediaOutputUploadButton({
         ) : (
           <IconUpload size={15} stroke={2.2} />
         )}
+        {showLabel ? (
+          <span>{uploading ? t('materials.uploading') : t('canvas.node.upload')}</span>
+        ) : null}
       </button>
       <input
         ref={inputRef}

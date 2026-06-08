@@ -10,11 +10,11 @@ export function TimelineRuler({
   onSeek: (seconds: number) => void;
 }) {
   const safeDuration = Math.max(duration, 1);
-  const tickCount = Math.min(12, Math.max(4, Math.ceil(safeDuration / 2)));
+  const tickCount = Math.min(14, Math.max(4, Math.ceil(safeDuration)));
 
   return (
     <div
-      className="relative h-8 cursor-pointer border-b border-white/[0.08] bg-[#141518]"
+      className="relative h-8 cursor-pointer border-b border-white/[0.06] bg-[#17181b]"
       onClick={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
         const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
@@ -36,10 +36,10 @@ export function TimelineRuler({
         return (
           <span
             key={`tick-${index}`}
-            className="absolute top-0 flex -translate-x-1/2 flex-col items-center text-[10px] text-white/34"
+            className="absolute top-0 flex -translate-x-1/2 flex-col items-center text-[10px] font-medium text-white/34"
             style={{ left: `${left}%` }}
           >
-            <span className="mb-1 h-2 w-px bg-white/18" />
+            <span className="mb-1 h-2.5 w-px bg-white/18" />
             {formatRulerLabel(seconds)}
           </span>
         );
@@ -53,8 +53,8 @@ export function TimelineRuler({
 }
 
 function formatRulerLabel(seconds: number) {
-  const whole = Math.floor(seconds);
-  const fraction = Math.round((seconds - whole) * 10);
-  if (fraction === 0) return `${whole}s`;
-  return `${whole}.${fraction}s`;
+  const whole = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(whole / 60);
+  const remainingSeconds = whole % 60;
+  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 }

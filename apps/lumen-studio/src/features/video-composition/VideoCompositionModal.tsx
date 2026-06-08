@@ -4,10 +4,16 @@ import type { CompositionTimeline } from '@lumen/shared/domain';
 import {
   IconArrowLeft,
   IconArrowRight,
+  IconArrowsMaximize,
+  IconDeviceFloppy,
   IconPlayerPlay,
+  IconPlayerPause,
   IconScissors,
   IconTrash,
+  IconVolume,
   IconX,
+  IconZoomIn,
+  IconZoomOut,
 } from '@tabler/icons-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -81,6 +87,7 @@ export function VideoCompositionModal({
 
   const [sourceDurationByUrl, setSourceDurationByUrl] = useState<Map<string, number>>(new Map());
   const [isPlaying, setIsPlaying] = useState(false);
+  const [timelineZoom, setTimelineZoom] = useState(74);
 
   useEffect(() => {
     let cancelled = false;
@@ -162,6 +169,9 @@ export function VideoCompositionModal({
   );
 
   const selectedClip = sortedClips.find((clip) => clip.id === selectedClipId) ?? null;
+  const rulerDuration = Math.max(totalDuration, 13);
+  const timelineWidth = Math.max(980, Math.ceil(rulerDuration * timelineZoom));
+  const playheadLeft = `${(Math.min(playhead, rulerDuration) / rulerDuration) * 100}%`;
 
   const handleSave = () => {
     onSave(timeline);
@@ -169,40 +179,40 @@ export function VideoCompositionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex flex-col bg-[#0b0c0e] text-white">
-      <header className="flex items-center gap-3 border-b border-white/[0.08] px-4 py-3">
-        <button
-          type="button"
-          aria-label={t('common.close')}
-          className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.06] text-white/72 ring-1 ring-white/[0.08] hover:bg-white/[0.1]"
-          onClick={onClose}
-        >
-          <IconX size={18} />
-        </button>
+    <div className="fixed inset-0 z-[120] flex flex-col bg-[#101112] text-white">
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-white/[0.06] bg-[#111214] px-3">
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-bold">{t('canvas.composition.title')}</div>
-          <div className="text-[12px] text-white/42">{t('canvas.composition.subtitle')}</div>
+          <div className="text-[13px] font-bold">{t('canvas.composition.title')}</div>
         </div>
         <button
           type="button"
-          className="rounded-[10px] bg-white/[0.08] px-3 py-2 text-[12px] font-bold text-white/78 ring-1 ring-white/[0.08] hover:bg-white/[0.12]"
+          className="flex h-8 items-center gap-1.5 rounded-[9px] bg-white/[0.08] px-3 text-[12px] font-bold text-white/78 ring-1 ring-white/[0.08] hover:bg-white/[0.12]"
           onClick={handleSave}
         >
+          <IconDeviceFloppy size={14} />
           {t('canvas.composition.save')}
         </button>
         <button
           type="button"
           disabled={!canRun || isRunning}
-          className="rounded-[10px] bg-[#9beaff] px-3 py-2 text-[12px] font-black text-[#041015] disabled:cursor-not-allowed disabled:opacity-45"
+          className="flex h-8 items-center gap-1.5 rounded-[9px] bg-white px-3 text-[12px] font-black text-[#111315] disabled:cursor-not-allowed disabled:opacity-45"
           onClick={() => {
             onRun(timeline);
           }}
         >
           {isRunning ? t('canvas.node.running') : t('canvas.composition.render')}
         </button>
+        <button
+          type="button"
+          aria-label={t('common.close')}
+          className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-white/[0.06] text-white/72 ring-1 ring-white/[0.08] hover:bg-white/[0.1]"
+          onClick={onClose}
+        >
+          <IconX size={18} />
+        </button>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_280px]">
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_292px]">
         <CompositionPreview
           clips={sortedClips}
           playhead={playhead}
@@ -212,97 +222,139 @@ export function VideoCompositionModal({
           resolveClipUrl={resolveClipUrl}
         />
 
-        <div className="flex min-h-0 flex-col border-t border-white/[0.08] bg-[#121316]">
-          <TimelineRuler duration={totalDuration} playhead={playhead} onSeek={setPlayhead} />
-          <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2">
-            <button
-              type="button"
-              className="flex h-8 items-center gap-1 rounded-[8px] bg-white/[0.08] px-2 text-[11px] font-bold"
-              onClick={() => setIsPlaying((current) => !current)}
-            >
-              <IconPlayerPlay size={14} />
-              {isPlaying ? t('canvas.composition.pause') : t('canvas.composition.play')}
-            </button>
+        <div className="flex min-h-0 flex-col border-t border-white/[0.08] bg-[#17181b] shadow-[0_-24px_80px_rgba(0,0,0,0.42)]">
+          <div className="flex h-11 shrink-0 items-center gap-2 border-b border-white/[0.06] px-3">
             <button
               type="button"
               disabled={!selectedClip}
-              className="flex h-8 items-center gap-1 rounded-[8px] bg-white/[0.08] px-2 text-[11px] font-bold disabled:opacity-35"
+              title={t('canvas.composition.split')}
+              className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-white/[0.07] text-white/68 ring-1 ring-white/[0.06] hover:bg-white/[0.12] disabled:opacity-30"
               onClick={() => splitClipAtPlayhead(sourceDurationByUrl)}
             >
-              <IconScissors size={14} />
-              {t('canvas.composition.split')}
+              <IconScissors size={15} />
             </button>
             <button
               type="button"
               disabled={!selectedClip}
-              className="flex h-8 items-center gap-1 rounded-[8px] bg-white/[0.08] px-2 text-[11px] font-bold disabled:opacity-35"
+              title={t('canvas.composition.delete')}
+              className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-white/[0.07] text-white/68 ring-1 ring-white/[0.06] hover:bg-white/[0.12] disabled:opacity-30"
               onClick={() => selectedClip && deleteClip(selectedClip.id)}
             >
-              <IconTrash size={14} />
-              {t('canvas.composition.delete')}
+              <IconTrash size={15} />
             </button>
             <button
               type="button"
               disabled={!selectedClip}
-              className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-white/[0.08] disabled:opacity-35"
+              title={t('canvas.composition.moveLeft')}
+              className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-white/[0.07] text-white/68 ring-1 ring-white/[0.06] hover:bg-white/[0.12] disabled:opacity-30"
               onClick={() => selectedClip && moveClip(selectedClip.id, -1)}
             >
-              <IconArrowLeft size={14} />
+              <IconArrowLeft size={15} />
             </button>
             <button
               type="button"
               disabled={!selectedClip}
-              className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-white/[0.08] disabled:opacity-35"
+              title={t('canvas.composition.moveRight')}
+              className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-white/[0.07] text-white/68 ring-1 ring-white/[0.06] hover:bg-white/[0.12] disabled:opacity-30"
               onClick={() => selectedClip && moveClip(selectedClip.id, 1)}
             >
-              <IconArrowRight size={14} />
+              <IconArrowRight size={15} />
             </button>
-            {selectedClip ? (
-              <div className="ml-auto flex items-center gap-2 text-[11px] text-white/52">
-                <label className="flex items-center gap-1">
-                  {t('canvas.composition.trimIn')}
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.1}
-                    value={Number(selectedClip.sourceIn.toFixed(2))}
-                    className="w-16 rounded-[6px] bg-[#1c1d20] px-1 py-0.5 text-white"
-                    onChange={(event) => {
-                      const next = Number(event.target.value);
-                      if (!Number.isFinite(next)) return;
-                      const delta = next - selectedClip.sourceIn;
-                      trimClipLeft(selectedClip.id, delta);
-                    }}
-                  />
-                </label>
-                <label className="flex items-center gap-1">
-                  {t('canvas.composition.duration')}
-                  <input
-                    type="number"
-                    min={0.25}
-                    step={0.1}
-                    value={Number(selectedClip.duration.toFixed(2))}
-                    className="w-16 rounded-[6px] bg-[#1c1d20] px-1 py-0.5 text-white"
-                    onChange={(event) => {
-                      const next = Number(event.target.value);
-                      if (!Number.isFinite(next)) return;
-                      trimClipRight(selectedClip.id, next);
-                    }}
-                  />
-                </label>
-              </div>
-            ) : null}
+            <div className="ml-auto flex items-center gap-2">
+              <span className="min-w-[42px] text-right text-[12px] font-bold text-white/58">
+                {formatCompositionTime(playhead)}
+              </span>
+              <button
+                type="button"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_10px_28px_rgba(0,0,0,0.32)]"
+                onClick={() => setIsPlaying((current) => !current)}
+              >
+                {isPlaying ? <IconPlayerPause size={17} /> : <IconPlayerPlay size={17} />}
+              </button>
+              <span className="min-w-[42px] text-[12px] font-bold text-white/58">
+                {formatCompositionTime(totalDuration)}
+              </span>
+            </div>
+            <div className="ml-auto flex items-center gap-2 text-white/52">
+              <IconVolume size={15} />
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={timeline.bgmVolume ?? 0.8}
+                className="w-20 accent-white"
+                onChange={(event) =>
+                  updateTimeline({ bgmVolume: Number(event.target.value) })
+                }
+              />
+              <IconZoomOut size={15} />
+              <input
+                type="range"
+                min={48}
+                max={120}
+                step={2}
+                value={timelineZoom}
+                className="w-24 accent-white"
+                onChange={(event) => setTimelineZoom(Number(event.target.value))}
+              />
+              <IconZoomIn size={15} />
+              <button
+                type="button"
+                title={t('common.fullscreen')}
+                className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-white/[0.07] text-white/68 ring-1 ring-white/[0.06] hover:bg-white/[0.12]"
+                onClick={() => document.documentElement.requestFullscreen?.()}
+              >
+                <IconArrowsMaximize size={15} />
+              </button>
+            </div>
           </div>
-          <BgmTrack bgmUrl={bgmUrl} volume={timeline.bgmVolume ?? 0.8} />
-          <VideoTrack
-            clips={sortedClips}
-            selectedClipId={selectedClipId}
-            onSelectClip={setSelectedClipId}
-            onMoveClipToIndex={moveClipToIndex}
-            onTrimClipLeft={trimClipLeft}
-            onTrimClipRight={trimClipRightByDelta}
-          />
-          <div className="flex items-center gap-3 border-t border-white/[0.06] px-3 py-2 text-[11px] text-white/42">
+
+          <div className="min-h-0 flex-1 overflow-x-auto px-4 pb-4 pt-2">
+            <div className="relative" style={{ width: timelineWidth }}>
+              <TimelineRuler
+                duration={rulerDuration}
+                playhead={playhead}
+                onSeek={(seconds) => setPlayhead(Math.min(totalDuration, seconds))}
+              />
+              <span
+                className="pointer-events-none absolute bottom-0 top-0 z-30 w-px bg-white/76 shadow-[0_0_0_1px_rgba(0,0,0,0.24)]"
+                style={{ left: playheadLeft }}
+              >
+                <span className="absolute -left-[5px] top-0 h-3 w-3 rounded-sm bg-white" />
+              </span>
+              <div className="grid grid-cols-[64px_1fr] gap-2 pt-2">
+                <div className="flex h-20 items-center gap-2 text-white/44">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-white/[0.06] ring-1 ring-white/[0.06]">
+                    <IconPlayerPlay size={14} />
+                  </span>
+                  <span className="text-[11px] font-bold">V</span>
+                </div>
+                <VideoTrack
+                  clips={sortedClips}
+                  pixelsPerSecond={timelineZoom}
+                  selectedClipId={selectedClipId}
+                  onSelectClip={setSelectedClipId}
+                  onMoveClipToIndex={moveClipToIndex}
+                  onTrimClipLeft={trimClipLeft}
+                  onTrimClipRight={trimClipRightByDelta}
+                  resolveClipUrl={resolveClipUrl}
+                  emptyLabel={t('canvas.composition.emptyTrack')}
+                />
+              </div>
+              <div className="grid grid-cols-[64px_1fr] gap-2">
+                <div className="flex h-10 items-center gap-2 text-white/44">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-white/[0.06] ring-1 ring-white/[0.06]">
+                    <IconVolume size={14} />
+                  </span>
+                  <span className="text-[11px] font-bold">A</span>
+                </div>
+                <BgmTrack bgmUrl={bgmUrl} volume={timeline.bgmVolume ?? 0.8} />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex h-10 shrink-0 items-center gap-3 border-t border-white/[0.06] px-3 text-[11px] text-white/42">
             <ParamSelect
               label={t('canvas.node.ratio')}
               value={timeline.aspectRatio}
@@ -319,25 +371,54 @@ export function VideoCompositionModal({
                 updateTimeline({ resolution: value as CompositionTimeline['resolution'] })
               }
             />
-            <label className="flex items-center gap-1">
-              BGM
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={timeline.bgmVolume ?? 0.8}
-                onChange={(event) =>
-                  updateTimeline({ bgmVolume: Number(event.target.value) })
-                }
-              />
-            </label>
-            <span className="ml-auto">{totalDuration.toFixed(1)}s</span>
+            {selectedClip ? (
+              <div className="ml-auto flex items-center gap-2">
+                <label className="flex items-center gap-1">
+                  {t('canvas.composition.trimIn')}
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    value={Number(selectedClip.sourceIn.toFixed(2))}
+                    className="w-16 rounded-[6px] bg-[#242529] px-1 py-0.5 text-white"
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      if (!Number.isFinite(next)) return;
+                      const delta = next - selectedClip.sourceIn;
+                      trimClipLeft(selectedClip.id, delta);
+                    }}
+                  />
+                </label>
+                <label className="flex items-center gap-1">
+                  {t('canvas.composition.duration')}
+                  <input
+                    type="number"
+                    min={0.25}
+                    step={0.1}
+                    value={Number(selectedClip.duration.toFixed(2))}
+                    className="w-16 rounded-[6px] bg-[#242529] px-1 py-0.5 text-white"
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      if (!Number.isFinite(next)) return;
+                      trimClipRight(selectedClip.id, next);
+                    }}
+                  />
+                </label>
+              </div>
+            ) : null}
+            <span className={selectedClip ? '' : 'ml-auto'}>{totalDuration.toFixed(1)}s</span>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function formatCompositionTime(seconds: number) {
+  const whole = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(whole / 60);
+  const remainingSeconds = whole % 60;
+  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
 function ParamSelect({

@@ -3,12 +3,22 @@
 import { parseCompositionTimeline } from '@lumen/shared/domain';
 import type { PublicErrorFields } from '@lumen/shared/domain';
 import {
+  IconLoader2,
   IconPlayerPlay,
   IconPlayerStop,
   IconScissors,
+  IconUpload,
 } from '@tabler/icons-react';
 import { Handle, Position, useReactFlow } from '@xyflow/react';
-import { useCallback, useContext, useMemo, useState, type MouseEvent } from 'react';
+import {
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type MouseEvent,
+} from 'react';
 
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { getTimelineDuration } from '@/features/video-composition/resolvePlayheadClip';
@@ -51,9 +61,12 @@ export function CompositionFlowNode({
     runSingleNode,
     cancelNodes,
     updateNodeData,
+    uploadCanvasMedia,
     canRunNode,
     openCompositionEditor,
   } = useContext(CanvasActionsContext);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   const status = data.status ?? 'idle';
   const progress = data.progress ?? (status === 'running' ? 0.45 : 0);
@@ -99,6 +112,30 @@ export function CompositionFlowNode({
     [id, openCompositionEditor],
   );
 
+  const handleUploadCompositionVideo = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+
+      const previousValue = data.output ?? null;
+      const previewUrl = URL.createObjectURL(file);
+      setUploading(true);
+      updateNodeData(id, { output: previewUrl });
+      try {
+        const uploadedUrl = await uploadCanvasMedia(file, 'video', id);
+        updateNodeData(id, { output: uploadedUrl });
+      } catch (error) {
+        console.error(error);
+        updateNodeData(id, { output: previousValue });
+      } finally {
+        URL.revokeObjectURL(previewUrl);
+        setUploading(false);
+      }
+    },
+    [data.output, id, updateNodeData, uploadCanvasMedia],
+  );
+
   const confirmStopNode = useCallback(() => {
     cancelNodes([id]);
     setCancelConfirmOpen(false);
@@ -126,6 +163,29 @@ export function CompositionFlowNode({
       >
         {upstreamOutputCount}
       </div>
+
+      <button
+        type="button"
+        data-skip-node-select="true"
+        className="nodrag nopan absolute -top-4 right-14 z-[90] flex h-8 items-center gap-1.5 rounded-full bg-white px-3 text-[11px] font-black text-[#111315] shadow-[0_12px_30px_rgba(0,0,0,0.32)] transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={uploading}
+        onClick={(event) => {
+          event.stopPropagation();
+          uploadInputRef.current?.click();
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {uploading ? <IconLoader2 size={14} className="animate-spin" /> : <IconUpload size={14} />}
+        {uploading ? t('materials.uploading') : t('canvas.node.upload')}
+      </button>
+      <input
+        ref={uploadInputRef}
+        className="sr-only"
+        type="file"
+        accept="video/*"
+        disabled={uploading}
+        onChange={handleUploadCompositionVideo}
+      />
 
       <Handle
         type="target"
