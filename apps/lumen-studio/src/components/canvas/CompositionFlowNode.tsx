@@ -152,7 +152,7 @@ export function CompositionFlowNode({
           <button
             type="button"
             data-skip-node-select="true"
-            className="nodrag nopan relative flex w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-[10px] bg-[linear-gradient(160deg,rgba(155,234,255,0.12),rgba(28,29,34,0.98)_54%,rgba(8,9,10,0.9))] px-4 py-6 ring-1 ring-white/[0.06] transition-colors hover:ring-[#9beaff]/28"
+            className="relative flex w-full cursor-grab flex-col items-center justify-center gap-2 overflow-hidden rounded-[10px] bg-[linear-gradient(160deg,rgba(155,234,255,0.12),rgba(28,29,34,0.98)_54%,rgba(8,9,10,0.9))] px-4 py-6 ring-1 ring-white/[0.06] transition-colors hover:ring-[#9beaff]/28 active:cursor-grabbing"
             onClick={handleOpenEditor}
           >
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#9beaff]/14 text-[#9beaff] ring-1 ring-[#9beaff]/24">
