@@ -6,6 +6,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from 'react';
+import { useRef } from 'react';
 
 function resolveDropIndex(pointerX: number, pointerY: number, fallbackIndex: number): number {
   const hit = document
@@ -60,6 +61,7 @@ export function TimelineClipBlock({
   onTrimRight: (deltaSeconds: number) => void;
 }) {
   const width = Math.max(64, clip.duration * pixelsPerSecond);
+  const reorderActiveRef = useRef(false);
 
   const beginTrim = (side: 'left' | 'right', event: ReactPointerEvent<HTMLSpanElement>) => {
     event.preventDefault();
@@ -92,25 +94,48 @@ export function TimelineClipBlock({
     window.addEventListener('pointercancel', handleEnd);
   };
 
-  const beginReorder = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    if ((event.target as HTMLElement).closest('[data-composition-trim-handle]')) return;
+  const startReorder = ({
+    element,
+    target,
+    startX,
+    startY,
+    pointerId,
+    mode,
+  }: {
+    element: HTMLDivElement;
+    target: EventTarget | null;
+    startX: number;
+    startY: number;
+    pointerId?: number;
+    mode: 'mouse' | 'pointer';
+  }) => {
+    if (reorderActiveRef.current) return;
+    if ((target as HTMLElement | null)?.closest?.('[data-composition-trim-handle]')) return;
 
-    const element = event.currentTarget;
-    const startX = event.clientX;
-    const startY = event.clientY;
+    reorderActiveRef.current = true;
     let moved = false;
+    const moveEventName = mode === 'pointer' ? 'pointermove' : 'mousemove';
+    const endEventName = mode === 'pointer' ? 'pointerup' : 'mouseup';
+
+    if (mode === 'pointer' && pointerId !== undefined) {
+      element.setPointerCapture?.(pointerId);
+    }
 
     const cleanup = () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener(moveEventName, handleMove);
+      window.removeEventListener(endEventName, handleEnd);
+      if (mode === 'pointer') window.removeEventListener('pointercancel', handleEnd);
+      if (mode === 'pointer' && pointerId !== undefined) {
+        element.releasePointerCapture?.(pointerId);
+      }
+      reorderActiveRef.current = false;
       element.style.pointerEvents = '';
       element.style.transform = '';
       element.style.zIndex = '';
       element.style.opacity = '';
     };
 
-    const handleMove = (moveEvent: MouseEvent) => {
+    const handleMove = (moveEvent: MouseEvent | PointerEvent) => {
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
       if (!moved && Math.hypot(deltaX, deltaY) < 6) return;
@@ -123,7 +148,7 @@ export function TimelineClipBlock({
       element.style.opacity = '0.78';
     };
 
-    const handleEnd = (endEvent: MouseEvent) => {
+    const handleEnd = (endEvent: MouseEvent | PointerEvent) => {
       const wasMoved = moved;
       const targetIndex = wasMoved
         ? resolveDropIndex(endEvent.clientX, endEvent.clientY, index)
@@ -139,8 +164,30 @@ export function TimelineClipBlock({
       if (targetIndex !== index) onMoveToIndex(targetIndex);
     };
 
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleEnd);
+    window.addEventListener(moveEventName, handleMove);
+    window.addEventListener(endEventName, handleEnd);
+    if (mode === 'pointer') window.addEventListener('pointercancel', handleEnd);
+  };
+
+  const beginPointerReorder = (event: ReactPointerEvent<HTMLDivElement>) => {
+    startReorder({
+      element: event.currentTarget,
+      target: event.target,
+      startX: event.clientX,
+      startY: event.clientY,
+      pointerId: event.pointerId,
+      mode: 'pointer',
+    });
+  };
+
+  const beginMouseReorder = (event: ReactMouseEvent<HTMLDivElement>) => {
+    startReorder({
+      element: event.currentTarget,
+      target: event.target,
+      startX: event.clientX,
+      startY: event.clientY,
+      mode: 'mouse',
+    });
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -163,7 +210,8 @@ export function TimelineClipBlock({
       }`}
       style={{ width }}
       onKeyDown={handleKeyDown}
-      onMouseDown={beginReorder}
+      onPointerDownCapture={beginPointerReorder}
+      onMouseDownCapture={beginMouseReorder}
       onClick={(event) => {
         if (event.currentTarget.dataset.compositionWasDragged === 'true') {
           event.preventDefault();
