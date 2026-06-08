@@ -29,6 +29,8 @@ interface VideoGenerationResult {
   };
 }
 
+const VEO_ASPECT_RATIOS = new Set(['16:9', '9:16']);
+
 export async function execute(
   input: ResolvedInput,
   settings: Record<string, unknown>,
@@ -38,10 +40,7 @@ export async function execute(
   throwIfCancelled(signal);
   const client = getGoogleClient();
 
-  const aspectRatio =
-    readStringSetting(settings, 'aspect_ratio') ??
-    readStringSetting(settings, 'aspectRatio') ??
-    '16:9';
+  const aspectRatio = readAspectRatio(settings);
   const resolution = readStringSetting(settings, 'resolution');
   // veo-3.1 text_to_video 仅支持 [4, 6, 8] 秒，向上吸附到最近的合法值；
   // 1080p / 4k 仅支持 8s（Veo 额外约束），其余尊重用户选择并 clamp。
@@ -116,6 +115,12 @@ export async function execute(
 function readStringSetting(settings: Record<string, unknown>, key: string): string | null {
   const value = settings[key];
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function readAspectRatio(settings: Record<string, unknown>): string {
+  const value =
+    readStringSetting(settings, 'aspect_ratio') ?? readStringSetting(settings, 'aspectRatio');
+  return value && VEO_ASPECT_RATIOS.has(value) ? value : '16:9';
 }
 
 function readNumberSetting(settings: Record<string, unknown>, key: string): number | null {

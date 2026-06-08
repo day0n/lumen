@@ -619,6 +619,15 @@ function getAspectRatio(settings: Record<string, unknown>, modelId?: string) {
   return isSupportedAspectRatio(value) ? value : '16:9';
 }
 
+function normalizeModelSettings(settings: Record<string, unknown>, modelId?: string) {
+  const aspectRatio = getAspectRatio(settings, modelId);
+  return {
+    ...settings,
+    aspectRatio,
+    aspect_ratio: aspectRatio,
+  };
+}
+
 function isSupportedAspectRatio(value: string): value is (typeof aspectRatioOptions)[number] {
   return aspectRatioOptions.includes(value as (typeof aspectRatioOptions)[number]);
 }
@@ -856,6 +865,7 @@ function toWorkflowNodes(nodes: LumenNode[], edges: LumenEdge[]) {
   }
 
   return nodes.map((node) => {
+    const modelId = resolveModelId(node.data);
     const inputImage = getSettingString(node.data.settings, 'inputImage');
     const inputLastFrameImage = getSettingString(node.data.settings, 'inputLastFrameImage');
     const inputVideo = getSettingString(node.data.settings, 'inputVideo');
@@ -864,13 +874,17 @@ function toWorkflowNodes(nodes: LumenNode[], edges: LumenEdge[]) {
       node.data.kind === 'image'
         ? findDownstreamVideoAspectRatio(node.id, nodeById, outgoingBySource)
         : null;
-    const settings = inheritedAspectRatio
+    const baseSettings = inheritedAspectRatio
       ? {
           ...node.data.settings,
           aspectRatio: inheritedAspectRatio,
           aspect_ratio: inheritedAspectRatio,
         }
       : node.data.settings;
+    const settings =
+      node.data.kind === 'image' || node.data.kind === 'video'
+        ? normalizeModelSettings(baseSettings, modelId)
+        : baseSettings;
 
     return {
       id: node.id,
@@ -895,7 +909,7 @@ function toWorkflowNodes(nodes: LumenNode[], edges: LumenEdge[]) {
         ),
         clips: getSettingVideoClips(node.data.settings).filter((clip) => !isBlobUrl(clip.url)),
       },
-      model: { id: resolveModelId(node.data), settings },
+      model: { id: modelId, settings },
     };
   });
 }
