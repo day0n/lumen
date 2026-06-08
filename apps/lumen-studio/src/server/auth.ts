@@ -1,7 +1,9 @@
 import 'server-only';
 
+import { verifyToken } from '@clerk/backend';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import type { UserRecord } from '@lumen/db';
+import { headers } from 'next/headers';
 
 import { getUserRepository } from './db';
 
@@ -18,7 +20,7 @@ export class UnauthorizedError extends Error {
  */
 export async function getClerkUserId(): Promise<string | null> {
   const { userId } = await auth();
-  return userId;
+  return userId ?? (await getBearerClerkUserId());
 }
 
 /**
@@ -29,17 +31,22 @@ export async function getClerkUserId(): Promise<string | null> {
  */
 export async function requireStudioUser(): Promise<UserRecord> {
   const { userId } = await auth();
-  if (!userId) {
+  const clerkUserId = userId ?? (await getBearerClerkUserId());
+  if (!clerkUserId) {
     throw new UnauthorizedError();
   }
 
   const repository = await getUserRepository();
-  const cachedUser = await repository.getByClerkId(userId);
+  const cachedUser = await repository.getByClerkId(clerkUserId);
   if (cachedUser) return cachedUser;
+
+  if (!userId) {
+    return repository.upsertFromClerk({ clerkUserId });
+  }
 
   const clerkUser = await currentUser();
   if (!clerkUser) {
-    throw new UnauthorizedError();
+    return repository.upsertFromClerk({ clerkUserId });
   }
 
   const primaryEmail = clerkUser.emailAddresses.find(
@@ -56,4 +63,25 @@ export async function requireStudioUser(): Promise<UserRecord> {
     fullName: fullName.length > 0 ? fullName : undefined,
     imageUrl: clerkUser.imageUrl,
   });
+}
+
+async function getBearerClerkUserId(): Promise<string | null> {
+  const token = await readBearerToken();
+  if (!token) return null;
+
+  const secretKey = process.env.CLERK_SECRET_KEY;
+  if (!secretKey) return null;
+
+  try {
+    const payload = await verifyToken(token, { secretKey });
+    return typeof payload.sub === 'string' && payload.sub ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readBearerToken(): Promise<string | null> {
+  const authorization = (await headers()).get('authorization');
+  const match = authorization?.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
 }
