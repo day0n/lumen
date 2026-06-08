@@ -150,13 +150,22 @@ export function Topbar() {
             <LanguageToggle compact iconOnlyOnMobile />
 
             {(!authLoaded || !isSignedIn) && (
-              <Link
-                href={localePath(`/sign-in?redirect_url=${authRedirect}`)}
-                prefetch={false}
-                className="flex min-h-11 max-w-[108px] items-center justify-center truncate rounded-full bg-white px-3 text-[12px] font-semibold text-black transition-opacity hover:opacity-90 sm:max-w-none sm:px-3.5 sm:text-[13px]"
-              >
-                {t('common.login')}
-              </Link>
+              <div className="flex items-center gap-1">
+                <Link
+                  href={localePath(`/sign-in?redirect_url=${authRedirect}`)}
+                  prefetch={false}
+                  className="hidden min-h-11 items-center rounded-full px-3 text-[13px] font-medium text-white/70 transition-colors hover:text-white sm:flex"
+                >
+                  {t('common.login')}
+                </Link>
+                <Link
+                  href={localePath(`/sign-up?redirect_url=${authRedirect}`)}
+                  prefetch={false}
+                  className="flex min-h-11 max-w-[108px] items-center justify-center truncate rounded-full bg-white px-3 text-[12px] font-semibold text-black transition-opacity hover:opacity-90 sm:max-w-none sm:px-3.5 sm:text-[13px]"
+                >
+                  {t('common.signup')}
+                </Link>
+              </div>
             )}
 
             {authLoaded && isSignedIn && (

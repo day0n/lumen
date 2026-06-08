@@ -712,18 +712,6 @@ const en = {
   auth: {
     signInPath: '/sign-in',
     signUpPath: '/sign-up',
-    noAccount: "Don't have an account?",
-    signUpLink: 'Sign up',
-    invite: {
-      title: 'Invitation only',
-      body: 'Lumen is currently invite-only. Paste the invitation code (or invitation link) your admin sent you to continue.',
-      placeholder: 'Paste invitation code or invitation link',
-      continue: 'Continue',
-      invalid:
-        "We couldn't find an invitation code in what you pasted. Make sure you copied the whole code or link.",
-      haveAccount: 'Already have an account?',
-      signIn: 'Sign in',
-    },
     loading: 'Loading sign-in…',
     troubleshoot: {
       title: 'Sign-in is taking longer than expected',
@@ -1440,17 +1428,6 @@ const zh: typeof en = {
   auth: {
     signInPath: '/sign-in',
     signUpPath: '/sign-up',
-    noAccount: '还没有账号？',
-    signUpLink: '注册',
-    invite: {
-      title: '仅限邀请',
-      body: 'Lumen 目前为邀请制。请将管理员发给你的邀请码（或邀请链接）粘贴到下方继续注册。',
-      placeholder: '粘贴邀请码或邀请链接',
-      continue: '继续',
-      invalid: '没识别到有效的邀请码，请确认邀请码或链接是否完整复制。',
-      haveAccount: '已有账号？',
-      signIn: '登录',
-    },
     loading: '正在加载登录组件…',
     troubleshoot: {
       title: '登录加载得有点慢',
