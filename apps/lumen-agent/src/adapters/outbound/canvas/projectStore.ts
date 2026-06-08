@@ -3,8 +3,8 @@ import type { Collection, Db } from 'mongodb';
 
 import {
   type LumenCanvas,
-  LumenCanvasSchema,
   type WorkflowEditSummary,
+  normalizeWorkflowCanvas,
   summarizeWorkflowEdit,
 } from '@lumen/shared/domain';
 
@@ -75,7 +75,7 @@ export class ProjectWorkflowStore {
     const current = await this.getProject(input.userId, input.projectId);
     if (!current) return null;
 
-    const canvas = LumenCanvasSchema.parse(input.canvas);
+    const canvas = normalizeWorkflowCanvas(input.canvas);
     const now = new Date();
     const set: Partial<ProjectDocument> = {
       canvas,
@@ -146,7 +146,7 @@ function toProject(doc: ProjectDocument): WorkflowProject {
     id: doc._id,
     ownerId: doc.owner_id,
     title: doc.title,
-    canvas: LumenCanvasSchema.parse(doc.canvas ?? { nodes: [], edges: [] }),
+    canvas: normalizeWorkflowCanvas(doc.canvas ?? { nodes: [], edges: [] }),
     updatedAt: doc.updated_at,
   };
 }

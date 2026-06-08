@@ -1,8 +1,5 @@
 import { z } from 'zod';
-import {
-  parseCompositionTimeline,
-  tryCompileCompositionClips,
-} from './composition.js';
+import { parseCompositionTimeline, tryCompileCompositionClips } from './composition.js';
 import {
   EdgeSchema,
   type ModelConfig,
@@ -130,7 +127,19 @@ export function getSupportedWorkflowModelIds(kind: z.infer<typeof NodeTypeSchema
 }
 
 export function normalizeWorkflowCanvas(value: unknown): LumenCanvas {
-  return LumenCanvasSchema.parse(value);
+  return stripUndefinedValues(LumenCanvasSchema.parse(value));
+}
+
+function stripUndefinedValues<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefinedValues(item)) as T;
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, item]) => item !== undefined)
+    .map(([key, item]) => [key, stripUndefinedValues(item)]);
+  return Object.fromEntries(entries) as T;
 }
 
 export function validateWorkflowCanvas(canvas: LumenCanvas): string[] {

@@ -45,7 +45,9 @@ export type CompositionCompileResult =
   | { ok: true; clips: VideoClipInput[] }
   | { ok: false; missing: string[] };
 
-export function parseCompositionTimeline(settings: Record<string, unknown>): CompositionTimeline | null {
+export function parseCompositionTimeline(
+  settings: Record<string, unknown>,
+): CompositionTimeline | null {
   const raw = settings.timeline;
   if (!raw || typeof raw !== 'object') return null;
   const parsed = CompositionTimelineSchema.safeParse(raw);
@@ -70,9 +72,7 @@ export function tryCompileCompositionClips(
   }
 
   const lookup =
-    videoUrlByNodeId instanceof Map
-      ? videoUrlByNodeId
-      : new Map(Object.entries(videoUrlByNodeId));
+    videoUrlByNodeId instanceof Map ? videoUrlByNodeId : new Map(Object.entries(videoUrlByNodeId));
 
   const missing: string[] = [];
   const clips: VideoClipInput[] = [];
