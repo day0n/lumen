@@ -105,6 +105,7 @@ import { checkCycle } from '@/lib/canvas/cycle-detection';
 import { canRunSelectedNodes, canRunSingleNode } from '@/lib/canvas/node-run-check';
 import type { NodeKind } from '@/lib/canvas/types';
 import { formatPublicWorkflowError } from '@/lib/public-workflow-error';
+import { useAuth } from '@clerk/nextjs';
 
 import { ImeTextarea } from './ImeTextarea';
 
@@ -1024,6 +1025,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const searchParams = useSearchParams();
   const { locale, t, localePath } = useI18n();
   const { isLoaded: authReady, isSignedIn, requireLogin } = useLoginRedirect();
+  const { getToken } = useAuth();
   const [initialPrompt] = useState(() => readCanvasEntrySearchParam(searchParams, 'prompt'));
   const [agentChatParam] = useState(() => readCanvasEntrySearchParam(searchParams, 'agent'));
   const shouldOpenAgentChat = agentChatParam !== 'closed';
@@ -1300,14 +1302,21 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         if (currentProjectId) form.set('workflowId', currentProjectId);
         if (nodeId) form.set('nodeId', nodeId);
 
+        const token = await getToken().catch(() => null);
+        const headers: Record<string, string> = { 'x-lumen-locale': locale };
+        if (token) headers.Authorization = `Bearer ${token}`;
+
         const response = await fetch('/api/canvas/uploads', {
           method: 'POST',
-          headers: { 'x-lumen-locale': locale },
+          headers,
           body: form,
         });
-        const payload = (await response.json()) as CanvasUploadApiResponse;
-        if (!response.ok || !payload.ok) {
-          throw new Error(payload.ok ? t('materials.uploadFailed') : payload.error.message);
+        const payload = (await response.json().catch(() => null)) as CanvasUploadApiResponse | null;
+        if (!response.ok || !payload?.ok) {
+          if (response.status === 401) requireLogin();
+          throw new Error(
+            payload && !payload.ok ? payload.error.message : t('materials.uploadFailed'),
+          );
         }
         return payload.data.asset.url;
       } finally {
@@ -1315,7 +1324,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         if (pendingCanvasUploads.current === 0) setCanvasMediaUploading(false);
       }
     },
-    [currentProjectId, locale, t],
+    [currentProjectId, getToken, locale, requireLogin, t],
   );
 
   useEffect(() => {

@@ -11,7 +11,7 @@ import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { toHotVideoMediaUrl } from '@/lib/hot-video-media-url';
 import { readClientApiJson } from '@/lib/read-api-json';
-import { useUser } from '@clerk/nextjs';
+import { useAuth, useUser } from '@clerk/nextjs';
 import type { HotVideoRecord } from '@lumen/db';
 import {
   IconArrowRight,
@@ -1205,6 +1205,7 @@ function ReplicaConfigModal({
   onClose: () => void;
 }) {
   const { locale, t } = useI18n();
+  const { getToken } = useAuth();
   const fileInputId = useId();
   const creatorFileInputId = useId();
   const environmentFileInputId = useId();
@@ -1341,9 +1342,13 @@ function ReplicaConfigModal({
     form.set('kind', 'image');
     form.set('nodeId', nodeId);
 
+    const token = await getToken().catch(() => null);
+    const headers: Record<string, string> = { 'x-lumen-locale': locale };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
     const response = await fetch('/api/canvas/uploads', {
       method: 'POST',
-      headers: { 'x-lumen-locale': locale },
+      headers,
       body: form,
       signal,
     });
