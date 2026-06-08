@@ -2,7 +2,9 @@ import {
   type NodeType,
   type VideoClipInput,
   type WorkflowNode,
+  compileCompositionClips,
   mergeTextOutputIntoNodePrompt,
+  parseCompositionTimeline,
 } from '@lumen/shared/domain';
 
 import type { WorkflowGraph } from './graph.js';
@@ -28,9 +30,9 @@ function applyVideoFrameInputs(resolved: ResolvedInput, upstreamImages: string[]
 
   if (!resolved.image && !resolved.lastFrameImage) {
     const [upstreamFirst, upstreamLast] = distinctUpstreamImages;
-    if (!upstreamFirst || !upstreamLast) return;
+    if (!upstreamFirst) return;
     resolved.image = upstreamFirst;
-    resolved.lastFrameImage = upstreamLast;
+    resolved.lastFrameImage = upstreamLast ?? null;
     return;
   }
 
@@ -41,6 +43,37 @@ function applyVideoFrameInputs(resolved: ResolvedInput, upstreamImages: string[]
     resolved.image =
       distinctUpstreamImages.find((output) => output !== resolved.lastFrameImage) ?? null;
   }
+}
+
+function resolveCompositionInput(
+  graph: WorkflowGraph,
+  nodeId: string,
+  node: WorkflowNode,
+  resolved: ResolvedInput,
+) {
+  const videoUrlByNodeId = new Map<string, string>();
+
+  for (const predecessorId of graph.inNeighbors(nodeId)) {
+    const predecessor = graph.getNodeAttributes(predecessorId) as WorkflowNode;
+    const upstreamOutput = predecessor.output?.trim();
+    if (!upstreamOutput) continue;
+
+    switch (predecessor.type) {
+      case 'video':
+        videoUrlByNodeId.set(predecessorId, upstreamOutput);
+        break;
+      case 'audio':
+        addResolvedAudio(resolved, upstreamOutput);
+        break;
+      default:
+        break;
+    }
+  }
+
+  const timeline = parseCompositionTimeline(node.model.settings ?? {});
+  resolved.clips = compileCompositionClips(timeline, videoUrlByNodeId);
+  resolved.video = null;
+  resolved.videos = [];
 }
 
 export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInput {
@@ -55,8 +88,14 @@ export function resolveInput(graph: WorkflowGraph, nodeId: string): ResolvedInpu
     videos: [...node.input.videos],
     audio: node.input.audio,
     audios: [...node.input.audios],
-    clips: [...node.input.clips],
+    clips: node.type === 'composition' ? [] : [...node.input.clips],
   };
+
+  if (node.type === 'composition') {
+    resolveCompositionInput(graph, nodeId, node, resolved);
+    return resolved;
+  }
+
   const upstreamImages: string[] = [];
 
   for (const predecessorId of graph.inNeighbors(nodeId)) {

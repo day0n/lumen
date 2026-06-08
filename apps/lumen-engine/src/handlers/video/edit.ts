@@ -139,19 +139,25 @@ export async function execute(
 }
 
 function collectClips(input: ResolvedInput): VideoClipInput[] {
-  const byUrl = new Set<string>();
   const result: VideoClipInput[] = [];
 
-  const add = (clip: VideoClipInput) => {
+  for (const clip of input.clips) {
     const url = clip.url.trim();
-    if (!url || byUrl.has(url)) return;
-    byUrl.add(url);
+    if (!url) continue;
     result.push({ ...clip, url });
-  };
+  }
 
-  for (const clip of input.clips) add(clip);
-  for (const url of input.videos) add({ url });
-  if (input.video) add({ url: input.video });
+  const seen = new Set(result.map((clip) => clip.url));
+  for (const url of input.videos) {
+    const trimmed = url.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push({ url: trimmed });
+  }
+  if (input.video) {
+    const trimmed = input.video.trim();
+    if (trimmed && !seen.has(trimmed)) result.push({ url: trimmed });
+  }
 
   return result;
 }

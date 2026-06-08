@@ -34,6 +34,7 @@ import {
   IconPlayerPlay,
   IconPlayerStop,
   IconPlus,
+  IconScissors,
   IconSelectAll,
   IconShare3,
   IconSparkles,
@@ -80,15 +81,7 @@ import type {
 import { AnimatePresence } from 'motion/react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ChangeEvent,
   MouseEvent,
@@ -98,7 +91,10 @@ import type {
 } from 'react';
 
 import { CanvasHydrationOverlay } from '@/components/canvas/CanvasHydrationOverlay';
+import { CompositionFlowNode } from '@/components/canvas/CompositionFlowNode';
+import { CanvasActionsContext } from '@/components/canvas/canvas-actions-context';
 import { ChatPanel } from '@/features/agent-chat/ChatPanel';
+import { VideoCompositionModal } from '@/features/video-composition/VideoCompositionModal';
 import { useWorkflowReconcile } from '@/features/workflow/use-workflow-reconcile';
 import { useWorkflowWs } from '@/features/workflow/use-workflow-ws';
 import type { NodeState } from '@/features/workflow/use-workflow-ws';
@@ -145,25 +141,7 @@ type LumenNode = Node<LumenNodeData, 'lumenNode'>;
 type LumenEdge = Edge<Record<string, unknown>, 'lumenSmooth'>;
 type CanvasSaveState = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 
-interface CanvasActions {
-  runSingleNode: (nodeId: string) => void;
-  cancelNodes: (nodeIds: string[]) => void;
-  updateNodeData: (nodeId: string, patch: Partial<LumenNodeData>) => void;
-  uploadCanvasMedia: (file: File, kind: MaterialAssetKind, nodeId?: string) => Promise<string>;
-  connectionError: string | null;
-  canRunNode: (nodeId: string) => boolean;
-}
-
-const CanvasActionsContext = createContext<CanvasActions>({
-  runSingleNode: () => {},
-  cancelNodes: () => {},
-  updateNodeData: () => {},
-  uploadCanvasMedia: async () => '',
-  connectionError: null,
-  canRunNode: () => false,
-});
-
-type MaterialAssetKind = 'image' | 'video' | 'audio';
+import type { MaterialAssetKind } from '@/components/canvas/canvas-actions-context';
 type MaterialAssetCategory = 'my_assets' | 'character' | 'scene' | 'item';
 
 type MaterialAssetRecord = {
@@ -345,6 +323,12 @@ const nodeCatalog = [
     icon: IconMusic,
     tone: 'from-[#171a2d] via-[#2b3c6f] to-[#0e1018]',
   },
+  {
+    kind: 'composition',
+    title: 'Composition',
+    icon: IconScissors,
+    tone: 'from-[#12242b] via-[#2d5668] to-[#0b1014]',
+  },
 ] satisfies [NodeTemplate, ...NodeTemplate[]];
 
 const defaultModels: Record<NodeKind, ModelOption[]> = {
@@ -383,11 +367,6 @@ const defaultModels: Record<NodeKind, ModelOption[]> = {
       label: 'Seedance 1.5 Pro',
       badges: ['canvas.models.highQualityVideo', 'canvas.models.dynamic', '30 ~ 120s'],
     },
-    {
-      id: 'lumen-video-edit',
-      label: 'Auto edit',
-      badges: ['canvas.models.localEdit', 'canvas.models.multiVideo', '30 ~ 120s'],
-    },
   ],
   audio: [
     {
@@ -406,6 +385,13 @@ const defaultModels: Record<NodeKind, ModelOption[]> = {
       badges: ['canvas.models.music', 'Suno', '60 ~ 180s'],
     },
   ],
+  composition: [
+    {
+      id: 'lumen-composition',
+      label: 'Video Composition',
+      badges: ['canvas.models.localEdit', 'canvas.models.multiVideo', '30 ~ 120s'],
+    },
+  ],
 };
 
 const legacyNodeTitles: Record<NodeKind, string> = {
@@ -413,6 +399,7 @@ const legacyNodeTitles: Record<NodeKind, string> = {
   image: '图片节点',
   video: '视频节点',
   audio: '音频节点',
+  composition: '视频合成',
 };
 
 const aspectRatioOptions = ['1:1', '4:5', '16:9', '9:16'] as const;
@@ -423,17 +410,17 @@ const videoDurationOptions = [4, 6, 8] as const;
 const seedanceDurationOptions = [4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 const videoResolutionOptions = ['720p', '1080p', '4k'] as const;
 const seedanceResolutionOptions = ['480p', '720p', '1080p'] as const;
-const editVideoResolutionOptions = ['720p', '1080p'] as const;
 const MATERIAL_ASSET_DRAG_TYPE = 'application/x-lumen-material-asset';
 // 1080p / 4k 仅支持 8s（Veo 约束）
 const resolutionRequiresEightSeconds = (resolution: string) =>
   resolution === '1080p' || resolution === '4k';
 
 const compatibleTargetKinds: Record<NodeKind, NodeKind[]> = {
-  text: ['text', 'image', 'video', 'audio'],
+  text: ['text', 'image', 'video', 'audio', 'composition'],
   image: ['text', 'image', 'video'],
-  video: ['text', 'video'],
-  audio: ['text', 'video', 'audio'],
+  video: ['text', 'video', 'composition'],
+  audio: ['text', 'video', 'audio', 'composition'],
+  composition: ['text', 'video'],
 };
 
 function createNodeData(template: NodeTemplate): LumenNodeData {
@@ -667,7 +654,7 @@ function getVideoResolution(settings: Record<string, unknown>, modelId?: string)
     : '720p';
 }
 
-// 与 engine/resolver.ts 的图片合并逻辑保持一致：手动上传优先，上游图片必须成对出现才填入首/尾帧。
+// 与 engine/resolver.ts 的图片合并逻辑保持一致：手动上传优先，单张上游图片作为首帧。
 function resolveFrames(inputImage: string, inputLastFrameImage: string, upstreamImages: string[]) {
   let first = inputImage;
   let last = inputLastFrameImage;
@@ -678,8 +665,8 @@ function resolveFrames(inputImage: string, inputLastFrameImage: string, upstream
 
   if (!first && !last) {
     const [upstreamFirst, upstreamLast] = distinctUpstreamImages;
-    if (!upstreamFirst || !upstreamLast) return { first: '', last: '' };
-    return { first: upstreamFirst, last: upstreamLast };
+    if (!upstreamFirst) return { first: '', last: '' };
+    return { first: upstreamFirst, last: upstreamLast ?? '' };
   }
 
   if (first && !last) {
@@ -907,7 +894,10 @@ function toWorkflowNodes(nodes: LumenNode[], edges: LumenEdge[]) {
         audios: getSettingStringArray(node.data.settings, 'inputAudios').filter(
           (url) => !isBlobUrl(url),
         ),
-        clips: getSettingVideoClips(node.data.settings).filter((clip) => !isBlobUrl(clip.url)),
+        clips:
+          node.data.kind === 'composition'
+            ? []
+            : getSettingVideoClips(node.data.settings).filter((clip) => !isBlobUrl(clip.url)),
       },
       model: { id: modelId, settings },
     };
@@ -941,6 +931,8 @@ function getNodeSize(node: LumenNode) {
       return { width: 380, height: 405 };
     case 'audio':
       return { width: 360, height: 385 };
+    case 'composition':
+      return { width: 300, height: 280 };
   }
 }
 
@@ -1072,6 +1064,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const pendingCanvasUploads = useRef(0);
   const [canvasMediaUploading, setCanvasMediaUploading] = useState(false);
   const [cancelGroupId, setCancelGroupId] = useState<string | null>(null);
+  const [compositionEditorNodeId, setCompositionEditorNodeId] = useState<string | null>(null);
   const selectedElementCount = useMemo(
     () =>
       nodes.filter((node) => node.selected).length + edges.filter((edge) => edge.selected).length,
@@ -1923,7 +1916,23 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     [currentProjectId, locale, setEdges, setNodes, t],
   );
 
-  const canvasActions = useMemo<CanvasActions>(
+  const openCompositionEditor = useCallback(
+    (nodeId: string) => {
+      if (isMobileCanvas) {
+        window.alert(t('canvas.composition.mobileOnlyDesktop'));
+        return;
+      }
+      setCompositionEditorNodeId(nodeId);
+    },
+    [isMobileCanvas, t],
+  );
+
+  const compositionEditorNode = useMemo(
+    () => nodes.find((node) => node.id === compositionEditorNodeId) ?? null,
+    [compositionEditorNodeId, nodes],
+  );
+
+  const canvasActions = useMemo(
     () => ({
       runSingleNode,
       cancelNodes,
@@ -1931,8 +1940,17 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       uploadCanvasMedia,
       connectionError,
       canRunNode,
+      openCompositionEditor,
     }),
-    [runSingleNode, cancelNodes, updateNodeData, uploadCanvasMedia, connectionError, canRunNode],
+    [
+      runSingleNode,
+      cancelNodes,
+      updateNodeData,
+      uploadCanvasMedia,
+      connectionError,
+      canRunNode,
+      openCompositionEditor,
+    ],
   );
 
   return (
@@ -2151,6 +2169,30 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         onCancel={() => setCancelGroupId(null)}
         onConfirm={confirmCancelGroup}
       />
+
+      {compositionEditorNode ? (
+        <VideoCompositionModal
+          nodeId={compositionEditorNode.id}
+          nodes={nodes.map((node) => ({ id: node.id, data: node.data }))}
+          edges={edges.map((edge) => ({ source: edge.source, target: edge.target }))}
+          settings={compositionEditorNode.data.settings}
+          projectId={currentProjectId}
+          canRun={canRunNode(compositionEditorNode.id)}
+          isRunning={isWorkflowNodeBusy(compositionEditorNode.data.status)}
+          onClose={() => setCompositionEditorNodeId(null)}
+          onSave={(timeline) => {
+            updateNodeData(compositionEditorNode.id, {
+              settings: {
+                ...compositionEditorNode.data.settings,
+                timeline,
+                aspectRatio: timeline.aspectRatio,
+                resolution: timeline.resolution,
+              },
+            });
+          }}
+          onRun={() => runSingleNode(compositionEditorNode.id)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -3299,6 +3341,15 @@ const nodeKindStyles: Record<
     glow: 'shadow-[0_22px_70px_rgba(245,199,106,0.13)]',
     promptPlaceholder: '描述任何你想要生成的内容',
   },
+  composition: {
+    shell: 'w-[300px]',
+    icon: 'bg-[#9beaff]/14 text-[#9beaff] ring-[#9beaff]/20',
+    primaryButton: 'bg-[#9beaff] text-[#041015] hover:bg-[#c3f4ff]',
+    preview:
+      'bg-[linear-gradient(160deg,rgba(155,234,255,0.12),rgba(28,29,34,0.98)_54%,rgba(8,9,10,0.9))]',
+    glow: 'shadow-[0_22px_70px_rgba(155,234,255,0.12)]',
+    promptPlaceholder: '',
+  },
 };
 
 const waveformBars = [
@@ -3541,6 +3592,12 @@ function ParamPills<T extends string | number>({
 }
 
 function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
+  if (data.kind === 'composition') {
+    return (
+      <CompositionFlowNode data={{ ...data, kind: 'composition' }} id={id} selected={selected} />
+    );
+  }
+
   const { t } = useI18n();
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
@@ -3568,7 +3625,6 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const aspectRatio = getAspectRatio(data.settings, modelId);
   const acceptsImageInput = data.kind === 'image' || data.kind === 'video';
   const isVideo = data.kind === 'video';
-  const isVideoEdit = isVideo && modelId === 'lumen-video-edit';
   const isVeo = isVideo && modelId === 'veo-3.1';
   const isSeedance = isVideo && modelId === 'seedance-1.5-pro';
   const videoDuration = getVideoDuration(data.settings, modelId);
@@ -3580,11 +3636,6 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       : aspectRatioOptions;
   const videoDurationOptionList = isSeedance ? seedanceDurationOptions : videoDurationOptions;
   const videoResolutionOptionList = isSeedance ? seedanceResolutionOptions : videoResolutionOptions;
-  const editVideoResolution = editVideoResolutionOptions.includes(
-    videoResolution as (typeof editVideoResolutionOptions)[number],
-  )
-    ? (videoResolution as (typeof editVideoResolutionOptions)[number])
-    : '720p';
 
   // 读取上游图片节点的输出；上游图片只有成对时才展示为首/尾帧。
   const incomingConnections = useNodeConnections({ handleType: 'target' });
@@ -3603,16 +3654,6 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
     }
     return result;
   }, [isVideo, upstreamNodesData]);
-  const upstreamVideos = useMemo(() => {
-    if (!isVideoEdit) return [] as string[];
-    const result: string[] = [];
-    for (const upstream of upstreamNodesData ?? []) {
-      if (upstream?.data.kind !== 'video') continue;
-      const output = upstream.data.output?.trim();
-      if (output) result.push(output);
-    }
-    return result;
-  }, [isVideoEdit, upstreamNodesData]);
 
   const { first: resolvedFirstFrame, last: resolvedLastFrame } = resolveFrames(
     inputImage,
@@ -3845,6 +3886,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
               onChange={(output) => updateNodeData(id, { output: output || null })}
               onMediaUpload={handleOutputMediaUpload}
             />
+            {status === 'error' && nodeError ? <NodeErrorOverlay message={nodeError} /> : null}
             {isNodeBusy ? <div className="lumen-node-running-overlay absolute inset-0" /> : null}
             {isNodeBusy ? (
               <div className="absolute inset-x-0 bottom-0 h-1 bg-white/[0.06]">
@@ -3861,103 +3903,76 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
           <div className="bg-[#242527]/95 p-2.5">
             {acceptsImageInput ? (
               isVideo ? (
-                isVideoEdit ? (
-                  <div className="mb-2 space-y-2">
-                    <div className="flex items-center justify-between rounded-[10px] bg-[#2d2e30]/86 px-3 py-2 ring-1 ring-white/[0.07]">
-                      <span className="text-[10px] font-black text-white/40">
-                        {t('canvas.node.clips')}
-                      </span>
-                      <span className="rounded-full bg-white/[0.08] px-2 py-1 text-[11px] font-black text-white/72">
-                        {upstreamVideos.length}
-                      </span>
-                    </div>
-                    <ParamPills
-                      label={t('canvas.node.ratio')}
-                      options={aspectRatioOptions}
-                      value={aspectRatio as (typeof aspectRatioOptions)[number]}
-                      onSelect={(ratio) => updateSettings({ aspectRatio: ratio })}
+                <div className="mb-2 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <FrameImageSlot
+                      image={resolvedFirstFrame}
+                      label={t('canvas.node.firstFrame')}
+                      fromUpstream={firstFromUpstream}
+                      draggable
+                      dropActive={frameDragActive}
+                      onClear={inputImage ? () => updateSettings({ inputImage: '' }) : undefined}
+                      onUpload={(event) => handleAssetUpload(event, 'inputImage')}
+                      onDragStart={() => handleFrameDragStart('first')}
+                      onDragEnd={handleFrameDragEnd}
+                      onDrop={() => handleFrameDrop('first')}
                     />
-                    <ParamPills
-                      label={t('canvas.node.resolution')}
-                      options={editVideoResolutionOptions}
-                      value={editVideoResolution}
-                      onSelect={(resolution) => updateSettings({ resolution })}
+                    <button
+                      type="button"
+                      aria-label={t('canvas.node.swapFrames')}
+                      title={t('canvas.node.swapFrames')}
+                      disabled={!resolvedFirstFrame || !resolvedLastFrame}
+                      className="nodrag flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/64 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.16] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                      onClick={handleSwapFrames}
+                    >
+                      <IconArrowsExchange2 size={15} stroke={2.3} />
+                    </button>
+                    <FrameImageSlot
+                      image={resolvedLastFrame}
+                      label={t('canvas.node.lastFrame')}
+                      fromUpstream={lastFromUpstream}
+                      draggable
+                      dropActive={frameDragActive}
+                      onClear={
+                        inputLastFrameImage
+                          ? () => updateSettings({ inputLastFrameImage: '' })
+                          : undefined
+                      }
+                      onUpload={(event) => handleAssetUpload(event, 'inputLastFrameImage')}
+                      onDragStart={() => handleFrameDragStart('last')}
+                      onDragEnd={handleFrameDragEnd}
+                      onDrop={() => handleFrameDrop('last')}
                     />
-                  </div>
-                ) : (
-                  <div className="mb-2 space-y-2">
-                    <div className="flex items-center gap-1.5">
-                      <FrameImageSlot
-                        image={resolvedFirstFrame}
-                        label={t('canvas.node.firstFrame')}
-                        fromUpstream={firstFromUpstream}
-                        draggable
-                        dropActive={frameDragActive}
-                        onClear={inputImage ? () => updateSettings({ inputImage: '' }) : undefined}
-                        onUpload={(event) => handleAssetUpload(event, 'inputImage')}
-                        onDragStart={() => handleFrameDragStart('first')}
-                        onDragEnd={handleFrameDragEnd}
-                        onDrop={() => handleFrameDrop('first')}
-                      />
+                    {inputImage || inputLastFrameImage ? (
                       <button
                         type="button"
-                        aria-label={t('canvas.node.swapFrames')}
-                        title={t('canvas.node.swapFrames')}
-                        disabled={!resolvedFirstFrame || !resolvedLastFrame}
-                        className="nodrag flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/64 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.16] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                        onClick={handleSwapFrames}
+                        className="nodrag ml-auto h-7 self-start rounded-[9px] px-2 text-[11px] font-black text-white/34 transition-colors hover:bg-white/[0.08] hover:text-white/76"
+                        onClick={() => updateSettings({ inputImage: '', inputLastFrameImage: '' })}
                       >
-                        <IconArrowsExchange2 size={15} stroke={2.3} />
+                        {t('canvas.node.clear')}
                       </button>
-                      <FrameImageSlot
-                        image={resolvedLastFrame}
-                        label={t('canvas.node.lastFrame')}
-                        fromUpstream={lastFromUpstream}
-                        draggable
-                        dropActive={frameDragActive}
-                        onClear={
-                          inputLastFrameImage
-                            ? () => updateSettings({ inputLastFrameImage: '' })
-                            : undefined
-                        }
-                        onUpload={(event) => handleAssetUpload(event, 'inputLastFrameImage')}
-                        onDragStart={() => handleFrameDragStart('last')}
-                        onDragEnd={handleFrameDragEnd}
-                        onDrop={() => handleFrameDrop('last')}
-                      />
-                      {inputImage || inputLastFrameImage ? (
-                        <button
-                          type="button"
-                          className="nodrag ml-auto h-7 self-start rounded-[9px] px-2 text-[11px] font-black text-white/34 transition-colors hover:bg-white/[0.08] hover:text-white/76"
-                          onClick={() =>
-                            updateSettings({ inputImage: '', inputLastFrameImage: '' })
-                          }
-                        >
-                          {t('canvas.node.clear')}
-                        </button>
-                      ) : null}
-                    </div>
-                    <ParamPills
-                      label={t('canvas.node.ratio')}
-                      options={videoAspectRatioOptions}
-                      value={aspectRatio}
-                      onSelect={(ratio) => updateSettings({ aspectRatio: ratio })}
-                    />
-                    <ParamPills
-                      label={t('canvas.node.duration')}
-                      options={videoDurationOptionList}
-                      value={videoDuration}
-                      onSelect={handleSelectDuration}
-                      format={(seconds) => `${seconds}s`}
-                    />
-                    <ParamPills
-                      label={t('canvas.node.resolution')}
-                      options={videoResolutionOptionList}
-                      value={videoResolution}
-                      onSelect={handleSelectResolution}
-                    />
+                    ) : null}
                   </div>
-                )
+                  <ParamPills
+                    label={t('canvas.node.ratio')}
+                    options={videoAspectRatioOptions}
+                    value={aspectRatio}
+                    onSelect={(ratio) => updateSettings({ aspectRatio: ratio })}
+                  />
+                  <ParamPills
+                    label={t('canvas.node.duration')}
+                    options={videoDurationOptionList}
+                    value={videoDuration}
+                    onSelect={handleSelectDuration}
+                    format={(seconds) => `${seconds}s`}
+                  />
+                  <ParamPills
+                    label={t('canvas.node.resolution')}
+                    options={videoResolutionOptionList}
+                    value={videoResolution}
+                    onSelect={handleSelectResolution}
+                  />
+                </div>
               ) : (
                 <div className="mb-2 grid grid-cols-[auto_1fr] gap-2">
                   <FrameImageSlot
@@ -4033,12 +4048,6 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
               </button>
             </div>
 
-            {status === 'error' && nodeError ? (
-              <div className="mt-2 rounded-[12px] bg-[#ff5d73]/10 px-3 py-2 text-[12px] font-semibold text-[#ffabb6] ring-1 ring-[#ff5d73]/16">
-                {nodeError}
-              </div>
-            ) : null}
-
             {connectionError ? (
               <div className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-white/30">
                 <IconAlertTriangle size={13} stroke={2.2} />
@@ -4064,6 +4073,19 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
         onCancel={() => setCancelConfirmOpen(false)}
         onConfirm={confirmStopNode}
       />
+    </div>
+  );
+}
+
+function NodeErrorOverlay({ message }: { message: string }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[#111315]/88 p-2 text-center backdrop-blur-[2px]">
+      <div className="flex max-h-full max-w-full flex-col items-center justify-center gap-1.5 overflow-hidden rounded-[10px] bg-[#ff5d73]/14 px-3 py-2 text-[#ffd7de] ring-1 ring-[#ff5d73]/28">
+        <IconAlertTriangle className="shrink-0 text-[#ff8fa0]" size={15} stroke={2.4} />
+        <span className="max-w-full overflow-hidden break-words text-[11px] font-bold leading-snug">
+          {message}
+        </span>
+      </div>
     </div>
   );
 }
@@ -4117,7 +4139,7 @@ function NodeOutputEditor({
 
   if (
     trimmedOutput &&
-    data.kind === 'video' &&
+    (data.kind === 'video' || data.kind === 'composition') &&
     (trimmedOutput.startsWith('data:video') || isHttpUrl(trimmedOutput))
   ) {
     return (
@@ -4174,7 +4196,7 @@ function NodeOutputEditor({
   return (
     <MediaOutputUpload
       aspectRatio={data.kind === 'video' ? previewAspectRatio : undefined}
-      kind={data.kind}
+      kind={data.kind === 'composition' ? 'video' : data.kind}
       onUpload={onMediaUpload}
     />
   );

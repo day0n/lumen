@@ -1,4 +1,4 @@
-export type NodeKind = 'text' | 'image' | 'video' | 'audio';
+export type NodeKind = 'text' | 'image' | 'video' | 'audio' | 'composition';
 
 export type NodeStatus = 'idle' | 'queued' | 'running' | 'success' | 'error' | 'cancelled';
 

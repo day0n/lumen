@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface WorkflowNode {
   id: string;
-  type: 'text' | 'image' | 'video' | 'audio';
+  type: 'text' | 'image' | 'video' | 'audio' | 'composition';
   position: { x: number; y: number };
   output: string | null;
   input: {

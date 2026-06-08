@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import type { NodeType } from '@lumen/shared/domain';
+import type { NodeOutputType } from '@lumen/shared/domain';
 import * as Sentry from '@sentry/node';
 import { customAlphabet } from 'nanoid';
 
@@ -14,7 +14,7 @@ import type { NodeOutput } from '../handlers/base.js';
 import { logger } from '../utils/logger.js';
 
 const nano = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 18);
-const MEDIA_TYPES = new Set<NodeType>(['image', 'video', 'audio']);
+const MEDIA_TYPES = new Set<NodeOutputType>(['image', 'video', 'audio']);
 
 let cachedClient: S3Client | null = null;
 
@@ -27,7 +27,7 @@ interface R2Settings {
 }
 
 export interface StoredNodeOutput {
-  type: NodeType;
+  type: NodeOutputType;
   value: string;
   asset?: WorkflowOutputAsset;
 }
@@ -241,7 +241,7 @@ async function uploadBuffer(args: {
 
 async function uploadFromUrl(args: {
   sourceUrl: string;
-  outputType: NodeType;
+  outputType: NodeOutputType;
   prefix: string;
   settings: R2Settings;
 }): Promise<WorkflowOutputAsset> {
@@ -287,7 +287,7 @@ async function uploadFromUrl(args: {
 
 async function uploadFromLocalFile(args: {
   fileUrl: string;
-  outputType: NodeType;
+  outputType: NodeOutputType;
   prefix: string;
   settings: R2Settings;
 }): Promise<WorkflowOutputAsset> {
@@ -446,7 +446,7 @@ function isFileUrl(value: string): boolean {
   }
 }
 
-function contentTypeForLocalFile(value: string, outputType: NodeType): string {
+function contentTypeForLocalFile(value: string, outputType: NodeOutputType): string {
   const extension = value.split('.').pop()?.toLowerCase();
   switch (extension) {
     case 'mp4':
@@ -471,7 +471,7 @@ function contentTypeForLocalFile(value: string, outputType: NodeType): string {
   }
 }
 
-function extensionFor(contentType: string, outputType: NodeType, sourceUrl?: string): string {
+function extensionFor(contentType: string, outputType: NodeOutputType, sourceUrl?: string): string {
   switch (contentType.toLowerCase()) {
     case 'image/jpeg':
     case 'image/jpg':
@@ -524,7 +524,7 @@ function extensionFromUrl(value: string): string | null {
   }
 }
 
-function fallbackContentType(outputType: NodeType): string {
+function fallbackContentType(outputType: NodeOutputType): string {
   switch (outputType) {
     case 'image':
       return 'image/png';
@@ -537,7 +537,7 @@ function fallbackContentType(outputType: NodeType): string {
   }
 }
 
-function maxBytesFor(outputType: NodeType): number {
+function maxBytesFor(outputType: NodeOutputType): number {
   switch (outputType) {
     case 'image':
       return 30 * 1024 * 1024;

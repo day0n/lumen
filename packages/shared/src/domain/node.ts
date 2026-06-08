@@ -1,7 +1,10 @@
 import { z } from 'zod';
 
-export const NodeTypeSchema = z.enum(['text', 'image', 'video', 'audio']);
+export const NodeTypeSchema = z.enum(['text', 'image', 'video', 'audio', 'composition']);
 export type NodeType = z.infer<typeof NodeTypeSchema>;
+
+export const NodeOutputTypeSchema = z.enum(['text', 'image', 'video', 'audio']);
+export type NodeOutputType = z.infer<typeof NodeOutputTypeSchema>;
 
 export const NodeStatusSchema = z.enum([
   'idle',
@@ -59,7 +62,7 @@ export const EdgeSchema = z.object({
 export type WorkflowEdge = z.infer<typeof EdgeSchema>;
 
 export const NodeOutputSchema = z.object({
-  type: NodeTypeSchema,
+  type: NodeOutputTypeSchema,
   value: z.string(),
 });
 export type NodeOutput = z.infer<typeof NodeOutputSchema>;

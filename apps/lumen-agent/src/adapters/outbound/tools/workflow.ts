@@ -98,6 +98,7 @@ const RUNNABLE_MODEL_OVERRIDES = {
   audio: {
     'doubao-tts': 'fish-tts',
   },
+  composition: {},
 } as const;
 
 function enforceRunnableModels(canvas: LumenCanvas): {
@@ -239,7 +240,7 @@ export class RunWorkflowNodeTool extends Tool {
   override readonly name = 'run_canvas_node';
   override readonly timeoutSeconds = 10 * 60 + 30;
   override readonly description =
-    'Run exactly one workflow node through the Lumen engine and save its output back to the canvas.';
+    'Run exactly one workflow node through the Lumen engine and save its output back to the canvas. For composition nodes, upstream video/audio outputs must exist and settings.timeline must be valid.';
 
   override readonly parameters: JsonSchema = {
     type: 'object',

@@ -23,8 +23,11 @@ test('classifyMediaModelError maps safety review messages to 3005', () => {
   for (const message of [
     'content safety check failed',
     'blocked by safety filter',
+    'promptFeedback blockReason PROHIBITED_CONTENT',
+    'finishReason SAFETY',
     'moderation did not approve this request',
     'violates policy',
+    "I can't assist with that request",
     '审核未通过',
   ]) {
     const classified = classifyMediaModelError(new Error(message));
@@ -35,7 +38,7 @@ test('classifyMediaModelError maps safety review messages to 3005', () => {
 
 test('classifyMediaModelError prefers real-person over generic sensitive content', () => {
   const classified = classifyMediaModelError(
-    new Error('sensitive content: input image may contain real person'),
+    new Error('sensitive content: input image may contain real person 真人图片'),
   );
 
   assert.equal(classified.errorCode, 4007);

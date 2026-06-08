@@ -48,8 +48,10 @@ export async function execute(
   const supportedDurations = [4, 6, 8] as const;
   const clampedDuration = supportedDurations.find((value) => value >= requestedDuration) ?? 8;
   const durationSeconds = resolution === '1080p' || resolution === '4k' ? 8 : clampedDuration;
-  const image = await toVeoImage(input.image, signal);
-  const lastFrame = image ? await toVeoImage(input.lastFrameImage, signal) : null;
+  const imageSource = firstImage(input.image, input.images);
+  const lastFrameSource = nextImage(input.lastFrameImage, input.images, imageSource);
+  const image = await toVeoImage(imageSource, signal);
+  const lastFrame = image ? await toVeoImage(lastFrameSource, signal) : null;
 
   logger.info(
     {
@@ -129,6 +131,16 @@ function readNumberSetting(settings: Record<string, unknown>, key: string): numb
   if (typeof value !== 'string' || !value.trim()) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function firstImage(primary: string | null, images: string[]): string | null {
+  return primary?.trim() || images.find((value) => value.trim())?.trim() || null;
+}
+
+function nextImage(primary: string | null, images: string[], first: string | null): string | null {
+  const explicit = primary?.trim();
+  if (explicit && explicit !== first) return explicit;
+  return images.find((value) => value.trim() && value.trim() !== first)?.trim() || null;
 }
 
 async function toVeoImage(value: string | null, signal?: AbortSignal): Promise<VeoImage | null> {

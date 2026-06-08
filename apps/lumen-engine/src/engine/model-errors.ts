@@ -16,10 +16,11 @@ const PUBLIC_ERROR_MESSAGES = {
   model_execution_failed: 'Generation failed. Please try again.',
 } as const satisfies Record<PublicErrorName, string>;
 
-const REAL_PERSON_PATTERN = /real.?person|PrivacyInformation|InputImageSensitiveContentDetected/i;
+const REAL_PERSON_PATTERN =
+  /real.?person|PrivacyInformation|InputImageSensitiveContentDetected|真人|真实人物|真人图片/i;
 
 const CONTENT_BLOCKED_PATTERN =
-  /content.*flag|content.*checker|content.?safety|safety.?filter|safety.?check|sensitive|content.policy|violat|moderation|review.*fail|audit.*fail|not approved|not pass|failed.*review|审核|未通过|不通过/i;
+  /content.*flag|content.*checker|content.?safety|\bsafety\b|safety.?filter|safety.?check|safety.?rating|block(?:ed|ing|reason)?|prohibited|unsafe|content.policy|policy|violat|moderation|review.*fail|audit.*fail|not approved|not pass|failed.*review|can't assist|cannot assist|not able to help|审核|未通过|不通过/i;
 
 const NON_RETRYABLE_LOCAL_PATTERN =
   /unsupported .*model|unsupported .*input.*format|unsupported .*reference.*format|is required for|URL is not an image|failed to fetch (image reference|veo input image)/i;

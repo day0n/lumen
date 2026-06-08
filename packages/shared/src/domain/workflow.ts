@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import {
+  parseCompositionTimeline,
+  tryCompileCompositionClips,
+} from './composition.js';
+import {
   EdgeSchema,
   type ModelConfig,
   NodeInputSchema,
@@ -21,13 +25,13 @@ export const WorkflowModelCatalog = {
   video: [
     { id: 'veo-3.1', label: 'Veo 3.1' },
     { id: 'seedance-1.5-pro', label: 'Seedance 1.5 Pro' },
-    { id: 'lumen-video-edit', label: 'Lumen Auto Edit' },
   ],
   audio: [
     { id: 'fish-tts', label: 'Fish TTS' },
     { id: 'doubao-tts', label: 'Doubao TTS' },
     { id: 'suno-music', label: 'Suno Music' },
   ],
+  composition: [{ id: 'lumen-composition', label: 'Video Composition' }],
 } as const;
 
 export const LumenCanvasNodeDataSchema = z
@@ -181,6 +185,7 @@ export function resolveCanvasNodeModelId(node: LumenCanvasNode): string {
 
 export function canvasNodeToWorkflowNode(node: LumenCanvasNode) {
   const settings = node.data.settings ?? {};
+  const isComposition = node.data.kind === 'composition';
   return NodeSchema.parse({
     id: node.id,
     type: node.data.kind,
@@ -195,7 +200,7 @@ export function canvasNodeToWorkflowNode(node: LumenCanvasNode) {
       videos: getSettingStringArray(settings, 'inputVideos'),
       audio: getSettingString(settings, 'inputAudio') || null,
       audios: getSettingStringArray(settings, 'inputAudios'),
-      clips: getSettingVideoClips(settings),
+      clips: isComposition ? [] : getSettingVideoClips(settings),
     },
     model: { id: resolveCanvasNodeModelId(node), settings },
   });
@@ -292,6 +297,22 @@ export function mergeTextOutputIntoNodePrompt(input: {
   return input.currentPrompt ? `${upstreamOutput}\n\n${input.currentPrompt}` : upstreamOutput;
 }
 
+export function buildCompositionVideoUrlLookup(
+  canvas: LumenCanvas,
+  nodeId: string,
+): Map<string, string> {
+  const byId = new Map(canvas.nodes.map((item) => [item.id, item]));
+  const lookup = new Map<string, string>();
+  for (const edge of canvas.edges) {
+    if (edge.target !== nodeId) continue;
+    const source = byId.get(edge.source);
+    if (!source || source.data.kind !== 'video') continue;
+    const output = typeof source.data.output === 'string' ? source.data.output.trim() : '';
+    if (output) lookup.set(source.id, output);
+  }
+  return lookup;
+}
+
 export function computeSingleNodeInput(canvas: LumenCanvas, nodeId: string) {
   const node = canvas.nodes.find((item) => item.id === nodeId);
   if (!node) throw new Error(`node not found: ${nodeId}`);
@@ -301,6 +322,44 @@ export function computeSingleNodeInput(canvas: LumenCanvas, nodeId: string) {
   const missing: string[] = [];
   const byId = new Map(canvas.nodes.map((item) => [item.id, item]));
   const resolved = NodeInputSchema.parse(base);
+
+  if (node.data.kind === 'composition') {
+    const videoUrlByNodeId = buildCompositionVideoUrlLookup(canvas, nodeId);
+
+    for (const edge of incoming) {
+      const source = byId.get(edge.source);
+      if (!source) {
+        missing.push(`${edge.source} (missing node)`);
+        continue;
+      }
+      const output = typeof source.data.output === 'string' ? source.data.output.trim() : '';
+      if (source.data.kind === 'video') {
+        if (!output) {
+          missing.push(`${source.id} (${source.data.title || source.data.kind})`);
+        } else {
+          videoUrlByNodeId.set(source.id, output);
+        }
+        continue;
+      }
+      if (source.data.kind === 'audio') {
+        if (!output) {
+          missing.push(`${source.id} (${source.data.title || source.data.kind})`);
+        } else {
+          addResolvedAudio(resolved, output);
+        }
+      }
+    }
+
+    const timeline = parseCompositionTimeline(node.data.settings ?? {});
+    const compiled = tryCompileCompositionClips(timeline, videoUrlByNodeId);
+    if (!compiled.ok) {
+      for (const clipId of compiled.missing) {
+        missing.push(`timeline clip (${clipId})`);
+      }
+    }
+
+    return { input: resolved, missingInputs: missing };
+  }
 
   for (const edge of incoming) {
     const source = byId.get(edge.source);

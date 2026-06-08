@@ -5,14 +5,15 @@ export class LoadSkillTool extends Tool {
   override readonly name = 'use_skill';
   override readonly timeoutSeconds = 10;
   override readonly description =
-    'Load an internal skill guide into the conversation when a task needs specialized workflow rules.';
+    'Load an internal skill guide into the conversation. Use canvas-core for workflow basics; use composition-editing for video stitching, trim, split, timeline, BGM, and final MP4 export.';
 
   override readonly parameters: JsonSchema = {
     type: 'object',
     properties: {
       skill_name: {
         type: 'string',
-        description: 'Name of the skill to load, for example canvas-core.',
+        description:
+          'Skill name: canvas-core (workflow basics) or composition-editing (video timeline editing and final cut).',
       },
     },
     required: ['skill_name'],

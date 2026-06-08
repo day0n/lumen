@@ -55,7 +55,7 @@ export async function execute(
 
   const candidate = response.candidates?.[0];
   if (!candidate?.content?.parts) {
-    throw new Error('no image generated from nano-banana2');
+    throw new Error(`no image generated from nano-banana2: ${summarizeImageResponse(response)}`);
   }
 
   const parts = candidate.content.parts as ImagePart[];
@@ -77,7 +77,11 @@ export async function execute(
       .filter(Boolean)
       .join('\n')
       .slice(0, 500);
-    throw new Error(text ? `no image data in response: ${text}` : 'no image data in response');
+    throw new Error(
+      text
+        ? `no image data in response: ${text}`
+        : `no image data in response: ${summarizeImageResponse(response)}`,
+    );
   }
 
   const base64 = imagePart.inlineData.data ?? '';
@@ -110,6 +114,39 @@ function uniqueRefs(values: Array<string | null | undefined>): string[] {
     if (trimmed && !refs.includes(trimmed)) refs.push(trimmed);
   }
   return refs;
+}
+
+function summarizeImageResponse(response: unknown): string {
+  const value = response as {
+    promptFeedback?: unknown;
+    candidates?: Array<{
+      finishReason?: unknown;
+      finishMessage?: unknown;
+      safetyRatings?: unknown;
+      content?: { parts?: ImagePart[] };
+    }>;
+  };
+  return safeJson({
+    promptFeedback: value.promptFeedback,
+    candidates: value.candidates?.map((candidate) => ({
+      finishReason: candidate.finishReason,
+      finishMessage: candidate.finishMessage,
+      safetyRatings: candidate.safetyRatings,
+      text: candidate.content?.parts
+        ?.map((part) => part.text?.trim())
+        .filter(Boolean)
+        .join('\n')
+        .slice(0, 500),
+    })),
+  });
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 async function toImagePart(value: string | null, signal?: AbortSignal): Promise<ImagePart | null> {

@@ -41,6 +41,8 @@ function getAutoLayoutNodeSize(node: AutoLayoutNode) {
       return { width: 380, height: 405 };
     case 'audio':
       return { width: 360, height: 385 };
+    case 'composition':
+      return { width: 300, height: 280 };
   }
 }
 

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { NodeType } from '@lumen/shared/domain';
+import type { NodeOutputType } from '@lumen/shared/domain';
 
 import { config } from '../config.js';
 import { getMongo } from '../database/mongo.js';
@@ -180,6 +180,6 @@ function runFfmpeg(command: string, args: string[], signal?: AbortSignal): Promi
   });
 }
 
-export function isSnapshotOutputType(type: NodeType): type is 'image' | 'video' {
+export function isSnapshotOutputType(type: NodeOutputType): type is 'image' | 'video' {
   return type === 'image' || type === 'video';
 }

@@ -38,7 +38,7 @@ A canvas is a JSON object:
 }
 ```
 
-Supported node kinds: `text`, `image`, `video`, `audio`.
+Supported node kinds: `text`, `image`, `video`, `audio`, `composition`.
 
 Default production-backed models:
 
@@ -46,6 +46,7 @@ Default production-backed models:
 - `image`: `nano-banana2`
 - `video`: `veo-3.1` or `seedance-1.5-pro` (Volcengine Ark; supports first/last frame i2v)
 - `audio`: `fish-tts`
+- `composition`: `lumen-composition` (timeline stitch / trim / split / BGM export)
 
 Video model selection:
 
@@ -72,9 +73,9 @@ Avoid placeholder / non-production models such as `doubao-seed-2.0-pro`,
 `doubao-seedream-3.0`, and `doubao-tts` unless the user explicitly asks for
 them. `seedance-1.5-pro` is production-ready (Volcengine Ark).
 
-For final automatic video editing, use the internal `video` model id
-`lumen-video-edit`. This is Lumen's own engine-side editor, not an external
-generation model.
+For video stitching, trimming, splitting, reordering, or BGM, use a `composition`
+node with `modelId: lumen-composition` and `settings.timeline`. Load the
+`composition-editing` skill before writing or running composition workflows.
 
 ## Editing Rules
 
@@ -100,8 +101,9 @@ Typical layers:
 5. Motion nodes: one video node per important scene or final video output.
 6. Audio nodes: voiceover (`fish-tts`) for spoken script, or music (`suno-music`)
    for background music / songs / BGM when needed.
-7. Final edit node: for multi-clip output, add one rightmost `video` node with
-   `modelId: "lumen-video-edit"` and connect every source video clip to it.
+7. Final composition node: for multi-clip output, add one rightmost `composition`
+   node with `modelId: "lumen-composition"`, connect every source video clip to
+   it, and write `settings.timeline`.
 
 Rules:
 
@@ -134,8 +136,12 @@ Typical order for a product video:
 
 1. `text` node: product strategy or short script.
 2. `image` node: key visual / storyboard frame.
-3. `video` node: animate the image or create video from prompt.
-4. Optional `audio` node: voiceover or music.
+3. `video` node(s): one clip per scene or animate the image.
+4. Optional `audio` node: voiceover or music (BGM).
+5. `composition` node: when there are 2+ scene videos, stitch them into the final MP4.
+   Load `composition-editing` before writing `settings.timeline` or running composition.
+
+For a single-scene video with no editing, step 5 is optional.
 
 ## Tool Use Pattern
 

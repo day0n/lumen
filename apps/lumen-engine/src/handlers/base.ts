@@ -1,9 +1,9 @@
-import type { ModelConfig, NodeType } from '@lumen/shared/domain';
+import type { ModelConfig, NodeOutputType, NodeType } from '@lumen/shared/domain';
 import { executeMediaModelWithRetry } from '../engine/model-errors.js';
 import type { ResolvedInput } from '../engine/resolver.js';
 
 export interface NodeOutput {
-  type: NodeType;
+  type: NodeOutputType;
   value: string;
 }
 
@@ -52,6 +52,10 @@ export async function executeNode(
     case 'audio': {
       const { executeAudio } = await import('../handlers/audio/index.js');
       return executeAudio(input, model, context);
+    }
+    case 'composition': {
+      const { executeComposition } = await import('../handlers/composition/index.js');
+      return executeComposition(input, model.settings, context);
     }
   }
 }

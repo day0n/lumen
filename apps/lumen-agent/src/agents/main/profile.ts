@@ -18,7 +18,8 @@ import {
 import type { AgentBlueprint, ToolFactory } from '../../domain/profile.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SYSTEM_PROMPT = readFileSync(join(__dirname, 'prompt.md'), 'utf-8');
+const PROMPT_PATH = join(__dirname, 'prompt.md');
+const BASE_SYSTEM_PROMPT = readFileSync(PROMPT_PATH, 'utf-8');
 
 const webSearch: ToolFactory = (ctx) =>
   new WebSearchTool({
@@ -52,7 +53,11 @@ const runWorkflowNode: ToolFactory = () => new RunWorkflowNodeTool();
 export const MAIN_PROFILE: AgentBlueprint = {
   name: 'main',
   description: 'Primary conversational agent for the Lumen video studio',
-  systemPrompt: SYSTEM_PROMPT,
+  systemPrompt: ({ skillsLoader }) => {
+    const skillsSummary = skillsLoader.buildSkillsSummary();
+    if (!skillsSummary) return BASE_SYSTEM_PROMPT;
+    return `${BASE_SYSTEM_PROMPT}\n\n## 可按需加载的内部技能\n\n涉及画布或视频剪辑时，先调用 \`use_skill\` 加载对应技能全文，再读写/运行画布。\n\n${skillsSummary}`;
+  },
   toolFactories: [
     webSearch,
     videoSearch,
@@ -63,6 +68,6 @@ export const MAIN_PROFILE: AgentBlueprint = {
     runWorkflowNode,
   ],
   inlineSkills: [],
-  loadableSkills: ['canvas-core', 'video-editing'],
+  loadableSkills: ['canvas-core', 'composition-editing'],
   maxIterations: 40,
 };
