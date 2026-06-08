@@ -99,46 +99,43 @@ export function TimelineClipBlock({
     target,
     startX,
     startY,
-    pointerId,
     mode,
   }: {
     element: HTMLDivElement;
     target: EventTarget | null;
     startX: number;
     startY: number;
-    pointerId?: number;
     mode: 'mouse' | 'pointer';
   }) => {
-    if (reorderActiveRef.current) return;
     if ((target as HTMLElement | null)?.closest?.('[data-composition-trim-handle]')) return;
 
-    reorderActiveRef.current = true;
     let moved = false;
+    let ownsActiveDrag = false;
     const moveEventName = mode === 'pointer' ? 'pointermove' : 'mousemove';
     const endEventName = mode === 'pointer' ? 'pointerup' : 'mouseup';
-
-    if (mode === 'pointer' && pointerId !== undefined) {
-      element.setPointerCapture?.(pointerId);
-    }
 
     const cleanup = () => {
       window.removeEventListener(moveEventName, handleMove);
       window.removeEventListener(endEventName, handleEnd);
       if (mode === 'pointer') window.removeEventListener('pointercancel', handleEnd);
-      if (mode === 'pointer' && pointerId !== undefined) {
-        element.releasePointerCapture?.(pointerId);
+      if (ownsActiveDrag) {
+        reorderActiveRef.current = false;
+        element.style.pointerEvents = '';
+        element.style.transform = '';
+        element.style.zIndex = '';
+        element.style.opacity = '';
       }
-      reorderActiveRef.current = false;
-      element.style.pointerEvents = '';
-      element.style.transform = '';
-      element.style.zIndex = '';
-      element.style.opacity = '';
     };
 
     const handleMove = (moveEvent: MouseEvent | PointerEvent) => {
+      if (reorderActiveRef.current && !ownsActiveDrag) return;
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
       if (!moved && Math.hypot(deltaX, deltaY) < 6) return;
+      if (!ownsActiveDrag) {
+        reorderActiveRef.current = true;
+        ownsActiveDrag = true;
+      }
       moved = true;
       moveEvent.preventDefault();
       element.dataset.compositionDragging = 'true';
@@ -149,7 +146,7 @@ export function TimelineClipBlock({
     };
 
     const handleEnd = (endEvent: MouseEvent | PointerEvent) => {
-      const wasMoved = moved;
+      const wasMoved = ownsActiveDrag && moved;
       const targetIndex = wasMoved
         ? resolveDropIndex(endEvent.clientX, endEvent.clientY, index)
         : index;
@@ -175,7 +172,6 @@ export function TimelineClipBlock({
       target: event.target,
       startX: event.clientX,
       startY: event.clientY,
-      pointerId: event.pointerId,
       mode: 'pointer',
     });
   };
