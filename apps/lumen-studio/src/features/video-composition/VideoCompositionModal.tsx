@@ -6,8 +6,8 @@ import {
   IconArrowRight,
   IconArrowsMaximize,
   IconDeviceFloppy,
-  IconPlayerPlay,
   IconPlayerPause,
+  IconPlayerPlay,
   IconScissors,
   IconTrash,
   IconVolume,
@@ -15,22 +15,32 @@ import {
   IconZoomIn,
   IconZoomOut,
 } from '@tabler/icons-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useI18n } from '@/i18n/provider';
 import type { CanvasEdgeShape, CanvasNodeShape } from '@/lib/canvas/types';
 
 import { BgmTrack } from './BgmTrack';
+import { CompositionPreview } from './CompositionPreview';
+import { TimelineRuler } from './TimelineRuler';
+import { VideoTrack } from './VideoTrack';
 import {
   buildInitialTimeline,
   collectUpstreamBgmUrl,
   collectUpstreamVideoSources,
 } from './buildTimelineFromCanvas';
-import { CompositionPreview } from './CompositionPreview';
 import { probeMediaDurationClient } from './probeMediaDuration';
-import { TimelineRuler } from './TimelineRuler';
 import { useCompositionTimeline } from './useCompositionTimeline';
-import { VideoTrack } from './VideoTrack';
+
+const AUTO_DURATION_PLACEHOLDER_SECONDS = 3;
+
+function isAutoDurationPlaceholderClip(clip: CompositionTimeline['clips'][number]): boolean {
+  return (
+    clip.sourceIn === 0 &&
+    Boolean(clip.sourceUrlSnapshot) &&
+    Math.abs(clip.duration - AUTO_DURATION_PLACEHOLDER_SECONDS) <= 0.05
+  );
+}
 
 export function VideoCompositionModal({
   nodeId,
@@ -61,13 +71,28 @@ export function VideoCompositionModal({
     [edges, nodeId, nodes],
   );
   const bgmUrl = useMemo(() => collectUpstreamBgmUrl(nodeId, nodes, edges), [edges, nodeId, nodes]);
+  const hasSavedTimeline = useMemo(() => {
+    const raw = settings.timeline;
+    if (!raw || typeof raw !== 'object') return false;
+    const clips = (raw as { clips?: unknown }).clips;
+    return Array.isArray(clips) && clips.length > 0;
+  }, [settings]);
   const initialTimeline = useMemo(
     () => buildInitialTimeline(settings, upstreamVideos),
     [settings, upstreamVideos],
   );
+  const autoHydrateClipIdsRef = useRef<Set<string> | null>(null);
+  const hydratedClipIdsRef = useRef<Set<string>>(new Set());
+
+  if (autoHydrateClipIdsRef.current === null) {
+    autoHydrateClipIdsRef.current = hasSavedTimeline
+      ? new Set()
+      : new Set(initialTimeline.clips.filter(isAutoDurationPlaceholderClip).map((clip) => clip.id));
+  }
 
   const {
     timeline,
+    setTimeline,
     sortedClips,
     totalDuration,
     playhead,
@@ -75,7 +100,6 @@ export function VideoCompositionModal({
     selectedClipId,
     setSelectedClipId,
     updateTimeline,
-    updateClip,
     deleteClip,
     moveClip,
     moveClipToIndex,
@@ -88,6 +112,32 @@ export function VideoCompositionModal({
   const [sourceDurationByUrl, setSourceDurationByUrl] = useState<Map<string, number>>(new Map());
   const [isPlaying, setIsPlaying] = useState(false);
   const [timelineZoom, setTimelineZoom] = useState(74);
+
+  const shouldHydrateClipDuration = useCallback((clip: CompositionTimeline['clips'][number]) => {
+    return (
+      Boolean(autoHydrateClipIdsRef.current?.has(clip.id)) &&
+      !hydratedClipIdsRef.current.has(clip.id) &&
+      isAutoDurationPlaceholderClip(clip)
+    );
+  }, []);
+
+  const hydrateClipDuration = useCallback(
+    (clipId: string, duration: number) => {
+      setTimeline((current) => {
+        const clip = current.clips.find((item) => item.id === clipId);
+        if (!clip || !shouldHydrateClipDuration(clip)) return current;
+
+        hydratedClipIdsRef.current.add(clipId);
+        if (Math.abs(clip.duration - duration) <= 0.05) return current;
+
+        return {
+          ...current,
+          clips: current.clips.map((item) => (item.id === clipId ? { ...item, duration } : item)),
+        };
+      });
+    },
+    [setTimeline, shouldHydrateClipDuration],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -117,21 +167,18 @@ export function VideoCompositionModal({
       const url = clip.sourceUrlSnapshot;
       const known = url ? sourceDurationByUrl.get(url) : undefined;
       if (!url) continue;
-      if (known && clip.duration <= 3.01 && clip.sourceIn === 0) {
-        if (Math.abs(clip.duration - known) > 0.05) {
-          updateClip(clip.id, { duration: known });
-        }
+      if (!shouldHydrateClipDuration(clip)) continue;
+      if (known) {
+        hydrateClipDuration(clip.id, known);
         continue;
       }
-      if (!known && clip.duration <= 3.01 && clip.sourceIn === 0) {
-        void probeMediaDurationClient(url, projectId).then((duration) => {
-          if (!duration) return;
-          setSourceDurationByUrl((current) => new Map(current).set(url, duration));
-          updateClip(clip.id, { duration });
-        });
-      }
+      void probeMediaDurationClient(url, projectId).then((duration) => {
+        if (!duration) return;
+        setSourceDurationByUrl((current) => new Map(current).set(url, duration));
+        hydrateClipDuration(clip.id, duration);
+      });
     }
-  }, [projectId, sortedClips, sourceDurationByUrl, updateClip]);
+  }, [hydrateClipDuration, projectId, shouldHydrateClipDuration, sortedClips, sourceDurationByUrl]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -284,9 +331,7 @@ export function VideoCompositionModal({
                 step={0.05}
                 value={timeline.bgmVolume ?? 0.8}
                 className="w-20 accent-white"
-                onChange={(event) =>
-                  updateTimeline({ bgmVolume: Number(event.target.value) })
-                }
+                onChange={(event) => updateTimeline({ bgmVolume: Number(event.target.value) })}
               />
               <IconZoomOut size={15} />
               <input

@@ -1,8 +1,8 @@
 'use client';
 
 import type { CompositionTimeline, CompositionTimelineClip } from '@lumen/shared/domain';
-import { useCallback, useMemo, useState } from 'react';
 import { nanoid } from 'nanoid';
+import { useCallback, useMemo, useState } from 'react';
 
 import { getTimelineDuration } from './resolvePlayheadClip';
 
@@ -16,9 +16,7 @@ function normalizeOrders(clips: CompositionTimelineClip[]): CompositionTimelineC
 export function useCompositionTimeline(initial: CompositionTimeline) {
   const [timeline, setTimeline] = useState<CompositionTimeline>(initial);
   const [playhead, setPlayhead] = useState(0);
-  const [selectedClipId, setSelectedClipId] = useState<string | null>(
-    initial.clips[0]?.id ?? null,
-  );
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(initial.clips[0]?.id ?? null);
 
   const sortedClips = useMemo(
     () => [...timeline.clips].sort((a, b) => a.order - b.order),
@@ -89,9 +87,7 @@ export function useCompositionTimeline(initial: CompositionTimeline) {
           if (local < minSegment || clip.duration - local < minSegment) return;
 
           const sourceUrl = clip.sourceUrlSnapshot ?? '';
-          const maxSource =
-            sourceDurationByUrl.get(sourceUrl) ??
-            clip.sourceIn + clip.duration + local;
+          const maxSource = sourceDurationByUrl.get(sourceUrl) ?? clip.sourceIn + clip.duration;
 
           const firstDuration = local;
           const secondDuration = clip.duration - local;
@@ -99,6 +95,7 @@ export function useCompositionTimeline(initial: CompositionTimeline) {
 
           if (secondSourceIn + secondDuration > maxSource + 0.01) return;
 
+          const firstId = nanoid(10);
           const secondId = nanoid(10);
           setTimeline((current) => ({
             ...current,
@@ -106,7 +103,7 @@ export function useCompositionTimeline(initial: CompositionTimeline) {
               current.clips.flatMap((item) => {
                 if (item.id !== clip.id) return [item];
                 return [
-                  { ...item, duration: firstDuration },
+                  { ...item, id: firstId, duration: firstDuration },
                   {
                     ...item,
                     id: secondId,
