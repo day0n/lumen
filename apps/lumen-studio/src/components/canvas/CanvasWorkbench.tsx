@@ -11,7 +11,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LumenMark } from '@/components/ui/LumenMark';
 import { useIsMobileCanvas } from '@/hooks/use-is-mobile';
 import { cn } from '@/lib/cn';
-import type { PublicErrorFields } from '@lumen/shared/domain';
+import type { CompositionTimeline, PublicErrorFields } from '@lumen/shared/domain';
 import {
   IconAlertTriangle,
   IconArrowLeft,
@@ -1191,6 +1191,29 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     [nodes, edges, runNodes],
   );
 
+  const saveCompositionTimeline = useCallback(
+    (nodeId: string, timeline: CompositionTimeline) => {
+      const nextNodes = nodes.map((node) => {
+        if (node.id !== nodeId) return node;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            settings: {
+              ...node.data.settings,
+              timeline,
+              aspectRatio: timeline.aspectRatio,
+              resolution: timeline.resolution,
+            },
+          },
+        };
+      });
+      setNodes(nextNodes);
+      return nextNodes;
+    },
+    [nodes, setNodes],
+  );
+
   const runGroup = useCallback(
     (groupId: string) => {
       const nodeIds = getGroupedNodeIds(nodes, groupId);
@@ -2181,16 +2204,16 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           isRunning={isWorkflowNodeBusy(compositionEditorNode.data.status)}
           onClose={() => setCompositionEditorNodeId(null)}
           onSave={(timeline) => {
-            updateNodeData(compositionEditorNode.id, {
-              settings: {
-                ...compositionEditorNode.data.settings,
-                timeline,
-                aspectRatio: timeline.aspectRatio,
-                resolution: timeline.resolution,
-              },
-            });
+            saveCompositionTimeline(compositionEditorNode.id, timeline);
           }}
-          onRun={() => runSingleNode(compositionEditorNode.id)}
+          onRun={(timeline) => {
+            const nextNodes = saveCompositionTimeline(compositionEditorNode.id, timeline);
+            runNodes(
+              [compositionEditorNode.id],
+              toWorkflowNodes(nextNodes, edges),
+              toWorkflowEdges(edges),
+            );
+          }}
         />
       ) : null}
     </main>

@@ -43,7 +43,9 @@ export function CompositionPreview({
       video.load();
     }
 
+    let cancelled = false;
     const syncPlayback = () => {
+      if (cancelled) return;
       if (Math.abs(video.currentTime - targetTime) > (isPlaying ? 0.25 : 0.08)) {
         video.currentTime = targetTime;
       }
@@ -59,6 +61,10 @@ export function CompositionPreview({
     } else {
       video.addEventListener('loadedmetadata', syncPlayback, { once: true });
     }
+    return () => {
+      cancelled = true;
+      video.removeEventListener('loadedmetadata', syncPlayback);
+    };
   }, [isPlaying, playhead, resolveClipUrl, state]);
 
   useEffect(() => {

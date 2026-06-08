@@ -6,6 +6,7 @@ export interface CanvasNodeShape {
   id: string;
   data: {
     kind: NodeKind;
+    title?: string;
     prompt: string;
     output: string | null;
     status: NodeStatus;

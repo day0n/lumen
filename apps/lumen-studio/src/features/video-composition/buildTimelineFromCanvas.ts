@@ -26,8 +26,8 @@ export function collectUpstreamVideoSources(
     const url = source.data.output?.trim();
     if (!url || url.startsWith('blob:')) continue;
     const title =
-      typeof source.data.settings?.title === 'string'
-        ? source.data.settings.title
+      typeof source.data.title === 'string' && source.data.title.length > 0
+        ? source.data.title
         : source.id.slice(0, 8);
     sources.push({
       nodeId: source.id,
