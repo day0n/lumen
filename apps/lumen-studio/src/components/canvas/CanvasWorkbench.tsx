@@ -376,8 +376,8 @@ const defaultModels: Record<NodeKind, ModelOption[]> = {
     },
     {
       id: 'seedance-1.5-pro',
-      label: 'Seedance 1.5',
-      badges: ['canvas.models.autoEdit', 'canvas.models.dynamic', '30 ~ 90s'],
+      label: 'Seedance 1.5 Pro',
+      badges: ['canvas.models.highQualityVideo', 'canvas.models.dynamic', '30 ~ 120s'],
     },
     {
       id: 'lumen-video-edit',
@@ -412,9 +412,12 @@ const legacyNodeTitles: Record<NodeKind, string> = {
 };
 
 const aspectRatioOptions = ['1:1', '4:5', '16:9', '9:16'] as const;
+const seedanceAspectRatioOptions = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'] as const;
 
 const videoDurationOptions = [4, 6, 8] as const;
+const seedanceDurationOptions = [4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 const videoResolutionOptions = ['720p', '1080p', '4k'] as const;
+const seedanceResolutionOptions = ['480p', '720p', '1080p'] as const;
 const editVideoResolutionOptions = ['720p', '1080p'] as const;
 const MATERIAL_ASSET_DRAG_TYPE = 'application/x-lumen-material-asset';
 // 1080p / 4k 仅支持 8s（Veo 约束）
@@ -599,9 +602,12 @@ function getOptionalNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function getAspectRatio(settings: Record<string, unknown>) {
+function getAspectRatio(settings: Record<string, unknown>, modelId?: string) {
   const value =
     getSettingString(settings, 'aspectRatio') || getSettingString(settings, 'aspect_ratio');
+  if (modelId === 'seedance-1.5-pro') {
+    return isSupportedSeedanceAspectRatio(value) ? value : '16:9';
+  }
   return isSupportedAspectRatio(value) ? value : '16:9';
 }
 
@@ -609,11 +615,23 @@ function isSupportedAspectRatio(value: string): value is (typeof aspectRatioOpti
   return aspectRatioOptions.includes(value as (typeof aspectRatioOptions)[number]);
 }
 
+function isSupportedSeedanceAspectRatio(
+  value: string,
+): value is (typeof seedanceAspectRatioOptions)[number] {
+  return seedanceAspectRatioOptions.includes(value as (typeof seedanceAspectRatioOptions)[number]);
+}
+
 function getVideoDuration(
   settings: Record<string, unknown>,
-): (typeof videoDurationOptions)[number] {
+  modelId?: string,
+): number {
   const raw = settings.duration;
   const value = typeof raw === 'number' ? raw : Number(raw);
+  if (modelId === 'seedance-1.5-pro') {
+    return seedanceDurationOptions.includes(value as (typeof seedanceDurationOptions)[number])
+      ? value
+      : 4;
+  }
   return videoDurationOptions.includes(value as (typeof videoDurationOptions)[number])
     ? (value as (typeof videoDurationOptions)[number])
     : 8;
@@ -621,8 +639,14 @@ function getVideoDuration(
 
 function getVideoResolution(
   settings: Record<string, unknown>,
-): (typeof videoResolutionOptions)[number] {
+  modelId?: string,
+): string {
   const value = getSettingString(settings, 'resolution');
+  if (modelId === 'seedance-1.5-pro') {
+    return seedanceResolutionOptions.includes(value as (typeof seedanceResolutionOptions)[number])
+      ? value
+      : '1080p';
+  }
   return videoResolutionOptions.includes(value as (typeof videoResolutionOptions)[number])
     ? (value as (typeof videoResolutionOptions)[number])
     : '720p';
@@ -3475,12 +3499,18 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const nodeTitle = getNodeTitle(data, t);
   const inputImage = getSettingString(data.settings, 'inputImage');
   const inputLastFrameImage = getSettingString(data.settings, 'inputLastFrameImage');
-  const aspectRatio = getAspectRatio(data.settings);
+  const aspectRatio = getAspectRatio(data.settings, modelId);
   const acceptsImageInput = data.kind === 'image' || data.kind === 'video';
   const isVideo = data.kind === 'video';
   const isVideoEdit = isVideo && modelId === 'lumen-video-edit';
-  const videoDuration = getVideoDuration(data.settings);
-  const videoResolution = getVideoResolution(data.settings);
+  const isSeedance = isVideo && modelId === 'seedance-1.5-pro';
+  const videoDuration = getVideoDuration(data.settings, modelId);
+  const videoResolution = getVideoResolution(data.settings, modelId);
+  const videoAspectRatioOptions = isSeedance ? seedanceAspectRatioOptions : aspectRatioOptions;
+  const videoDurationOptionList = isSeedance ? seedanceDurationOptions : videoDurationOptions;
+  const videoResolutionOptionList = isSeedance
+    ? seedanceResolutionOptions
+    : videoResolutionOptions;
   const editVideoResolution = editVideoResolutionOptions.includes(
     videoResolution as (typeof editVideoResolutionOptions)[number],
   )
@@ -3618,7 +3648,11 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   );
 
   const handleSelectDuration = useCallback(
-    (duration: (typeof videoDurationOptions)[number]) => {
+    (duration: number) => {
+      if (isSeedance) {
+        updateSettings({ duration });
+        return;
+      }
       // 选择短时长时，若当前清晰度要求 8s（1080p/4k），自动降回 720p。
       if (duration !== 8 && resolutionRequiresEightSeconds(videoResolution)) {
         updateSettings({ duration, resolution: '720p' });
@@ -3626,11 +3660,15 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       }
       updateSettings({ duration });
     },
-    [updateSettings, videoResolution],
+    [isSeedance, updateSettings, videoResolution],
   );
 
   const handleSelectResolution = useCallback(
-    (resolution: (typeof videoResolutionOptions)[number]) => {
+    (resolution: string) => {
+      if (isSeedance) {
+        updateSettings({ resolution });
+        return;
+      }
       // 1080p/4k 仅支持 8s，自动把时长拉到 8s。
       if (resolutionRequiresEightSeconds(resolution)) {
         updateSettings({ resolution, duration: 8 });
@@ -3638,7 +3676,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
       }
       updateSettings({ resolution });
     },
-    [updateSettings],
+    [isSeedance, updateSettings],
   );
 
   const handleRun = useCallback(
@@ -3832,20 +3870,20 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
                     </div>
                     <ParamPills
                       label={t('canvas.node.ratio')}
-                      options={aspectRatioOptions}
-                      value={aspectRatio as (typeof aspectRatioOptions)[number]}
+                      options={videoAspectRatioOptions}
+                      value={aspectRatio}
                       onSelect={(ratio) => updateSettings({ aspectRatio: ratio })}
                     />
                     <ParamPills
                       label={t('canvas.node.duration')}
-                      options={videoDurationOptions}
+                      options={videoDurationOptionList}
                       value={videoDuration}
                       onSelect={handleSelectDuration}
                       format={(seconds) => `${seconds}s`}
                     />
                     <ParamPills
                       label={t('canvas.node.resolution')}
-                      options={videoResolutionOptions}
+                      options={videoResolutionOptionList}
                       value={videoResolution}
                       onSelect={handleSelectResolution}
                     />

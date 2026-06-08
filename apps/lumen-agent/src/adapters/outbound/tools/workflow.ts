@@ -94,9 +94,7 @@ const RUNNABLE_MODEL_OVERRIDES = {
   image: {
     'doubao-seedream-3.0': 'nano-banana2',
   },
-  video: {
-    'seedance-1.5-pro': 'veo-3.1',
-  },
+  video: {},
   audio: {
     'doubao-tts': 'fish-tts',
   },

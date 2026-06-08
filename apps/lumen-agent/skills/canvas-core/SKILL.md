@@ -57,8 +57,8 @@ Audio node models:
   music run takes roughly 60–180s. The output is an audio URL, same as TTS.
 
 Avoid placeholder / non-production models such as `doubao-seed-2.0-pro`,
-`doubao-seedream-3.0`, `seedance-1.5-pro`, and `doubao-tts` unless the user
-explicitly asks for them.
+`doubao-seedream-3.0`, and `doubao-tts` unless the user explicitly asks for
+them. `seedance-1.5-pro` is production-ready (Volcengine Ark).
 
 For final automatic video editing, use the internal `video` model id
 `lumen-video-edit`. This is Lumen's own engine-side editor, not an external

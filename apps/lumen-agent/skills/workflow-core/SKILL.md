@@ -44,12 +44,12 @@ Default production-backed models:
 
 - `text`: `gemini-3.5-flash`
 - `image`: `nano-banana2`
-- `video`: `veo-3.1`
+- `video`: `veo-3.1` or `seedance-1.5-pro` (supports first/last frame i2v)
 - `audio`: `fish-tts`
 
 Avoid placeholder / non-production models such as `doubao-seed-2.0-pro`,
-`doubao-seedream-3.0`, `seedance-1.5-pro`, and `doubao-tts` unless the user
-explicitly asks for them.
+`doubao-seedream-3.0`, and `doubao-tts` unless the user explicitly asks for
+them.
 
 ## Editing Rules
 
