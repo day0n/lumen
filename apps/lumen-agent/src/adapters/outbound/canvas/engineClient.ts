@@ -5,6 +5,7 @@ import {
   type LumenCanvas,
   type LumenCanvasNode,
   type LumenCanvasNodeData,
+  type PublicErrorFields,
   canvasNodeToWorkflowNodeWithContext,
   computeSingleNodeInput,
   updateCanvasNodeData,
@@ -27,6 +28,26 @@ class WorkflowNodeCancelledError extends Error {
   constructor(message = 'cancelled by user') {
     super(message);
     this.name = 'WorkflowNodeCancelledError';
+  }
+}
+
+class WorkflowNodeExecutionError extends Error implements PublicErrorFields {
+  readonly displayMessage: string;
+  readonly errorCode?: number;
+  readonly errorName?: PublicErrorFields['errorName'];
+  readonly errorI18nKey?: string;
+  readonly retryable?: boolean;
+  readonly attempts?: number;
+
+  constructor(event: Extract<ServerEvent, { event: 'node:error' }>) {
+    super(formatAgentWorkflowError(event));
+    this.name = 'WorkflowNodeExecutionError';
+    this.displayMessage = event.error;
+    this.errorCode = event.errorCode;
+    this.errorName = event.errorName;
+    this.errorI18nKey = event.errorI18nKey;
+    this.retryable = event.retryable;
+    this.attempts = event.attempts;
   }
 }
 
@@ -71,6 +92,11 @@ export class WorkflowEngineClient {
     await this.updateNodeState(input.project, target.id, {
       status: 'queued',
       error: null,
+      errorCode: undefined,
+      errorName: undefined,
+      errorI18nKey: undefined,
+      retryable: undefined,
+      attempts: undefined,
       progress: 0,
     });
     await emitToolEvent('workflow_node_status', {
@@ -96,11 +122,12 @@ export class WorkflowEngineClient {
         node: workflowNode,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = workflowErrorDisplayMessage(err);
       const cancelled = err instanceof WorkflowNodeCancelledError;
       const errorCanvas = updateCanvasNodeData(input.project.canvas, target.id, {
         status: cancelled ? 'cancelled' : 'error',
         error: message,
+        ...workflowErrorFields(err),
         progress: 1,
       });
       await this.store.updateCanvas({
@@ -117,6 +144,7 @@ export class WorkflowEngineClient {
         run_id: runId,
         node_count: errorCanvas.nodes.length,
         edge_count: errorCanvas.edges.length,
+        ...workflowErrorEventFields(err),
       });
       throw err;
     }
@@ -125,6 +153,11 @@ export class WorkflowEngineClient {
       status: 'success',
       output,
       error: null,
+      errorCode: undefined,
+      errorName: undefined,
+      errorI18nKey: undefined,
+      retryable: undefined,
+      attempts: undefined,
       progress: 1,
     });
     const update = await this.store.updateCanvas({
@@ -210,7 +243,7 @@ export class WorkflowEngineClient {
             if (event.event === 'node:error' && event.nodeId === input.nodeId) {
               settled = true;
               clearTimeout(timer);
-              reject(new Error(event.error));
+              reject(new WorkflowNodeExecutionError(event));
             }
             if (event.event === 'node:cancel' && event.nodeId === input.nodeId) {
               settled = true;
@@ -336,6 +369,7 @@ export class WorkflowEngineClient {
           node_kind: nodeMeta.nodeKind,
           status: 'error',
           error: event.error,
+          ...toSnakePublicErrorFields(event),
         });
         break;
       case 'node:cancel':
@@ -365,4 +399,57 @@ export class WorkflowEngineClient {
         break;
     }
   }
+}
+
+function workflowErrorDisplayMessage(error: unknown): string {
+  if (error instanceof WorkflowNodeExecutionError) return error.displayMessage;
+  return error instanceof Error ? error.message : String(error);
+}
+
+function workflowErrorFields(error: unknown): PublicErrorFields {
+  if (error instanceof WorkflowNodeExecutionError) {
+    return compactPublicErrorFields({
+      errorCode: error.errorCode,
+      errorName: error.errorName,
+      errorI18nKey: error.errorI18nKey,
+      retryable: error.retryable,
+      attempts: error.attempts,
+    });
+  }
+  return {};
+}
+
+function workflowErrorEventFields(error: unknown): Record<string, unknown> {
+  if (!(error instanceof WorkflowNodeExecutionError)) return {};
+  return toSnakePublicErrorFields(error);
+}
+
+function toSnakePublicErrorFields(fields: PublicErrorFields): Record<string, unknown> {
+  return {
+    ...(fields.errorCode !== undefined ? { error_code: fields.errorCode } : {}),
+    ...(fields.errorName ? { error_name: fields.errorName } : {}),
+    ...(fields.errorI18nKey ? { error_i18n_key: fields.errorI18nKey } : {}),
+    ...(fields.retryable !== undefined ? { retryable: fields.retryable } : {}),
+    ...(fields.attempts !== undefined ? { attempts: fields.attempts } : {}),
+  };
+}
+
+function compactPublicErrorFields(fields: PublicErrorFields): PublicErrorFields {
+  return {
+    ...(fields.errorCode !== undefined ? { errorCode: fields.errorCode } : {}),
+    ...(fields.errorName ? { errorName: fields.errorName } : {}),
+    ...(fields.errorI18nKey ? { errorI18nKey: fields.errorI18nKey } : {}),
+    ...(fields.retryable !== undefined ? { retryable: fields.retryable } : {}),
+    ...(fields.attempts !== undefined ? { attempts: fields.attempts } : {}),
+  };
+}
+
+function formatAgentWorkflowError(event: Extract<ServerEvent, { event: 'node:error' }>): string {
+  const details = ['workflow node failed'];
+  if (event.errorCode !== undefined) details.push(`error_code=${event.errorCode}`);
+  if (event.errorName) details.push(`error_name=${event.errorName}`);
+  if (event.errorI18nKey) details.push(`error_i18n_key=${event.errorI18nKey}`);
+  if (event.attempts !== undefined) details.push(`attempts=${event.attempts}`);
+  details.push(`message=${event.error}`);
+  return details.join(' ');
 }

@@ -247,6 +247,13 @@ const en = {
     engineConnectionFailed: 'Workflow engine connection failed',
     connectionError: 'Workflow connection error',
     connectionClosed: 'Workflow connection closed',
+    errorCodes: {
+      runFailed: 'Generation failed. Please try again.',
+      contentBlocked:
+        'Your content was flagged by our safety system. Please modify your input and try again.',
+      realPersonDetected:
+        'The input image appears to contain a real person, which is not supported by this model. Please use a different image.',
+    },
     save: {
       loading: 'Loading',
       saving: 'Saving',
@@ -692,7 +699,8 @@ const en = {
       body: 'Lumen is currently invite-only. Paste the invitation code (or invitation link) your admin sent you to continue.',
       placeholder: 'Paste invitation code or invitation link',
       continue: 'Continue',
-      invalid: "We couldn't find an invitation code in what you pasted. Make sure you copied the whole code or link.",
+      invalid:
+        "We couldn't find an invitation code in what you pasted. Make sure you copied the whole code or link.",
       haveAccount: 'Already have an account?',
       signIn: 'Sign in',
     },
@@ -954,6 +962,11 @@ const zh: typeof en = {
     engineConnectionFailed: '工作流引擎连接失败',
     connectionError: '工作流连接异常',
     connectionClosed: '工作流连接已断开',
+    errorCodes: {
+      runFailed: '生成失败，请重试。',
+      contentBlocked: '您的内容被安全系统标记，请修改输入后重试。',
+      realPersonDetected: '输入图片疑似包含真人，该模型不支持真人图片，请更换图片后重试。',
+    },
     save: {
       loading: '读取中',
       saving: '保存中',

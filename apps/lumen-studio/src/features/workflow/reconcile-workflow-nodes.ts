@@ -1,6 +1,6 @@
-import type { NodeStatus } from '@lumen/shared/domain';
+import type { NodeStatus, PublicErrorFields } from '@lumen/shared/domain';
 
-export interface WorkflowNodeResultPayload {
+export interface WorkflowNodeResultPayload extends PublicErrorFields {
   nodeId: string;
   runId: string;
   status: string;
@@ -10,7 +10,7 @@ export interface WorkflowNodeResultPayload {
   updatedAt: string;
 }
 
-export interface ReconcileNodeState {
+export interface ReconcileNodeState extends PublicErrorFields {
   status: NodeStatus;
   output: string | null;
   error: string | null;
@@ -41,6 +41,11 @@ export function mapWorkflowResultToNodeState(
     status,
     output: status === 'success' ? result.output : null,
     error: status === 'error' || status === 'cancelled' ? result.error : null,
+    errorCode: result.errorCode,
+    errorName: result.errorName,
+    errorI18nKey: result.errorI18nKey,
+    retryable: result.retryable,
+    attempts: result.attempts,
     progress: status === 'success' ? 1 : status === 'running' ? result.progress || 0.45 : 0,
   };
 }
@@ -49,13 +54,21 @@ export function shouldApplyWorkflowReconcile(
   current: ReconcileNodeState,
   incoming: ReconcileNodeState,
 ): boolean {
-  if (TERMINAL_CANVAS_STATUSES.has(current.status) && current.status === 'success' && current.output) {
+  if (
+    TERMINAL_CANVAS_STATUSES.has(current.status) &&
+    current.status === 'success' &&
+    current.output
+  ) {
     return false;
   }
   if (TERMINAL_CANVAS_STATUSES.has(current.status) && incoming.status === 'running') {
     return false;
   }
-  if (current.status === incoming.status && current.output === incoming.output && current.error === incoming.error) {
+  if (
+    current.status === incoming.status &&
+    current.output === incoming.output &&
+    current.error === incoming.error
+  ) {
     return false;
   }
   if (TERMINAL_CANVAS_STATUSES.has(incoming.status)) return true;

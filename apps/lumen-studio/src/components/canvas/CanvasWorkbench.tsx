@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LumenMark } from '@/components/ui/LumenMark';
 import { useIsMobileCanvas } from '@/hooks/use-is-mobile';
 import { cn } from '@/lib/cn';
+import type { PublicErrorFields } from '@lumen/shared/domain';
 import {
   IconAlertTriangle,
   IconArrowLeft,
@@ -107,6 +108,7 @@ import { arrangeCanvasNodes } from '@/lib/canvas/auto-layout';
 import { checkCycle } from '@/lib/canvas/cycle-detection';
 import { canRunSelectedNodes, canRunSingleNode } from '@/lib/canvas/node-run-check';
 import type { NodeKind } from '@/lib/canvas/types';
+import { formatPublicWorkflowError } from '@/lib/public-workflow-error';
 
 import { ImeTextarea } from './ImeTextarea';
 
@@ -123,20 +125,21 @@ type ModelOption = {
   badges: string[];
 };
 
-type LumenNodeData = Record<string, unknown> & {
-  kind: NodeKind;
-  title: string;
-  prompt: string;
-  output: string | null;
-  modelId: string;
-  settings: Record<string, unknown>;
-  status: 'idle' | 'queued' | 'running' | 'success' | 'error' | 'cancelled';
-  error?: string | null;
-  groupId?: string | null;
-  groupName?: string | null;
-  progress?: number;
-  previewAspectRatio?: string;
-};
+type LumenNodeData = Record<string, unknown> &
+  PublicErrorFields & {
+    kind: NodeKind;
+    title: string;
+    prompt: string;
+    output: string | null;
+    modelId: string;
+    settings: Record<string, unknown>;
+    status: 'idle' | 'queued' | 'running' | 'success' | 'error' | 'cancelled';
+    error?: string | null;
+    groupId?: string | null;
+    groupName?: string | null;
+    progress?: number;
+    previewAspectRatio?: string;
+  };
 
 type LumenNode = Node<LumenNodeData, 'lumenNode'>;
 type LumenEdge = Edge<Record<string, unknown>, 'lumenSmooth'>;
@@ -413,6 +416,7 @@ const legacyNodeTitles: Record<NodeKind, string> = {
 };
 
 const aspectRatioOptions = ['1:1', '4:5', '16:9', '9:16'] as const;
+const veoAspectRatioOptions = ['16:9', '9:16'] as const;
 const seedanceAspectRatioOptions = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'] as const;
 
 const videoDurationOptions = [4, 6, 8] as const;
@@ -609,11 +613,18 @@ function getAspectRatio(settings: Record<string, unknown>, modelId?: string) {
   if (modelId === 'seedance-1.5-pro') {
     return isSupportedSeedanceAspectRatio(value) ? value : '16:9';
   }
+  if (modelId === 'veo-3.1') {
+    return isSupportedVeoAspectRatio(value) ? value : '16:9';
+  }
   return isSupportedAspectRatio(value) ? value : '16:9';
 }
 
 function isSupportedAspectRatio(value: string): value is (typeof aspectRatioOptions)[number] {
   return aspectRatioOptions.includes(value as (typeof aspectRatioOptions)[number]);
+}
+
+function isSupportedVeoAspectRatio(value: string): value is (typeof veoAspectRatioOptions)[number] {
+  return veoAspectRatioOptions.includes(value as (typeof veoAspectRatioOptions)[number]);
 }
 
 function isSupportedSeedanceAspectRatio(
@@ -622,10 +633,7 @@ function isSupportedSeedanceAspectRatio(
   return seedanceAspectRatioOptions.includes(value as (typeof seedanceAspectRatioOptions)[number]);
 }
 
-function getVideoDuration(
-  settings: Record<string, unknown>,
-  modelId?: string,
-): number {
+function getVideoDuration(settings: Record<string, unknown>, modelId?: string): number {
   const raw = settings.duration;
   const value = typeof raw === 'number' ? raw : Number(raw);
   if (modelId === 'seedance-1.5-pro') {
@@ -638,10 +646,7 @@ function getVideoDuration(
     : 8;
 }
 
-function getVideoResolution(
-  settings: Record<string, unknown>,
-  modelId?: string,
-): string {
+function getVideoResolution(settings: Record<string, unknown>, modelId?: string): string {
   const value = getSettingString(settings, 'resolution');
   if (modelId === 'seedance-1.5-pro') {
     return seedanceResolutionOptions.includes(value as (typeof seedanceResolutionOptions)[number])
@@ -1132,6 +1137,11 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
               status: state.status,
               output: state.output ?? node.data.output,
               error: state.error,
+              errorCode: state.errorCode,
+              errorName: state.errorName,
+              errorI18nKey: state.errorI18nKey,
+              retryable: state.retryable,
+              attempts: state.attempts,
               progress: state.progress,
             },
           };
@@ -1341,6 +1351,11 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         status,
         output: readEventString(data.output),
         error: readEventString(data.error),
+        errorCode: readEventNumber(data.error_code) ?? undefined,
+        errorName: readPublicErrorName(data.error_name),
+        errorI18nKey: readEventString(data.error_i18n_key) ?? undefined,
+        retryable: readEventBoolean(data.retryable) ?? undefined,
+        attempts: readEventNumber(data.attempts) ?? undefined,
         progress: readEventNumber(data.progress) ?? (status === 'success' ? 1 : 0),
       });
     },
@@ -2155,7 +2170,25 @@ function readEventString(value: unknown): string | null {
 }
 
 function readEventNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readEventBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+function readPublicErrorName(value: unknown): PublicErrorFields['errorName'] | undefined {
+  if (
+    value === 'content_blocked' ||
+    value === 'real_person_detected' ||
+    value === 'model_execution_failed'
+  ) {
+    return value;
+  }
+  return undefined;
 }
 
 function readNodeStatus(value: unknown): NodeState['status'] | null {
@@ -3515,20 +3548,24 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const isNodeBusy = isWorkflowNodeBusy(status);
   const progressPercent = Math.max(isNodeBusy ? 14 : 0, Math.round(progress * 100));
   const nodeTitle = getNodeTitle(data, t);
+  const nodeError = formatPublicWorkflowError(data, t, data.error);
   const inputImage = getSettingString(data.settings, 'inputImage');
   const inputLastFrameImage = getSettingString(data.settings, 'inputLastFrameImage');
   const aspectRatio = getAspectRatio(data.settings, modelId);
   const acceptsImageInput = data.kind === 'image' || data.kind === 'video';
   const isVideo = data.kind === 'video';
   const isVideoEdit = isVideo && modelId === 'lumen-video-edit';
+  const isVeo = isVideo && modelId === 'veo-3.1';
   const isSeedance = isVideo && modelId === 'seedance-1.5-pro';
   const videoDuration = getVideoDuration(data.settings, modelId);
   const videoResolution = getVideoResolution(data.settings, modelId);
-  const videoAspectRatioOptions = isSeedance ? seedanceAspectRatioOptions : aspectRatioOptions;
+  const videoAspectRatioOptions = isSeedance
+    ? seedanceAspectRatioOptions
+    : isVeo
+      ? veoAspectRatioOptions
+      : aspectRatioOptions;
   const videoDurationOptionList = isSeedance ? seedanceDurationOptions : videoDurationOptions;
-  const videoResolutionOptionList = isSeedance
-    ? seedanceResolutionOptions
-    : videoResolutionOptions;
+  const videoResolutionOptionList = isSeedance ? seedanceResolutionOptions : videoResolutionOptions;
   const editVideoResolution = editVideoResolutionOptions.includes(
     videoResolution as (typeof editVideoResolutionOptions)[number],
   )
@@ -3982,9 +4019,9 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
               </button>
             </div>
 
-            {status === 'error' && data.error ? (
+            {status === 'error' && nodeError ? (
               <div className="mt-2 rounded-[12px] bg-[#ff5d73]/10 px-3 py-2 text-[12px] font-semibold text-[#ffabb6] ring-1 ring-[#ff5d73]/16">
-                {data.error}
+                {nodeError}
               </div>
             ) : null}
 

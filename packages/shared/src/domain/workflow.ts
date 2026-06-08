@@ -7,6 +7,7 @@ import {
   type NodeType,
   NodeTypeSchema,
 } from './node.js';
+import { PublicErrorFieldsSchema } from './public-error.js';
 
 export const WorkflowModelCatalog = {
   text: [
@@ -39,6 +40,7 @@ export const LumenCanvasNodeDataSchema = z
     settings: z.record(z.unknown()).default({}),
     status: z.enum(['idle', 'queued', 'running', 'success', 'error', 'cancelled']).default('idle'),
     error: z.string().nullable().optional(),
+    ...PublicErrorFieldsSchema.shape,
     groupId: z.string().nullable().optional(),
     groupName: z.string().nullable().optional(),
     progress: z.number().min(0).max(1).optional(),

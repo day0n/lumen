@@ -2,6 +2,7 @@ import type {
   ModelConfig,
   NodeInput,
   NodeType,
+  PublicErrorFields,
   WorkflowEdge,
   WorkflowNode,
 } from '@lumen/shared/domain';
@@ -82,6 +83,12 @@ export interface WorkflowNodeResultDocument {
   output_value?: string;
   asset?: WorkflowOutputAsset;
   error?: string;
+  error_code?: number;
+  error_name?: string;
+  error_i18n_key?: string;
+  retryable?: boolean;
+  attempts?: number;
+  raw_error?: string;
   started_at?: Date;
   completed_at?: Date;
   duration_ms?: number;
@@ -137,8 +144,9 @@ export interface CompleteNodeInput extends NodePersistenceInput {
   startedAt?: Date;
 }
 
-export interface FailNodeInput extends NodePersistenceInput {
+export interface FailNodeInput extends NodePersistenceInput, PublicErrorFields {
   error: string;
+  rawError?: string;
   startedAt?: Date;
 }
 
@@ -254,6 +262,12 @@ export class WorkflowStore {
         },
         $unset: {
           error: '',
+          error_code: '',
+          error_name: '',
+          error_i18n_key: '',
+          retryable: '',
+          attempts: '',
+          raw_error: '',
           output_type: '',
           output_value: '',
           asset: '',
@@ -289,6 +303,12 @@ export class WorkflowStore {
         },
         $unset: {
           error: '',
+          error_code: '',
+          error_name: '',
+          error_i18n_key: '',
+          retryable: '',
+          attempts: '',
+          raw_error: '',
           output_type: '',
           output_value: '',
           asset: '',
@@ -355,6 +375,7 @@ export class WorkflowStore {
           model: input.node.model,
           input: compactNodeInput(input.input),
           error: input.error,
+          ...publicErrorDocumentFields(input),
           completed_at: completedAt,
           ...(input.startedAt
             ? { duration_ms: completedAt.getTime() - input.startedAt.getTime() }
@@ -386,6 +407,7 @@ export class WorkflowStore {
           model: input.node.model,
           input: compactNodeInput(input.input),
           error: input.error,
+          ...publicErrorDocumentFields(input),
           completed_at: completedAt,
           ...(input.startedAt
             ? { duration_ms: completedAt.getTime() - input.startedAt.getTime() }
@@ -497,6 +519,17 @@ function resultId(runId: string, nodeId: string) {
 
 function materialAssetId(ownerId: string, workflowId: string, runId: string, nodeId: string) {
   return `${ownerId}:${workflowId}:${runId}:${nodeId}`;
+}
+
+function publicErrorDocumentFields(input: PublicErrorFields & { rawError?: string }) {
+  return {
+    ...(input.errorCode !== undefined ? { error_code: input.errorCode } : {}),
+    ...(input.errorName ? { error_name: input.errorName } : {}),
+    ...(input.errorI18nKey ? { error_i18n_key: input.errorI18nKey } : {}),
+    ...(input.retryable !== undefined ? { retryable: input.retryable } : {}),
+    ...(input.attempts !== undefined ? { attempts: input.attempts } : {}),
+    ...(input.rawError ? { raw_error: input.rawError } : {}),
+  };
 }
 
 function isMaterialKind(value: NodeType): value is 'image' | 'video' | 'audio' {

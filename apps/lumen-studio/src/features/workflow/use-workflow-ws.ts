@@ -3,7 +3,7 @@
 import { translate } from '@/i18n/messages';
 import type { Locale } from '@/i18n/routing';
 import { useAuth } from '@clerk/nextjs';
-import type { NodeStatus } from '@lumen/shared/domain';
+import type { NodeStatus, PublicErrorFields } from '@lumen/shared/domain';
 import type { ClientRunMessage, ServerEvent } from '@lumen/shared/protocols';
 import * as Sentry from '@sentry/nextjs';
 import { nanoid } from 'nanoid';
@@ -40,7 +40,7 @@ export interface WorkflowEdge {
   target: string;
 }
 
-export interface NodeState {
+export interface NodeState extends PublicErrorFields {
   status: NodeStatus;
   output: string | null;
   error: string | null;
@@ -143,7 +143,16 @@ export function useWorkflowWs({
           });
           break;
         case 'node:error':
-          updateNode(event.nodeId, (prev) => ({ ...prev, status: 'error', error: event.error }));
+          updateNode(event.nodeId, (prev) => ({
+            ...prev,
+            status: 'error',
+            error: event.error,
+            errorCode: event.errorCode,
+            errorName: event.errorName,
+            errorI18nKey: event.errorI18nKey,
+            retryable: event.retryable,
+            attempts: event.attempts,
+          }));
           break;
         case 'node:cancel':
           updateNode(event.nodeId, (prev) => {

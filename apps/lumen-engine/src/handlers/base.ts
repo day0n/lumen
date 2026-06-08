@@ -1,4 +1,5 @@
 import type { ModelConfig, NodeType } from '@lumen/shared/domain';
+import { executeMediaModelWithRetry } from '../engine/model-errors.js';
 import type { ResolvedInput } from '../engine/resolver.js';
 
 export interface NodeOutput {
@@ -29,11 +30,24 @@ export async function executeNode(
     }
     case 'image': {
       const { executeImage } = await import('../handlers/image/index.js');
-      return executeImage(input, model, context);
+      return executeMediaModelWithRetry({
+        nodeType: 'image',
+        modelId: model.id,
+        signal: context.signal,
+        execute: () => executeImage(input, model, context),
+      });
     }
     case 'video': {
       const { executeVideo } = await import('../handlers/video/index.js');
-      return executeVideo(input, model, context);
+      if (model.id === 'lumen-video-edit') {
+        return executeVideo(input, model, context);
+      }
+      return executeMediaModelWithRetry({
+        nodeType: 'video',
+        modelId: model.id,
+        signal: context.signal,
+        execute: () => executeVideo(input, model, context),
+      });
     }
     case 'audio': {
       const { executeAudio } = await import('../handlers/audio/index.js');

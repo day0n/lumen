@@ -19,6 +19,7 @@ import {
   withCancellation,
 } from './cancellation.js';
 import { buildGraph, topologicalSort } from './graph.js';
+import { PublicWorkflowError, publicErrorFields, publicErrorRawMessage } from './model-errors.js';
 import { resolveInput } from './resolver.js';
 
 export class WorkflowExecutor {
@@ -239,8 +240,15 @@ export class WorkflowExecutor {
             failedIds.add(nodeId);
             terminalIds.add(nodeId);
             summary.failed += 1;
-            const errorMsg = err instanceof Error ? err.message : String(err);
-            logger.error({ err, nodeId }, 'node execution failed');
+            const errorMsg =
+              err instanceof PublicWorkflowError
+                ? err.message
+                : err instanceof Error
+                  ? err.message
+                  : String(err);
+            const structuredError = publicErrorFields(err);
+            const rawError = publicErrorRawMessage(err);
+            logger.error({ err, nodeId, structuredError }, 'node execution failed');
             await this.workflowStore.markNodeFailed({
               runId,
               projectId,
@@ -249,12 +257,15 @@ export class WorkflowExecutor {
               node,
               input,
               error: errorMsg,
+              rawError,
+              ...structuredError,
               startedAt,
             });
             await this.publisher.publish(channelId, {
               event: 'node:error',
               nodeId,
               error: errorMsg,
+              ...structuredError,
             });
           }
         }

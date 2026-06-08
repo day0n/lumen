@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 
-import type { NodeStatus } from '@lumen/shared/domain';
+import type { NodeStatus, PublicErrorFields } from '@lumen/shared/domain';
 
 import {
+  type WorkflowNodeResultPayload,
   mapWorkflowResultToNodeState,
   shouldApplyWorkflowReconcile,
   shouldReconcileWorkflowNode,
-  type WorkflowNodeResultPayload,
 } from './reconcile-workflow-nodes';
 
 interface CanvasNodeSnapshot {
@@ -28,7 +28,7 @@ interface UseWorkflowReconcileOptions {
       output: string | null;
       error: string | null;
       progress: number;
-    },
+    } & PublicErrorFields,
   ) => void;
 }
 

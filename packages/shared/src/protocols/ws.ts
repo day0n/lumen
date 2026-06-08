@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { EdgeSchema, NodeSchema } from '../domain/node.js';
+import { PublicErrorFieldsSchema } from '../domain/public-error.js';
 
 // W3C/Sentry 分布式追踪上下文，由浏览器注入，经 studio WS gateway 透传到
 // Redis stream，再被 engine 读出来续接同一条 trace。纯数据字段，不引入任何
@@ -60,6 +61,7 @@ export const NodeErrorEventSchema = z.object({
   event: z.literal('node:error'),
   nodeId: z.string(),
   error: z.string(),
+  ...PublicErrorFieldsSchema.shape,
 });
 
 export const NodeCancelEventSchema = z.object({

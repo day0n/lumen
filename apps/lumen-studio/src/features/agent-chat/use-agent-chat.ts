@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { translate } from '@/i18n/messages';
 import type { Locale } from '@/i18n/routing';
+import { formatPublicWorkflowError } from '@/lib/public-workflow-error';
 
 const AGENT_URL = process.env.NEXT_PUBLIC_AGENT_URL ?? 'http://localhost:3001';
 
@@ -849,7 +850,8 @@ function projectHistoryMessages(stored: StoredHistoryMessage[], locale: Locale):
         kind: 'act_event',
         status: workflowTimelineStatus(eventName, data),
         title: formatWorkflowEventTitle(eventName, data, locale),
-        detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName, locale),
+        detail:
+          summarizeWorkflowEventDetail(eventName, data, locale) || formatToolName(toolName, locale),
         toolCallId: item.tool_call_id ?? `history-${index}`,
         toolName,
         eventName,
@@ -1052,7 +1054,9 @@ function handleEvent(
           kind: 'act_event',
           status: workflowTimelineStatus(eventName, data),
           title: formatWorkflowEventTitle(eventName, data, locale),
-          detail: summarizeWorkflowEventDetail(eventName, data) || formatToolName(toolName, locale),
+          detail:
+            summarizeWorkflowEventDetail(eventName, data, locale) ||
+            formatToolName(toolName, locale),
           toolCallId,
           toolName,
           eventName,
@@ -1304,6 +1308,7 @@ function formatWorkflowEventTitle(
 function summarizeWorkflowEventDetail(
   eventName: string,
   data: Record<string, unknown>,
+  locale: Locale,
 ): string | undefined {
   if (eventName === 'workflow_update') {
     const nodeCount = readNumber(data.node_count);
@@ -1321,7 +1326,8 @@ function summarizeWorkflowEventDetail(
     const nodeKind = readString(data.node_kind);
     const progress = readNumber(data.progress);
     const error = readString(data.error);
-    if (error) return compactText(error, 90);
+    const publicError = formatPublicWorkflowError(data, (key) => translate(locale, key), error);
+    if (publicError) return compactText(publicError, 90);
     const parts = [
       nodeKind,
       nodeId ? `node ${nodeId}` : null,

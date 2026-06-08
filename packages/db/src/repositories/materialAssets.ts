@@ -27,6 +27,11 @@ export interface WorkflowNodeResultSnapshot {
   status: string;
   output: string | null;
   error: string | null;
+  errorCode?: number;
+  errorName?: string;
+  errorI18nKey?: string;
+  retryable?: boolean;
+  attempts?: number;
   progress: number;
   updatedAt: string;
 }
@@ -44,6 +49,11 @@ interface WorkflowNodeResultDocument {
   output_type?: string;
   output_value?: string;
   error?: string;
+  error_code?: number;
+  error_name?: string;
+  error_i18n_key?: string;
+  retryable?: boolean;
+  attempts?: number;
   asset?: {
     key?: string;
     url?: string;
@@ -287,6 +297,11 @@ function toWorkflowNodeResultSnapshot(
     status,
     output,
     error,
+    ...(typeof document.error_code === 'number' ? { errorCode: document.error_code } : {}),
+    ...(normalizedString(document.error_name) ? { errorName: document.error_name } : {}),
+    ...(normalizedString(document.error_i18n_key) ? { errorI18nKey: document.error_i18n_key } : {}),
+    ...(typeof document.retryable === 'boolean' ? { retryable: document.retryable } : {}),
+    ...(typeof document.attempts === 'number' ? { attempts: document.attempts } : {}),
     progress: status === 'success' ? 1 : status === 'running' ? 0.45 : 0,
     updatedAt,
   };
