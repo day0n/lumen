@@ -333,6 +333,7 @@ const en = {
       delete: 'Delete clip',
       trimIn: 'In',
       duration: 'Duration',
+      noBgm: 'No BGM. Connect an audio node.',
       mobileOnlyDesktop: 'Please edit composition on desktop.',
     },
     groupActions: {
@@ -1061,6 +1062,7 @@ const zh: typeof en = {
       delete: '删除片段',
       trimIn: '入点',
       duration: '时长',
+      noBgm: '未连接 BGM，请连接一个音频节点。',
       mobileOnlyDesktop: '请在桌面端编辑视频合成。',
     },
     groupActions: {

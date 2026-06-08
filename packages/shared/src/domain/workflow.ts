@@ -356,6 +356,10 @@ export function computeSingleNodeInput(canvas: LumenCanvas, nodeId: string) {
       for (const clipId of compiled.missing) {
         missing.push(`timeline clip (${clipId})`);
       }
+    } else {
+      resolved.clips = compiled.clips;
+      resolved.video = null;
+      resolved.videos = [];
     }
 
     return { input: resolved, missingInputs: missing };

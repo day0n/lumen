@@ -1,10 +1,14 @@
 'use client';
 
+import { useI18n } from '@/i18n/provider';
+
 export function BgmTrack({ bgmUrl, volume }: { bgmUrl: string | null; volume: number }) {
+  const { t } = useI18n();
+
   if (!bgmUrl) {
     return (
       <div className="mx-3 mb-2 rounded-[8px] border border-dashed border-white/[0.1] px-3 py-2 text-[11px] text-white/34">
-        No BGM — connect an audio node
+        {t('canvas.composition.noBgm')}
       </div>
     );
   }
