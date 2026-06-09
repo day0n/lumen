@@ -21,6 +21,37 @@ import {
 
 const COLLECTION = 'studio_projects';
 
+// Hard limit on serialized canvas size. Mongo's per-document limit is 16MB.
+// `LumenCanvasNodeDataSchema` uses `.passthrough()` and `settings` is
+// `z.record(z.unknown())`, so a misbehaving client could push base64
+// thumbnails or raw upload urls into `data.settings` and quickly approach
+// 16MB — at which point inserts/updates start failing project-wide.
+// 4MB gives ample headroom for a fully-loaded canvas (hundreds of nodes,
+// long prompts, R2 URL references) while bounding the worst case well below
+// what would break Mongo or knock out auto-save.
+const MAX_CANVAS_BYTES = 4 * 1024 * 1024;
+
+export class CanvasTooLargeError extends Error {
+  readonly bytes: number;
+  readonly limit: number;
+  constructor(bytes: number, limit: number) {
+    super(`canvas payload too large: ${bytes} bytes exceeds ${limit} byte limit`);
+    this.name = 'CanvasTooLargeError';
+    this.bytes = bytes;
+    this.limit = limit;
+  }
+}
+
+function assertCanvasWithinLimit(canvas: ProjectCanvas) {
+  // Buffer.byteLength is the cheapest accurate UTF-8 size check we have
+  // (Mongo BSON encoding is close to but not identical to JSON; this is a
+  // tight upper bound that errs on the safe side).
+  const size = Buffer.byteLength(JSON.stringify(canvas), 'utf8');
+  if (size > MAX_CANVAS_BYTES) {
+    throw new CanvasTooLargeError(size, MAX_CANVAS_BYTES);
+  }
+}
+
 export class ProjectRepository {
   constructor(private readonly db: Db) {}
 
@@ -36,6 +67,7 @@ export class ProjectRepository {
   async create(input: CreateProjectInput): Promise<ProjectRecord> {
     const parsed = CreateProjectInputSchema.parse(input);
     const now = new Date();
+    if (parsed.canvas) assertCanvasWithinLimit(parsed.canvas);
     const document = ProjectDocumentSchema.parse({
       _id: randomUUID(),
       owner_id: parsed.ownerId,
@@ -211,7 +243,11 @@ export class ProjectRepository {
 
     if (parsed.title !== undefined) set.title = parsed.title;
     if (parsed.status !== undefined) set.status = parsed.status;
-    if (parsed.canvas !== undefined) set.canvas = ProjectCanvasSchema.parse(parsed.canvas);
+    if (parsed.canvas !== undefined) {
+      const canvas = ProjectCanvasSchema.parse(parsed.canvas);
+      assertCanvasWithinLimit(canvas);
+      set.canvas = canvas;
+    }
 
     if (parsed.description !== undefined) {
       if (parsed.description === null) unset.description = '';
