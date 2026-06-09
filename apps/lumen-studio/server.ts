@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, resolve } from 'node:path';
+import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { parse } from 'node:url';
 
 import { WebSocketServer } from 'ws';
@@ -146,7 +146,7 @@ function serveStudioApp(rawUrl: string, res: import('node:http').ServerResponse)
   if (appPathname.startsWith('/app/assets/')) {
     const assetPath = resolve(appDistDir, appPathname.slice('/app/'.length));
     if (
-      !assetPath.startsWith(appDistDir) ||
+      !isPathInside(assetPath, appDistDir) ||
       !existsSync(assetPath) ||
       !statSync(assetPath).isFile()
     ) {
@@ -170,6 +170,20 @@ function serveStudioApp(rawUrl: string, res: import('node:http').ServerResponse)
   res.setHeader('cache-control', 'no-cache');
   res.setHeader('content-type', 'text/html; charset=utf-8');
   createReadStream(indexPath).pipe(res);
+  return true;
+}
+
+// Defense against prefix-confusion path traversal: a previous version used
+// `assetPath.startsWith(appDistDir)`, which would also accept paths inside
+// any sibling directory whose name starts with the same prefix (e.g. a
+// future `dist-staging/`). Using `path.relative` and rejecting paths that
+// escape (`..`) or stay absolute is the canonical "is X strictly inside
+// Y?" check on POSIX and Windows alike.
+function isPathInside(child: string, parent: string) {
+  const rel = relative(parent, child);
+  if (!rel || rel === '.') return false; // do not serve the directory itself
+  if (rel.startsWith(`..${sep}`) || rel === '..') return false;
+  if (isAbsolute(rel)) return false;
   return true;
 }
 
