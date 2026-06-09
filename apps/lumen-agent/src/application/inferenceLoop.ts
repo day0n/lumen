@@ -137,9 +137,36 @@ export class InferenceLoop {
         break;
       }
 
-      // 执行 tool calls（顺序执行，避免 message ordering 复杂化）
-      for (const tc of response.tool_calls) {
-        await this.runToolCall(tc, messages, toolsUsed, toolTimings);
+      // Run all tool calls in this turn concurrently, then append their
+      // results to `messages` in the original tool_calls order. Providers
+      // expect the tool result messages to follow the assistant message in
+      // the same order as the calls; Promise.all preserves array order, so
+      // we get parallel execution without breaking message ordering.
+      //
+      // Previous implementation ran them serially "to avoid message
+      // ordering complexity". For typical multi-tool turns (search_web +
+      // find_inspiration ≈ 1-3s each, or two parallel run_canvas_node
+      // calls), serial execution made the wall-clock equal to the SUM of
+      // tool durations; this version makes it the MAX.
+      const settled = await Promise.all(response.tool_calls.map((tc) => this.executeToolCall(tc)));
+      for (const outcome of settled) {
+        addToolResult(messages, outcome.toolCallId, outcome.toolName, outcome.resultText);
+        toolsUsed.push(outcome.toolName);
+        const t = toolTimings[outcome.toolName] ?? { call_count: 0, total_ms: 0 };
+        t.call_count += 1;
+        t.total_ms += outcome.durationMs;
+        toolTimings[outcome.toolName] = t;
+        await this.hooks.onToolEnd?.(
+          outcome.toolName,
+          outcome.toolCallId,
+          outcome.outputBytes,
+          outcome.toolError,
+          outcome.args,
+          outcome.status,
+          outcome.durationMs,
+          outcome.rawResultText,
+          outcome.truncated,
+        );
       }
 
       await this.hooks.onStepEnd?.(iteration);
@@ -211,12 +238,26 @@ export class InferenceLoop {
 
   // ── 单个 tool 调用 ──────────────────────────────────────────────
 
-  private async runToolCall(
-    tc: ToolCallRequest,
-    messages: MessageList,
-    toolsUsed: string[],
-    toolTimings: Record<string, ToolTiming>,
-  ): Promise<void> {
+  /**
+   * Execute a single tool call and return everything needed to (a) append
+   * the tool result message in the right place and (b) emit the
+   * onToolEnd / timings hooks afterwards. Pure data return — does not
+   * mutate `messages` or shared state — so multiple of these can run in
+   * parallel via Promise.all and the caller serializes the appends in
+   * tool_calls order.
+   */
+  private async executeToolCall(tc: ToolCallRequest): Promise<{
+    toolCallId: string;
+    toolName: string;
+    args: Record<string, unknown>;
+    resultText: string; // possibly truncated, what gets appended to messages
+    rawResultText: string; // pre-truncation, for telemetry
+    truncated: boolean;
+    outputBytes: number;
+    status: 'success' | 'error';
+    toolError: string | null;
+    durationMs: number;
+  }> {
     const { id: toolCallId, name: toolName, arguments: args } = tc;
     const start = performance.now();
 
@@ -269,26 +310,19 @@ export class InferenceLoop {
       truncated = true;
     }
 
-    addToolResult(messages, toolCallId, toolName, resultText);
-
     const durationMs = Math.round(performance.now() - start);
-    toolsUsed.push(toolName);
-    const t = toolTimings[toolName] ?? { call_count: 0, total_ms: 0 };
-    t.call_count += 1;
-    t.total_ms += durationMs;
-    toolTimings[toolName] = t;
-
-    await this.hooks.onToolEnd?.(
-      toolName,
+    return {
       toolCallId,
-      Buffer.byteLength(rawResultText, 'utf8'),
-      toolError,
+      toolName,
       args,
-      status,
-      durationMs,
+      resultText,
       rawResultText,
       truncated,
-    );
+      outputBytes: Buffer.byteLength(rawResultText, 'utf8'),
+      status,
+      toolError,
+      durationMs,
+    };
   }
 }
 
