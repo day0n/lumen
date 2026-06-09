@@ -5,6 +5,8 @@ import { useEffect } from 'react';
 import { currentAppRedirectUrl } from '../../lib/path-map';
 import { AppRouteFallback } from '../routing/AppRouteFallback';
 
+const SIGN_IN_REDIRECT_GRACE_MS = 1500;
+
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const location = useLocation();
@@ -13,7 +15,12 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (allowPublicEntry) return;
     if (!isLoaded || isSignedIn) return;
-    window.location.assign(`/sign-in?redirect_url=${encodeURIComponent(currentAppRedirectUrl())}`);
+    const timeout = window.setTimeout(() => {
+      window.location.assign(
+        `/sign-in?redirect_url=${encodeURIComponent(currentAppRedirectUrl())}`,
+      );
+    }, SIGN_IN_REDIRECT_GRACE_MS);
+    return () => window.clearTimeout(timeout);
   }, [allowPublicEntry, isLoaded, isSignedIn]);
 
   if (allowPublicEntry) {

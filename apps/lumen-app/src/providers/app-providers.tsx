@@ -2,22 +2,141 @@ import { I18nProvider } from '@/i18n/provider';
 import { ClerkProvider, useAuth } from '@clerk/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Provider as JotaiProvider } from 'jotai';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { installApiFetchInterceptor, setApiTokenGetter } from '../lib/api-client';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  installApiFetchInterceptor,
+  setApiAuthStatusVerifier,
+  setApiTokenGetter,
+} from '../lib/api-client';
 import { scheduleAppWarmup } from '../lib/app-warmup';
 import { createQueryClient } from '../lib/query-client';
 import { MinimalProviders } from './minimal-providers';
 
-function ApiTokenBridge() {
-  const { getToken } = useAuth();
+type AuthStatus = 'active' | 'signed-out' | 'unknown';
+type AuthSnapshot = {
+  isLoaded: boolean;
+  isSignedIn: boolean;
+};
+type AuthSnapshotRef = {
+  current: AuthSnapshot;
+};
+
+const AUTH_CHECK_TOKEN_TIMEOUT_MS = 3000;
+const AUTH_CHECK_RETRY_DELAY_MS = 700;
+const AUTH_CHECK_SETTLE_DELAY_MS = 500;
+const AUTH_HEARTBEAT_INTERVAL_MS = 60_000;
+const AUTH_HEARTBEAT_INITIAL_DELAY_MS = 2500;
+
+function ApiAuthBridge() {
+  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const authSnapshotRef = useRef<AuthSnapshot>({
+    isLoaded,
+    isSignedIn: Boolean(isSignedIn),
+  });
+
+  useEffect(() => {
+    authSnapshotRef.current = {
+      isLoaded,
+      isSignedIn: Boolean(isSignedIn),
+    };
+  }, [isLoaded, isSignedIn]);
 
   useEffect(() => {
     setApiTokenGetter(() => getToken());
+    setApiAuthStatusVerifier(() => verifyCurrentAuth(getToken, authSnapshotRef));
     installApiFetchInterceptor();
-    return () => setApiTokenGetter(null);
+    return () => {
+      setApiTokenGetter(null);
+      setApiAuthStatusVerifier(null);
+    };
   }, [getToken]);
 
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+
+    let cancelled = false;
+    const ping = () => {
+      if (cancelled) return;
+      void checkCurrentUser(getToken).catch(() => undefined);
+    };
+    const pingWhenVisible = () => {
+      if (document.visibilityState === 'visible') ping();
+    };
+
+    const initialTimer = window.setTimeout(pingWhenVisible, AUTH_HEARTBEAT_INITIAL_DELAY_MS);
+    const interval = window.setInterval(pingWhenVisible, AUTH_HEARTBEAT_INTERVAL_MS);
+    window.addEventListener('focus', pingWhenVisible);
+    document.addEventListener('visibilitychange', pingWhenVisible);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+      window.removeEventListener('focus', pingWhenVisible);
+      document.removeEventListener('visibilitychange', pingWhenVisible);
+    };
+  }, [getToken, isLoaded, isSignedIn]);
+
   return null;
+}
+
+async function verifyCurrentAuth(
+  getToken: () => Promise<string | null>,
+  authSnapshotRef: AuthSnapshotRef,
+): Promise<AuthStatus> {
+  let sawAuthFailure = false;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const snapshot = authSnapshotRef.current;
+    if (!snapshot.isLoaded) {
+      await delay(AUTH_CHECK_SETTLE_DELAY_MS);
+      continue;
+    }
+    if (!snapshot.isSignedIn) return 'signed-out';
+
+    const response = await checkCurrentUser(getToken).catch(() => null);
+    if (!response) return 'unknown';
+    if (response.ok) return 'active';
+    if (response.status !== 401 && response.status !== 403) return 'unknown';
+    sawAuthFailure = true;
+    if (attempt === 0) await delay(AUTH_CHECK_RETRY_DELAY_MS);
+  }
+
+  const snapshot = authSnapshotRef.current;
+  if (snapshot.isLoaded && !snapshot.isSignedIn) return 'signed-out';
+  return sawAuthFailure ? 'signed-out' : 'unknown';
+}
+
+async function checkCurrentUser(getToken: () => Promise<string | null>) {
+  const token = await getTokenWithTimeout(getToken, AUTH_CHECK_TOKEN_TIMEOUT_MS);
+  const headers = new Headers({ 'x-lumen-auth-check': '1' });
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  return fetch('/api/me', {
+    cache: 'no-store',
+    credentials: 'include',
+    headers,
+  });
+}
+
+async function getTokenWithTimeout(
+  getToken: () => Promise<string | null>,
+  timeoutMs: number,
+): Promise<string | null> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timeout = setTimeout(() => resolve(null), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([getToken().catch(() => null), timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function AppWarmup() {
@@ -64,7 +183,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
         <JotaiProvider>
           <QueryClientProvider client={queryClient}>
             <I18nProvider>
-              <ApiTokenBridge />
+              <ApiAuthBridge />
               <AppWarmup />
               {children}
             </I18nProvider>

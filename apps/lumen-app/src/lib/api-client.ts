@@ -1,4 +1,6 @@
 type TokenGetter = () => Promise<string | null>;
+type AuthStatus = 'active' | 'signed-out' | 'unknown';
+type AuthStatusVerifier = () => Promise<AuthStatus>;
 
 type CachedApiResponse = {
   body: string;
@@ -9,7 +11,9 @@ type CachedApiResponse = {
 };
 
 let installed = false;
+let authRedirectInProgress = false;
 let tokenGetter: TokenGetter | null = null;
+let authStatusVerifier: AuthStatusVerifier | null = null;
 const apiCache = new Map<string, CachedApiResponse>();
 
 const apiCacheTtlByPath: Array<[prefix: string, ttlMs: number]> = [
@@ -26,6 +30,10 @@ const apiCacheTtlByPath: Array<[prefix: string, ttlMs: number]> = [
 
 export function setApiTokenGetter(getter: TokenGetter | null) {
   tokenGetter = getter;
+}
+
+export function setApiAuthStatusVerifier(verifier: AuthStatusVerifier | null) {
+  authStatusVerifier = verifier;
 }
 
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
@@ -50,9 +58,11 @@ export function installApiFetchInterceptor() {
     const request = normalizeRequest(input, init);
     const method = request.method.toUpperCase();
     const uploadRequest = isCanvasUploadRequest(apiUrl, method);
-    const token = request.headers.has('Authorization')
-      ? null
-      : await readApiToken(uploadRequest ? 6000 : 1500);
+    const authCheckRequest = isAuthCheckRequest(request);
+    const token =
+      request.headers.has('Authorization') || authCheckRequest
+        ? null
+        : await readApiToken(uploadRequest ? 6000 : 1500);
     if (token) {
       request.headers.set('Authorization', `Bearer ${token}`);
     }
@@ -60,7 +70,7 @@ export function installApiFetchInterceptor() {
       request.headers.set('x-lumen-locale', readLocale());
     }
 
-    if (method === 'GET') {
+    if (method === 'GET' && !authCheckRequest) {
       const cached = readCachedApiResponse(apiUrl, request.headers);
       if (cached) return cached;
     }
@@ -69,18 +79,31 @@ export function installApiFetchInterceptor() {
     if (
       (response.status === 401 || response.status === 403) &&
       !isPrefetchRequest(request) &&
-      !uploadRequest
+      !uploadRequest &&
+      !authCheckRequest
     ) {
-      const redirectUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      window.location.assign(`/sign-in?redirect_url=${encodeURIComponent(redirectUrl)}`);
+      await redirectToSignInIfSignedOut();
     }
-    if (method === 'GET') {
+    if (method === 'GET' && !authCheckRequest) {
       void writeCachedApiResponse(apiUrl, request.headers, response);
     } else if (response.ok) {
       clearApiCacheForMutation(apiUrl.pathname);
     }
     return response;
   };
+}
+
+async function redirectToSignInIfSignedOut() {
+  if (authRedirectInProgress) return;
+
+  if (authStatusVerifier) {
+    const status = await authStatusVerifier().catch((): AuthStatus => 'unknown');
+    if (status !== 'signed-out') return;
+  }
+
+  authRedirectInProgress = true;
+  const redirectUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  window.location.assign(`/sign-in?redirect_url=${encodeURIComponent(redirectUrl)}`);
 }
 
 async function readApiToken(timeoutMs = 1500): Promise<string | null> {
@@ -100,6 +123,10 @@ async function readApiToken(timeoutMs = 1500): Promise<string | null> {
 
 function isPrefetchRequest(request: Request) {
   return request.headers.get('x-lumen-prefetch') === '1';
+}
+
+function isAuthCheckRequest(request: Request) {
+  return request.headers.get('x-lumen-auth-check') === '1';
 }
 
 function isCanvasUploadRequest(url: URL, method: string) {
