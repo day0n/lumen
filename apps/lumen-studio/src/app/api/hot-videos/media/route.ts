@@ -30,13 +30,16 @@ async function proxyMedia(request: Request, method: 'GET' | 'HEAD'): Promise<Res
     });
 
     if (!upstream.ok && upstream.status !== 304) {
+      // Drain the upstream body to free the socket before returning.
+      try {
+        await upstream.body?.cancel();
+      } catch {
+        // ignore
+      }
       return failJson('Media unavailable', upstream.status);
     }
 
-    const body =
-      method === 'HEAD' || upstream.status === 304
-        ? null
-        : Buffer.from(await upstream.arrayBuffer());
+    const body = method === 'HEAD' || upstream.status === 304 ? null : (upstream.body ?? null);
 
     return new Response(body, {
       status: upstream.status,
