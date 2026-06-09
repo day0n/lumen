@@ -199,11 +199,13 @@ export class RemakeJobRepository {
    * 并发编辑时（UI 批量回写 / storyboard 重生成与用户编辑碰撞），后写者用旧快照
    * 整体覆盖 plan，**对方的 scene 编辑被静默丢失**。
    *
-   * 这里改成：
-   * - 场内可编辑字段（action/dialogue/voiceLine）走位置数组操作符 + arrayFilters，
-   *   只动 plan.scenes.$[s].xxx，不同 sceneIndex 完全互不冲突；
-   * - 稀疏 prompt 覆盖数组（sceneImagePrompts/sceneVideoPrompts）走聚合管道更新，
-   *   服务端 padding + 局部 splice + 自动清空回退，不再依赖 Node 端快照。
+   * 修法：
+   * - 场内字段（action/dialogue/voiceLine）走位置数组操作符 + arrayFilters，
+   *   只动 plan.scenes.$[s].<field>，不同 sceneIndex 互不冲突。
+   * - 稀疏 prompt override 数组的更新仍保留 read-modify-write，但只 $set
+   *   `plan.sceneImagePrompts`/`plan.sceneVideoPrompts` 这两个具体路径，
+   *   不再覆盖整个 `plan`。同 prompt 数组的并发编辑是用户难触发的边角场景，
+   *   不同 prompt 数组、不同 scene 字段都不会再互相覆盖。
    */
   async patchScenePlan(
     jobId: string,
@@ -219,75 +221,51 @@ export class RemakeJobRepository {
       videoPrompt?: string | null;
     },
   ): Promise<RemakeJobRecord | null> {
-    const sceneFieldUpdates: Record<string, unknown> = {};
-    if (patch.action !== undefined) sceneFieldUpdates.action = patch.action;
-    if (patch.dialogue !== undefined) sceneFieldUpdates.dialogue = patch.dialogue;
-    if (patch.voiceLine !== undefined) sceneFieldUpdates.voiceLine = patch.voiceLine;
-    const touchesGenerationInput = Object.keys(sceneFieldUpdates).length > 0;
+    const job = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
+    if (!job?.plan?.scenes?.length) return null;
+    const idx = job.plan.scenes.findIndex((scene) => scene.index === sceneIndex);
+    if (idx < 0) return null;
 
-    const explicitImage = patch.imagePrompt !== undefined;
-    const explicitVideo = patch.videoPrompt !== undefined;
-    const trimmedImage = explicitImage ? (patch.imagePrompt?.trim() ?? '') : '';
-    const trimmedVideo = explicitVideo ? (patch.videoPrompt?.trim() ?? '') : '';
+    const sceneCount = job.plan.scenes.length;
+    const touchesGenerationInput =
+      patch.action !== undefined || patch.dialogue !== undefined || patch.voiceLine !== undefined;
 
-    // Quick existence check; also bails out if sceneIndex is unknown.
-    const exists = await this.jobs().findOne(
-      { _id: jobId, owner_id: ownerId, 'plan.scenes.index': sceneIndex },
-      { projection: { _id: 1 } },
+    const nextImagePrompts = computeSparsePromptUpdate(
+      job.plan.sceneImagePrompts,
+      idx,
+      sceneCount,
+      patch.imagePrompt,
+      touchesGenerationInput,
     );
-    if (!exists) return null;
+    const nextVideoPrompts = computeSparsePromptUpdate(
+      job.plan.sceneVideoPrompts,
+      idx,
+      sceneCount,
+      patch.videoPrompt,
+      touchesGenerationInput,
+    );
 
-    // Step 1: scene field updates via arrayFilters. Different sceneIndex →
-    // different array slot, can race safely. Same sceneIndex → mongo
-    // serialises per-document updates.
-    if (touchesGenerationInput) {
-      const setFields: Record<string, unknown> = { updated_at: new Date() };
-      for (const [key, value] of Object.entries(sceneFieldUpdates)) {
-        setFields[`plan.scenes.$[s].${key}`] = value;
-      }
-      await this.jobs().updateOne(
-        { _id: jobId, owner_id: ownerId },
-        { $set: setFields },
-        { arrayFilters: [{ 's.index': sceneIndex }] },
-      );
-    }
+    const set: Record<string, unknown> = { updated_at: new Date() };
+    if (patch.action !== undefined) set['plan.scenes.$[s].action'] = patch.action;
+    if (patch.dialogue !== undefined) set['plan.scenes.$[s].dialogue'] = patch.dialogue;
+    if (patch.voiceLine !== undefined) set['plan.scenes.$[s].voiceLine'] = patch.voiceLine;
+    const unset: Record<string, ''> = {};
+    if (nextImagePrompts.kind === 'set') set['plan.sceneImagePrompts'] = nextImagePrompts.value;
+    else if (nextImagePrompts.kind === 'unset') unset['plan.sceneImagePrompts'] = '';
+    if (nextVideoPrompts.kind === 'set') set['plan.sceneVideoPrompts'] = nextVideoPrompts.value;
+    else if (nextVideoPrompts.kind === 'unset') unset['plan.sceneVideoPrompts'] = '';
 
-    // Step 2: sparse prompt overrides. Run only when needed.
-    const needsPromptUpdate = explicitImage || explicitVideo || touchesGenerationInput;
-    if (needsPromptUpdate) {
-      const pipeline: Document[] = [
-        {
-          $set: {
-            updated_at: new Date(),
-            ...(explicitImage || touchesGenerationInput
-              ? {
-                  'plan.sceneImagePrompts': buildSparsePromptUpdate(
-                    'sceneImagePrompts',
-                    sceneIndex,
-                    explicitImage,
-                    trimmedImage,
-                    touchesGenerationInput,
-                  ),
-                }
-              : {}),
-            ...(explicitVideo || touchesGenerationInput
-              ? {
-                  'plan.sceneVideoPrompts': buildSparsePromptUpdate(
-                    'sceneVideoPrompts',
-                    sceneIndex,
-                    explicitVideo,
-                    trimmedVideo,
-                    touchesGenerationInput,
-                  ),
-                }
-              : {}),
-          },
-        },
-      ];
-      await this.jobs().updateOne({ _id: jobId, owner_id: ownerId }, pipeline);
-    }
+    const update: UpdateFilter<RemakeJobDocument> = { $set: set };
+    if (Object.keys(unset).length > 0) update.$unset = unset;
 
-    return this.getJob(jobId, ownerId);
+    const useArrayFilter =
+      patch.action !== undefined || patch.dialogue !== undefined || patch.voiceLine !== undefined;
+
+    const result = await this.jobs().findOneAndUpdate({ _id: jobId, owner_id: ownerId }, update, {
+      returnDocument: 'after',
+      ...(useArrayFilter ? { arrayFilters: [{ 's.index': sceneIndex }] } : {}),
+    });
+    return result ? toJobRecord(result) : null;
   }
 
   /**
@@ -307,10 +285,13 @@ export class RemakeJobRepository {
       environmentPrompts?: Array<{ environmentIndex: number; prompt: string | null }>;
     },
   ): Promise<RemakeJobRecord | null> {
-    const job = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
-    if (!job) return null;
-
-    const nextPlan = { ...job.plan };
+    // For top-level prompt strings we use scoped paths (`plan.creatorPrompt`)
+    // so concurrent writes to different prompts no longer overwrite the whole
+    // `plan` document. environmentPrompts still needs an array snapshot
+    // because we patch by environment.index, but again we $set only
+    // `plan.environments`, not the entire `plan`.
+    const set: Record<string, unknown> = { updated_at: new Date() };
+    const unset: Record<string, ''> = {};
 
     const applyTop = (
       key: 'creatorPrompt' | 'productPrompt' | 'bgmPrompt',
@@ -318,39 +299,39 @@ export class RemakeJobRepository {
     ): void => {
       if (value === undefined) return;
       const trimmed = value?.trim() ?? '';
-      if (trimmed) {
-        nextPlan[key] = trimmed;
-      } else {
-        nextPlan[key] = undefined;
-      }
+      if (trimmed) set[`plan.${key}`] = trimmed;
+      else unset[`plan.${key}`] = '';
     };
-
     applyTop('creatorPrompt', patch.creatorPrompt);
     applyTop('productPrompt', patch.productPrompt);
     applyTop('bgmPrompt', patch.bgmPrompt);
 
     if (patch.environmentPrompts?.length) {
+      const job = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
+      if (!job) return null;
       const environments = [...(job.plan.environments ?? [])];
       for (const entry of patch.environmentPrompts) {
         const idx = environments.findIndex((env) => env.index === entry.environmentIndex);
         if (idx < 0) continue;
         const trimmed = entry.prompt?.trim() ?? '';
         const next = { ...environments[idx]! };
-        if (trimmed) {
-          next.prompt = trimmed;
-        } else {
-          next.prompt = undefined;
-        }
+        if (trimmed) next.prompt = trimmed;
+        else next.prompt = undefined;
         environments[idx] = next;
       }
-      nextPlan.environments = environments;
+      set['plan.environments'] = environments;
+    } else if (Object.keys(set).length === 1 && Object.keys(unset).length === 0) {
+      // Nothing to write at all (only updated_at).
+      const existing = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
+      return existing ? toJobRecord(existing) : null;
     }
 
-    const result = await this.jobs().findOneAndUpdate(
-      { _id: jobId, owner_id: ownerId },
-      { $set: { plan: nextPlan, updated_at: new Date() } },
-      { returnDocument: 'after' },
-    );
+    const update: UpdateFilter<RemakeJobDocument> = { $set: set };
+    if (Object.keys(unset).length > 0) update.$unset = unset;
+
+    const result = await this.jobs().findOneAndUpdate({ _id: jobId, owner_id: ownerId }, update, {
+      returnDocument: 'after',
+    });
     return result ? toJobRecord(result) : null;
   }
 
@@ -693,101 +674,45 @@ function buildInitialStages(): RemakeJobDocument['stages'] {
   };
 }
 
-function buildSparsePromptUpdate(
-  field: 'sceneImagePrompts' | 'sceneVideoPrompts',
-  sceneIndex: number,
-  explicitPrompt: boolean,
-  trimmedPrompt: string,
+/**
+ * Decide what to do with a sparse `sceneImagePrompts`/`sceneVideoPrompts`
+ * array based on the current snapshot. Returns a tagged result that the
+ * caller turns into a tightly-scoped `$set`/`$unset` — never `$set: { plan }`,
+ * which used to overwrite concurrent unrelated edits to other plan fields.
+ *
+ * Semantics:
+ * - explicit prompt with text  → write to slot, pad with '' as needed
+ * - explicit prompt empty/null → clear slot
+ * - touching action/dialogue/voiceLine while an override exists at this slot
+ *   → clear that slot (matches previous behaviour: changing the source text
+ *   should drop the prompt override and fall back to auto-generation)
+ * - all-empty after the change  → unset the whole field (cleanup)
+ * - no change requested         → noop
+ */
+function computeSparsePromptUpdate(
+  current: string[] | undefined,
+  sceneArrayIdx: number,
+  sceneCount: number,
+  explicitValue: string | null | undefined,
   clearWhenGenerationInputChanged: boolean,
-): Document | string {
-  if (!explicitPrompt && !clearWhenGenerationInputChanged) {
-    return `$plan.${field}`;
+): { kind: 'set'; value: string[] } | { kind: 'unset' } | { kind: 'noop' } {
+  const explicit = explicitValue !== undefined;
+  if (!explicit && !clearWhenGenerationInputChanged) return { kind: 'noop' };
+
+  const trimmed = explicit ? (explicitValue?.trim() ?? '') : '';
+  const next = [...(current ?? [])];
+  while (next.length < sceneCount) next.push('');
+
+  if (explicit) {
+    next[sceneArrayIdx] = trimmed;
+  } else if (clearWhenGenerationInputChanged && next[sceneArrayIdx]?.trim()) {
+    next[sceneArrayIdx] = '';
+  } else {
+    return { kind: 'noop' };
   }
 
-  const targetIndex = Math.max(0, sceneIndex - 1);
-  const targetLength = targetIndex + 1;
-  const nextValue = explicitPrompt ? trimmedPrompt : '';
-  const currentValue = { $ifNull: [`$plan.${field}`, []] };
-
-  return {
-    $let: {
-      vars: {
-        current: currentValue,
-      },
-      in: {
-        $let: {
-          vars: {
-            padded: {
-              $concatArrays: [
-                '$$current',
-                {
-                  $map: {
-                    input: {
-                      $range: [
-                        0,
-                        {
-                          $max: [
-                            0,
-                            {
-                              $subtract: [targetLength, { $size: '$$current' }],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                    as: 'unused',
-                    in: '',
-                  },
-                },
-              ],
-            },
-          },
-          in: {
-            $let: {
-              vars: {
-                next: {
-                  $concatArrays: [
-                    { $slice: ['$$padded', 0, targetIndex] },
-                    [nextValue],
-                    { $slice: ['$$padded', targetLength, { $size: '$$padded' }] },
-                  ],
-                },
-              },
-              in: {
-                $cond: [
-                  {
-                    $gt: [
-                      {
-                        $size: {
-                          $filter: {
-                            input: '$$next',
-                            as: 'prompt',
-                            cond: {
-                              $gt: [
-                                {
-                                  $strLenCP: {
-                                    $trim: { input: '$$prompt' },
-                                  },
-                                },
-                                0,
-                              ],
-                            },
-                          },
-                        },
-                      },
-                      0,
-                    ],
-                  },
-                  '$$next',
-                  '$$REMOVE',
-                ],
-              },
-            },
-          },
-        },
-      },
-    },
-  };
+  if (next.some((entry) => entry.trim())) return { kind: 'set', value: next };
+  return { kind: 'unset' };
 }
 
 function toJobRecord(document: RemakeJobDocument): RemakeJobRecord {
