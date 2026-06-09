@@ -382,6 +382,9 @@ async function assertHostNotInternal(hostname: string): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`DNS lookup failed for ${hostname}: ${msg}`);
   }
+  if (addresses.length === 0) {
+    throw new Error(`DNS lookup returned no addresses for ${hostname}`);
+  }
   for (const { address } of addresses) {
     if (isInternalAddress(address)) {
       throw new Error(`hostname ${hostname} resolves to internal address ${address}`);
@@ -414,12 +417,23 @@ function isInternalIPv4(address: string): boolean {
 }
 
 function isInternalIPv6(address: string): boolean {
-  const lower = address.toLowerCase();
+  const lower = address.toLowerCase().replace(/^\[|\]$/g, '');
   if (lower === '::' || lower === '::1') return true;
-  if (lower.startsWith('fe80:') || lower.startsWith('fe8') || lower.startsWith('fec0:'))
-    return true;
-  if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // ULA fc00::/7
-  // IPv4-mapped (::ffff:a.b.c.d) — re-check the embedded IPv4 portion.
+  // IPv4-mapped (::ffff:a.b.c.d / ::ffff:7f00:1). Reject the mapped
+  // namespace outright: accepting mapped public addresses is not useful for
+  // media URLs, and rejecting avoids parser differences in hex-vs-dotted forms.
+  if (lower.startsWith('::ffff:')) return true;
+  // IPv4-compatible IPv6 (::a.b.c.d) is deprecated but still worth rejecting.
+  const compatible = /^::(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(lower);
+  if (compatible?.[1]) return true;
+  const firstHextetText = lower.split(':').find(Boolean);
+  const firstHextet = firstHextetText ? Number.parseInt(firstHextetText, 16) : Number.NaN;
+  if (!Number.isFinite(firstHextet)) return true;
+  if ((firstHextet & 0xffc0) === 0xfe80) return true; // link-local fe80::/10
+  if ((firstHextet & 0xfe00) === 0xfc00) return true; // ULA fc00::/7
+  if ((firstHextet & 0xff00) === 0xff00) return true; // multicast ff00::/8
+  if ((firstHextet & 0xffc0) === 0xfec0) return true; // deprecated site-local fec0::/10
+  // IPv4-mapped dotted form kept as a fallback for non-normalized inputs.
   const mapped = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(lower);
   if (mapped?.[1]) return isInternalIPv4(mapped[1]);
   return false;

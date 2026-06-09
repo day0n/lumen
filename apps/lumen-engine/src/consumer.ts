@@ -192,45 +192,54 @@ export class StreamConsumer {
   private async reclaimAbandonedMessages(): Promise<void> {
     const RECLAIM_IDLE_MS = 5 * 60 * 1000;
     try {
-      // ioredis types xautoclaim loosely; cast to the documented response shape.
-      const response = (await this.redis.xautoclaim(
-        STREAM_KEY,
-        GROUP_NAME,
-        CONSUMER_NAME,
-        RECLAIM_IDLE_MS,
-        '0-0',
-        'COUNT',
-        50,
-      )) as [string, [string, string[]][], string[]] | null;
-      if (!response) return;
-      const claimed = response[1] ?? [];
-      if (claimed.length === 0) return;
+      let cursor = '0-0';
+      let reclaimed = 0;
+      do {
+        // ioredis types xautoclaim loosely; cast to the documented response shape.
+        const response = (await this.redis.xautoclaim(
+          STREAM_KEY,
+          GROUP_NAME,
+          CONSUMER_NAME,
+          RECLAIM_IDLE_MS,
+          cursor,
+          'COUNT',
+          50,
+        )) as [string, [string, string[]][], string[]] | null;
+        if (!response) break;
 
-      logger.warn(
-        { count: claimed.length, idleMs: RECLAIM_IDLE_MS },
-        'reclaimed abandoned messages from PEL — acking without retry to free the stream',
-      );
-      for (const [messageId, fields] of claimed) {
-        const data = parseFields(fields as string[]);
-        // Best-effort: tell the listening client that the run died.
-        try {
-          if (data.channelId && data.payload) {
-            const payload = JSON.parse(data.payload) as { runId?: string };
-            if (payload.runId) {
-              await this.redis.publish(
-                `flow:events:${data.channelId}`,
-                JSON.stringify({
-                  event: 'flow:error',
-                  runId: payload.runId,
-                  error: 'engine restarted while this run was in flight',
-                }),
-              );
+        cursor = response[0] || '0-0';
+        const claimed = response[1] ?? [];
+        reclaimed += claimed.length;
+
+        for (const [messageId, fields] of claimed) {
+          const data = parseFields(fields as string[]);
+          // Best-effort: tell the listening client that the run died.
+          try {
+            if (data.channelId && data.payload) {
+              const payload = JSON.parse(data.payload) as { runId?: string };
+              if (payload.runId) {
+                await this.redis.publish(
+                  `flow:events:${data.channelId}`,
+                  JSON.stringify({
+                    event: 'flow:error',
+                    runId: payload.runId,
+                    error: 'engine restarted while this run was in flight',
+                  }),
+                );
+              }
             }
+          } catch (err) {
+            logger.warn({ err, messageId }, 'failed to publish abandoned-run notice');
           }
-        } catch (err) {
-          logger.warn({ err, messageId }, 'failed to publish abandoned-run notice');
+          await this.redis.xack(STREAM_KEY, GROUP_NAME, messageId);
         }
-        await this.redis.xack(STREAM_KEY, GROUP_NAME, messageId);
+      } while (cursor !== '0-0');
+
+      if (reclaimed > 0) {
+        logger.warn(
+          { count: reclaimed, idleMs: RECLAIM_IDLE_MS },
+          'reclaimed abandoned messages from PEL — acking without retry to free the stream',
+        );
       }
     } catch (err) {
       // XAUTOCLAIM was added in Redis 6.2. On older deployments this no-ops

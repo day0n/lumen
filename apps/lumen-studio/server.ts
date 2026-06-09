@@ -174,12 +174,8 @@ function serveStudioApp(rawUrl: string, res: import('node:http').ServerResponse)
     res.setHeader('cache-control', 'public,max-age=31536000,immutable');
     res.setHeader('content-type', contentTypeFor(assetPath));
     const stream = createReadStream(assetPath);
-    let opened = false;
-    stream.once('open', () => {
-      opened = true;
-    });
     stream.once('error', (err: NodeJS.ErrnoException) => {
-      if (opened || res.headersSent) {
+      if (res.headersSent) {
         res.destroy(err);
         return;
       }
