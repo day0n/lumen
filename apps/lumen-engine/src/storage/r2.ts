@@ -292,30 +292,39 @@ async function uploadFromLocalFile(args: {
   settings: R2Settings;
 }): Promise<WorkflowOutputAsset> {
   const localPath = safeTempFilePath(args.fileUrl);
-  const info = await stat(localPath);
-  if (!info.isFile()) throw new Error('Local media output is not a file');
+  // try/finally so the temp directory is removed even when stat/size
+  // checks reject the file or the R2 PUT throws. Previously cleanup
+  // only ran on the happy path, leaving the lumen-video-edit-* /
+  // lumen-suno-music-* workdirs (each potentially holding tens to
+  // hundreds of MB of source clips + final.mp4) lingering in /tmp until
+  // the next reboot.
+  try {
+    const info = await stat(localPath);
+    if (!info.isFile()) throw new Error('Local media output is not a file');
 
-  const maxBytes = maxBytesFor(args.outputType);
-  if (info.size > maxBytes) {
-    throw new Error(
-      `Generated ${args.outputType} is too large (${(info.size / 1024 / 1024).toFixed(1)}MB > ${(
-        maxBytes / 1024 / 1024
-      ).toFixed(0)}MB)`,
-    );
+    const maxBytes = maxBytesFor(args.outputType);
+    if (info.size > maxBytes) {
+      throw new Error(
+        `Generated ${args.outputType} is too large (${(info.size / 1024 / 1024).toFixed(1)}MB > ${(
+          maxBytes / 1024 / 1024
+        ).toFixed(0)}MB)`,
+      );
+    }
+
+    const contentType = contentTypeForLocalFile(localPath, args.outputType);
+    const asset = await uploadFileStream({
+      localPath,
+      size: info.size,
+      contentType,
+      extension: extensionFor(contentType, args.outputType, localPath),
+      prefix: args.prefix,
+      settings: args.settings,
+    });
+    return asset;
+  } finally {
+    // best-effort: any cleanup error is logged inside cleanupTempFile.
+    await cleanupTempFile(localPath);
   }
-
-  const contentType = contentTypeForLocalFile(localPath, args.outputType);
-  const asset = await uploadFileStream({
-    localPath,
-    size: info.size,
-    contentType,
-    extension: extensionFor(contentType, args.outputType, localPath),
-    prefix: args.prefix,
-    settings: args.settings,
-  });
-
-  await cleanupTempFile(localPath);
-  return asset;
 }
 
 async function uploadFileStream(args: {
