@@ -1,7 +1,7 @@
 import { useLocation } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { warmAppRouteResources } from '../lib/app-warmup';
-import { toRouterPath } from '../lib/path-map';
+import { getLocaleFromPathname, toAppPath, toRouterPath } from '../lib/path-map';
 import { router } from '../router';
 
 type NavigateOptions = {
@@ -31,7 +31,10 @@ export function useRouter() {
 
 export function usePathname() {
   const location = useLocation();
-  return location.pathname;
+  return useMemo(() => {
+    if (typeof window !== 'undefined') return window.location.pathname;
+    return `/app${location.pathname}`;
+  }, [location.pathname, location.searchStr, location.hash]);
 }
 
 export function useSearchParams() {
@@ -59,10 +62,19 @@ export function notFound(): never {
 }
 
 function navigateTo(href: string, replace: boolean) {
-  const target = toRouterPath(href);
+  const normalizedHref = toAppPath(href);
+  const currentLocale = getLocaleFromPathname(window.location.pathname);
+  const targetLocale = getLocaleFromPathname(normalizedHref);
+  if (currentLocale !== targetLocale) {
+    if (replace) window.location.replace(normalizedHref);
+    else window.location.assign(normalizedHref);
+    return;
+  }
+
+  const target = toRouterPath(normalizedHref);
   if (!target) {
-    if (replace) window.location.replace(href);
-    else window.location.assign(href);
+    if (replace) window.location.replace(normalizedHref);
+    else window.location.assign(normalizedHref);
     return;
   }
 
@@ -72,3 +84,4 @@ function navigateTo(href: string, replace: boolean) {
     replace,
   });
 }
+

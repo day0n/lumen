@@ -38,7 +38,7 @@ export function I18nProvider({
   initialLocale?: Locale;
 }) {
   const pathname = usePathname();
-  const [locale, setLocaleState] = useState<Locale>(initialLocale ?? DEFAULT_LOCALE);
+  const [locale, setLocaleState] = useState<Locale>(() => resolveClientLocale(initialLocale, pathname));
   const routeLocale = useMemo(() => getLocaleFromPathname(pathname || '/'), [pathname]);
 
   useEffect(() => {
@@ -80,6 +80,20 @@ export function useI18n(): I18nContextValue {
     throw new Error('useI18n must be used inside I18nProvider');
   }
   return value;
+}
+
+function resolveClientLocale(initialLocale: Locale | undefined, pathname: string): Locale {
+  if (initialLocale) return initialLocale;
+  if (pathname) {
+    const routeLocale = getLocaleFromPathname(pathname);
+    if (routeLocale !== DEFAULT_LOCALE) return routeLocale;
+  }
+  if (typeof window !== 'undefined') {
+    const stored = window.localStorage.getItem(LUMEN_LOCALE_COOKIE);
+    if (isLocale(stored)) return stored;
+    return getLocaleFromPathname(window.location.pathname);
+  }
+  return DEFAULT_LOCALE;
 }
 
 function persistLocale(locale: Locale) {

@@ -4,6 +4,7 @@ export function toAppPath(href: string): string {
   if (!href || href.startsWith('#') || /^https?:\/\//i.test(href)) return href;
 
   const url = new URL(href, 'https://lumen.local');
+  const localePrefix = readLocalePrefix(url.pathname);
   const pathname = stripLocalePrefix(url.pathname);
   let nextPath = pathname;
 
@@ -19,14 +20,15 @@ export function toAppPath(href: string): string {
   else if (pathname.startsWith('/canvas/')) nextPath = `/app${pathname}`;
   else if (pathname.startsWith('/app/')) nextPath = pathname;
 
-  return `${nextPath}${url.search}${url.hash}`;
+  return `${localePrefix}${nextPath}${url.search}${url.hash}`;
 }
 
 export function toRouterPath(href: string): { to: string; search: Record<string, string> } | null {
   const appHref = toAppPath(href);
-  if (!appHref.startsWith(APP_PREFIX)) return null;
+  const appPathname = stripLocalePrefix(appHref);
+  if (!appPathname.startsWith(APP_PREFIX)) return null;
 
-  const url = new URL(appHref, 'https://lumen.local');
+  const url = new URL(appPathname, 'https://lumen.local');
   const to = url.pathname.slice(APP_PREFIX.length) || '/';
   return {
     to,
@@ -39,9 +41,18 @@ export function currentAppRedirectUrl(): string {
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
 
-function stripLocalePrefix(pathname: string): string {
+export function stripLocalePrefix(pathname: string): string {
   if (pathname === '/zh' || pathname === '/en') return '/';
   if (pathname.startsWith('/zh/')) return pathname.slice(3) || '/';
   if (pathname.startsWith('/en/')) return pathname.slice(3) || '/';
   return pathname || '/';
+}
+
+export function readLocalePrefix(pathname: string): '/zh' | '' {
+  if (pathname === '/zh' || pathname.startsWith('/zh/')) return '/zh';
+  return '';
+}
+
+export function getLocaleFromPathname(pathname: string): 'en' | 'zh' {
+  return readLocalePrefix(pathname) === '/zh' ? 'zh' : 'en';
 }

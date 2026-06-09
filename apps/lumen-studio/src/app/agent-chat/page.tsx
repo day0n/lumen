@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import { redirectWithLocale } from '@/i18n/server';
 
-export default function AgentChatPage() {
-  redirect('/app/canvas/new?agent=chat');
+export default async function AgentChatPage() {
+  await redirectWithLocale('/app/canvas/new?agent=chat');
 }

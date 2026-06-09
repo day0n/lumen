@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import { redirectWithLocale } from '@/i18n/server';
 
 interface CanvasProjectPageProps {
   params: Promise<{
@@ -8,5 +8,5 @@ interface CanvasProjectPageProps {
 
 export default async function CanvasProjectPage({ params }: CanvasProjectPageProps) {
   const { projectId } = await params;
-  redirect(`/app/canvas/${projectId}`);
+  await redirectWithLocale(`/app/canvas/${projectId}`);
 }

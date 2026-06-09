@@ -1,7 +1,8 @@
 import { ShareLoginPanel } from '@/components/share/ShareLoginPanel';
 import { cloneSharedProject, getSharedProjectPreview } from '@/server/projects';
 import { auth } from '@clerk/nextjs/server';
-import { notFound, redirect } from 'next/navigation';
+import { redirectWithLocale } from '@/i18n/server';
+import { notFound } from 'next/navigation';
 
 interface ShareProjectPageProps {
   params: Promise<{
@@ -22,5 +23,5 @@ export default async function ShareProjectPage({ params }: ShareProjectPageProps
   const project = await cloneSharedProject(shareId);
   if (!project) notFound();
 
-  redirect(`/app/canvas/${project.id}`);
+  await redirectWithLocale(`/app/canvas/${project.id}`);
 }

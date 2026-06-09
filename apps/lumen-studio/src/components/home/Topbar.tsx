@@ -64,7 +64,7 @@ export function Topbar() {
   const authRedirect = encodeURIComponent(pathname || '/');
   const inAppShell = normalizedPath === '/app' || normalizedPath.startsWith('/app/');
   const activePath = pendingPath ?? normalizedPath;
-  const homeHref = inAppShell ? '/app/home' : '/home';
+  const homeHref = localePath(inAppShell ? '/app/home' : '/home');
 
   useEffect(() => {
     if (!pendingPath) return;
@@ -98,7 +98,7 @@ export function Topbar() {
       <div className="border-b border-white/[0.06] bg-[#111315]/95 backdrop-blur-xl">
         <div className="relative flex h-16 w-full min-w-0 items-center gap-2 px-3 sm:h-20 sm:gap-4 sm:px-6">
           <Link
-            href={inAppShell ? homeHref : localePath(homeHref)}
+            href={homeHref}
             prefetch={false}
             className="flex min-h-11 min-w-11 shrink-0 items-center gap-2 sm:gap-3"
           >
@@ -112,14 +112,14 @@ export function Topbar() {
           <nav className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-white/[0.035] p-1 ring-1 ring-white/[0.06] lg:flex">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const href = inAppShell ? item.appHref : item.href;
+              const href = localePath(inAppShell ? item.appHref : item.href);
               const active = isNavItemActive(activePath, item.activePaths);
               const label = t(item.labelKey);
 
               return (
                 <Link
                   key={href}
-                  href={inAppShell ? href : localePath(href)}
+                  href={href}
                   prefetch={false}
                   onClick={(event) => handleProtectedNavClick(event, href)}
                   onFocus={() => handleNavIntent(href)}
@@ -184,14 +184,14 @@ export function Topbar() {
       <nav className="fixed inset-x-4 bottom-4 z-50 grid grid-cols-5 gap-1 rounded-2xl bg-[#111315]/92 p-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] ring-1 ring-white/[0.08] backdrop-blur-xl lg:hidden">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const href = inAppShell ? item.appHref : item.href;
+          const href = localePath(inAppShell ? item.appHref : item.href);
           const active = isNavItemActive(activePath, item.activePaths);
           const label = t(item.labelKey);
 
           return (
             <Link
               key={href}
-              href={inAppShell ? href : localePath(href)}
+              href={href}
               prefetch={false}
               aria-label={label}
               onClick={(event) => handleProtectedNavClick(event, href)}

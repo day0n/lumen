@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import { redirectWithLocale } from '@/i18n/server';
 
-export default function MaterialsRoutePage() {
-  redirect('/app/materials');
+export default async function MaterialsPage() {
+  await redirectWithLocale('/app/materials');
 }

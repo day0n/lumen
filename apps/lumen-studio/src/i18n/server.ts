@@ -1,4 +1,5 @@
 import { cookies, headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 import {
   DEFAULT_LOCALE,
@@ -7,6 +8,7 @@ import {
   type Locale,
   getLocaleFromPathname,
   isLocale,
+  localePath,
 } from './routing';
 
 export async function getRequestLocale(): Promise<Locale> {
@@ -20,4 +22,9 @@ export async function getRequestLocale(): Promise<Locale> {
 
   const pathname = headerStore.get('x-pathname') ?? '';
   return pathname ? getLocaleFromPathname(pathname) : DEFAULT_LOCALE;
+}
+
+export async function redirectWithLocale(href: string): Promise<never> {
+  const locale = await getRequestLocale();
+  redirect(localePath(href, locale));
 }

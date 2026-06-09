@@ -32,10 +32,27 @@ export default clerkMiddleware(
 
     const locale = resolveMiddlewareLocale(request);
     const normalizedPath = stripLocalePrefix(pathname);
+    const localizedPathname = localePath(pathname, locale);
+    if (
+      !pathname.startsWith('/api') &&
+      !pathname.startsWith('/trpc') &&
+      localizedPathname !== pathname
+    ) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = localizedPathname;
+      const redirectResponse = NextResponse.redirect(redirectUrl);
+      redirectResponse.cookies.set(LUMEN_LOCALE_COOKIE, locale, {
+        path: '/',
+        maxAge: 60 * 60 * 24 * 365,
+        sameSite: 'lax',
+      });
+      return redirectResponse;
+    }
+
     const appRedirectPath = getLegacyAppRedirectPath(normalizedPath);
     if (appRedirectPath) {
       const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = appRedirectPath;
+      redirectUrl.pathname = localePath(appRedirectPath, locale);
       if (normalizedPath === '/agent-chat') {
         redirectUrl.searchParams.set('agent', 'chat');
       }
@@ -118,18 +135,21 @@ function resolveMiddlewareLocale(request: Request) {
   const pathLocale = getLocaleFromPathname(pathname);
   if (pathLocale === 'zh') return pathLocale;
 
-  if (pathname.startsWith('/api') || pathname.startsWith('/trpc')) {
-    const headerLocale = request.headers.get(LUMEN_LOCALE_HEADER);
-    if (isLocale(headerLocale)) return headerLocale;
+  const headerLocale = request.headers.get(LUMEN_LOCALE_HEADER);
+  if (isLocale(headerLocale)) return headerLocale;
 
-    const cookieLocale = request.headers
-      .get('cookie')
-      ?.split(';')
-      .map((part) => part.trim())
-      .find((part) => part.startsWith(`${LUMEN_LOCALE_COOKIE}=`))
-      ?.split('=')[1];
-    if (isLocale(cookieLocale)) return cookieLocale;
-  }
+  const cookieLocale = readCookieLocale(request);
+  if (isLocale(cookieLocale)) return cookieLocale;
 
   return pathLocale;
+}
+
+function readCookieLocale(request: Request): string | null {
+  const raw = request.headers
+    .get('cookie')
+    ?.split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${LUMEN_LOCALE_COOKIE}=`))
+    ?.split('=')[1];
+  return raw ?? null;
 }

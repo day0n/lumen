@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import { redirectWithLocale } from '@/i18n/server';
 
-export default function CanvasProjectsPage() {
-  redirect('/app/projects');
+export default async function CanvasProjectsPage() {
+  await redirectWithLocale('/app/projects');
 }

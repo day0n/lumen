@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import { redirectWithLocale } from '@/i18n/server';
 
-export default function DashboardRoutePage() {
-  redirect('/app/dashboard');
+export default async function DashboardPage() {
+  await redirectWithLocale('/app/dashboard');
 }
