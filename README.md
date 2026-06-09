@@ -9,13 +9,16 @@ monorepo（pnpm workspace）。
 ```
 lumen/
 ├── apps/
-│   ├── lumen-studio/    Next.js 15 前端 + 工作流 WebSocket gateway
+│   ├── lumen-app/       Vite + React 19 + TanStack Router SPA（用户主界面，画布 / 项目 / Agent 面板）
+│   ├── lumen-studio/    Node 自定义 server + Next.js（BFF / API / WebSocket gateway，并把 lumen-app 的 dist 当静态资源服）
 │   ├── lumen-agent/     Hono SSE Agent 服务
 │   └── lumen-engine/    工作流执行引擎
 └── packages/
     ├── shared/          跨服务的 zod schema / 协议
     └── db/              MongoDB / Redis 连接和仓储
 ```
+
+前端做过一次拆分：用户实际访问的 UI（画布、项目列表、Agent 面板、首页等）现在跑在 Vite 打出的 SPA 里，路径以 `/app` 为前缀；`lumen-studio` 的 Next.js 主要承担 API 路由（`/api/*` 与 `/app/api/*`）、WebSocket gateway（`/ws/flow`）、Sentry tunnel（`/monitoring`）以及静态资源分发。开发模式下 Vite 起在 :3002，代理 `/api` / `/ws` / `/monitoring` 到 lumen-studio :3000；生产模式下两者跑在同一个进程：`server.ts` 自定义 Node server 既挂 Next.js handler，又把 `../lumen-app/dist` 作为 `/app/*` 的静态资源直接吐出去。
 
 ## 运行时拓扑
 
