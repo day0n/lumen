@@ -29,6 +29,7 @@ import {
   IconHierarchy2,
   IconLayoutGrid,
   IconLoader2,
+  IconMaximize,
   IconMusic,
   IconPhoto,
   IconPlayerPlay,
@@ -41,6 +42,7 @@ import {
   IconTrash,
   IconUpload,
   IconVideo,
+  IconX,
   IconZoomIn,
   IconZoomOut,
 } from '@tabler/icons-react';
@@ -89,6 +91,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import { CanvasHydrationOverlay } from '@/components/canvas/CanvasHydrationOverlay';
 import { CompositionFlowNode } from '@/components/canvas/CompositionFlowNode';
@@ -4498,7 +4501,7 @@ function NodeOutputEditor({
         >
           <img
             alt={t('canvas.node.imageAlt')}
-            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+            className="pointer-events-none absolute inset-0 h-full w-full object-contain"
             decoding="async"
             draggable={false}
             loading="lazy"
@@ -4537,7 +4540,7 @@ function NodeOutputEditor({
       >
         <video
           // transform-gpu + contain:paint 把视频提升到独立合成层，播放重绘不再波及整个节点/画布
-          className="absolute inset-0 h-full w-full transform-gpu cursor-grab object-cover active:cursor-grabbing"
+          className="absolute inset-0 h-full w-full transform-gpu cursor-grab bg-black object-contain active:cursor-grabbing"
           style={{ contain: 'paint' }}
           controls
           playsInline
@@ -4677,18 +4680,44 @@ function MediaOutputFrame({
   ) => Promise<void>;
   url?: string;
 }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const canPreview = kind === 'image' || kind === 'video';
+
   return (
-    <div
-      className={`group/output relative max-h-[320px] w-full cursor-grab overflow-hidden active:cursor-grabbing ${
-        aspectRatio ? '' : 'min-h-[104px]'
-      }`}
-      style={aspectRatio ? { aspectRatio: toCssAspectRatio(aspectRatio) } : undefined}
-    >
-      {children}
-      {activityState?.active ? <MediaOutputActivityOverlay activity={activityState} /> : null}
-      {url ? <MediaOutputOpenButton url={url} /> : null}
-      <MediaOutputUploadButton kind={kind} onUpload={onUpload} />
-    </div>
+    <>
+      <div
+        className={`group/output relative w-full cursor-grab overflow-hidden bg-black/28 active:cursor-grabbing ${
+          aspectRatio ? 'min-h-[180px] max-h-[520px]' : 'min-h-[104px]'
+        }`}
+        style={aspectRatio ? { aspectRatio: toCssAspectRatio(aspectRatio) } : undefined}
+        onDoubleClick={(event) => {
+          if (!canPreview || !url) return;
+          event.stopPropagation();
+          setPreviewOpen(true);
+        }}
+      >
+        {children}
+        {activityState?.active ? <MediaOutputActivityOverlay activity={activityState} /> : null}
+        {url ? (
+          canPreview ? (
+            <MediaOutputPreviewButton onOpen={() => setPreviewOpen(true)} />
+          ) : (
+            <MediaOutputOpenButton url={url} />
+          )
+        ) : null}
+        {aspectRatio ? <MediaAspectBadge aspectRatio={aspectRatio} /> : null}
+        <MediaOutputUploadButton kind={kind} onUpload={onUpload} />
+      </div>
+      {url && canPreview ? (
+        <MediaOutputPreviewDialog
+          aspectRatio={aspectRatio}
+          kind={kind === 'image' ? 'image' : 'video'}
+          onClose={() => setPreviewOpen(false)}
+          open={previewOpen}
+          url={url}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -4732,8 +4761,8 @@ function MediaOutputUpload({
 
   return (
     <div
-      className={`group/output relative flex max-h-[320px] w-full cursor-grab flex-col items-center justify-center gap-2 overflow-hidden px-3 py-2.5 text-white/30 transition-colors hover:text-white/64 active:cursor-grabbing ${
-        aspectRatio ? '' : 'min-h-[104px]'
+      className={`group/output relative flex w-full cursor-grab flex-col items-center justify-center gap-2 overflow-hidden bg-black/18 px-3 py-2.5 text-white/30 transition-colors hover:text-white/64 active:cursor-grabbing ${
+        aspectRatio ? 'min-h-[180px] max-h-[520px]' : 'min-h-[104px]'
       }`}
       style={aspectRatio ? { aspectRatio: toCssAspectRatio(aspectRatio) } : undefined}
     >
@@ -4746,12 +4775,21 @@ function MediaOutputUpload({
           <span className="text-[12px] font-bold text-white/38">{t('canvas.node.output')}</span>
         </div>
       ) : null}
+      {aspectRatio ? <MediaAspectBadge aspectRatio={aspectRatio} /> : null}
       <MediaOutputUploadButton
         kind={kind}
         onUpload={onUpload}
         onUploadProgress={setProgress}
         onUploadingChange={setUploading}
       />
+    </div>
+  );
+}
+
+function MediaAspectBadge({ aspectRatio }: { aspectRatio: string }) {
+  return (
+    <div className="pointer-events-none absolute right-2 top-11 z-10 rounded-full bg-black/46 px-2 py-1 text-[10px] font-black leading-none text-white/72 ring-1 ring-white/[0.12] backdrop-blur">
+      {aspectRatio}
     </div>
   );
 }
@@ -4809,6 +4847,119 @@ function MediaOutputOpenButton({ url }: { url: string }) {
     >
       <IconExternalLink size={14} stroke={2.2} />
     </button>
+  );
+}
+
+function MediaOutputPreviewButton({ onOpen }: { onOpen: () => void }) {
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      aria-label={t('canvas.node.openOutput')}
+      title={t('canvas.node.openOutput')}
+      data-skip-node-select="true"
+      className="nodrag nopan absolute left-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/52 text-white/86 ring-1 ring-white/[0.18] backdrop-blur transition-colors hover:bg-black/70 hover:text-white"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <IconMaximize size={14} stroke={2.2} />
+    </button>
+  );
+}
+
+function MediaOutputPreviewDialog({
+  aspectRatio,
+  kind,
+  onClose,
+  open,
+  url,
+}: {
+  aspectRatio?: string;
+  kind: 'image' | 'video';
+  onClose: () => void;
+  open: boolean;
+  url: string;
+}) {
+  const { t } = useI18n();
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose, open]);
+
+  if (!open || typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/82 p-4 backdrop-blur-md"
+      data-skip-node-select="true"
+    >
+      <button
+        type="button"
+        aria-label={t('common.close')}
+        className="absolute inset-0 cursor-default"
+        onClick={onClose}
+      />
+      <div
+        className="relative z-10 flex max-h-[94vh] max-w-[96vw] flex-col gap-3"
+        data-skip-node-select="true"
+      >
+        <div className="flex items-center justify-end gap-2">
+          {aspectRatio ? (
+            <span className="mr-auto rounded-full bg-white/[0.08] px-3 py-1.5 text-[12px] font-black text-white/68 ring-1 ring-white/[0.12]">
+              {aspectRatio}
+            </span>
+          ) : null}
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={t('canvas.node.openOutput')}
+            title={t('canvas.node.openOutput')}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.08] text-white/76 ring-1 ring-white/[0.12] transition-colors hover:bg-white/[0.14] hover:text-white"
+          >
+            <IconExternalLink size={17} stroke={2.2} />
+          </a>
+          <button
+            type="button"
+            aria-label={t('common.close')}
+            title={t('common.close')}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.08] text-white/76 ring-1 ring-white/[0.12] transition-colors hover:bg-white/[0.14] hover:text-white"
+            onClick={onClose}
+          >
+            <IconX size={18} stroke={2.4} />
+          </button>
+        </div>
+        <div className="relative overflow-hidden rounded-[16px] bg-black shadow-[0_28px_120px_rgba(0,0,0,0.72)] ring-1 ring-white/[0.12]">
+          {kind === 'image' ? (
+            <img
+              alt={t('canvas.node.imageAlt')}
+              className="block max-h-[calc(94vh-76px)] max-w-[96vw] object-contain"
+              decoding="async"
+              src={url}
+            />
+          ) : (
+            <video
+              className="block max-h-[calc(94vh-76px)] max-w-[96vw] bg-black object-contain"
+              controls
+              playsInline
+              preload="metadata"
+              src={url}
+            >
+              <track kind="captions" />
+            </video>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

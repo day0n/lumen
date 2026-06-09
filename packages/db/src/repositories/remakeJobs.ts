@@ -194,6 +194,16 @@ export class RemakeJobRepository {
   /**
    * 更新 plan.scenes 里某一场的可编辑字段（口播 / 字幕 / 动作 / 分镜 prompt / 视频 prompt 覆盖）。
    * sceneIndex 为 plan.scenes[].index（从 1 起）。
+   *
+   * 之前的实现是 findOne → 改 nextPlan → `$set: { plan: nextPlan }`。两个 scene
+   * 并发编辑时（UI 批量回写 / storyboard 重生成与用户编辑碰撞），后写者用旧快照
+   * 整体覆盖 plan，**对方的 scene 编辑被静默丢失**。
+   *
+   * 这里改成：
+   * - 场内可编辑字段（action/dialogue/voiceLine）走位置数组操作符 + arrayFilters，
+   *   只动 plan.scenes.$[s].xxx，不同 sceneIndex 完全互不冲突；
+   * - 稀疏 prompt 覆盖数组（sceneImagePrompts/sceneVideoPrompts）走聚合管道更新，
+   *   服务端 padding + 局部 splice + 自动清空回退，不再依赖 Node 端快照。
    */
   async patchScenePlan(
     jobId: string,
@@ -209,58 +219,75 @@ export class RemakeJobRepository {
       videoPrompt?: string | null;
     },
   ): Promise<RemakeJobRecord | null> {
-    const job = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
-    if (!job?.plan?.scenes?.length) return null;
+    const sceneFieldUpdates: Record<string, unknown> = {};
+    if (patch.action !== undefined) sceneFieldUpdates.action = patch.action;
+    if (patch.dialogue !== undefined) sceneFieldUpdates.dialogue = patch.dialogue;
+    if (patch.voiceLine !== undefined) sceneFieldUpdates.voiceLine = patch.voiceLine;
+    const touchesGenerationInput = Object.keys(sceneFieldUpdates).length > 0;
 
-    const scenes = [...job.plan.scenes];
-    const idx = scenes.findIndex((scene) => scene.index === sceneIndex);
-    if (idx < 0) return null;
+    const explicitImage = patch.imagePrompt !== undefined;
+    const explicitVideo = patch.videoPrompt !== undefined;
+    const trimmedImage = explicitImage ? (patch.imagePrompt?.trim() ?? '') : '';
+    const trimmedVideo = explicitVideo ? (patch.videoPrompt?.trim() ?? '') : '';
 
-    const current = scenes[idx]!;
-    scenes[idx] = {
-      ...current,
-      ...(patch.action !== undefined ? { action: patch.action } : {}),
-      ...(patch.dialogue !== undefined ? { dialogue: patch.dialogue } : {}),
-      ...(patch.voiceLine !== undefined ? { voiceLine: patch.voiceLine } : {}),
-    };
-
-    const nextPlan = { ...job.plan, scenes };
-    const touchesGenerationInput =
-      patch.action !== undefined || patch.dialogue !== undefined || patch.voiceLine !== undefined;
-
-    // 分镜首帧 prompt override：与 sceneVideoPrompts 同样的稀疏数组语义
-    if (patch.imagePrompt !== undefined) {
-      const prompts = [...(job.plan.sceneImagePrompts ?? [])];
-      while (prompts.length < scenes.length) prompts.push('');
-      const trimmed = patch.imagePrompt?.trim() ?? '';
-      prompts[idx] = trimmed;
-      nextPlan.sceneImagePrompts = prompts.some((entry) => entry.trim()) ? prompts : undefined;
-    } else if (touchesGenerationInput && job.plan.sceneImagePrompts?.[idx]?.trim()) {
-      const prompts = [...(job.plan.sceneImagePrompts ?? [])];
-      while (prompts.length < scenes.length) prompts.push('');
-      prompts[idx] = '';
-      nextPlan.sceneImagePrompts = prompts.some((entry) => entry.trim()) ? prompts : undefined;
-    }
-
-    if (patch.videoPrompt !== undefined) {
-      const prompts = [...(job.plan.sceneVideoPrompts ?? [])];
-      while (prompts.length < scenes.length) prompts.push('');
-      const trimmed = patch.videoPrompt?.trim() ?? '';
-      prompts[idx] = trimmed;
-      nextPlan.sceneVideoPrompts = prompts.some((entry) => entry.trim()) ? prompts : undefined;
-    } else if (touchesGenerationInput && job.plan.sceneVideoPrompts?.[idx]?.trim()) {
-      const prompts = [...(job.plan.sceneVideoPrompts ?? [])];
-      while (prompts.length < scenes.length) prompts.push('');
-      prompts[idx] = '';
-      nextPlan.sceneVideoPrompts = prompts.some((entry) => entry.trim()) ? prompts : undefined;
-    }
-
-    const result = await this.jobs().findOneAndUpdate(
-      { _id: jobId, owner_id: ownerId },
-      { $set: { plan: nextPlan, updated_at: new Date() } },
-      { returnDocument: 'after' },
+    // Quick existence check; also bails out if sceneIndex is unknown.
+    const exists = await this.jobs().findOne(
+      { _id: jobId, owner_id: ownerId, 'plan.scenes.index': sceneIndex },
+      { projection: { _id: 1 } },
     );
-    return result ? toJobRecord(result) : null;
+    if (!exists) return null;
+
+    // Step 1: scene field updates via arrayFilters. Different sceneIndex →
+    // different array slot, can race safely. Same sceneIndex → mongo
+    // serialises per-document updates.
+    if (touchesGenerationInput) {
+      const setFields: Record<string, unknown> = { updated_at: new Date() };
+      for (const [key, value] of Object.entries(sceneFieldUpdates)) {
+        setFields[`plan.scenes.$[s].${key}`] = value;
+      }
+      await this.jobs().updateOne(
+        { _id: jobId, owner_id: ownerId },
+        { $set: setFields },
+        { arrayFilters: [{ 's.index': sceneIndex }] },
+      );
+    }
+
+    // Step 2: sparse prompt overrides. Run only when needed.
+    const needsPromptUpdate = explicitImage || explicitVideo || touchesGenerationInput;
+    if (needsPromptUpdate) {
+      const pipeline: Document[] = [
+        {
+          $set: {
+            updated_at: new Date(),
+            ...(explicitImage || touchesGenerationInput
+              ? {
+                  'plan.sceneImagePrompts': buildSparsePromptUpdate(
+                    'sceneImagePrompts',
+                    sceneIndex,
+                    explicitImage,
+                    trimmedImage,
+                    touchesGenerationInput,
+                  ),
+                }
+              : {}),
+            ...(explicitVideo || touchesGenerationInput
+              ? {
+                  'plan.sceneVideoPrompts': buildSparsePromptUpdate(
+                    'sceneVideoPrompts',
+                    sceneIndex,
+                    explicitVideo,
+                    trimmedVideo,
+                    touchesGenerationInput,
+                  ),
+                }
+              : {}),
+          },
+        },
+      ];
+      await this.jobs().updateOne({ _id: jobId, owner_id: ownerId }, pipeline);
+    }
+
+    return this.getJob(jobId, ownerId);
   }
 
   /**
@@ -663,6 +690,103 @@ function buildInitialStages(): RemakeJobDocument['stages'] {
     storyboard: locked,
     video: locked,
     final: locked,
+  };
+}
+
+function buildSparsePromptUpdate(
+  field: 'sceneImagePrompts' | 'sceneVideoPrompts',
+  sceneIndex: number,
+  explicitPrompt: boolean,
+  trimmedPrompt: string,
+  clearWhenGenerationInputChanged: boolean,
+): Document | string {
+  if (!explicitPrompt && !clearWhenGenerationInputChanged) {
+    return `$plan.${field}`;
+  }
+
+  const targetIndex = Math.max(0, sceneIndex - 1);
+  const targetLength = targetIndex + 1;
+  const nextValue = explicitPrompt ? trimmedPrompt : '';
+  const currentValue = { $ifNull: [`$plan.${field}`, []] };
+
+  return {
+    $let: {
+      vars: {
+        current: currentValue,
+      },
+      in: {
+        $let: {
+          vars: {
+            padded: {
+              $concatArrays: [
+                '$$current',
+                {
+                  $map: {
+                    input: {
+                      $range: [
+                        0,
+                        {
+                          $max: [
+                            0,
+                            {
+                              $subtract: [targetLength, { $size: '$$current' }],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    as: 'unused',
+                    in: '',
+                  },
+                },
+              ],
+            },
+          },
+          in: {
+            $let: {
+              vars: {
+                next: {
+                  $concatArrays: [
+                    { $slice: ['$$padded', 0, targetIndex] },
+                    [nextValue],
+                    { $slice: ['$$padded', targetLength, { $size: '$$padded' }] },
+                  ],
+                },
+              },
+              in: {
+                $cond: [
+                  {
+                    $gt: [
+                      {
+                        $size: {
+                          $filter: {
+                            input: '$$next',
+                            as: 'prompt',
+                            cond: {
+                              $gt: [
+                                {
+                                  $strLenCP: {
+                                    $trim: { input: '$$prompt' },
+                                  },
+                                },
+                                0,
+                              ],
+                            },
+                          },
+                        },
+                      },
+                      0,
+                    ],
+                  },
+                  '$$next',
+                  '$$REMOVE',
+                ],
+              },
+            },
+          },
+        },
+      },
+    },
   };
 }
 
