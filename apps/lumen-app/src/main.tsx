@@ -13,7 +13,7 @@ if (__LUMEN_SENTRY_DSN__) {
       Sentry.init({
         dsn: __LUMEN_SENTRY_DSN__,
         environment: __LUMEN_SENTRY_ENVIRONMENT__,
-        tracesSampleRate: 1,
+        tracesSampleRate: __LUMEN_SENTRY_TRACES_SAMPLE_RATE__,
       });
     });
   };

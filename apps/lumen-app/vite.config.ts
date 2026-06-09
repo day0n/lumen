@@ -21,6 +21,15 @@ const startsWithPackage = (id: string, prefixes: string[]) => {
   return prefixes.some((prefix) => normalizedId.includes(`/node_modules/${prefix}`));
 };
 
+function clampSampleRate(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
 const manualChunks = (id: string): string | undefined => {
   if (!id.includes('node_modules')) return undefined;
 
@@ -100,6 +109,16 @@ export default defineConfig(({ mode }) => {
       ),
       __LUMEN_SENTRY_ENVIRONMENT__: JSON.stringify(
         env.VITE_SENTRY_ENVIRONMENT ?? env.SENTRY_ENVIRONMENT ?? mode,
+      ),
+      // Browser tracesSampleRate: a hardcoded 1.0 sent every fetch / SSE
+      // request as a Sentry transaction, which floods quota and adds
+      // instrumentation overhead on hot paths. Default to 0.1 in prod,
+      // 1.0 in dev/preview, with explicit override via env when needed.
+      __LUMEN_SENTRY_TRACES_SAMPLE_RATE__: JSON.stringify(
+        clampSampleRate(
+          env.VITE_SENTRY_TRACES_SAMPLE_RATE ?? env.SENTRY_TRACES_SAMPLE_RATE,
+          mode === 'production' ? 0.1 : 1,
+        ),
       ),
     },
     build: {
