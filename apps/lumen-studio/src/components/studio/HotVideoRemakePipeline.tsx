@@ -1613,7 +1613,8 @@ function getCopy(locale: 'en' | 'zh') {
       loadFailed: '加载失败',
       promptBar: {
         label: 'Prompt',
-        placeholder: '留空保存即视作恢复为自动生成…',
+        placeholder:
+          '该步骤还没有真实生效的 prompt（任务跑过后会自动同步进来）。你也可以现在就写一段自定义 prompt。',
         hint: '保存后下次重跑该步骤会使用此 prompt；清空再保存可恢复自动生成。',
         save: '保存',
         cancel: '取消',
@@ -1728,7 +1729,8 @@ function getCopy(locale: 'en' | 'zh') {
     loadFailed: 'Failed to load',
     promptBar: {
       label: 'Prompt',
-      placeholder: 'Leave empty and save to fall back to auto-generated…',
+      placeholder:
+        'No effective prompt yet — it will sync in once the step runs. You can also write a custom prompt now.',
       hint: 'Saved prompt will be used the next time this step runs. Clear it to fall back to auto.',
       save: 'Save',
       cancel: 'Cancel',

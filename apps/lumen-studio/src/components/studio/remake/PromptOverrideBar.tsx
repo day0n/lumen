@@ -1,7 +1,7 @@
 'use client';
 
 import { IconCheck, IconLoader2, IconPencil, IconRotate, IconX } from '@tabler/icons-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/cn';
 
@@ -125,11 +125,21 @@ function PromptOverrideDrawer(props: DrawerProps) {
   // textarea 默认值 = 真实生效 prompt（如果存在）。优先级：
   //   1. 用户已经写过的 override（hasOverride）
   //   2. 上一次实际跑该 task 时用的 prompt（effectivePrompt 由父组件解析）
-  //   3. 都没有时才空着
+  //   3. 都没有时才空着，但会被下面的 effect 在拿到真值后自动回填
   // 这样用户打开 Drawer 就能看到完整 prompt，基于它改而不是从空白开始写。
   const initialValue = hasOverride ? (overrideValue ?? '') : (effectivePrompt ?? '');
   const [value, setValue] = useState<string>(initialValue);
   const [saving, setSaving] = useState(false);
+
+  // 打开 Drawer 后如果 task 还在 queued/running，effectivePrompt 可能为 null；等任务
+  // 进入 running 后 inputPrompt 才会被 fetch 拉回来。用 ref 标记用户是否亲手改过 textarea；
+  // 没改过且新数据到达时自动覆盖，让用户不必关掉重开。
+  const userTouchedRef = useRef(false);
+  useEffect(() => {
+    if (userTouchedRef.current) return;
+    const next = hasOverride ? (overrideValue ?? '') : (effectivePrompt ?? '');
+    setValue((current) => (current === next ? current : next));
+  }, [hasOverride, overrideValue, effectivePrompt]);
 
   // ESC 关闭
   useEffect(() => {
@@ -207,7 +217,10 @@ function PromptOverrideDrawer(props: DrawerProps) {
             </span>
             <textarea
               value={value}
-              onChange={(event) => setValue(event.target.value)}
+              onChange={(event) => {
+                userTouchedRef.current = true;
+                setValue(event.target.value);
+              }}
               placeholder={copy.placeholder}
               disabled={saving}
               className="min-h-[320px] w-full flex-1 resize-vertical rounded-[14px] bg-white/[0.045] px-4 py-3 font-mono text-[12px] leading-5 text-white outline-none ring-1 ring-white/[0.08] transition-colors focus:ring-[#79e4ff]/35 disabled:opacity-50"
