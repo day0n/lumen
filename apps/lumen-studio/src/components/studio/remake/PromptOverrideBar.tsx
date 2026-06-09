@@ -9,28 +9,23 @@ import { cn } from '@/lib/cn';
  * Prompt 覆盖编辑入口。
  *
  * 设计目标：
- * - 折叠态是一行紧凑的"prompt 第一行"，挂在每个产物卡片下方，不抢视觉重点。
- * - 点击展开为右侧 Drawer，里面是完整 textarea + 自动生成预览 + 保存/重置。
+ * - 只渲染一个 24x24 的小铅笔按钮，挂在产物卡片 subtitle 区域右下角（外部用 slot 安排位置）。
+ * - 用户已自定义过 prompt 时，铅笔右上角浮一个青色小圆点指示；未自定义时纯灰色铅笔。
+ * - 点击展开为右侧 Drawer，里面是完整 textarea + 保存/取消/恢复自动。
  * - 一个组件覆盖所有 6 类 prompt 入口（creator/product/env-N/scene-image-N/scene-video-N/bgm）。
  *
  * 显式区分两个 prompt 概念：
- *  - `effectivePrompt` —— 当前真正会喂给模型的 prompt（生效值），用于折叠态预览。
- *      lock/bgm：=override ?? plan 里 LLM 生成的字段 ?? fallback
- *      scene-image：lock 跑前未知（=null），跑后才能由 promptGenerators 算出
- *      scene-video：storyboard 跑前未知（=null），跑后才能算
- *  - `overrideValue` —— 用户在 plan 上显式写过的覆盖；undefined 表示从未覆盖（"Auto"）。
- *      只有 overrideValue 才是这个组件保存/重置的对象，effectivePrompt 只是用于预览。
+ *  - `effectivePrompt` —— 当前真正会喂给模型的 prompt（生效值），打开 Drawer 时作为 textarea
+ *      默认值，让用户基于此修改而不是从空白开始。
+ *      lock/bgm：=override ?? task 上次实际用过的 inputPrompt ?? null
+ *      scene-image/scene-video：=override ?? task.inputPrompt ?? null
+ *  - `overrideValue` —— 用户在 plan 上显式写过的覆盖；undefined 表示从未覆盖。
+ *      只有 overrideValue 才是这个组件保存/重置的对象。
  */
 
 export interface PromptOverrideCopy {
-  /** 折叠条 label，例如 "Prompt"。 */
+  /** Drawer 内 textarea 上方的小标签，例如 "Prompt"。 */
   label: string;
-  /** 折叠条上的"自定义已生效"小标签。 */
-  overrideBadge: string;
-  /** 折叠条上的"自动生成"小标签。 */
-  autoBadge: string;
-  /** 折叠条上没有可预览 prompt 时的占位文字。 */
-  emptyHint: string;
   /** Drawer 标题。 */
   title: string;
   /** Drawer 副标题 / 用途说明。 */
@@ -49,6 +44,8 @@ export interface PromptOverrideCopy {
   saving: string;
   /** 当组件被禁用（stage running）时的 hover tooltip。 */
   disabledTooltip: string;
+  /** 正常情况下铅笔按钮的 hover tooltip / aria-label。 */
+  editTooltip: string;
 }
 
 export interface PromptOverrideBarProps {
@@ -68,16 +65,10 @@ export interface PromptOverrideBarProps {
 }
 
 export function PromptOverrideBar(props: PromptOverrideBarProps) {
-  const { effectivePrompt, overrideValue, disabled, copy, className, onSave } = props;
+  const { overrideValue, disabled, copy, className, onSave } = props;
   const [open, setOpen] = useState(false);
 
   const hasOverride = typeof overrideValue === 'string' && overrideValue.trim().length > 0;
-  // 折叠条优先展示真实"生效中" prompt 的第一行（哪怕 = override 也是同一值），
-  // 用户对此一目了然：UI 上看到的就是模型实际收到的；不再走 placeholder 提示。
-  const previewSource = hasOverride ? overrideValue : (effectivePrompt ?? null);
-  const previewLine = pickFirstLine(previewSource);
-  const showPlaceholder = !previewLine;
-  const previewText = previewLine || copy.emptyHint;
 
   return (
     <>
@@ -85,51 +76,27 @@ export function PromptOverrideBar(props: PromptOverrideBarProps) {
         type="button"
         disabled={disabled}
         onClick={() => setOpen(true)}
-        title={disabled ? copy.disabledTooltip : undefined}
+        title={disabled ? copy.disabledTooltip : copy.editTooltip}
+        aria-label={copy.editTooltip}
         className={cn(
-          'group/prompt-bar mt-2 flex h-8 w-full min-w-0 items-center gap-2 overflow-hidden rounded-[12px] bg-white/[0.045] px-2.5 text-left ring-1 ring-white/[0.06] transition-colors',
+          'relative inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-white/[0.08] transition-colors',
           disabled
             ? 'cursor-not-allowed opacity-50'
-            : 'hover:bg-white/[0.08] hover:ring-white/[0.12]',
+            : 'hover:bg-white/[0.12] hover:ring-white/[0.18]',
           className,
         )}
       >
         <IconPencil
-          size={12}
+          size={13}
           stroke={2.2}
-          className={cn(
-            'shrink-0',
-            hasOverride ? 'text-[#79e4ff]' : 'text-white/40',
-            !disabled && 'group-hover/prompt-bar:text-white/72',
-          )}
+          className={hasOverride ? 'text-[#79e4ff]' : 'text-white/64'}
         />
-        <span
-          className={cn(
-            'shrink-0 whitespace-nowrap rounded-full px-1.5 text-[10px] font-bold uppercase tracking-wide',
-            hasOverride
-              ? 'bg-[#79e4ff]/14 text-[#79e4ff] ring-1 ring-[#79e4ff]/22'
-              : 'bg-white/[0.06] text-white/40 ring-1 ring-white/[0.06]',
-          )}
-        >
-          {hasOverride ? copy.overrideBadge : copy.autoBadge}
-        </span>
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate whitespace-nowrap text-[11px] leading-[16px]',
-            showPlaceholder ? 'italic text-white/40' : 'text-white/68',
-          )}
-        >
-          {previewText}
-        </span>
-        <span
-          aria-hidden
-          className={cn(
-            'shrink-0 text-[11px] font-bold',
-            disabled ? 'text-white/24' : 'text-white/40 group-hover/prompt-bar:text-white/72',
-          )}
-        >
-          ›
-        </span>
+        {hasOverride ? (
+          <span
+            className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#79e4ff] ring-2 ring-[#15171a]"
+            aria-hidden
+          />
+        ) : null}
       </button>
 
       {open ? (
@@ -288,15 +255,4 @@ function PromptOverrideDrawer(props: DrawerProps) {
       </aside>
     </dialog>
   );
-}
-
-function pickFirstLine(value: string | null | undefined): string {
-  if (!value) return '';
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  for (const line of trimmed.split(/\r?\n/)) {
-    const segment = line.trim();
-    if (segment) return segment;
-  }
-  return trimmed;
 }
