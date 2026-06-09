@@ -3,6 +3,7 @@
 import { VoiceInputControl } from '@/components/voice/VoiceInputControl';
 import { appendSpeechTranscript, useSpeechToText } from '@/hooks/use-speech-to-text';
 import { useI18n } from '@/i18n/provider';
+import { readMessageObjectArray } from '@/i18n/messages';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import {
   IconArrowUp,
@@ -55,7 +56,7 @@ const COVER_GRADIENTS = [
 
 export function Hero() {
   const router = useRouter();
-  const { locale, t, ta, localePath } = useI18n();
+  const { locale, t, localePath } = useI18n();
   const { requireLogin } = useLoginRedirect();
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -199,7 +200,10 @@ export function Hero() {
     router.push(localePath(target));
   };
 
-  const quickActions = ta('home.quickActions');
+  const quickActions = readMessageObjectArray<{ label: string; prompt: string }>(
+    locale,
+    'home.quickActions',
+  );
 
   const handleChatPanelPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const panel = chatPanelRef.current;
@@ -362,14 +366,15 @@ export function Hero() {
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span className="text-[12px] text-white/35">{t('home.try')}</span>
-          {quickActions.map((prompt) => (
+          {quickActions.map((action) => (
             <button
-              key={prompt}
+              key={action.label}
               type="button"
-              onClick={() => setValue(prompt)}
+              onClick={() => setValue(action.prompt)}
+              title={action.prompt}
               className="min-h-11 rounded-full bg-white/[0.045] px-3 py-1.5 text-[12px] text-white/55 ring-1 ring-white/[0.06] transition-colors hover:bg-white/[0.08] hover:text-white"
             >
-              {prompt}
+              {action.label}
             </button>
           ))}
         </div>
