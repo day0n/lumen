@@ -39,6 +39,7 @@ import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -330,8 +331,22 @@ export function ChatPanel({
     const el = scrollRef.current;
     if (!el) return;
     void streamKey;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  }, [open, streamKey]);
+    // While streaming, the user can be re-scheduled to the bottom dozens of
+    // times per second. `behavior: 'smooth'` cannot keep up with that — each
+    // call cancels the previous animation and restarts, so the scrollbar
+    // looks jittery and never quite reaches the bottom. Use 'auto' (instant)
+    // mid-stream and only smooth-scroll when the message has fully settled.
+    // Also respect the user's intent: if they scrolled up to read history
+    // (more than 80px from the bottom), don't yank them back.
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const lastMessage = messages[messages.length - 1];
+    const isStreaming = lastMessage?.status === 'streaming';
+    if (distanceFromBottom > 80 && isStreaming) return;
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: isStreaming ? 'auto' : 'smooth',
+    });
+  }, [open, streamKey, messages]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -517,7 +532,11 @@ export function ChatPanel({
           <ul className="flex min-h-full flex-col gap-6">
             <AnimatePresence initial={false}>
               {messages.map((message) => (
-                <MessageItem key={message.id} message={message} onFeedback={setMessageFeedback} />
+                <MemoMessageItem
+                  key={message.id}
+                  message={message}
+                  onFeedback={setMessageFeedback}
+                />
               ))}
             </AnimatePresence>
           </ul>
@@ -943,8 +962,23 @@ function MessageItem({
   );
 }
 
+// SSE token deltas mutate `message.content` ~10-30 times per second on the
+// last assistant message. Without memo the parent's `messages.map` re-runs
+// every other message's render too, and each <AssistantMessage> calls
+// parseRichMessageContent (a markdown regex sweep) inside its render body.
+// Memoising on message reference + onFeedback keeps untouched messages
+// stable; useAgentChat does an immutable update on the streaming message
+// only, so its reference flip is what we *want* to re-render.
+const MemoMessageItem = memo(MessageItem, (prev, next) => {
+  return prev.message === next.message && prev.onFeedback === next.onFeedback;
+});
+
 function UserMessage({ message }: { message: ChatMessage }) {
-  const richContent = parseRichMessageContent(message.content);
+  // parseRichMessageContent walks the full content with markdown regex and
+  // builds an attachment Map; cache by content reference so it only re-runs
+  // when the actual text changes (user messages are immutable in practice
+  // but cheap to be safe).
+  const richContent = useMemo(() => parseRichMessageContent(message.content), [message.content]);
 
   return (
     <motion.li
@@ -973,7 +1007,11 @@ function AssistantMessage({
   const isStreaming = message.status === 'streaming';
   const isFailed = message.status === 'failed';
   const liveLabel = getLiveLabel(message, t);
-  const richContent = parseRichMessageContent(message.content);
+  // Same parser as UserMessage. Streaming assistants tick `content` once per
+  // SSE delta; with memo on MessageItem only the actively-streaming message
+  // re-renders, but inside that single render we still want the parse cached
+  // — RichMessageText/MediaPreviewList do their own work on the result.
+  const richContent = useMemo(() => parseRichMessageContent(message.content), [message.content]);
   const hasActivity = hasToolActivity(message.events);
   const thinkingLabel = thinkingSummaryLabel(message, t);
 
