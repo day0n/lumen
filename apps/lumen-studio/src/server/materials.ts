@@ -10,6 +10,8 @@ import { MaterialAssetRecordSchema } from '@lumen/db';
 
 import { requireStudioUser } from './auth';
 import { getMaterialAssetRepository, getProjectRepository, getStudioCache } from './db';
+import { embedMaterial } from './embeddings';
+import { logger } from './logger';
 import { traceStudioStep } from './telemetry';
 
 const MATERIAL_ASSET_LIST_CACHE_TTL_SECONDS = 60;
@@ -192,15 +194,72 @@ export async function createStudioMaterialAssetForOwner(
   const asset = await traceStudioStep(
     'studio.material_assets.create_user_upload.db',
     'db.query',
-    () => repository.createUserUpload({ ...input, ownerId }),
+    () =>
+      repository.createUserUpload({
+        ...input,
+        ownerId,
+      }),
     {
       category: input.category,
       kind: input.kind,
     },
   );
 
+  void embedStudioMaterialAsset({
+    assetId: asset.id,
+    ownerId,
+    repository,
+    input,
+  }).catch((error) => {
+    logger.warn(
+      { err: error, asset_id: asset.id, category: input.category },
+      'material embedding backfill failed',
+    );
+  });
+
   await invalidateMaterialAssetListCache(ownerId);
   return asset;
+}
+
+async function embedStudioMaterialAsset({
+  assetId,
+  ownerId,
+  repository,
+  input,
+}: {
+  assetId: string;
+  ownerId: string;
+  repository: Awaited<ReturnType<typeof getMaterialAssetRepository>>;
+  input: Omit<CreateUserMaterialAssetInput, 'ownerId'>;
+}): Promise<void> {
+  const embedding = await traceStudioStep(
+    'studio.material_assets.embed',
+    'ai.embed',
+    () =>
+      embedMaterial({
+        category: input.category,
+        title: input.title,
+        subcategory: input.metadata?.subcategory,
+        sellingPoints: input.metadata?.sellingPoints,
+      }),
+    { category: input.category },
+  );
+  if (!embedding) return;
+
+  await traceStudioStep(
+    'studio.material_assets.patch_embedding.db',
+    'db.write',
+    () =>
+      repository.patchUserUploadEmbedding(ownerId, assetId, {
+        embedding: embedding.vector,
+        embeddingText: embedding.text,
+        embeddingModel: embedding.model,
+      }),
+    {
+      category: input.category,
+      embedded: true,
+    },
+  );
 }
 
 export async function deleteStudioMaterialAsset(assetId: string): Promise<boolean> {

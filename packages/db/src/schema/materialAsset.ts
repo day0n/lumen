@@ -56,6 +56,11 @@ export const MaterialAssetDocumentSchema = z
     size: z.number().int().nonnegative().optional(),
     input_prompt: MaterialInputPromptSchema.optional(),
     metadata: MaterialAssetMetadataDocumentSchema.optional(),
+    // 入库时对「类目 + 子类 + 标题 + 卖点」文本做的向量，供 Agent 语义检索。
+    // 维度与 MATERIAL_EMBEDDING_DIMS 一致；缺失表示尚未向量化（可被回填脚本补齐）。
+    embedding: z.array(z.number()).optional(),
+    embedding_text: z.string().trim().min(1).max(4000).optional(),
+    embedding_model: z.string().trim().min(1).max(120).optional(),
     created_at: z.date(),
     updated_at: z.date(),
   })
@@ -132,6 +137,9 @@ export const CreateUserMaterialAssetInputSchema = z
     size: z.number().int().nonnegative().optional(),
     inputPrompt: MaterialInputPromptSchema.optional(),
     metadata: MaterialAssetMetadataRecordSchema.optional(),
+    embedding: z.array(z.number()).optional(),
+    embeddingText: z.string().trim().min(1).max(4000).optional(),
+    embeddingModel: z.string().trim().min(1).max(120).optional(),
   })
   .strict();
 export type CreateUserMaterialAssetInput = z.infer<typeof CreateUserMaterialAssetInputSchema>;

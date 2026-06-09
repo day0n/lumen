@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { Db, Filter } from 'mongodb';
+import type { Db, Document, Filter } from 'mongodb';
 
 import {
   type CreateUserMaterialAssetInput,
@@ -17,6 +17,13 @@ import {
 
 export const MATERIAL_ASSETS_COLLECTION = 'studio_material_assets';
 export const WORKFLOW_NODE_RESULTS_COLLECTION = 'workflow_node_results';
+
+/** Atlas Vector Search 索引名（建在 studio_material_assets.embedding 上）。 */
+export const MATERIAL_ASSETS_VECTOR_INDEX = 'material_assets_vector_index';
+/** 素材向量维度，必须与入库 / 查询两端使用的 embedding 模型一致。 */
+export const MATERIAL_EMBEDDING_DIMS = 1536;
+/** 入库 / 查询统一使用的 embedding 模型，改这里要同步重建索引。 */
+export const MATERIAL_EMBEDDING_MODEL = 'text-embedding-3-small';
 
 const WORKFLOW_RESULT_MATERIAL_KINDS = ['image', 'video', 'audio'] as const;
 type WorkflowResultMaterialKind = (typeof WORKFLOW_RESULT_MATERIAL_KINDS)[number];
@@ -103,6 +110,49 @@ export class MaterialAssetRepository {
       output_type: 1,
       completed_at: -1,
     });
+
+    await this.ensureVectorSearchIndex();
+  }
+
+  /**
+   * 在 studio_material_assets.embedding 上建 Atlas Vector Search 索引（幂等）。
+   *
+   * 设计成「绝不抛错」：本地/社区版 Mongo 没有 search index 能力，或 Atlas 侧
+   * 暂时不可用时，只记录日志，不能让整个 ensureIndexes 失败（它在 studio 启动
+   * 预热和懒加载路径上被 await，抛错会拖垮素材库相关接口）。
+   */
+  private async ensureVectorSearchIndex(): Promise<void> {
+    const collection = this.collection() as unknown as {
+      listSearchIndexes?: () => AsyncIterable<{ name?: string }>;
+      createSearchIndex?: (index: Document) => Promise<string>;
+    };
+    if (!collection.listSearchIndexes || !collection.createSearchIndex) return;
+
+    try {
+      for await (const index of collection.listSearchIndexes()) {
+        if (index.name === MATERIAL_ASSETS_VECTOR_INDEX) return;
+      }
+      await collection.createSearchIndex({
+        name: MATERIAL_ASSETS_VECTOR_INDEX,
+        type: 'vectorSearch',
+        definition: {
+          fields: [
+            {
+              type: 'vector',
+              path: 'embedding',
+              numDimensions: MATERIAL_EMBEDDING_DIMS,
+              similarity: 'cosine',
+            },
+            { type: 'filter', path: 'owner_id' },
+            { type: 'filter', path: 'category' },
+            { type: 'filter', path: 'kind' },
+            { type: 'filter', path: 'source' },
+          ],
+        },
+      });
+    } catch {
+      // 非致命：索引能力不可用时静默跳过，素材仍可正常入库，只是暂不可向量检索。
+    }
   }
 
   async list(input: ListMaterialAssetsInput): Promise<MaterialAssetRecord[]> {
@@ -116,7 +166,8 @@ export class MaterialAssetRepository {
     if (parsed.kind) filter.kind = parsed.kind;
 
     const documents = await this.collection()
-      .find(filter)
+      // embedding 向量动辄上千个浮点数，列表场景用不到，投影排除以省带宽和解析开销。
+      .find(filter, { projection: { embedding: 0 } })
       .sort({ updated_at: -1 })
       .limit(parsed.limit)
       .toArray();
@@ -242,12 +293,43 @@ export class MaterialAssetRepository {
       ...(parsed.size !== undefined ? { size: parsed.size } : {}),
       ...(parsed.inputPrompt ? { input_prompt: parsed.inputPrompt } : {}),
       ...(parsed.metadata ? { metadata: toDocumentMetadata(parsed.metadata) } : {}),
+      ...(parsed.embedding?.length ? { embedding: parsed.embedding } : {}),
+      ...(parsed.embeddingText ? { embedding_text: parsed.embeddingText } : {}),
+      ...(parsed.embeddingModel ? { embedding_model: parsed.embeddingModel } : {}),
       created_at: now,
       updated_at: now,
     };
 
     await this.collection().insertOne(document);
     return toMaterialAssetRecord(document);
+  }
+
+  async patchUserUploadEmbedding(
+    ownerId: string,
+    assetId: string,
+    patch: {
+      embedding: number[];
+      embeddingText: string;
+      embeddingModel: string;
+    },
+  ): Promise<boolean> {
+    if (patch.embedding.length !== MATERIAL_EMBEDDING_DIMS) return false;
+
+    const result = await this.collection().updateOne(
+      {
+        _id: assetId,
+        owner_id: ownerId,
+        source: 'user_upload',
+      },
+      {
+        $set: {
+          embedding: patch.embedding,
+          embedding_text: patch.embeddingText,
+          embedding_model: patch.embeddingModel,
+        },
+      },
+    );
+    return result.modifiedCount > 0;
   }
 
   async getLatestNodeResultsForProject(

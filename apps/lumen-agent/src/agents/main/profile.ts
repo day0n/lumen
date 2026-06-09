@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { InspirationSearchTool } from '../../adapters/outbound/tools/inspirationSearch.js';
+import { MaterialSearchTool } from '../../adapters/outbound/tools/materialSearch.js';
 import { MediaUnderstandingTool } from '../../adapters/outbound/tools/mediaUnderstanding.js';
 import { VideoSearchTool } from '../../adapters/outbound/tools/videoSearch.js';
 import { WebSearchTool } from '../../adapters/outbound/tools/web.js';
@@ -40,6 +41,12 @@ const inspirationSearch: ToolFactory = (ctx) =>
     openaiApiKey: ctx.toolEnv.openaiApiKey,
   });
 
+const materialSearch: ToolFactory = (ctx) =>
+  new MaterialSearchTool({
+    db: ctx.materialDb,
+    openaiApiKey: ctx.toolEnv.openaiApiKey,
+  });
+
 const mediaUnderstanding: ToolFactory = (ctx) =>
   new MediaUnderstandingTool({
     googleOcJson: ctx.toolEnv.googleOcJson,
@@ -62,6 +69,7 @@ export const MAIN_PROFILE: AgentBlueprint = {
     webSearch,
     videoSearch,
     inspirationSearch,
+    materialSearch,
     mediaUnderstanding,
     getWorkflow,
     editWorkflow,

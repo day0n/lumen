@@ -23,6 +23,9 @@ export interface AgentDeps {
   /** Studio database, used by tools that read shared product/material libraries. */
   inspirationDb?: Db;
 
+  /** Workflow database, where per-user uploaded material assets (+ embeddings) live. */
+  materialDb?: Db;
+
   /**
    * tool 工厂可以从这里读 provider 配置 / 第三方 client。
    * 前期把所有可选依赖塞这里，避免每个 tool 都改签名。

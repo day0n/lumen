@@ -17,6 +17,8 @@ const StudioServerConfigSchema = z
     GOOGLE_OC_JSON: z.string().optional().default(''),
     GOOGLE_CLOUD_PROJECT: z.string().optional().default(''),
     GOOGLE_CLOUD_LOCATION: z.string().optional().default('global'),
+    // 素材库入库向量化用（OpenAI text-embedding-3-small）。与 agent 查询端同一个 key。
+    OPENAI_API_KEY: z.string().optional().default(''),
     NEXT_PUBLIC_APP_URL: z.string().optional().default(''),
   })
   .passthrough();
@@ -38,6 +40,7 @@ export type StudioServerConfig = Pick<
   | 'GOOGLE_OC_JSON'
   | 'GOOGLE_CLOUD_PROJECT'
   | 'GOOGLE_CLOUD_LOCATION'
+  | 'OPENAI_API_KEY'
   | 'NEXT_PUBLIC_APP_URL'
 >;
 
