@@ -2,6 +2,7 @@
 
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
+import { SpotlightCard } from '@/components/studio/dashboard-motion';
 import { useI18n } from '@/i18n/provider';
 import { useAppShellChrome } from '@/lib/app-shell-chrome';
 import { useLoginRedirect } from '@/lib/auth-redirect';
@@ -340,10 +341,7 @@ export function MaterialsPage() {
           />
           <div className="relative z-10 flex min-h-[248px] flex-col p-2 sm:p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span
-                className="inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.055] px-2.5 text-[12px] font-bold text-white/70 ring-1 ring-white/[0.07]"
-                style={{ color: activeAccent }}
-              >
+              <span className="inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.055] px-2.5 text-[12px] font-bold text-white/70 ring-1 ring-white/[0.07]">
                 <IconPhoto size={15} stroke={2.1} />
                 {t('materials.title')}
               </span>
@@ -380,9 +378,15 @@ export function MaterialsPage() {
                   >
                     <span className="flex items-center gap-2">
                       <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: category.accent }}
-                      />
+                        className={cn(
+                          'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors',
+                          active
+                            ? 'bg-white/[0.11] text-white ring-white/[0.16]'
+                            : 'bg-white/[0.045] text-white/38 ring-white/[0.07] group-hover:text-white/58',
+                        )}
+                      >
+                        <IconPhoto size={14} stroke={2.1} />
+                      </span>
                       <span className="min-w-0 truncate text-[13px] font-bold">
                         {t(`materials.categories.${category.id}.title`)}
                       </span>
@@ -443,10 +447,9 @@ export function MaterialsPage() {
                     {t('materials.title')}
                   </div>
                 </div>
-                <span
-                  className="h-3 w-3 shrink-0 rounded-full shadow-[0_0_24px_currentColor]"
-                  style={{ color: activeAccent, backgroundColor: activeAccent }}
-                />
+                <span className="shrink-0 rounded-lg bg-white/[0.07] px-2 py-1 text-[11px] font-bold text-white/52 ring-1 ring-white/[0.08]">
+                  {visibleAssets.length}
+                </span>
               </div>
             </div>
           </div>
@@ -462,11 +465,10 @@ export function MaterialsPage() {
         <section className="mt-5">
           <div className="mb-5 flex flex-wrap items-center gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: activeAccent }}
-              />
-              <h2 className="text-[18px] font-bold text-white">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.055] text-white/60 ring-1 ring-white/[0.08]">
+                <IconPhoto size={17} stroke={2.1} />
+              </span>
+              <h2 className="text-[18px] font-extrabold text-white">
                 {t(`materials.categories.${activeCategory}.title`)}
               </h2>
               <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-white/[0.05] px-2 text-[12px] font-bold text-white/52 ring-1 ring-white/[0.07]">
@@ -758,72 +760,74 @@ function MaterialCard({
       transition={{ duration: 0.42, delay: index * 0.03, ease: [0.32, 0.72, 0, 1] }}
       className="group overflow-hidden rounded-[18px] bg-[#1c1e20] ring-1 ring-white/[0.07] transition-colors hover:bg-[#222528] hover:ring-white/[0.12]"
     >
-      <button
-        type="button"
-        onClick={() => window.open(asset.url, '_blank', 'noopener,noreferrer')}
-        className="relative block aspect-[4/3] w-full overflow-hidden bg-black"
-      >
-        {asset.thumbnailUrl || asset.url ? (
-          <img
-            src={asset.thumbnailUrl ?? asset.url}
-            alt={asset.title}
-            decoding="async"
-            loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
-          />
-        ) : (
-          <span className="flex h-full w-full items-center justify-center text-white/26">
-            <IconPhoto size={34} stroke={1.8} />
+      <SpotlightCard className="h-full" spotlightColor="rgba(255, 255, 255, 0.08)">
+        <button
+          type="button"
+          onClick={() => window.open(asset.url, '_blank', 'noopener,noreferrer')}
+          className="relative block aspect-[4/3] w-full overflow-hidden bg-black"
+        >
+          {asset.thumbnailUrl || asset.url ? (
+            <img
+              src={asset.thumbnailUrl ?? asset.url}
+              alt={asset.title}
+              decoding="async"
+              loading="lazy"
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+            />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-white/26">
+              <IconPhoto size={34} stroke={1.8} />
+            </span>
+          )}
+          <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white/82 backdrop-blur">
+            {asset.metadata?.subcategory ?? t(`materials.categories.${asset.category}.title`)}
           </span>
-        )}
-        <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white/82 backdrop-blur">
-          {asset.metadata?.subcategory ?? t(`materials.categories.${asset.category}.title`)}
-        </span>
-      </button>
+        </button>
 
-      <div className="space-y-3 p-3.5">
-        <div className="flex items-start gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[14px] font-bold text-white">{asset.title}</div>
-            <div className="mt-1 truncate text-[11px] text-white/38">
-              {formatMaterialDate(asset.updatedAt, locale)} · {formatBytes(asset.size)}
+        <div className="space-y-3 p-3.5">
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[14px] font-bold text-white">{asset.title}</div>
+              <div className="mt-1 truncate text-[11px] text-white/38">
+                {formatMaterialDate(asset.updatedAt, locale)} · {formatBytes(asset.size)}
+              </div>
             </div>
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  await onDelete();
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/32 transition-colors hover:bg-white/[0.08] hover:text-white/78 disabled:opacity-45"
+              aria-label={t('materials.delete')}
+            >
+              {deleting ? (
+                <IconLoader2 size={15} className="animate-spin" />
+              ) : (
+                <IconTrash size={15} />
+              )}
+            </button>
           </div>
-          <button
-            type="button"
-            disabled={deleting}
-            onClick={async () => {
-              setDeleting(true);
-              try {
-                await onDelete();
-              } finally {
-                setDeleting(false);
-              }
-            }}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/32 transition-colors hover:bg-[#ff5d73]/14 hover:text-[#ff9caa] disabled:opacity-45"
-            aria-label={t('materials.delete')}
-          >
-            {deleting ? (
-              <IconLoader2 size={15} className="animate-spin" />
-            ) : (
-              <IconTrash size={15} />
-            )}
-          </button>
+          {points.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {points.slice(0, 3).map((point) => (
+                <span
+                  key={point}
+                  className="max-w-full truncate rounded-lg bg-white/[0.045] px-2 py-1 text-[10.5px] font-medium text-white/52 ring-1 ring-white/[0.06]"
+                  title={point}
+                >
+                  {point}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
-        {points.length ? (
-          <div className="flex flex-wrap gap-1.5">
-            {points.slice(0, 3).map((point) => (
-              <span
-                key={point}
-                className="max-w-full truncate rounded-lg bg-white/[0.045] px-2 py-1 text-[10.5px] font-medium text-white/52 ring-1 ring-white/[0.06]"
-                title={point}
-              >
-                {point}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </div>
+      </SpotlightCard>
     </motion.article>
   );
 }

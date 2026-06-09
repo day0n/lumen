@@ -20,7 +20,7 @@ const display = Manrope({
   subsets: ['latin'],
   variable: '--font-display',
   display: 'swap',
-  weight: ['600', '700', '800'],
+  weight: ['400', '500', '600', '700', '800'],
 });
 
 export async function generateMetadata(): Promise<Metadata> {

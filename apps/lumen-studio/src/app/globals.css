@@ -46,9 +46,9 @@ body {
   max-width: 100%;
   background: var(--lumen-ink);
   color: #f4f6f8;
-  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue",
-    sans-serif;
-  letter-spacing: -0.005em;
+  font-family: var(--font-display), var(--font-inter), -apple-system, BlinkMacSystemFont,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Helvetica Neue", sans-serif;
+  letter-spacing: 0;
 }
 
 html {
