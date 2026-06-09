@@ -4447,7 +4447,7 @@ function NodeOutputEditor({
   const previewAspectRatio = getPreviewAspectRatio(data);
 
   if (data.kind === 'text') {
-    return <TextOutputEditor onChange={onChange} output={output} />;
+    return <TextOutputEditor activityState={activityState} onChange={onChange} output={output} />;
   }
 
   if (data.kind === 'image') {
@@ -4571,9 +4571,11 @@ function getPreviewAspectRatio(data: LumenNodeData): string | undefined {
 }
 
 function TextOutputEditor({
+  activityState,
   onChange,
   output,
 }: {
+  activityState?: MediaActivityDisplayState;
   onChange: (output: string) => void;
   output: string;
 }) {
@@ -4583,27 +4585,30 @@ function TextOutputEditor({
 
   if (editing) {
     return (
-      <ImeTextarea
-        aria-label={t('canvas.node.output')}
-        autoFocus
-        className="nodrag nowheel block min-h-[104px] w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/26"
-        onBlur={() => setEditing(false)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            event.currentTarget.blur();
-          }
-        }}
-        onValueChange={onChange}
-        placeholder={t('canvas.node.output')}
-        value={output}
-      />
+      <div className="relative min-h-[104px] overflow-hidden">
+        <ImeTextarea
+          aria-label={t('canvas.node.output')}
+          autoFocus
+          className="nodrag nowheel block min-h-[104px] w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/26"
+          onBlur={() => setEditing(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+          onValueChange={onChange}
+          placeholder={t('canvas.node.output')}
+          value={output}
+        />
+        {activityState?.active ? <MediaOutputActivityOverlay activity={activityState} /> : null}
+      </div>
     );
   }
 
   return (
     <div
-      className="min-h-[104px] w-full cursor-grab whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none transition-colors hover:text-white/86 active:cursor-grabbing"
+      className="relative min-h-[104px] w-full cursor-grab overflow-hidden whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none transition-colors hover:text-white/86 active:cursor-grabbing"
       onDoubleClick={(event) => {
         event.stopPropagation();
         setEditing(true);
@@ -4612,6 +4617,7 @@ function TextOutputEditor({
       <span className={hasOutput ? undefined : 'text-white/28'}>
         {hasOutput ? output : t('canvas.node.output')}
       </span>
+      {activityState?.active ? <MediaOutputActivityOverlay activity={activityState} /> : null}
     </div>
   );
 }
