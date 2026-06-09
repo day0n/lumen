@@ -27,6 +27,7 @@ const EMBEDDING_DIMS = 1536;
 const DEFAULT_COUNT = 6;
 const MAX_COUNT = 12;
 const DEFAULT_MIN_SCORE = 0.3;
+const EMBEDDING_REQUEST_TIMEOUT_MS = 8_000;
 
 const MATERIAL_CATEGORIES = ['item', 'character', 'scene'] as const;
 
@@ -166,6 +167,8 @@ export class MaterialSearchTool extends Tool {
     const proxy = readProxyUrl();
     this.client ??= new OpenAI({
       apiKey: this.env.openaiApiKey,
+      maxRetries: 0,
+      timeout: EMBEDDING_REQUEST_TIMEOUT_MS,
       ...(proxy ? { httpAgent: new HttpsProxyAgent(proxy) } : {}),
     });
     return this.client;

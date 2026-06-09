@@ -20,6 +20,7 @@ const EMBEDDING_MODEL = 'text-embedding-3-small';
 const EMBEDDING_DIMS = 1536;
 const DEFAULT_COUNT = 6;
 const MAX_COUNT = 12;
+const EMBEDDING_REQUEST_TIMEOUT_MS = 8_000;
 
 // 相似度地板：Atlas cosine 分数归一化到 [0,1]（0.5≈正交）。
 // 默认设得很宽松，只挡掉明显不相关的；想更严就调高 INSPIRATION_MIN_SCORE。
@@ -201,6 +202,8 @@ export class InspirationSearchTool extends Tool {
     const proxy = readProxyUrl();
     this.client ??= new OpenAI({
       apiKey: this.env.openaiApiKey,
+      maxRetries: 0,
+      timeout: EMBEDDING_REQUEST_TIMEOUT_MS,
       ...(proxy ? { httpAgent: new HttpsProxyAgent(proxy) } : {}),
     });
     return this.client;
