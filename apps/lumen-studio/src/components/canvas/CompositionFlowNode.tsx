@@ -11,13 +11,14 @@ import {
 } from '@tabler/icons-react';
 import { Handle, Position, useReactFlow } from '@xyflow/react';
 import {
+  type ChangeEvent,
+  type MouseEvent,
+  memo,
   useCallback,
   useContext,
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
-  type MouseEvent,
 } from 'react';
 
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -45,7 +46,22 @@ function isWorkflowNodeBusy(status?: NodeStatus) {
   return status === 'queued' || status === 'running';
 }
 
-export function CompositionFlowNode({
+export function CompositionFlowNode(props: {
+  data: CompositionNodeData;
+  id: string;
+  selected?: boolean;
+}) {
+  return <CompositionFlowNodeMemo {...props} />;
+}
+
+// See note in CanvasWorkbench's LumenFlowNode wrapper. Same reason: React
+// Flow doesn't memoise custom node bodies, so a ws progress event on any
+// other node forces composition nodes to re-render and rebuild their
+// timeline subtree. The composition body is heavier than the regular node
+// body (clip strip, scrubber, drawer state) so the win here is larger.
+const CompositionFlowNodeMemo = memo(CompositionFlowNodeImpl);
+
+function CompositionFlowNodeImpl({
   data,
   id,
   selected,
@@ -218,7 +234,9 @@ export function CompositionFlowNode({
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#9beaff]/14 text-[#9beaff] ring-1 ring-[#9beaff]/24">
               <IconScissors size={22} stroke={2.2} />
             </span>
-            <span className="text-[13px] font-bold text-white/86">{t('canvas.composition.open')}</span>
+            <span className="text-[13px] font-bold text-white/86">
+              {t('canvas.composition.open')}
+            </span>
             <span className="text-[11px] text-white/42">
               {clipCount} {t('canvas.composition.clips')} · {totalDuration.toFixed(1)}s
             </span>

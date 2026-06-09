@@ -81,7 +81,7 @@ import type {
 import { AnimatePresence } from 'motion/react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ChangeEvent,
   MouseEvent,
@@ -778,29 +778,56 @@ function withCanvasOutputMetrics(nodes: LumenNode[], edges: LumenEdge[]) {
   };
 
   return {
-    nodes: nodes.map((node) => ({
-      ...node,
-      data: {
-        ...node.data,
-        outputCount: getNodeOutputCount(node),
-        previewAspectRatio:
-          node.data.kind === 'image'
-            ? (findDownstreamVideoAspectRatio(node.id, nodeById, outgoingBySource) ??
-              getAspectRatio(node.data.settings))
-            : node.data.kind === 'video'
-              ? getAspectRatio(node.data.settings)
-              : undefined,
-        upstreamOutputCount: countUpstreamOutputs(node.id),
-      },
-    })),
+    // Reference-stable map: only allocate a new node/edge object when at
+    // least one derived metric actually changed. The previous version
+    // unconditionally spread `{...node, data: {...node.data, ...}}` for every
+    // node, which produced new references on every render and made any
+    // downstream React.memo on the node component useless. Now untouched
+    // nodes pass through identity-equal, so memoised LumenFlowNode and
+    // CompositionFlowNode skip render when their props didn't change.
+    nodes: nodes.map((node) => {
+      const outputCount = getNodeOutputCount(node);
+      const previewAspectRatio =
+        node.data.kind === 'image'
+          ? (findDownstreamVideoAspectRatio(node.id, nodeById, outgoingBySource) ??
+            getAspectRatio(node.data.settings))
+          : node.data.kind === 'video'
+            ? getAspectRatio(node.data.settings)
+            : undefined;
+      const upstreamOutputCount = countUpstreamOutputs(node.id);
+
+      if (
+        node.data.outputCount === outputCount &&
+        node.data.previewAspectRatio === previewAspectRatio &&
+        node.data.upstreamOutputCount === upstreamOutputCount
+      ) {
+        return node;
+      }
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          outputCount,
+          previewAspectRatio,
+          upstreamOutputCount,
+        },
+      };
+    }),
     edges: edges.map((edge) => {
       const source = nodeById.get(edge.source);
+      const sourceKind = source?.data.kind ?? null;
+      const sourceOutputCount = getNodeOutputCount(source);
+      const prev = (edge.data ?? {}) as { sourceKind?: unknown; sourceOutputCount?: unknown };
+      if (prev.sourceKind === sourceKind && prev.sourceOutputCount === sourceOutputCount) {
+        return edge;
+      }
       return {
         ...edge,
         data: {
           ...(edge.data ?? {}),
-          sourceKind: source?.data.kind ?? null,
-          sourceOutputCount: getNodeOutputCount(source),
+          sourceKind,
+          sourceOutputCount,
         },
       };
     }),
@@ -3823,7 +3850,7 @@ function ParamPills<T extends string | number>({
   );
 }
 
-function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
+function LumenFlowNodeImpl({ data, id, selected }: NodeProps<LumenNode>) {
   if (data.kind === 'composition') {
     return (
       <CompositionFlowNode data={{ ...data, kind: 'composition' }} id={id} selected={selected} />
@@ -4410,6 +4437,15 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
     </div>
   );
 }
+
+// React Flow does NOT memoise custom node components for you. Without this
+// wrapper, every state change anywhere in the canvas (a ws node:progress
+// event, a drag, an output update on one node) re-rendered every node in
+// the graph, including the heavy ImeTextarea / ParamPills / Handle subtrees
+// inside each one. With `withCanvasOutputMetrics` now reference-stable on
+// unchanged nodes, memo is what actually skips the work — the props (data,
+// selected) for an untouched node are identity-equal and we shortcut.
+const LumenFlowNode = memo(LumenFlowNodeImpl);
 
 function NodeErrorOverlay({ message }: { message: string }) {
   return (
