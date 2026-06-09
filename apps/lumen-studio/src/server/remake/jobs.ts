@@ -211,15 +211,18 @@ export async function confirmGate2(input: {
   // 进入 video 阶段前，把已有的 video/final tasks 全清掉，避免拿到旧数据
   await repository.deleteTasksByStages(input.jobId, ['video', 'final']);
 
+  const sceneIndexes = job.outputs.scenes.map((scene) => scene.sceneIndex);
+  if (sceneIndexes.length > 0) {
+    await repository.clearSceneOutputFields(input.jobId, input.ownerId, sceneIndexes, [
+      'videoUrl',
+      'voiceUrl',
+      'mixUrl',
+    ]);
+  }
+  await repository.clearOutputFields(input.jobId, input.ownerId, ['bgmUrl', 'finalUrl']);
+
   const updated = await repository.updateJob(input.jobId, input.ownerId, {
     gate2ConfirmedAt: new Date(),
-    outputsPatch: {
-      // 清掉每场的 video/voice/mix output（保留 image），bgm/final 也清
-      scenes: job.outputs.scenes.map((scene) => ({
-        sceneIndex: scene.sceneIndex,
-        ...(scene.imageUrl ? { imageUrl: scene.imageUrl } : {}),
-      })),
-    },
   });
   if (!updated) return null;
 
