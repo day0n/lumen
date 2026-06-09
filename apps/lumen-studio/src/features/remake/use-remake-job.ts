@@ -228,12 +228,20 @@ export function useRemakeJob(
   }, [fetchView]);
 
   // 每秒轮询，直到终态或组件卸载。
-  // stateRef 避免把 state 加入依赖数组——否则每次 fetch 更新 state
-  // 都会清掉旧 interval 重建新的，节奏不稳定。
+  // - stateRef 避免把 state 加入依赖数组——否则每次 fetch 更新 state
+  //   都会清掉旧 interval 重建新的，节奏不稳定。
+  // - document.visibilityState !== 'visible' 时暂停轮询：用户切到别的标签页或
+  //   把窗口最小化时，原来还会以 1Hz 拉 /api/remake/jobs/:id（每个 tab 都
+  //   会触发一次 mongo getJob + listTasksByJob + deriveJobStageStatuses）。
+  //   一个用户开三个 tab + 后台 tab 也照跑，就是 180 req/min/用户。
+  //   切回来时立刻 fetch 一次拿最新状态，不要等下一拍。
   useEffect(() => {
     if (!jobId) return;
+    if (typeof document === 'undefined') return;
 
-    const id = setInterval(() => {
+    let id: ReturnType<typeof setInterval> | null = null;
+
+    const tick = () => {
       const s = stateRef.current;
       if (s.phase === 'ready') {
         const { final } = s.view?.stageStatuses ?? {};
@@ -241,9 +249,36 @@ export function useRemakeJob(
         if (final === 'success' || final === 'error' || final === 'cancelled') return;
       }
       void fetchView();
-    }, 1000);
+    };
 
-    return () => clearInterval(id);
+    const start = () => {
+      if (id !== null) return;
+      id = setInterval(tick, 1000);
+    };
+    const stop = () => {
+      if (id === null) return;
+      clearInterval(id);
+      id = null;
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        // Just came back into view — refresh immediately so the user
+        // doesn't see stale state for up to a second.
+        void fetchView();
+        start();
+      } else {
+        stop();
+      }
+    };
+
+    if (document.visibilityState === 'visible') start();
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [jobId, fetchView]);
 
   const post = useCallback(
