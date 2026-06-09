@@ -11,15 +11,15 @@ import {
   ProjectFolderDocumentSchema,
   type ProjectFolderRecord,
   ProjectFolderRecordSchema,
-  type ProjectFolderSystemKey,
   type UpdateProjectFolderInput,
   UpdateProjectFolderInputSchema,
 } from '../schema/projectFolder';
 
 const COLLECTION = 'studio_project_folders';
 
-/** 普通用户文件夹的 sort_order 起点。系统文件夹强制 < 这个值，永远在最上面。 */
 const USER_SORT_BASE = 1000;
+/** 已废弃的系统文件夹 key；列表请求时会顺带清理。 */
+const RETIRED_SYSTEM_FOLDER_KEY = 'viral_remix';
 
 export class ProjectFolderRepository {
   constructor(private readonly db: Db) {}
@@ -50,14 +50,12 @@ export class ProjectFolderRepository {
   async create(input: CreateProjectFolderInput): Promise<ProjectFolderRecord> {
     const parsed = CreateProjectFolderInputSchema.parse(input);
     const now = new Date();
-    const sortOrder =
-      parsed.sortOrder ?? (parsed.systemKey ? 0 : USER_SORT_BASE + now.getTime());
+    const sortOrder = parsed.sortOrder ?? USER_SORT_BASE + now.getTime();
 
     const document = ProjectFolderDocumentSchema.parse({
       _id: randomUUID(),
       owner_id: parsed.ownerId,
       name: parsed.name,
-      system_key: parsed.systemKey,
       sort_order: sortOrder,
       created_at: now,
       updated_at: now,
@@ -68,42 +66,33 @@ export class ProjectFolderRepository {
   }
 
   /**
-   * 用户首次访问/触发对应业务时调用：如果同一个 owner 已经有同 system_key 的文件夹
-   * （包括软删过的）直接返回；否则插入一条。
+   * 软删已废弃的系统文件夹，并返回被清理的 folder id 列表（供项目挪回未分类）。
    */
-  async ensureSystemFolder(
-    ownerId: string,
-    systemKey: ProjectFolderSystemKey,
-    defaultName: string,
-  ): Promise<ProjectFolderRecord> {
+  async retireLegacySystemFolders(ownerId: string): Promise<string[]> {
     const collection = this.collection();
-    const existing = await collection.findOne({
-      owner_id: ownerId,
-      system_key: systemKey,
-    });
+    const legacy = await collection
+      .find({
+        owner_id: ownerId,
+        system_key: RETIRED_SYSTEM_FOLDER_KEY,
+        deleted_at: { $exists: false },
+      })
+      .project({ _id: 1 })
+      .toArray();
 
-    if (existing) {
-      if (existing.deleted_at) {
-        // 用户误删过系统文件夹，悄悄复活；保留 name 不强行覆盖。
-        const restored = await collection.findOneAndUpdate(
-          { _id: existing._id },
-          {
-            $unset: { deleted_at: '' },
-            $set: { updated_at: new Date() },
-          },
-          { returnDocument: 'after' },
-        );
-        if (restored) return toRecord(restored);
-      }
-      return toRecord(existing);
-    }
+    if (legacy.length === 0) return [];
 
-    return this.create({
-      ownerId,
-      name: defaultName,
-      systemKey,
-      sortOrder: 0,
-    });
+    const now = new Date();
+    const folderIds = legacy.map((row) => row._id);
+    await collection.updateMany(
+      { _id: { $in: folderIds }, owner_id: ownerId },
+      {
+        $set: {
+          deleted_at: now,
+          updated_at: now,
+        },
+      },
+    );
+    return folderIds;
   }
 
   async get(ownerId: string, folderId: string): Promise<ProjectFolderRecord | null> {
@@ -132,8 +121,6 @@ export class ProjectFolderRepository {
         _id: folderId,
         owner_id: ownerId,
         deleted_at: { $exists: false },
-        // 系统文件夹不允许重命名 / 改序号
-        system_key: { $exists: false },
       },
       { $set: set },
       { returnDocument: 'after' },
@@ -148,8 +135,6 @@ export class ProjectFolderRepository {
         _id: folderId,
         owner_id: ownerId,
         deleted_at: { $exists: false },
-        // 系统文件夹不允许删除
-        system_key: { $exists: false },
       },
       {
         $set: {
@@ -172,7 +157,6 @@ function toRecord(document: ProjectFolderDocument): ProjectFolderRecord {
     id: parsed._id,
     ownerId: parsed.owner_id,
     name: parsed.name,
-    systemKey: parsed.system_key,
     sortOrder: parsed.sort_order,
     createdAt: parsed.created_at.toISOString(),
     updatedAt: parsed.updated_at.toISOString(),

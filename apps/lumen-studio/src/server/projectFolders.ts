@@ -1,20 +1,12 @@
 import 'server-only';
 
-import type {
-  ProjectFolderRecord,
-  ProjectFolderSystemKey,
-  UpdateProjectFolderInput,
-} from '@lumen/db';
+import type { ProjectFolderRecord, UpdateProjectFolderInput } from '@lumen/db';
 import { ProjectFolderRecordSchema } from '@lumen/db';
 import { z } from 'zod';
 
 import { requireStudioUser } from './auth';
 import { getProjectFolderRepository, getProjectRepository, getStudioCache } from './db';
 
-/** 系统文件夹的默认 name；前端可按系统 key 翻译为本地化文案。 */
-const SYSTEM_FOLDER_DEFAULTS: Record<ProjectFolderSystemKey, string> = {
-  viral_remix: 'Viral remix',
-};
 const FOLDER_LIST_CACHE_TTL_SECONDS = 30;
 const FolderListWithCountsSchema = z
   .object({
@@ -39,10 +31,12 @@ export async function listStudioFolders(): Promise<FolderListWithCounts> {
   const folderRepo = await getProjectFolderRepository();
   const projectRepo = await getProjectRepository();
 
-  // 首次访问时按需把系统文件夹（如爆款复刻）补齐，让侧栏第一眼就能看到它们，
-  // 不必等到用户真的在爆款复刻页生成第一条工作流才出现。ensureSystemFolder 是 idempotent，
-  // 已存在则直接返回，所以这里每次列表请求都跑也只多一次轻量 findOne。
-  await folderRepo.ensureSystemFolder(user.id, 'viral_remix', SYSTEM_FOLDER_DEFAULTS.viral_remix);
+  const retiredFolderIds = await folderRepo.retireLegacySystemFolders(user.id);
+  if (retiredFolderIds.length > 0) {
+    await Promise.all(
+      retiredFolderIds.map((folderId) => projectRepo.clearFolderForOwner(user.id, folderId)),
+    );
+  }
 
   const [folders, counts] = await Promise.all([
     folderRepo.list({ ownerId: user.id }),
@@ -74,7 +68,6 @@ export async function updateStudioFolder(
 
 /**
  * 删除文件夹：连带里面所有工作流一起软删（前端必须已经做过二次确认）。
- * 返回是否成功（系统文件夹返回 false）。
  */
 export async function deleteStudioFolder(folderId: string): Promise<boolean> {
   const user = await requireStudioUser();
@@ -86,26 +79,8 @@ export async function deleteStudioFolder(folderId: string): Promise<boolean> {
   return deleted;
 }
 
-/**
- * 系统文件夹的 idempotent 入口：保证当前用户有这个 system folder，并返回它。
- * 给爆款复刻这类后台业务用。
- */
-export async function ensureStudioSystemFolder(
-  systemKey: ProjectFolderSystemKey,
-): Promise<ProjectFolderRecord> {
-  const user = await requireStudioUser();
-  const folderRepo = await getProjectFolderRepository();
-  const folder = await folderRepo.ensureSystemFolder(
-    user.id,
-    systemKey,
-    SYSTEM_FOLDER_DEFAULTS[systemKey],
-  );
-  await invalidateFolderListCache(user.id);
-  return folder;
-}
-
 function folderListCacheKey(ownerId: string) {
-  return `folders:${ownerId}:list:v1`;
+  return `folders:${ownerId}:list:v2`;
 }
 
 async function invalidateFolderListCache(ownerId: string) {

@@ -70,7 +70,7 @@ export const ProjectDocumentSchema = z
     status: ProjectStatusSchema.default('draft'),
     thumbnail: z.string().trim().optional(),
     share_id: z.string().trim().min(1).optional(),
-    /** 文件夹 id；未设置 = "未分类"。系统文件夹（如爆款复刻）也走这个字段。 */
+    /** 文件夹 id；未设置 = "未分类"。 */
     folder_id: z.string().trim().min(1).optional(),
     canvas: ProjectCanvasSchema.default({ nodes: [], edges: [] }),
     created_at: z.date(),

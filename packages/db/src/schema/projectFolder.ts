@@ -3,21 +3,16 @@ import { z } from 'zod';
 /**
  * 工作室项目的"文件夹"：用户给工作流分组的容器。
  *
- * - `system_key` 标记内置文件夹（如 'viral_remix' 爆款复刻），不允许重命名或删除。
- *   普通用户文件夹无此字段。
- * - `sort_order` 用于稳定排序（小的在前）；普通文件夹按创建时间递增分配，
- *   系统文件夹保留较小的 sort_order 让它们永远在最上面。
+ * - `sort_order` 用于稳定排序（小的在前）；新建文件夹按创建时间递增分配。
+ * - `system_key` 仅用于读取历史数据，新文件夹不再写入。
  */
-
-export const ProjectFolderSystemKeySchema = z.enum(['viral_remix']);
-export type ProjectFolderSystemKey = z.infer<typeof ProjectFolderSystemKeySchema>;
 
 export const ProjectFolderDocumentSchema = z
   .object({
     _id: z.string().min(1),
     owner_id: z.string().min(1),
     name: z.string().trim().min(1).max(80),
-    system_key: ProjectFolderSystemKeySchema.optional(),
+    system_key: z.string().optional(),
     sort_order: z.number().int().default(0),
     created_at: z.date(),
     updated_at: z.date(),
@@ -31,7 +26,6 @@ export const ProjectFolderRecordSchema = z
     id: z.string().min(1),
     ownerId: z.string().min(1),
     name: z.string().min(1).max(80),
-    systemKey: ProjectFolderSystemKeySchema.optional(),
     sortOrder: z.number().int(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -43,7 +37,6 @@ export const CreateProjectFolderInputSchema = z
   .object({
     ownerId: z.string().min(1),
     name: z.string().trim().min(1).max(80),
-    systemKey: ProjectFolderSystemKeySchema.optional(),
     sortOrder: z.number().int().optional(),
   })
   .strict();

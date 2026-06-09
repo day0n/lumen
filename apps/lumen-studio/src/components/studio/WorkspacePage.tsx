@@ -14,7 +14,6 @@ import { cn } from '@/lib/cn';
 import {
   IconCheck,
   IconDotsVertical,
-  IconFlame,
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
@@ -75,7 +74,6 @@ type ProjectsApiResponse =
 interface FolderRecord {
   id: string;
   name: string;
-  systemKey?: 'viral_remix';
 }
 
 type FoldersApiResponse =
@@ -130,13 +128,13 @@ export function WorkspacePage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const stored = window.localStorage.getItem('workspace.sidebar.collapsed');
-    // 只有显式存了 '0' 才视为用户偏好展开；其他情况（首次访问 / 旧记录）都保持折叠默认。
+    const stored = window.localStorage.getItem('workspace.sidebar.collapsed.v2');
+    // 只有显式存了 '0' 才视为用户偏好展开；默认始终折叠。
     if (stored === '0') setSidebarCollapsed(false);
   }, []);
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem('workspace.sidebar.collapsed', sidebarCollapsed ? '1' : '0');
+    window.localStorage.setItem('workspace.sidebar.collapsed.v2', sidebarCollapsed ? '1' : '0');
   }, [sidebarCollapsed]);
 
   const loadFolders = useCallback(
@@ -409,7 +407,7 @@ export function WorkspacePage() {
     if (confirmState.kind === 'deleteProject') {
       return t('workspace.folders.confirmDeleteWorkflow', { name: confirmState.project.name });
     }
-    const folderName = folderDisplayName(confirmState.folder, t);
+    const folderName = confirmState.folder.name;
     return confirmState.workflowCount > 0
       ? t('workspace.folders.confirmDeleteWithWorkflows', {
           name: folderName,
@@ -418,16 +416,12 @@ export function WorkspacePage() {
       : t('workspace.folders.confirmDelete', { name: folderName });
   }, [confirmState, t]);
 
-  const sortedFolders = useMemo(() => {
-    // 系统文件夹永远在前
-    const sorted = [...folders];
-    sorted.sort((a, b) => {
-      if (a.systemKey && !b.systemKey) return -1;
-      if (!a.systemKey && b.systemKey) return 1;
-      return 0;
-    });
-    return sorted;
-  }, [folders]);
+  const hasUserFolders = folders.length > 0;
+
+  useEffect(() => {
+    if (hasUserFolders) return;
+    if (selectedScope !== null) setSelectedScope(null);
+  }, [hasUserFolders, selectedScope]);
 
   return (
     <div className="relative min-h-screen text-white">
@@ -529,32 +523,33 @@ export function WorkspacePage() {
                   active={selectedScope === null}
                   onClick={() => setSelectedScope(null)}
                 />
-                <FolderSidebarItem
-                  icon={<IconFolder size={15} stroke={2.2} />}
-                  label={t('workspace.folders.uncategorized')}
-                  count={counts.uncategorized ?? 0}
-                  active={selectedScope === 'uncategorized'}
-                  onClick={() => setSelectedScope('uncategorized')}
-                />
 
-                {sortedFolders.map((folder) => (
+                {hasUserFolders ? (
+                  <FolderSidebarItem
+                    icon={<IconFolder size={15} stroke={2.2} />}
+                    label={t('workspace.folders.uncategorized')}
+                    count={counts.uncategorized ?? 0}
+                    active={selectedScope === 'uncategorized'}
+                    onClick={() => setSelectedScope('uncategorized')}
+                  />
+                ) : null}
+
+                {folders.map((folder) => (
                   <FolderSidebarItem
                     key={folder.id}
                     icon={
-                      folder.systemKey === 'viral_remix' ? (
-                        <IconFlame size={15} stroke={2.2} />
-                      ) : selectedScope === folder.id ? (
+                      selectedScope === folder.id ? (
                         <IconFolderOpen size={15} stroke={2.2} />
                       ) : (
                         <IconFolder size={15} stroke={2.2} />
                       )
                     }
-                    label={folderDisplayName(folder, t)}
+                    label={folder.name}
                     count={counts[folder.id] ?? 0}
                     active={selectedScope === folder.id}
                     onClick={() => setSelectedScope(folder.id)}
-                    onRename={folder.systemKey ? undefined : () => handleRenameFolder(folder)}
-                    onDelete={folder.systemKey ? undefined : () => handleDeleteFolder(folder)}
+                    onRename={() => handleRenameFolder(folder)}
+                    onDelete={() => handleDeleteFolder(folder)}
                   />
                 ))}
 
@@ -626,10 +621,10 @@ export function WorkspacePage() {
                     key={project.id}
                     project={project}
                     href={withCanvasEntryLoader(localePath(`/canvas/${project.id}`))}
-                    folders={sortedFolders}
+                    folders={folders}
                     onMove={(folderId) => moveProject(project.id, folderId)}
                     onDelete={() => deleteProject(project)}
-                    folderDisplayName={(folder) => folderDisplayName(folder, t)}
+                    folderDisplayName={(folder) => folder.name}
                     moveToLabel={t('workspace.folders.moveTo')}
                     moveToRootLabel={t('workspace.folders.moveToRoot')}
                     deleteLabel={t('workspace.folders.deleteWorkflow')}
@@ -1045,14 +1040,6 @@ function MoveMenuItem({
       {selected ? <IconCheck size={13} stroke={2.6} className="text-[#9da8ff]" /> : null}
     </button>
   );
-}
-
-function folderDisplayName(
-  folder: FolderRecord,
-  t: (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string,
-): string {
-  if (folder.systemKey === 'viral_remix') return t('workspace.folders.systemViralRemix');
-  return folder.name;
 }
 
 function toStudioProject(
