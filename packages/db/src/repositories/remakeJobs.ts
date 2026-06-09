@@ -566,6 +566,7 @@ function toJobRecord(document: RemakeJobDocument): RemakeJobRecord {
 
 function toTaskRecord(document: RemakeTaskDocument): RemakeTaskRecord {
   const parsed = RemakeTaskDocumentSchema.parse(document);
+  const inputPrompt = parsed.input?.prompt?.trim() || undefined;
   return RemakeTaskRecordSchema.parse({
     id: parsed._id,
     jobId: parsed.job_id,
@@ -577,6 +578,7 @@ function toTaskRecord(document: RemakeTaskDocument): RemakeTaskRecord {
     outputKind: parsed.output_kind,
     progress: parsed.progress,
     error: parsed.error,
+    ...(inputPrompt ? { inputPrompt } : {}),
     startedAt: parsed.started_at?.toISOString(),
     settledAt: parsed.settled_at?.toISOString(),
     createdAt: parsed.created_at.toISOString(),

@@ -39,10 +39,6 @@ export interface PromptOverrideCopy {
   placeholder: string;
   /** Drawer 底部提示。 */
   hint: string;
-  /** 折叠区标题："当前自动生成内容预览"。 */
-  effectiveLabel: string;
-  /** effectivePrompt 为 null 时折叠区文案。 */
-  effectivePlaceholder: string;
   /** 保存按钮。 */
   save: string;
   /** 取消按钮。 */
@@ -76,7 +72,12 @@ export function PromptOverrideBar(props: PromptOverrideBarProps) {
   const [open, setOpen] = useState(false);
 
   const hasOverride = typeof overrideValue === 'string' && overrideValue.trim().length > 0;
-  const firstLine = pickFirstLine(hasOverride ? overrideValue : effectivePrompt) || copy.emptyHint;
+  // 折叠条优先展示真实"生效中" prompt 的第一行（哪怕 = override 也是同一值），
+  // 用户对此一目了然：UI 上看到的就是模型实际收到的；不再走 placeholder 提示。
+  const previewSource = hasOverride ? overrideValue : (effectivePrompt ?? null);
+  const previewLine = pickFirstLine(previewSource);
+  const showPlaceholder = !previewLine;
+  const previewText = previewLine || copy.emptyHint;
 
   return (
     <>
@@ -86,7 +87,7 @@ export function PromptOverrideBar(props: PromptOverrideBarProps) {
         onClick={() => setOpen(true)}
         title={disabled ? copy.disabledTooltip : undefined}
         className={cn(
-          'group/prompt-bar mt-2 flex h-8 w-full items-center gap-2 rounded-[12px] bg-white/[0.045] px-2.5 text-left ring-1 ring-white/[0.06] transition-colors',
+          'group/prompt-bar mt-2 flex h-8 w-full min-w-0 items-center gap-2 overflow-hidden rounded-[12px] bg-white/[0.045] px-2.5 text-left ring-1 ring-white/[0.06] transition-colors',
           disabled
             ? 'cursor-not-allowed opacity-50'
             : 'hover:bg-white/[0.08] hover:ring-white/[0.12]',
@@ -104,7 +105,7 @@ export function PromptOverrideBar(props: PromptOverrideBarProps) {
         />
         <span
           className={cn(
-            'shrink-0 rounded-full px-1.5 text-[10px] font-bold uppercase tracking-wide',
+            'shrink-0 whitespace-nowrap rounded-full px-1.5 text-[10px] font-bold uppercase tracking-wide',
             hasOverride
               ? 'bg-[#79e4ff]/14 text-[#79e4ff] ring-1 ring-[#79e4ff]/22'
               : 'bg-white/[0.06] text-white/40 ring-1 ring-white/[0.06]',
@@ -112,8 +113,13 @@ export function PromptOverrideBar(props: PromptOverrideBarProps) {
         >
           {hasOverride ? copy.overrideBadge : copy.autoBadge}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[11px] leading-4 text-white/68">
-          {firstLine}
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate whitespace-nowrap text-[11px] leading-[16px]',
+            showPlaceholder ? 'italic text-white/40' : 'text-white/68',
+          )}
+        >
+          {previewText}
         </span>
         <span
           aria-hidden
@@ -130,7 +136,6 @@ export function PromptOverrideBar(props: PromptOverrideBarProps) {
         <PromptOverrideDrawer
           {...props}
           hasOverride={hasOverride}
-          firstLine={firstLine}
           onClose={() => setOpen(false)}
           onSave={async (value) => {
             await onSave(value);
@@ -144,18 +149,20 @@ export function PromptOverrideBar(props: PromptOverrideBarProps) {
 
 interface DrawerProps extends PromptOverrideBarProps {
   hasOverride: boolean;
-  firstLine: string;
   onClose: () => void;
 }
 
 function PromptOverrideDrawer(props: DrawerProps) {
   const { copy, effectivePrompt, overrideValue, hasOverride, onClose, onSave } = props;
 
-  const [value, setValue] = useState<string>(
-    overrideValue !== undefined ? overrideValue : (effectivePrompt ?? ''),
-  );
+  // textarea 默认值 = 真实生效 prompt（如果存在）。优先级：
+  //   1. 用户已经写过的 override（hasOverride）
+  //   2. 上一次实际跑该 task 时用的 prompt（effectivePrompt 由父组件解析）
+  //   3. 都没有时才空着
+  // 这样用户打开 Drawer 就能看到完整 prompt，基于它改而不是从空白开始写。
+  const initialValue = hasOverride ? (overrideValue ?? '') : (effectivePrompt ?? '');
+  const [value, setValue] = useState<string>(initialValue);
   const [saving, setSaving] = useState(false);
-  const [effectiveExpanded, setEffectiveExpanded] = useState(false);
 
   // ESC 关闭
   useEffect(() => {
@@ -189,8 +196,8 @@ function PromptOverrideDrawer(props: DrawerProps) {
   }, [onSave, saving]);
 
   const canReset = hasOverride;
-  const hasUnsaved =
-    value.trim() !== (overrideValue?.trim() ?? '') && !(value.trim() === '' && !hasOverride);
+  // 用户改动 vs 当时打开 Drawer 的初始值
+  const hasUnsaved = value.trim() !== initialValue.trim();
 
   return (
     <dialog
@@ -227,7 +234,7 @@ function PromptOverrideDrawer(props: DrawerProps) {
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
-          <label className="flex flex-col gap-2">
+          <label className="flex min-h-0 flex-1 flex-col gap-2">
             <span className="text-[11px] font-bold uppercase tracking-wide text-white/40">
               {copy.label}
             </span>
@@ -236,33 +243,9 @@ function PromptOverrideDrawer(props: DrawerProps) {
               onChange={(event) => setValue(event.target.value)}
               placeholder={copy.placeholder}
               disabled={saving}
-              className="min-h-[260px] w-full resize-vertical rounded-[14px] bg-white/[0.045] px-4 py-3 font-mono text-[12px] leading-5 text-white outline-none ring-1 ring-white/[0.08] transition-colors focus:ring-[#79e4ff]/35 disabled:opacity-50"
+              className="min-h-[320px] w-full flex-1 resize-vertical rounded-[14px] bg-white/[0.045] px-4 py-3 font-mono text-[12px] leading-5 text-white outline-none ring-1 ring-white/[0.08] transition-colors focus:ring-[#79e4ff]/35 disabled:opacity-50"
             />
           </label>
-
-          <details
-            className="group/effective rounded-[14px] bg-white/[0.035] ring-1 ring-white/[0.06]"
-            open={effectiveExpanded}
-            onToggle={(event) => setEffectiveExpanded((event.target as HTMLDetailsElement).open)}
-          >
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wide text-white/52 hover:text-white/72">
-              <span>{copy.effectiveLabel}</span>
-              <span className="text-white/36 transition-transform group-open/effective:rotate-180">
-                ▾
-              </span>
-            </summary>
-            <div className="border-t border-white/[0.06] px-4 py-3">
-              {effectivePrompt ? (
-                <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-white/62">
-                  {effectivePrompt}
-                </pre>
-              ) : (
-                <div className="text-[12px] leading-5 text-white/40">
-                  {copy.effectivePlaceholder}
-                </div>
-              )}
-            </div>
-          </details>
 
           <div className="rounded-[14px] bg-[#79e4ff]/8 px-3 py-2.5 text-[11px] leading-5 text-white/64 ring-1 ring-[#79e4ff]/14">
             {copy.hint}

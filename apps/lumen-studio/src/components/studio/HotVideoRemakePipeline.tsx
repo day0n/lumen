@@ -768,7 +768,11 @@ function LockStage({
             kind="image"
           />
           <PromptOverrideBar
-            effectivePrompt={job.plan.creatorPrompt ?? null}
+            effectivePrompt={
+              job.plan.creatorPrompt ??
+              findTaskBySliceKey(tasks, RemakeSliceKeys.creatorLock)?.inputPrompt ??
+              null
+            }
             overrideValue={job.plan.creatorPrompt}
             disabled={promptDisabled}
             onSave={(value) => onUpdatePlanPrompts({ creatorPrompt: value })}
@@ -788,7 +792,11 @@ function LockStage({
             kind="image"
           />
           <PromptOverrideBar
-            effectivePrompt={job.plan.productPrompt ?? null}
+            effectivePrompt={
+              job.plan.productPrompt ??
+              findTaskBySliceKey(tasks, RemakeSliceKeys.productLock)?.inputPrompt ??
+              null
+            }
             overrideValue={job.plan.productPrompt}
             disabled={promptDisabled}
             onSave={(value) => onUpdatePlanPrompts({ productPrompt: value })}
@@ -817,7 +825,12 @@ function LockStage({
                 kind="image"
               />
               <PromptOverrideBar
-                effectivePrompt={environment.prompt ?? null}
+                effectivePrompt={
+                  environment.prompt ??
+                  findTaskBySliceKey(tasks, RemakeSliceKeys.environmentLock(environment.index))
+                    ?.inputPrompt ??
+                  null
+                }
                 overrideValue={environment.prompt}
                 disabled={promptDisabled}
                 onSave={(value) =>
@@ -887,18 +900,19 @@ function StoryboardStage({
           const sliceKey = RemakeSliceKeys.sceneImage(scene.index);
           const sceneOutput = findSceneOutput(job.outputs.scenes, scene.index);
           const overrideValue = job.plan.sceneImagePrompts?.[sceneIdx];
+          const task = findTaskBySliceKey(tasks, sliceKey);
           return (
             <div key={sliceKey} className="space-y-2">
               <SlicePreview
                 copy={copy}
                 title={`${copy.scene} ${scene.index}`}
                 subtitle={scene.action}
-                task={findTaskBySliceKey(tasks, sliceKey)}
+                task={task}
                 outputUrl={sceneOutput?.imageUrl}
                 kind="image"
               />
               <PromptOverrideBar
-                effectivePrompt={overrideValue ?? null}
+                effectivePrompt={overrideValue ?? task?.inputPrompt ?? null}
                 overrideValue={overrideValue || undefined}
                 disabled={promptDisabled}
                 onSave={(value) => onUpdateScene({ sceneIndex: scene.index, imagePrompt: value })}
@@ -979,18 +993,19 @@ function VideoStage({
           const sliceKey = RemakeSliceKeys.sceneVideo(scene.index);
           const sceneOutput = findSceneOutput(job.outputs.scenes, scene.index);
           const overrideValue = job.plan.sceneVideoPrompts?.[sceneIdx];
+          const task = findTaskBySliceKey(tasks, sliceKey);
           return (
             <div key={sliceKey} className="space-y-2">
               <SlicePreview
                 copy={copy}
                 title={`${copy.scene} ${scene.index}`}
                 subtitle={scene.dialogue}
-                task={findTaskBySliceKey(tasks, sliceKey)}
+                task={task}
                 outputUrl={sceneOutput?.videoUrl}
                 kind="video"
               />
               <PromptOverrideBar
-                effectivePrompt={overrideValue ?? null}
+                effectivePrompt={overrideValue ?? task?.inputPrompt ?? null}
                 overrideValue={overrideValue || undefined}
                 disabled={promptDisabled}
                 onSave={(value) => onUpdateScene({ sceneIndex: scene.index, videoPrompt: value })}
@@ -1023,7 +1038,11 @@ function VideoStage({
             icon={<IconMusic size={18} />}
           />
           <PromptOverrideBar
-            effectivePrompt={job.plan.bgmPrompt ?? null}
+            effectivePrompt={
+              job.plan.bgmPrompt ??
+              findTaskBySliceKey(tasks, RemakeSliceKeys.bgm)?.inputPrompt ??
+              null
+            }
             overrideValue={job.plan.bgmPrompt}
             disabled={promptDisabled}
             onSave={(value) => onUpdatePlanPrompts({ bgmPrompt: value })}
@@ -1573,11 +1592,9 @@ function getCopy(locale: 'en' | 'zh') {
         label: 'Prompt',
         overrideBadge: '已自定义',
         autoBadge: '自动',
-        emptyHint: '该步骤运行时由 AI 实时生成 prompt，跑完后会显示真实生效内容',
+        emptyHint: '该步骤运行后这里会显示真实生效的 prompt 第一行',
         placeholder: '留空保存即视作恢复为自动生成…',
         hint: '保存后下次重跑该步骤会使用此 prompt；清空再保存可恢复自动生成。',
-        effectiveLabel: '当前自动生成预览',
-        effectivePlaceholder: '该 prompt 由 AI 在 stage 跑前实时生成，需先跑过对应步骤后才能看到。',
         save: '保存',
         cancel: '取消',
         reset: '恢复自动',
@@ -1689,12 +1706,9 @@ function getCopy(locale: 'en' | 'zh') {
       label: 'Prompt',
       overrideBadge: 'Custom',
       autoBadge: 'Auto',
-      emptyHint: 'Prompt is generated live when this step runs — preview appears after the run.',
+      emptyHint: 'The real prompt will appear here after this step runs once.',
       placeholder: 'Leave empty and save to fall back to auto-generated…',
       hint: 'Saved prompt will be used the next time this step runs. Clear it to fall back to auto.',
-      effectiveLabel: 'Auto-generated preview',
-      effectivePlaceholder:
-        'This prompt is generated live before each run. Run the stage at least once to see it.',
       save: 'Save',
       cancel: 'Cancel',
       reset: 'Reset to auto',

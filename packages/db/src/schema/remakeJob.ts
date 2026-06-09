@@ -389,6 +389,14 @@ export const RemakeTaskRecordSchema = z
     outputKind: z.enum(['image', 'video', 'audio', 'text']).optional(),
     progress: z.number(),
     error: z.string().optional(),
+    /**
+     * 上一次跑该 task 时实际喂给模型的 prompt 字符串。前端用它来：
+     * 1) 在 PromptOverrideBar 折叠条上预览"真实生效"的第一行
+     * 2) 在用户打开编辑 Drawer 时把 textarea 默认值填成这个 prompt，
+     *    让用户基于它修改而不是从空白开始
+     * 字段尺寸可能上 KB，所以只在 task 至少跑过一次后才有值。
+     */
+    inputPrompt: z.string().optional(),
     startedAt: z.string().datetime().optional(),
     settledAt: z.string().datetime().optional(),
     createdAt: z.string().datetime(),
