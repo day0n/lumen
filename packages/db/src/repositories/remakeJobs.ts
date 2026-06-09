@@ -581,13 +581,32 @@ export class RemakeJobRepository {
       set.error = patch.error;
     }
 
-    if (patch.status === 'running') {
-      // 第一次进 running 才记录 started_at；mongo 没有"only on first"原语，简单做：
-      // 在 jobs.ts 那层判断 prev.status 来决定是否调这个分支带 startedAt（这里就不重置）。
-      set.started_at = now;
-    }
     if (patch.status === 'success' || patch.status === 'error' || patch.status === 'cancelled') {
       set.settled_at = now;
+    }
+
+    if (patch.status === 'running') {
+      // First time we transition to running, capture started_at; subsequent
+      // running events (progress / re-runs after retry) must NOT overwrite
+      // it, otherwise audit/duration metrics lose the original start time.
+      // Mongo has no "set on first only" outside of upsert, so use an
+      // aggregation-pipeline update with $ifNull to preserve the existing
+      // value when present.
+      const pipeline: UpdateFilter<RemakeTaskDocument>[] = [
+        {
+          $set: {
+            ...set,
+            started_at: { $ifNull: ['$started_at', now] },
+          },
+        },
+      ];
+      if (update.$unset) {
+        pipeline.push({ $unset: Object.keys(update.$unset) });
+      }
+      const result = await this.tasks().findOneAndUpdate({ _id: taskId }, pipeline, {
+        returnDocument: 'after',
+      });
+      return result ? toTaskRecord(result) : null;
     }
 
     const result = await this.tasks().findOneAndUpdate({ _id: taskId }, update, {
