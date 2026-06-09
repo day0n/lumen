@@ -18,8 +18,15 @@ function getCache() {
   return globalMongo.__lumenMongoClients;
 }
 
+// Cache MongoClients by URI only. A single MongoClient can serve any number
+// of databases via `client.db(name)`, and the connection pool is on the
+// client. Previously we keyed on `${appName}:${dbName}:${uri}`, which
+// produced two independent MongoClients (and two pools) whenever Studio
+// touched both `lumen_app` and the workflow db with different appName tags.
+// Studio runs with maxPoolSize=10, so that doubled the resident connection
+// count for no benefit. The first appName wins for telemetry purposes.
 function getCacheKey(options: MongoDatabaseOptions) {
-  return `${options.appName ?? 'lumen'}:${options.dbName}:${options.uri}`;
+  return options.uri;
 }
 
 export async function getMongoDatabase(options: MongoDatabaseOptions): Promise<Db> {
@@ -38,7 +45,7 @@ export async function getMongoDatabase(options: MongoDatabaseOptions): Promise<D
     clientPromise = new MongoClient(options.uri, {
       appName: options.appName ?? 'lumen',
       ignoreUndefined: true,
-      maxPoolSize: 10,
+      maxPoolSize: 20,
     })
       .connect()
       .catch((error) => {
