@@ -1,11 +1,13 @@
 import 'server-only';
 
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { customAlphabet } from 'nanoid';
 
 import { getStudioServerConfig } from './config';
 
 const nano = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 18);
+const OBJECT_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 
 let cachedClient: S3Client | null = null;
 
@@ -63,6 +65,16 @@ export interface UploadResult {
   size: number;
 }
 
+function buildObjectKey(prefix: string | undefined, extension: string): string {
+  const folder = prefix?.trim().replace(/^\/+|\/+$/g, '') ?? 'lumen';
+  return `${folder}/${nano()}.${extension.replace(/^\./, '')}`;
+}
+
+function publicUrlForKey(settings: R2Settings, key: string): string {
+  const base = settings.publicBaseUrl.replace(/\/+$/, '');
+  return `${base}/${key}`;
+}
+
 export async function uploadBuffer(args: {
   body: Buffer | Uint8Array;
   contentType: string;
@@ -73,8 +85,7 @@ export async function uploadBuffer(args: {
   if (!settings) throw new ObjectStorageNotConfiguredError();
 
   const client = getClient(settings);
-  const folder = args.prefix?.trim().replace(/^\/+|\/+$/g, '') ?? 'lumen';
-  const key = `${folder}/${nano()}.${args.extension.replace(/^\./, '')}`;
+  const key = buildObjectKey(args.prefix, args.extension);
 
   await client.send(
     new PutObjectCommand({
@@ -82,15 +93,55 @@ export async function uploadBuffer(args: {
       Key: key,
       Body: args.body,
       ContentType: args.contentType,
-      CacheControl: 'public, max-age=31536000, immutable',
+      CacheControl: OBJECT_CACHE_CONTROL,
     }),
   );
 
-  const base = settings.publicBaseUrl.replace(/\/+$/, '');
   return {
     key,
-    url: `${base}/${key}`,
+    url: publicUrlForKey(settings, key),
     size: args.body.byteLength,
+  };
+}
+
+export async function createPresignedUpload(args: {
+  contentType: string;
+  prefix?: string;
+  extension: string;
+  expiresInSeconds?: number;
+}): Promise<{
+  expiresAt: string;
+  expiresIn: number;
+  headers: Record<string, string>;
+  key: string;
+  uploadUrl: string;
+  url: string;
+}> {
+  const settings = getR2Settings();
+  if (!settings) throw new ObjectStorageNotConfiguredError();
+
+  const client = getClient(settings);
+  const key = buildObjectKey(args.prefix, args.extension);
+  const expiresIn = args.expiresInSeconds ?? 15 * 60;
+  const headers = {
+    'Content-Type': args.contentType,
+    'Cache-Control': OBJECT_CACHE_CONTROL,
+  };
+  const command = new PutObjectCommand({
+    Bucket: settings.bucket,
+    Key: key,
+    ContentType: args.contentType,
+    CacheControl: OBJECT_CACHE_CONTROL,
+  });
+  const uploadUrl = await getSignedUrl(client as never, command as never, { expiresIn });
+
+  return {
+    expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+    expiresIn,
+    headers,
+    key,
+    uploadUrl,
+    url: publicUrlForKey(settings, key),
   };
 }
 

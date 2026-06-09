@@ -103,7 +103,10 @@ function isPrefetchRequest(request: Request) {
 }
 
 function isCanvasUploadRequest(url: URL, method: string) {
-  return method === 'POST' && url.pathname === '/api/canvas/uploads';
+  return (
+    method === 'POST' &&
+    (url.pathname === '/api/canvas/uploads' || url.pathname === '/api/canvas/uploads/presign')
+  );
 }
 
 function normalizeRequest(input: RequestInfo | URL, init: RequestInit) {

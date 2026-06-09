@@ -104,6 +104,11 @@ import { arrangeCanvasNodes } from '@/lib/canvas/auto-layout';
 import { checkCycle } from '@/lib/canvas/cycle-detection';
 import { canRunSelectedNodes, canRunSingleNode } from '@/lib/canvas/node-run-check';
 import type { NodeKind } from '@/lib/canvas/types';
+import {
+  DirectUploadError,
+  type UploadProgressCallback,
+  uploadToObjectStorage,
+} from '@/lib/direct-upload';
 import { formatPublicWorkflowError } from '@/lib/public-workflow-error';
 import { getUploadAuthToken } from '@/lib/upload-auth-token';
 import { useAuth } from '@clerk/nextjs';
@@ -270,6 +275,28 @@ type CanvasUploadApiResponse =
       ok: true;
       data: {
         asset: {
+          url: string;
+        };
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        message: string;
+      };
+    };
+
+type CanvasUploadPresignApiResponse =
+  | {
+      ok: true;
+      data: {
+        asset: {
+          url: string;
+        };
+        upload: {
+          expiresAt: string;
+          expiresIn: number;
+          headers: Record<string, string>;
           url: string;
         };
       };
@@ -1292,7 +1319,12 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   );
 
   const uploadCanvasMedia = useCallback(
-    async (file: File, kind: MaterialAssetKind, nodeId?: string) => {
+    async (
+      file: File,
+      kind: MaterialAssetKind,
+      nodeId?: string,
+      onProgress?: UploadProgressCallback,
+    ) => {
       pendingCanvasUploads.current += 1;
       setCanvasMediaUploading(true);
 
@@ -1311,18 +1343,29 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           return form;
         };
 
-        const buildHeaders = async (freshToken: boolean) => {
+        const buildPresignBody = () =>
+          JSON.stringify({
+            contentType: file.type,
+            filename: file.name,
+            kind,
+            nodeId,
+            size: file.size,
+            workflowId: currentProjectId,
+          });
+
+        const buildHeaders = async (freshToken: boolean, contentType?: string) => {
           const token = await getUploadAuthToken(
             getToken,
             freshToken ? { skipCache: true } : undefined,
             freshToken ? 6000 : 3000,
           );
           const headers: Record<string, string> = { 'x-lumen-locale': locale };
+          if (contentType) headers['content-type'] = contentType;
           if (token) headers.Authorization = `Bearer ${token}`;
           return headers;
         };
 
-        const upload = async (freshToken = false) =>
+        const legacyUpload = async (freshToken = false) =>
           fetch('/api/canvas/uploads', {
             method: 'POST',
             headers: await buildHeaders(freshToken),
@@ -1331,9 +1374,60 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             cache: 'no-store',
           });
 
-        let response = await upload();
+        const presignUpload = async (freshToken = false) =>
+          fetch('/api/canvas/uploads/presign', {
+            method: 'POST',
+            headers: await buildHeaders(freshToken, 'application/json'),
+            body: buildPresignBody(),
+            credentials: 'include',
+            cache: 'no-store',
+          });
+
+        const readPresign = async () => {
+          let response = await presignUpload();
+          if (response.status === 401) {
+            response = await presignUpload(true);
+          }
+
+          const payload = (await response
+            .json()
+            .catch(() => null)) as CanvasUploadPresignApiResponse | null;
+          if (!response.ok || !payload?.ok) {
+            if (response.status === 401 && !isSignedIn) requireLogin();
+            throw new Error(
+              payload && !payload.ok ? payload.error.message : t('materials.uploadFailed'),
+            );
+          }
+          return payload.data;
+        };
+
+        try {
+          let presigned = await readPresign();
+          try {
+            await uploadToObjectStorage({
+              file,
+              headers: presigned.upload.headers,
+              onProgress,
+              uploadUrl: presigned.upload.url,
+            });
+          } catch (error) {
+            if (!(error instanceof DirectUploadError) || !error.retryable) throw error;
+            presigned = await readPresign();
+            await uploadToObjectStorage({
+              file,
+              headers: presigned.upload.headers,
+              onProgress,
+              uploadUrl: presigned.upload.url,
+            });
+          }
+          return presigned.asset.url;
+        } catch (error) {
+          if (!(error instanceof DirectUploadError)) throw error;
+        }
+
+        let response = await legacyUpload();
         if (response.status === 401) {
-          response = await upload(true);
+          response = await legacyUpload(true);
         }
 
         const payload = (await response.json().catch(() => null)) as CanvasUploadApiResponse | null;
@@ -3780,12 +3874,12 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   );
 
   const handleOutputMediaUpload = useCallback(
-    async (file: File, kind: MaterialAssetKind) => {
+    async (file: File, kind: MaterialAssetKind, onProgress?: UploadProgressCallback) => {
       const previousValue = data.output ?? null;
       const previewUrl = URL.createObjectURL(file);
       updateNodeData(id, { output: previewUrl });
       try {
-        const uploadedUrl = await uploadCanvasMedia(file, kind, id);
+        const uploadedUrl = await uploadCanvasMedia(file, kind, id, onProgress);
         updateNodeData(id, { output: uploadedUrl });
       } catch (error) {
         console.error(error);
@@ -4175,7 +4269,11 @@ function NodeOutputEditor({
 }: {
   data: LumenNodeData;
   onChange: (output: string) => void;
-  onMediaUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
+  onMediaUpload: (
+    file: File,
+    kind: MaterialAssetKind,
+    onProgress?: UploadProgressCallback,
+  ) => Promise<void>;
 }) {
   const { t } = useI18n();
   const output = data.output ?? '';
@@ -4347,7 +4445,11 @@ function MediaOutputFrame({
   aspectRatio?: string;
   children: ReactNode;
   kind: MaterialAssetKind;
-  onUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
+  onUpload: (
+    file: File,
+    kind: MaterialAssetKind,
+    onProgress?: UploadProgressCallback,
+  ) => Promise<void>;
   url?: string;
 }) {
   return (
@@ -4371,11 +4473,20 @@ function MediaOutputUpload({
 }: {
   aspectRatio?: string;
   kind: MaterialAssetKind;
-  onUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
+  onUpload: (
+    file: File,
+    kind: MaterialAssetKind,
+    onProgress?: UploadProgressCallback,
+  ) => Promise<void>;
 }) {
   const { t } = useI18n();
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const Icon = mediaOutputIcon(kind);
+  const uploadingLabel =
+    uploading && progress !== null
+      ? `${t('materials.uploading')} ${progress}%`
+      : t('materials.uploading');
 
   return (
     <div
@@ -4391,10 +4502,15 @@ function MediaOutputUpload({
           <Icon size={30} stroke={1.6} className="opacity-70" />
         )}
         <span className="text-[12px] font-bold text-white/38">
-          {uploading ? t('materials.uploading') : t('canvas.node.output')}
+          {uploading ? uploadingLabel : t('canvas.node.output')}
         </span>
       </div>
-      <MediaOutputUploadButton kind={kind} onUpload={onUpload} onUploadingChange={setUploading} />
+      <MediaOutputUploadButton
+        kind={kind}
+        onUpload={onUpload}
+        onUploadProgress={setProgress}
+        onUploadingChange={setUploading}
+      />
     </div>
   );
 }
@@ -4428,25 +4544,36 @@ function MediaOutputUploadButton({
   className,
   kind,
   onUpload,
+  onUploadProgress,
   onUploadingChange,
   showLabel = false,
 }: {
   className?: string;
   kind: MaterialAssetKind;
-  onUpload: (file: File, kind: MaterialAssetKind) => Promise<void>;
+  onUpload: (
+    file: File,
+    kind: MaterialAssetKind,
+    onProgress?: UploadProgressCallback,
+  ) => Promise<void>;
+  onUploadProgress?: (progress: number | null) => void;
   onUploadingChange?: (uploading: boolean) => void;
   showLabel?: boolean;
 }) {
   const { t } = useI18n();
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const setUploadState = useCallback(
     (nextUploading: boolean) => {
       setUploading(nextUploading);
       onUploadingChange?.(nextUploading);
+      if (!nextUploading) {
+        setProgress(null);
+        onUploadProgress?.(null);
+      }
     },
-    [onUploadingChange],
+    [onUploadProgress, onUploadingChange],
   );
 
   const handleUpload = useCallback(
@@ -4455,13 +4582,18 @@ function MediaOutputUploadButton({
       event.target.value = '';
       if (!file) return;
       setUploadState(true);
+      setProgress(1);
+      onUploadProgress?.(1);
       try {
-        await onUpload(file, kind);
+        await onUpload(file, kind, (event) => {
+          setProgress(event.percent);
+          onUploadProgress?.(event.percent);
+        });
       } finally {
         setUploadState(false);
       }
     },
-    [kind, onUpload, setUploadState],
+    [kind, onUpload, onUploadProgress, setUploadState],
   );
 
   return (
@@ -4487,7 +4619,13 @@ function MediaOutputUploadButton({
           <IconUpload size={15} stroke={2.2} />
         )}
         {showLabel ? (
-          <span>{uploading ? t('materials.uploading') : t('canvas.node.upload')}</span>
+          <span>
+            {uploading
+              ? progress !== null
+                ? `${t('materials.uploading')} ${progress}%`
+                : t('materials.uploading')
+              : t('canvas.node.upload')}
+          </span>
         ) : null}
       </button>
       <input
