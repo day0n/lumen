@@ -107,6 +107,8 @@ import type { NodeKind } from '@/lib/canvas/types';
 import {
   DirectUploadError,
   type UploadProgressCallback,
+  getUploadTimeoutMs,
+  uploadToAppServer,
   uploadToObjectStorage,
 } from '@/lib/direct-upload';
 import { formatPublicWorkflowError } from '@/lib/public-workflow-error';
@@ -307,6 +309,10 @@ type CanvasUploadPresignApiResponse =
         message: string;
       };
     };
+
+const DIRECT_UPLOAD_FIRST_PROGRESS_TIMEOUT_MS = 12_000;
+const APP_SERVER_UPLOAD_FIRST_PROGRESS_TIMEOUT_MS = 20_000;
+const APP_SERVER_UPLOAD_EXTRA_TIMEOUT_MS = 60_000;
 
 type ProjectHistoryRecordApiResponse =
   | {
@@ -1365,6 +1371,23 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           return headers;
         };
 
+        const readUploadPayload = (status: number, responseText: string) => {
+          const payload = (() => {
+            try {
+              return JSON.parse(responseText) as CanvasUploadApiResponse;
+            } catch {
+              return null;
+            }
+          })();
+          if (status === 401 && !isSignedIn) requireLogin();
+          if (status < 200 || status >= 300 || !payload?.ok) {
+            throw new Error(
+              payload && !payload.ok ? payload.error.message : t('materials.uploadFailed'),
+            );
+          }
+          return payload.data.asset.url;
+        };
+
         const legacyUpload = async (freshToken = false) =>
           fetch('/api/canvas/uploads', {
             method: 'POST',
@@ -1373,6 +1396,29 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             credentials: 'include',
             cache: 'no-store',
           });
+
+        const rawUpload = async (freshToken = false) => {
+          const headers = await buildHeaders(freshToken, file.type || 'application/octet-stream');
+          headers['x-lumen-upload-filename'] = encodeURIComponent(file.name || 'upload');
+          headers['x-lumen-upload-kind'] = kind;
+          headers['x-lumen-upload-content-type'] = file.type || 'application/octet-stream';
+          if (currentProjectId) headers['x-lumen-upload-workflow-id'] = currentProjectId;
+          if (nodeId) headers['x-lumen-upload-node-id'] = nodeId;
+          return uploadToAppServer({
+            file,
+            firstProgressTimeoutMs: APP_SERVER_UPLOAD_FIRST_PROGRESS_TIMEOUT_MS,
+            headers,
+            onProgress,
+            timeoutMs: getUploadTimeoutMs(file.size) + APP_SERVER_UPLOAD_EXTRA_TIMEOUT_MS,
+            uploadUrl: '/api/canvas/uploads/raw',
+          });
+        };
+
+        const readRawUpload = async () => {
+          let response = await rawUpload();
+          if (response.status === 401) response = await rawUpload(true);
+          return readUploadPayload(response.status, response.responseText);
+        };
 
         const presignUpload = async (freshToken = false) =>
           fetch('/api/canvas/uploads/presign', {
@@ -1406,6 +1452,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           try {
             await uploadToObjectStorage({
               file,
+              firstProgressTimeoutMs: DIRECT_UPLOAD_FIRST_PROGRESS_TIMEOUT_MS,
               headers: presigned.upload.headers,
               onProgress,
               uploadUrl: presigned.upload.url,
@@ -1415,12 +1462,19 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             presigned = await readPresign();
             await uploadToObjectStorage({
               file,
+              firstProgressTimeoutMs: DIRECT_UPLOAD_FIRST_PROGRESS_TIMEOUT_MS,
               headers: presigned.upload.headers,
               onProgress,
               uploadUrl: presigned.upload.url,
             });
           }
           return presigned.asset.url;
+        } catch (error) {
+          if (!(error instanceof DirectUploadError)) throw error;
+        }
+
+        try {
+          return await readRawUpload();
         } catch (error) {
           if (!(error instanceof DirectUploadError)) throw error;
         }
