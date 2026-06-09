@@ -4,6 +4,7 @@ import { PipelineStepper } from '@/components/reactbits/PipelineStepper';
 import ShinyText from '@/components/reactbits/ShinyText';
 import SpotlightCard from '@/components/reactbits/SpotlightCard';
 import { StageFade } from '@/components/reactbits/StageFade';
+import { ImageZoomButton } from '@/components/studio/remake/ImageZoomButton';
 import { PromptOverrideBar } from '@/components/studio/remake/PromptOverrideBar';
 import {
   type RemakeJobView,
@@ -702,6 +703,9 @@ function LockStage({
           task={findTaskBySliceKey(tasks, RemakeSliceKeys.creatorLock)}
           outputUrl={job.outputs.creatorLockUrl}
           kind="image"
+          aspectClassName="aspect-[4/3]"
+          objectFit="contain"
+          zoomable
           subtitleAction={
             <PromptOverrideBar
               effectivePrompt={
@@ -727,6 +731,9 @@ function LockStage({
           task={findTaskBySliceKey(tasks, RemakeSliceKeys.productLock)}
           outputUrl={job.outputs.productLockUrl}
           kind="image"
+          aspectClassName="aspect-[4/3]"
+          objectFit="contain"
+          zoomable
           subtitleAction={
             <PromptOverrideBar
               effectivePrompt={
@@ -761,6 +768,9 @@ function LockStage({
                 )?.imageUrl
               }
               kind="image"
+              aspectClassName="aspect-[4/3]"
+              objectFit="contain"
+              zoomable
               subtitleAction={
                 <PromptOverrideBar
                   effectivePrompt={
@@ -849,6 +859,7 @@ function StoryboardStage({
                 task={task}
                 outputUrl={sceneOutput?.imageUrl}
                 kind="image"
+                zoomable
                 subtitleAction={
                   <PromptOverrideBar
                     effectivePrompt={overrideValue ?? task?.inputPrompt ?? null}
@@ -1220,6 +1231,9 @@ function SlicePreview({
   kind,
   icon,
   className,
+  aspectClassName = 'aspect-[9/16]',
+  objectFit = 'cover',
+  zoomable = false,
 }: {
   copy: ReturnType<typeof getCopy>;
   title: string;
@@ -1231,6 +1245,15 @@ function SlicePreview({
   kind: 'image' | 'video' | 'audio';
   icon?: ReactNode;
   className?: string;
+  /**
+   * 媒体框宽高比。默认 `aspect-[9/16]`（竖屏视频/分镜首帧）。
+   * lock 类参考表通常是横向多面板，传 `aspect-[4/3]` 或 `aspect-[3/2]` 更省空间。
+   */
+  aspectClassName?: string;
+  /** 媒体 object-fit，默认 cover；横向参考表用 contain 才不会被裁掉左右两边。 */
+  objectFit?: 'cover' | 'contain';
+  /** 是否在 image 卡片右上角显示放大按钮 + 点击全屏看大图。仅 kind='image' 有效。 */
+  zoomable?: boolean;
 }) {
   const status = task?.status ?? 'queued';
   const isBusy = status === 'queued' || status === 'running';
@@ -1246,10 +1269,27 @@ function SlicePreview({
         <div className="min-w-0 flex-1 truncate text-[12px] font-bold text-white/74">{title}</div>
         <StatusDot status={status} />
       </div>
-      <div className="relative aspect-[9/16] bg-black/52">
+      <div className={cn('relative bg-black/52', aspectClassName)}>
         {outputUrl ? (
           kind === 'image' ? (
-            <img src={outputUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <>
+              <img
+                src={outputUrl}
+                alt=""
+                className={cn(
+                  'absolute inset-0 h-full w-full',
+                  objectFit === 'contain' ? 'object-contain' : 'object-cover',
+                )}
+              />
+              {zoomable ? (
+                <ImageZoomButton
+                  src={outputUrl}
+                  alt={title}
+                  caption={subtitle ?? title}
+                  className="absolute right-2 top-2 z-20"
+                />
+              ) : null}
+            </>
           ) : kind === 'video' ? (
             // biome-ignore lint/a11y/useMediaCaption: Generated preview media has no WebVTT track.
             <video
