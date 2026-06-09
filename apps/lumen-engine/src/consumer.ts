@@ -34,6 +34,7 @@ export class StreamConsumer {
 
   async start(): Promise<void> {
     await this.ensureGroup();
+    await this.reclaimAbandonedMessages();
     await this.startCancelSubscriber();
     this.running = true;
     logger.info('stream consumer started, waiting for tasks...');
@@ -113,7 +114,15 @@ export class StreamConsumer {
           } catch (err) {
             logger.error({ err, messageId, runId }, 'task execution failed');
           } finally {
-            if (runId) this.activeRuns.delete(runId);
+            if (runId) {
+              this.activeRuns.delete(runId);
+              // Free the cancel-reason record once the run is done. Without
+              // this, every cancelled run leaked an entry into cancelledRuns
+              // for the lifetime of the process — over weeks of uptime the
+              // map grew unbounded. Capping isn't enough on its own because
+              // a long-lived process must also bound its working set.
+              this.cancelledRuns.delete(runId);
+            }
             await this.redis.xack(STREAM_KEY, GROUP_NAME, messageId);
           }
         },
@@ -158,6 +167,76 @@ export class StreamConsumer {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!message.includes('BUSYGROUP')) throw err;
+    }
+  }
+
+  /**
+   * Recover messages that a previous engine instance picked up but never
+   * acked — typically because that instance OOM'd, was killed mid-run, or
+   * crashed inside the executor. Without this, those messages sit in the
+   * group's PEL forever; XREADGROUP with `>` only delivers *new* entries,
+   * so the studio side sees the run stuck in `running` with no terminal
+   * event ever arriving.
+   *
+   * Strategy:
+   * 1. XPENDING SUMMARY to find the oldest idle time across all consumers.
+   * 2. If anything has been idle longer than RECLAIM_IDLE_MS, claim it for
+   *    this consumer with XAUTOCLAIM. The newly-owned message is then
+   *    immediately XACK'd and we publish a `flow:error` so the user sees a
+   *    bounded failure instead of a stuck run.
+   *
+   * We do not retry the work — re-executing a partial workflow can produce
+   * duplicate side effects (R2 uploads, mongo writes). Surfacing a hard
+   * failure is the safe default.
+   */
+  private async reclaimAbandonedMessages(): Promise<void> {
+    const RECLAIM_IDLE_MS = 5 * 60 * 1000;
+    try {
+      // ioredis types xautoclaim loosely; cast to the documented response shape.
+      const response = (await this.redis.xautoclaim(
+        STREAM_KEY,
+        GROUP_NAME,
+        CONSUMER_NAME,
+        RECLAIM_IDLE_MS,
+        '0-0',
+        'COUNT',
+        50,
+      )) as [string, [string, string[]][], string[]] | null;
+      if (!response) return;
+      const claimed = response[1] ?? [];
+      if (claimed.length === 0) return;
+
+      logger.warn(
+        { count: claimed.length, idleMs: RECLAIM_IDLE_MS },
+        'reclaimed abandoned messages from PEL — acking without retry to free the stream',
+      );
+      for (const [messageId, fields] of claimed) {
+        const data = parseFields(fields as string[]);
+        // Best-effort: tell the listening client that the run died.
+        try {
+          if (data.channelId && data.payload) {
+            const payload = JSON.parse(data.payload) as { runId?: string };
+            if (payload.runId) {
+              await this.redis.publish(
+                `flow:events:${data.channelId}`,
+                JSON.stringify({
+                  event: 'flow:error',
+                  runId: payload.runId,
+                  error: 'engine restarted while this run was in flight',
+                }),
+              );
+            }
+          }
+        } catch (err) {
+          logger.warn({ err, messageId }, 'failed to publish abandoned-run notice');
+        }
+        await this.redis.xack(STREAM_KEY, GROUP_NAME, messageId);
+      }
+    } catch (err) {
+      // XAUTOCLAIM was added in Redis 6.2. On older deployments this no-ops
+      // and abandoned messages remain in the PEL — we log loudly so the
+      // operator notices, but do not block startup.
+      logger.warn({ err }, 'PEL reclaim failed (non-fatal); abandoned runs may persist');
     }
   }
 }
