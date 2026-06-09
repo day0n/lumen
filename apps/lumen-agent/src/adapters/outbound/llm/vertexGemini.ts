@@ -42,6 +42,13 @@ function unqualifyModel(model: string): string {
 const BLOCK_REASONING = 'vertex_reasoning_trace';
 const BLOCK_CALL_SIGNATURE = 'vertex_call_signature';
 
+// Short opaque suffix for tool_call_ids; only needs to be unique within a
+// single response, so 8 base36 chars (~41 bits) is plenty. Avoids pulling in
+// nanoid here for one call site.
+function randomCallSuffix(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
+
 interface GeminiPart {
   text?: string;
   thought?: boolean;
@@ -276,15 +283,47 @@ export class VertexGeminiProvider extends LLMProvider {
     }
 
     const token = await this.tokenCache.getToken();
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+
+    // Three layered timeouts. Without them a Vertex region that goes idle
+    // mid-stream wedges the InferenceLoop indefinitely:
+    //   - CONNECT_TIMEOUT_MS guards the initial TCP/TLS handshake.
+    //   - FIRST_CHUNK_TIMEOUT_MS guards "headers received but body never
+    //     yields" — Vertex sometimes accepts the request and then stalls.
+    //   - IDLE_CHUNK_TIMEOUT_MS resets on every chunk; if more than this
+    //     elapses between chunks we abort. Catches half-closed sockets.
+    // The InferenceLoop's retry policy already handles transient errors,
+    // so converting "stuck for 10 minutes" to "errored after 60s" is a
+    // straight latency win.
+    const CONNECT_TIMEOUT_MS = 30_000;
+    const FIRST_CHUNK_TIMEOUT_MS = 60_000;
+    const IDLE_CHUNK_TIMEOUT_MS = 60_000;
+    const controller = new AbortController();
+    let stallTimer: NodeJS.Timeout | null = null;
+    const armStallTimer = (ms: number, reason: string) => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => controller.abort(new Error(reason)), ms);
+      if (typeof stallTimer.unref === 'function') stallTimer.unref();
+    };
+    armStallTimer(CONNECT_TIMEOUT_MS, 'vertex gemini connect timeout');
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (stallTimer) clearTimeout(stallTimer);
+      throw err;
+    }
+    armStallTimer(FIRST_CHUNK_TIMEOUT_MS, 'vertex gemini first-chunk timeout');
     if (!res.ok || !res.body) {
+      if (stallTimer) clearTimeout(stallTimer);
       const text = await res.text();
       throw new Error(`Vertex Gemini stream HTTP ${res.status}: ${text.slice(0, 500)}`);
     }
@@ -302,6 +341,8 @@ export class VertexGeminiProvider extends LLMProvider {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+        // Got a chunk — reset the idle deadline.
+        armStallTimer(IDLE_CHUNK_TIMEOUT_MS, 'vertex gemini idle-chunk timeout');
         buf += decoder.decode(value, { stream: true });
 
         // SSE event 分隔符兼容 \r\n\r\n（Vertex 实际返回）和 \n\n
@@ -354,8 +395,16 @@ export class VertexGeminiProvider extends LLMProvider {
                 continue;
               }
               if (part.functionCall) {
+                // Generate a unique tool_call_id per call. Previously this
+                // was a deterministic `call_${name}`, which collided when
+                // Gemini emitted two parallel calls of the same tool in one
+                // response — downstream code (boundaryAfterOrphanTools and
+                // any consumer that maps results back to calls by id) would
+                // dedupe the second call away. The suffix is short, opaque,
+                // and process-local (only needs to be unique within the
+                // session, not globally).
                 accumulatedToolCalls.push({
-                  id: `call_${part.functionCall.name}`,
+                  id: `call_${part.functionCall.name}_${randomCallSuffix()}`,
                   name: part.functionCall.name,
                   arguments: part.functionCall.args ?? {},
                 });
@@ -377,6 +426,7 @@ export class VertexGeminiProvider extends LLMProvider {
       }
     } finally {
       reader.releaseLock();
+      if (stallTimer) clearTimeout(stallTimer);
     }
 
     yield {
