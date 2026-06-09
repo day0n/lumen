@@ -50,6 +50,11 @@ async function main(): Promise<void> {
   const studioDb = await getStudioMongo();
   const redis = getRedis();
   const sessionManager = new SessionManager(db, redis);
+  // Fire-and-forget index setup. The unique index on
+  // chat_messages.{session_id, seq} is what serialises concurrent saves
+  // (see SessionManager.save retry loop). Failure is non-fatal — common
+  // cause is legacy duplicate seq rows; logged inside the method.
+  void sessionManager.ensureIndexes();
 
   const memory = cfg.OPENAI_API_KEY ? new MemoryManager(db, cfg.OPENAI_API_KEY) : null;
 

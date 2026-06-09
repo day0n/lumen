@@ -579,6 +579,12 @@ function boundaryAfterOrphanTools(messages: ChatMessage[]): number {
 
 // ── SessionManager ────────────────────────────────────────────────
 
+function isDuplicateKeyError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: number; codeName?: string; name?: string };
+  return e.code === 11000 || e.codeName === 'DuplicateKey' || e.name === 'MongoServerError';
+}
+
 export class SessionManager {
   private sessions: Collection<SessionDoc>;
   private messages: Collection<MessageDoc>;
@@ -589,6 +595,37 @@ export class SessionManager {
   ) {
     this.sessions = db.collection<SessionDoc>('chat_sessions');
     this.messages = db.collection<MessageDoc>('chat_messages');
+  }
+
+  /**
+   * Build the indexes the persistence layer relies on. The unique index on
+   * `{ session_id, seq }` is the bug-fix part: without it, two concurrent
+   * `save(session)` calls for the same sessionId can both read the same
+   * `max(seq)` snapshot, both compute the same baseSeq, and both insertMany
+   * succeed — corrupting the seq order or silently duplicating a message
+   * (the slice into `session.messages` is identical for both calls).
+   * With this index, the loser's insertMany throws E11000, the catch path
+   * re-reads max(seq) and retries, restoring serializability.
+   *
+   * Idempotent: createIndex is a no-op when the index already exists; if it
+   * fails (e.g. legacy data with duplicate seq) it logs and keeps going so
+   * existing flows are not blocked on first deploy.
+   */
+  async ensureIndexes(): Promise<void> {
+    await Promise.all([
+      this.sessions.createIndex({ user_id: 1, updated_at: -1 }),
+      this.sessions
+        .createIndex({ user_id: 1, workflow_id: 1, updated_at: -1 })
+        .catch((err) => logger.warn({ err }, 'chat_sessions workflow index ensure failed')),
+      this.messages
+        .createIndex({ session_id: 1, seq: 1 }, { unique: true })
+        .catch((err) =>
+          logger.warn(
+            { err },
+            'chat_messages unique({session_id,seq}) ensure failed (legacy duplicates?)',
+          ),
+        ),
+    ]);
   }
 
   async getOrCreate(
@@ -699,75 +736,100 @@ export class SessionManager {
     const now = new Date();
     session.updatedAt = now;
 
-    // 用 Mongo 里现有的 max(seq) 来给新增消息分配 seq，防止 redis 落后导致冲突
-    let mongoNextSeq = session.persistedCount;
-    if (session.messages.length > 0) {
-      const maxDoc = await this.messages.findOne(
-        { session_id: session.sessionId },
-        { sort: { seq: -1 }, projection: { seq: 1 } },
-      );
-      mongoNextSeq = maxDoc && typeof maxDoc.seq === 'number' ? maxDoc.seq + 1 : 0;
-      if (mongoNextSeq < session.persistedCount) {
-        logger.warn(
-          {
-            session_id: session.sessionId,
-            redis: session.persistedCount,
-            mongo: mongoNextSeq,
-            msg_count: session.messages.length,
-          },
-          'Redis 记录的已落库数超过 Mongo 实际值，回退对齐到 Mongo',
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      // 用 Mongo 里现有的 max(seq) 来给新增消息分配 seq，防止 redis 落后导致冲突
+      let mongoNextSeq = session.persistedCount;
+      if (session.messages.length > 0) {
+        const maxDoc = await this.messages.findOne(
+          { session_id: session.sessionId },
+          { sort: { seq: -1 }, projection: { seq: 1 } },
         );
-        session.persistedCount = mongoNextSeq;
+        mongoNextSeq = maxDoc && typeof maxDoc.seq === 'number' ? maxDoc.seq + 1 : 0;
+        if (mongoNextSeq < session.persistedCount) {
+          logger.warn(
+            {
+              session_id: session.sessionId,
+              redis: session.persistedCount,
+              mongo: mongoNextSeq,
+              msg_count: session.messages.length,
+            },
+            'Redis 记录的已落库数超过 Mongo 实际值，回退对齐到 Mongo',
+          );
+          session.persistedCount = mongoNextSeq;
+        }
       }
-    }
 
-    const newMessages = session.messages.slice(session.persistedCount);
-    const baseSeq = Math.max(session.persistedCount, mongoNextSeq);
+      const newMessages = session.messages.slice(session.persistedCount);
+      const baseSeq = Math.max(session.persistedCount, mongoNextSeq);
 
-    if (newMessages.length > 0) {
-      const docs: MessageDoc[] = newMessages.map((msg, i) => ({
-        ...(msg as unknown as Record<string, unknown>),
-        session_id: session.sessionId,
-        seq: baseSeq + i,
-      })) as MessageDoc[];
-      await this.messages.insertMany(docs, { ordered: true });
-      session.persistedCount = session.messages.length;
-      session.lastSeq = Math.max(session.lastSeq, docs[docs.length - 1]!.seq);
-      session.revision += 1;
-    }
-
-    await this.sessions.updateOne(
-      { _id: session.sessionId },
-      {
-        $set: {
+      if (newMessages.length > 0) {
+        const docs: MessageDoc[] = newMessages.map((msg, i) => ({
+          ...(msg as unknown as Record<string, unknown>),
           session_id: session.sessionId,
-          user_id: session.userId,
-          workflow_id: session.workflowId,
-          channel: session.channel,
-          summary: session.summary,
-          message_count: session.messageCount,
-          turn_count: session.turnCount,
-          status: session.status,
-          revision: session.revision,
-          last_seq: session.lastSeq,
-          last_message_preview: session.lastMessagePreview,
-          updated_at: now,
-          metadata: session.metadata,
-        },
-        $setOnInsert: { created_at: session.createdAt },
-      },
-      { upsert: true },
-    );
+          seq: baseSeq + i,
+        })) as MessageDoc[];
+        try {
+          await this.messages.insertMany(docs, { ordered: true });
+        } catch (err) {
+          // E11000: another concurrent save() raced us and won. Re-read
+          // max(seq) and try again. The unique index on {session_id, seq}
+          // is what makes the loser visible here — without it both inserts
+          // would silently succeed with overlapping seq values.
+          if (isDuplicateKeyError(err) && attempt < MAX_RETRIES - 1) {
+            logger.warn(
+              {
+                session_id: session.sessionId,
+                attempt,
+                base_seq: baseSeq,
+                new_msgs: newMessages.length,
+              },
+              'chat_messages insert raced concurrent save, retrying with fresh seq',
+            );
+            continue;
+          }
+          throw err;
+        }
+        session.persistedCount = session.messages.length;
+        session.lastSeq = Math.max(session.lastSeq, docs[docs.length - 1]!.seq);
+        session.revision += 1;
+      }
 
-    await this.writeRedis(session);
-    logger.info(
-      {
-        session_id: session.sessionId,
-        new_msgs: newMessages.length,
-        turn_count: session.turnCount,
-      },
-      'Session saved',
-    );
+      await this.sessions.updateOne(
+        { _id: session.sessionId },
+        {
+          $set: {
+            session_id: session.sessionId,
+            user_id: session.userId,
+            workflow_id: session.workflowId,
+            channel: session.channel,
+            summary: session.summary,
+            message_count: session.messageCount,
+            turn_count: session.turnCount,
+            status: session.status,
+            revision: session.revision,
+            last_seq: session.lastSeq,
+            last_message_preview: session.lastMessagePreview,
+            updated_at: now,
+            metadata: session.metadata,
+          },
+          $setOnInsert: { created_at: session.createdAt },
+        },
+        { upsert: true },
+      );
+
+      await this.writeRedis(session);
+      logger.info(
+        {
+          session_id: session.sessionId,
+          new_msgs: newMessages.length,
+          turn_count: session.turnCount,
+        },
+        'Session saved',
+      );
+      return;
+    }
+    throw new Error(`SessionManager.save: exhausted retries for session ${session.sessionId}`);
   }
 
   async invalidate(sessionId: string): Promise<void> {
