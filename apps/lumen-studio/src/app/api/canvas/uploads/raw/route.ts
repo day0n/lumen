@@ -1,3 +1,5 @@
+import { Readable } from 'node:stream';
+
 import { translate } from '@/i18n/messages';
 import { requireStudioUser } from '@/server/auth';
 import {
@@ -13,7 +15,7 @@ import {
 } from '@/server/canvasUpload';
 import { failJson, okJson, routeError, withApiRouteSpan } from '@/server/http';
 import { resolveRequestLocale } from '@/server/locale';
-import { uploadBuffer } from '@/server/objectStorage';
+import { uploadStream } from '@/server/objectStorage';
 
 export const runtime = 'nodejs';
 
@@ -66,23 +68,19 @@ export const POST = withApiRouteSpan('POST /api/canvas/uploads/raw', async (requ
       );
     }
 
-    const bytes = Buffer.from(await request.arrayBuffer());
-    if (bytes.byteLength <= 0) {
+    if (!request.body) {
       return failJson(translate(locale, 'api.uploadEmptyMedia'), 400);
-    }
-    if (bytes.byteLength > config.maxBytes) {
-      return failJson(
-        translate(locale, 'api.uploadMediaTooLarge', {
-          size: Math.round(config.maxBytes / 1024 / 1024),
-        }),
-        400,
-      );
     }
 
     const workflowId = toPathSegment(readUploadHeader(request, 'x-lumen-upload-workflow-id'));
     const nodeId = toPathSegment(readUploadHeader(request, 'x-lumen-upload-node-id'));
-    const result = await uploadBuffer({
-      body: bytes,
+
+    // Stream the request body straight to R2 — never materialize the whole
+    // upload into a Node Buffer. Content-Length was validated above so the
+    // SDK can do a single PutObject without buffering for hash.
+    const result = await uploadStream({
+      body: Readable.fromWeb(request.body as never),
+      contentLength,
       contentType,
       extension,
       prefix: ['canvas', user.id, kind, workflowId, nodeId].filter(Boolean).join('/'),
