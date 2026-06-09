@@ -3,12 +3,23 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 
 import type { Locale } from '@/i18n/routing';
+import { readClientApiJson } from '@/lib/read-api-json';
 import type {
   RemakeJobRecord,
   RemakeStageName,
   RemakeStageStatus,
   RemakeTaskRecord,
 } from '@lumen/db';
+
+/**
+ * 服务不可用（5xx HTML error page / nginx 502 / 部署中等）时的兜底文案。
+ * 之前直接 `response.json()` 会裸抛 SyntaxError，UI 上就显示成
+ * `Unexpected token '<', "<!DOCTYPE "... is not valid JSON` 这种用户看不懂的报错。
+ */
+const UNAVAILABLE_MESSAGE: Record<Locale, string> = {
+  en: 'Service is temporarily unavailable. Please refresh and try again.',
+  zh: '服务暂时不可用，请刷新重试。',
+};
 
 /**
  * 爆款复刻 —— 前端 job hook。
@@ -171,13 +182,24 @@ export function useRemakeJob(
     error: null,
   } satisfies State);
 
+  // 给 fetchView 用：轮询失败时静默吞掉错误，不打扰用户。
+  // 用 ref 是为了避免把 state 加进 fetchView 依赖数组 —— 否则每秒 state 变都会
+  // 重建 fetchView + 重置 polling interval。
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  });
+
   const fetchView = useCallback(async () => {
     if (!jobId) return;
     try {
       const response = await fetch(`/api/remake/jobs/${jobId}`, {
         headers: { 'x-lumen-locale': locale },
       });
-      const payload = (await response.json()) as ApiResp<RemakeJobView>;
+      const payload = await readClientApiJson<ApiResp<RemakeJobView>>(
+        response,
+        UNAVAILABLE_MESSAGE[locale] ?? UNAVAILABLE_MESSAGE.en,
+      );
       if (!response.ok || !payload.ok) {
         dispatch({
           type: 'load:error',
@@ -187,6 +209,12 @@ export function useRemakeJob(
       }
       dispatch({ type: 'load:success', view: payload.data });
     } catch (error) {
+      // 已经有 view 数据（轮询失败）= 服务短暂抖动，静默重试下一 tick，
+      // 不打扰用户。否则刷新一闪一闪的红 banner 体验很糟糕。
+      if (stateRef.current.view) {
+        console.warn('[remake] poll failed, will retry next tick', error);
+        return;
+      }
       dispatch({
         type: 'load:error',
         error: error instanceof Error ? error.message : 'failed to load job',
@@ -198,11 +226,6 @@ export function useRemakeJob(
   useEffect(() => {
     void fetchView();
   }, [fetchView]);
-
-  const stateRef = useRef(state);
-  useEffect(() => {
-    stateRef.current = state;
-  });
 
   // 每秒轮询，直到终态或组件卸载。
   // stateRef 避免把 state 加入依赖数组——否则每次 fetch 更新 state
@@ -231,7 +254,10 @@ export function useRemakeJob(
           headers: { 'content-type': 'application/json', 'x-lumen-locale': locale },
           body: JSON.stringify(body),
         });
-        const payload = (await response.json()) as ApiResp<T>;
+        const payload = await readClientApiJson<ApiResp<T>>(
+          response,
+          UNAVAILABLE_MESSAGE[locale] ?? UNAVAILABLE_MESSAGE.en,
+        );
         if (!response.ok || !payload.ok) {
           dispatch({
             type: 'set-error',
@@ -262,7 +288,10 @@ export function useRemakeJob(
           headers: { 'content-type': 'application/json', 'x-lumen-locale': locale },
           body: JSON.stringify(body),
         });
-        const payload = (await response.json()) as ApiResp<T>;
+        const payload = await readClientApiJson<ApiResp<T>>(
+          response,
+          UNAVAILABLE_MESSAGE[locale] ?? UNAVAILABLE_MESSAGE.en,
+        );
         if (!response.ok || !payload.ok) {
           dispatch({
             type: 'set-error',
