@@ -105,6 +105,21 @@ const TRANSIENT_MARKERS = [
   'connection error',
   'econnreset',
   'etimedout',
+  // Node fetch / undici / DNS noise that previously slipped past the
+  // marker list and got classified as permanent (= no retry). All of
+  // these are observed during VPC NAT blips and Anthropic edge node
+  // hiccups; safe to retry.
+  'fetch failed',
+  'socket hang up',
+  'econnrefused',
+  'enetunreach',
+  'ehostunreach',
+  'eai_again',
+  'eai_nodata',
+  'aborterror',
+  'undici',
+  'request aborted',
+  'other side closed',
 ];
 
 function includesAny(haystack: string, needles: string[]): boolean {
