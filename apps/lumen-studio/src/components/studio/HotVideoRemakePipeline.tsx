@@ -1,5 +1,9 @@
 'use client';
 
+import { PipelineStepper } from '@/components/reactbits/PipelineStepper';
+import ShinyText from '@/components/reactbits/ShinyText';
+import SpotlightCard from '@/components/reactbits/SpotlightCard';
+import { StageFade } from '@/components/reactbits/StageFade';
 import { PromptOverrideBar } from '@/components/studio/remake/PromptOverrideBar';
 import {
   type RemakeJobView,
@@ -249,12 +253,16 @@ function PipelineView({
         </div>
       </div>
 
-      <Stepper
-        copy={copy}
-        active={activeStep}
-        stageStatuses={stageStatuses}
-        onClick={tryGoToStep}
-      />
+      <div className="mb-6 rounded-[18px] bg-[#15171a]/82 px-5 py-4 ring-1 ring-white/[0.06]">
+        <PipelineStepper
+          steps={copy.steps.map((label, index) => ({
+            label,
+            status: stageStatuses[STEP_TO_STAGE[index]!],
+          }))}
+          activeStep={activeStep + 1}
+          onStepClick={(oneBased) => tryGoToStep(oneBased - 1)}
+        />
+      </div>
 
       {error ? (
         <div className="mb-4 mt-2 rounded-xl bg-[#f5c76a]/10 px-4 py-3 text-[12px] leading-5 text-[#f5c76a] ring-1 ring-[#f5c76a]/20">
@@ -313,84 +321,85 @@ function PipelineView({
         </aside>
 
         <section className="min-h-[640px] rounded-[18px] bg-[#111315]/92 p-5 ring-1 ring-white/[0.08]">
-          {activeStep === 0 && (
-            <BreakdownStage copy={copy} job={job} onNext={() => setActiveStep(1)} />
-          )}
-          {activeStep === 1 && (
-            <ScriptStage
-              copy={copy}
-              job={job}
-              gateStatus={stageStatuses.script}
-              onConfirm={async (input) => {
-                setStageBusy('script');
-                try {
-                  await onConfirmGate1(input);
-                  // confirm 成功后跳到锁定步骤
-                  setActiveStep(2);
-                } finally {
-                  setStageBusy(null);
-                }
-              }}
-              busy={stageBusy === 'script'}
-            />
-          )}
-          {activeStep === 2 && (
-            <LockStage
-              copy={copy}
-              job={job}
-              tasks={tasks}
-              status={stageStatuses.lock}
-              busy={stageBusy === 'lock'}
-              onUpdatePlanPrompts={onUpdatePlanPrompts}
-              onRetry={(sliceKeys) => handleRunStage('lock', sliceKeys)}
-              onNext={() => setActiveStep(3)}
-            />
-          )}
-          {activeStep === 3 && (
-            <StoryboardStage
-              copy={copy}
-              job={job}
-              tasks={tasks}
-              status={stageStatuses.storyboard}
-              busy={stageBusy === 'storyboard'}
-              onUpdateScene={onUpdateScene}
-              onRetry={(sliceKeys) => handleRunStage('storyboard', sliceKeys)}
-              onRunOne={(sliceKey) => handleRunStage('storyboard', [sliceKey])}
-              onNext={async () => {
-                setStageBusy('storyboard');
-                try {
-                  await onConfirmGate2();
-                  setActiveStep(4);
-                } finally {
-                  setStageBusy(null);
-                }
-              }}
-            />
-          )}
-          {activeStep === 4 && (
-            <VideoStage
-              copy={copy}
-              job={job}
-              tasks={tasks}
-              status={stageStatuses.video}
-              busy={stageBusy === 'video'}
-              onUpdateScene={onUpdateScene}
-              onUpdatePlanPrompts={onUpdatePlanPrompts}
-              onRetry={(sliceKeys) => handleRunStage('video', sliceKeys)}
-              onRunOne={(sliceKey) => handleRunStage('video', [sliceKey])}
-              onNext={() => setActiveStep(5)}
-            />
-          )}
-          {activeStep === 5 && (
-            <FinalStage
-              copy={copy}
-              job={job}
-              tasks={tasks}
-              status={stageStatuses.final}
-              busy={stageBusy === 'final'}
-              onRetry={(sliceKeys) => handleRunStage('final', sliceKeys)}
-            />
-          )}
+          <StageFade motionKey={activeStep}>
+            {activeStep === 0 && (
+              <BreakdownStage copy={copy} job={job} onNext={() => setActiveStep(1)} />
+            )}
+            {activeStep === 1 && (
+              <ScriptStage
+                copy={copy}
+                job={job}
+                gateStatus={stageStatuses.script}
+                onConfirm={async (input) => {
+                  setStageBusy('script');
+                  try {
+                    await onConfirmGate1(input);
+                    setActiveStep(2);
+                  } finally {
+                    setStageBusy(null);
+                  }
+                }}
+                busy={stageBusy === 'script'}
+              />
+            )}
+            {activeStep === 2 && (
+              <LockStage
+                copy={copy}
+                job={job}
+                tasks={tasks}
+                status={stageStatuses.lock}
+                busy={stageBusy === 'lock'}
+                onUpdatePlanPrompts={onUpdatePlanPrompts}
+                onRetry={(sliceKeys) => handleRunStage('lock', sliceKeys)}
+                onNext={() => setActiveStep(3)}
+              />
+            )}
+            {activeStep === 3 && (
+              <StoryboardStage
+                copy={copy}
+                job={job}
+                tasks={tasks}
+                status={stageStatuses.storyboard}
+                busy={stageBusy === 'storyboard'}
+                onUpdateScene={onUpdateScene}
+                onRetry={(sliceKeys) => handleRunStage('storyboard', sliceKeys)}
+                onRunOne={(sliceKey) => handleRunStage('storyboard', [sliceKey])}
+                onNext={async () => {
+                  setStageBusy('storyboard');
+                  try {
+                    await onConfirmGate2();
+                    setActiveStep(4);
+                  } finally {
+                    setStageBusy(null);
+                  }
+                }}
+              />
+            )}
+            {activeStep === 4 && (
+              <VideoStage
+                copy={copy}
+                job={job}
+                tasks={tasks}
+                status={stageStatuses.video}
+                busy={stageBusy === 'video'}
+                onUpdateScene={onUpdateScene}
+                onUpdatePlanPrompts={onUpdatePlanPrompts}
+                onRetry={(sliceKeys) => handleRunStage('video', sliceKeys)}
+                onRunOne={(sliceKey) => handleRunStage('video', [sliceKey])}
+                onNext={() => setActiveStep(5)}
+              />
+            )}
+            {activeStep === 5 && (
+              <FinalStage
+                copy={copy}
+                job={job}
+                tasks={tasks}
+                status={stageStatuses.final}
+                busy={stageBusy === 'final'}
+                onRetry={(sliceKeys) => handleRunStage('final', sliceKeys)}
+              />
+            )}
+          </StageFade>
         </section>
       </div>
     </main>
@@ -415,79 +424,6 @@ const STEP_TO_STAGE: Record<number, RemakeStageName> = {
  * script 是 Gate1 需要用户手动编辑后确认，所以不走自动跑。
  */
 const AUTO_RUN_STAGES = new Set<RemakeStageName>(['lock', 'storyboard', 'video', 'final']);
-
-function Stepper({
-  copy,
-  active,
-  stageStatuses,
-  onClick,
-}: {
-  copy: ReturnType<typeof getCopy>;
-  active: number;
-  stageStatuses: Record<RemakeStageName, RemakeStageStatus>;
-  onClick: (index: number) => void;
-}) {
-  return (
-    <div className="mb-5 grid gap-2 md:grid-cols-6">
-      {copy.steps.map((step, index) => {
-        const stage = STEP_TO_STAGE[index]!;
-        const status = stageStatuses[stage];
-        const isActive = active === index;
-        const isLocked = status === 'locked';
-        const isDone = status === 'success';
-        const isRunning = status === 'running';
-        const isError = status === 'error';
-        return (
-          <button
-            key={step}
-            type="button"
-            onClick={() => onClick(index)}
-            disabled={isLocked}
-            className={cn(
-              'flex h-12 items-center gap-2 rounded-xl px-3 text-left text-[12px] font-bold ring-1 transition-all',
-              isLocked &&
-                'cursor-not-allowed bg-white/[0.025] text-white/22 ring-white/[0.04] blur-[0.3px]',
-              !isLocked &&
-                isActive &&
-                'bg-white text-[#111315] ring-white shadow-[0_8px_24px_-12px_rgba(255,255,255,0.5)]',
-              !isLocked &&
-                !isActive &&
-                'bg-white/[0.055] text-white/58 ring-white/[0.07] hover:bg-white/[0.09] hover:text-white',
-            )}
-          >
-            <span
-              className={cn(
-                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px]',
-                isLocked && 'bg-white/[0.04] text-white/22',
-                !isLocked && isActive && 'bg-[#111315] text-white',
-                !isLocked && !isActive && isDone && 'bg-[#3ae08a]/22 text-[#3ae08a]',
-                !isLocked && !isActive && isRunning && 'bg-[#79e4ff]/22 text-[#79e4ff]',
-                !isLocked && !isActive && isError && 'bg-[#f5c76a]/22 text-[#f5c76a]',
-                !isLocked &&
-                  !isActive &&
-                  !isDone &&
-                  !isRunning &&
-                  !isError &&
-                  'bg-white/[0.08] text-white/58',
-              )}
-            >
-              {isLocked ? (
-                <IconLock size={11} stroke={2.4} />
-              ) : isDone ? (
-                <IconCheck size={12} stroke={2.6} />
-              ) : isRunning ? (
-                <IconLoader2 size={11} className="animate-spin" />
-              ) : (
-                index + 1
-              )}
-            </span>
-            <span className="min-w-0 truncate">{step}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 // ============================================================
 // Stage 子组件
@@ -1146,10 +1082,19 @@ function StageHeader({
   description: string;
   status?: RemakeStageStatus;
 }) {
+  // 当前活跃 stage 的标题用 ShinyText 扫一道金属光泽，提升存在感；
+  // success / locked / error 等终态用普通白字，避免 idle 状态还在扫光浪费 CPU。
+  const useShine = status === 'running' || status === 'ready' || status === undefined;
   return (
     <div className="flex flex-wrap items-start gap-3">
       <div className="min-w-0 flex-1">
-        <h2 className="text-[20px] font-bold text-white">{title}</h2>
+        <h2 className="text-[20px] font-bold leading-7 text-white">
+          {useShine ? (
+            <ShinyText text={title} color="#f5f5f5" shineColor="#ffffff" speed={5} spread={120} />
+          ) : (
+            title
+          )}
+        </h2>
         <p className="mt-1 text-[13px] leading-6 text-white/42">{description}</p>
       </div>
       {status ? <StatusPill status={status} /> : null}
@@ -1292,11 +1237,9 @@ function SlicePreview({
   const rawProgress = task?.progress ?? 0;
   const progressPercent = Math.max(isBusy ? 14 : 0, Math.round(rawProgress * 100));
   return (
-    <div
-      className={cn(
-        'overflow-hidden rounded-[16px] bg-white/[0.045] ring-1 ring-white/[0.08]',
-        className,
-      )}
+    <SpotlightCard
+      className={cn('rounded-[16px] bg-white/[0.045] ring-1 ring-white/[0.08]', className)}
+      spotlightColor="rgba(121, 228, 255, 0.15)"
     >
       <div className="flex h-10 items-center gap-2 border-b border-white/[0.06] px-3">
         <span className="text-white/48">{icon}</span>
@@ -1365,7 +1308,7 @@ function SlicePreview({
           ) : null}
         </div>
       ) : null}
-    </div>
+    </SpotlightCard>
   );
 }
 
