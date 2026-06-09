@@ -549,9 +549,11 @@ const en = {
     uploadEnvironmentTip:
       'Use location or room photos as reusable scene-space anchors. They will guide the background and camera blocking, not product identity.',
     uploadedEnvironment: '{count}/4 uploaded',
-    promptLabel: 'Remix prompt (optional)',
+    promptLabel: 'Remix prompt or product assets',
     promptPlaceholder:
-      'Enter product info, selling points, price, and changes you want from the source video.',
+      'Required if you do not upload assets: product info, selling points, price, and changes from the source video.',
+    promptRequirement:
+      'Add product details here or upload at least one product / creator / scene reference to start.',
     videoSettings: 'Video settings',
     generationTime:
       'Generation stays on this page with script and storyboard confirmations before final output.',
@@ -1287,9 +1289,9 @@ const zh: typeof en = {
     uploadEnvironmentTip:
       '上传房间、柜台、厨房等场景图后，会作为可复用空间锚点影响背景和机位，不会被当作商品图。',
     uploadedEnvironment: '已上传 {count}/4',
-    promptLabel: '复刻提示词（选填）',
-    promptPlaceholder:
-      '请输入产品信息、卖点、价格及原视频修改需求，AI 将基于原爆款结构生成新的带货内容',
+    promptLabel: '复刻提示词或素材',
+    promptPlaceholder: '不上传素材时必填：请输入产品信息、卖点、价格及原视频修改需求',
+    promptRequirement: '请填写商品信息，或至少上传一张商品 / 创作者 / 场景参考图后再开始。',
     videoSettings: '视频设置',
     generationTime: '生成会停留在本页，脚本和分镜两步确认后再出最终成片',
     generate: '生成',

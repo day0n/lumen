@@ -1261,6 +1261,9 @@ function SlicePreview({
                   src={outputUrl}
                   alt={title}
                   caption={subtitle ?? title}
+                  openLabel={copy.zoomOpen}
+                  closeLabel={copy.zoomClose}
+                  dialogLabel={copy.zoomDialog}
                   className="absolute right-2 top-2 z-20"
                 />
               ) : null}
@@ -1282,17 +1285,14 @@ function SlicePreview({
           )
         ) : isBusy ? (
           <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(121,228,255,0.14),transparent_58%),linear-gradient(145deg,#14181d,#090b0d)]" />
-            <div className="absolute inset-0 bg-[#050608]/55 backdrop-blur-[10px]" />
+            <div className="absolute inset-0 bg-[linear-gradient(145deg,#16181c,#0b0c0e)]" />
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-5 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#79e4ff]/14 ring-1 ring-[#79e4ff]/35 shadow-[0_0_28px_rgba(121,228,255,0.22)]">
-                <IconLoader2 size={26} stroke={2.2} className="animate-spin text-[#79e4ff]" />
-              </div>
-              <div className="text-[15px] font-extrabold tracking-wide text-white drop-shadow-[0_1px_10px_rgba(0,0,0,0.55)]">
+              <IconLoader2 size={26} stroke={2} className="animate-spin text-white/70" />
+              <div className="text-[13px] font-semibold tracking-wide text-white/64">
                 {copy.generating}...
               </div>
               {rawProgress > 0 ? (
-                <div className="text-[12px] font-bold text-white/78">
+                <div className="text-[12px] font-bold text-white/52">
                   {Math.min(99, Math.round(rawProgress * 100))}%
                 </div>
               ) : null}
@@ -1609,6 +1609,9 @@ function getCopy(locale: 'en' | 'zh') {
       stageErrorSummary: '本步骤有 {count} 个任务失败。点右侧按钮重试这些失败任务。',
       stageErrorRetry: '重试失败任务',
       stageErrorUnknown: '未知错误',
+      zoomOpen: '放大查看',
+      zoomClose: '关闭',
+      zoomDialog: '放大图片',
     };
   }
   return {
@@ -1729,5 +1732,8 @@ function getCopy(locale: 'en' | 'zh') {
       '{count} task(s) failed in this step. Click retry to re-run the failed ones.',
     stageErrorRetry: 'Retry failed tasks',
     stageErrorUnknown: 'Unknown error',
+    zoomOpen: 'Open image preview',
+    zoomClose: 'Close preview',
+    zoomDialog: 'Image preview',
   };
 }

@@ -1748,6 +1748,11 @@ function ReplicaConfigModal({
                 placeholder={t('hotVideos.promptPlaceholder')}
                 className="mt-3 h-[112px] w-full resize-none rounded-xl bg-white/[0.045] px-4 py-3 text-[13px] leading-6 text-white outline-none ring-1 ring-white/[0.08] placeholder:text-white/28 focus:ring-[#79e4ff]/34"
               />
+              {!hasRemakeInput ? (
+                <div className="mt-2 text-[12px] leading-5 text-[#f5c76a]">
+                  {t('hotVideos.promptRequirement')}
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-6">

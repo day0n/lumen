@@ -46,25 +46,40 @@ interface TaskFields {
   settingsJson: string;
 }
 
+// 每个 task = 一次独立的模型调用，节点之间互不依赖（studio 编排层处理依赖）。
+// 因此 engine 侧并发处理多个 task：一个节点在生成时，用户重跑另一个节点能立即开跑，
+// 不必排队等当前节点结束。受控并发上限避免对上游模型 API 打太满。
+const MAX_CONCURRENCY = 6;
+
 export class RemakeStreamConsumer {
   private running = false;
   private activeTasks = new Map<string, AbortController>();
+  private inFlight = 0;
+  // 阻塞读用独立连接：XREADGROUP BLOCK 会占住整条连接，若和并发任务的
+  // publish/xack/get 共用一条连接会互相卡住。读用 reader，副作用用 this.redis。
+  private reader: Redis | null = null;
 
   constructor(private redis: Redis) {}
 
   async start(): Promise<void> {
     await this.ensureGroup();
     this.running = true;
+    this.reader = this.redis.duplicate();
     logger.info('remake stream consumer started, waiting for tasks...');
 
     while (this.running) {
       try {
-        const results = (await this.redis.xreadgroup(
+        if (this.inFlight >= MAX_CONCURRENCY) {
+          await sleep(100);
+          continue;
+        }
+        const capacity = MAX_CONCURRENCY - this.inFlight;
+        const results = (await this.reader.xreadgroup(
           'GROUP',
           GROUP_NAME,
           CONSUMER_NAME,
           'COUNT',
-          '1',
+          String(capacity),
           'BLOCK',
           '5000',
           'STREAMS',
@@ -75,7 +90,15 @@ export class RemakeStreamConsumer {
         if (!results) continue;
         for (const [, messages] of results) {
           for (const [messageId, fields] of messages) {
-            await this.processMessage(messageId, fields as string[]);
+            // 并发派发：不 await，让多个节点同时跑；inFlight 控制并发上限。
+            this.inFlight += 1;
+            void this.processMessage(messageId, fields as string[])
+              .catch((err) => {
+                logger.error({ err, messageId }, 'remake task processing crashed');
+              })
+              .finally(() => {
+                this.inFlight -= 1;
+              });
           }
         }
       } catch (err) {
@@ -91,6 +114,10 @@ export class RemakeStreamConsumer {
     this.running = false;
     for (const controller of this.activeTasks.values()) {
       if (!controller.signal.aborted) controller.abort('engine shutting down');
+    }
+    if (this.reader) {
+      this.reader.disconnect();
+      this.reader = null;
     }
   }
 

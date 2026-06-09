@@ -7,6 +7,7 @@ import type {
 } from '@lumen/db';
 
 import { GeminiNotConfiguredError, getStudioGoogleClient } from '../gemini';
+import { sanitizeVideoPromptText } from './promptSafety';
 
 /**
  * Storyboard / Video prompt 生成器。
@@ -113,7 +114,9 @@ export async function generateVideoPrompt(opts: VideoOptions): Promise<string | 
   const characterAge = character?.ageRange ?? 'adult';
   const characterTone = character?.tone ?? 'warm friendly UGC creator';
 
-  const voiceLine = (scene.voiceLine ?? scene.dialogue ?? '').trim();
+  const safeAction = sanitizeVideoPromptText(scene.action);
+  const safeCamera = sanitizeVideoPromptText(scene.camera);
+  const voiceLine = sanitizeVideoPromptText((scene.voiceLine ?? scene.dialogue ?? '').trim());
 
   const prompt = `You are writing the video-generation prompt for ONE scene of a vertical UGC short ad.
 
@@ -131,8 +134,8 @@ Paragraph 1 — opening:
 "Continue motion forward from @keyframe. Keep ${characterToken}'s identity and ${productToken}'s appearance stable across the clip."
 
 Paragraph 2 — motion description (1-2 sentences): how the action and camera evolve over ~${scene.durationSeconds}s, grounded in what the keyframe already shows.
-- Action context: ${scene.action}
-- Camera: ${scene.camera}
+- Action context: ${safeAction}
+- Camera: ${safeCamera}
 - Aspect ratio: ${aspectRatio}
 
 Paragraph 3 — voice identity (MANDATORY, copy this line VERBATIM with no edits):
@@ -142,11 +145,12 @@ Paragraph 4 — spoken delivery (MANDATORY, copy VERBATIM, do not paraphrase the
 ${characterToken} (VO, ${characterGender}) says: "${voiceLine}"
 
 Paragraph 5 — closing:
-"Generate the spoken audio natively in ${characterToken}'s voice. The on-screen mouth shapes must match the spoken line above."
+"Generate the spoken audio natively in ${characterToken}'s voice. The spoken timing must match the line above."
 
 Return ONLY the prompt text built from the structure above. No preamble, no quotes around the whole thing, no markdown, no headings, no commentary.`;
 
-  return runGemini(prompt, [part]);
+  const generated = await runGemini(prompt, [part]);
+  return generated ? sanitizeVideoPromptText(generated) : null;
 }
 
 async function runGemini(

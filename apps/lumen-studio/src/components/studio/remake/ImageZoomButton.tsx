@@ -20,9 +20,20 @@ interface ImageZoomButtonProps {
   className?: string;
   /** lightbox 顶部小字描述（可选）。 */
   caption?: string;
+  openLabel?: string;
+  closeLabel?: string;
+  dialogLabel?: string;
 }
 
-export function ImageZoomButton({ src, alt = '', className, caption }: ImageZoomButtonProps) {
+export function ImageZoomButton({
+  src,
+  alt = '',
+  className,
+  caption,
+  openLabel = 'Open image preview',
+  closeLabel = 'Close',
+  dialogLabel = 'Image preview',
+}: ImageZoomButtonProps) {
   const [open, setOpen] = useState(false);
 
   const close = useCallback(() => setOpen(false), []);
@@ -44,7 +55,7 @@ export function ImageZoomButton({ src, alt = '', className, caption }: ImageZoom
           event.stopPropagation();
           setOpen(true);
         }}
-        aria-label="放大查看"
+        aria-label={openLabel}
         className={`flex h-7 w-7 items-center justify-center rounded-lg bg-black/52 text-white/82 ring-1 ring-white/[0.12] backdrop-blur transition-colors hover:bg-black/72 hover:text-white ${className ?? ''}`}
       >
         <IconArrowsMaximize size={13} stroke={2.2} />
@@ -54,14 +65,14 @@ export function ImageZoomButton({ src, alt = '', className, caption }: ImageZoom
         <dialog
           open
           aria-modal="true"
-          aria-label={alt || '放大图片'}
+          aria-label={alt || dialogLabel}
           className="fixed inset-0 z-[70] m-0 flex h-full max-h-none w-full max-w-none items-center justify-center border-0 bg-transparent p-0"
         >
           {/* 遮罩 */}
           <button
             type="button"
             onClick={close}
-            aria-label="关闭"
+            aria-label={closeLabel}
             className="absolute inset-0 cursor-zoom-out bg-black/82 backdrop-blur-sm"
           />
 
@@ -87,7 +98,7 @@ export function ImageZoomButton({ src, alt = '', className, caption }: ImageZoom
           <button
             type="button"
             onClick={close}
-            aria-label="关闭"
+            aria-label={closeLabel}
             className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-xl bg-black/52 text-white/82 ring-1 ring-white/[0.12] backdrop-blur transition-colors hover:bg-black/72 hover:text-white"
           >
             <IconX size={16} stroke={2.2} />
