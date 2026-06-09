@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { parse } from 'node:url';
@@ -30,6 +30,23 @@ const dev = process.env.NODE_ENV !== 'production';
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const hostname = process.env.HOSTNAME ?? '0.0.0.0';
 const appDistDir = resolve(process.cwd(), '../lumen-app/dist');
+const indexHtmlPath = resolve(appDistDir, 'index.html');
+
+// Stat the SPA build at startup, not per-request. Each `/app/*` hit used
+// to call existsSync(appDistDir) + existsSync(assetPath) + statSync().isFile()
+// + existsSync(indexPath) — all SYNC fs syscalls that block the event
+// loop. Under load they showed up as P99 latency on otherwise-fast WS
+// heartbeats and API routes. Capture once on boot; the dist directory
+// does not change while the process is running, and a missing build at
+// startup is already the deploy.sh's responsibility.
+const studioAppBuildAvailable = existsSync(appDistDir) && existsSync(indexHtmlPath);
+if (!studioAppBuildAvailable) {
+  // Don't fail-fast here — Next.js can still serve API routes without the
+  // SPA bundle (this is also the legitimate state during a partial deploy).
+  console.warn(
+    `[lumen-studio] SPA build missing at ${appDistDir}; /app/* will return 503 until next deploy.`,
+  );
+}
 
 let captureException = (_err: unknown) => {};
 let logProcessError = (err: unknown, message: string) => {
@@ -136,7 +153,7 @@ function serveStudioApp(rawUrl: string, res: import('node:http').ServerResponse)
   const { pathname } = parse(rawUrl);
   const appPathname = normalizeStudioAppPath(pathname ?? '');
   if (!appPathname) return false;
-  if (!existsSync(appDistDir)) {
+  if (!studioAppBuildAvailable) {
     res.statusCode = 503;
     res.setHeader('content-type', 'text/plain; charset=utf-8');
     res.end('Studio app build is not available.');
@@ -145,31 +162,44 @@ function serveStudioApp(rawUrl: string, res: import('node:http').ServerResponse)
 
   if (appPathname.startsWith('/app/assets/')) {
     const assetPath = resolve(appDistDir, appPathname.slice('/app/'.length));
-    if (
-      !isPathInside(assetPath, appDistDir) ||
-      !existsSync(assetPath) ||
-      !statSync(assetPath).isFile()
-    ) {
+    if (!isPathInside(assetPath, appDistDir)) {
       res.statusCode = 404;
       res.end('Not found');
       return true;
     }
+    // Skip the up-front existsSync/statSync; just open the stream and let
+    // the OS tell us if the path is missing or is a directory. Headers are
+    // set lazily on first byte so a 404 still gets a clean text/plain
+    // response.
     res.setHeader('cache-control', 'public,max-age=31536000,immutable');
     res.setHeader('content-type', contentTypeFor(assetPath));
-    createReadStream(assetPath).pipe(res);
+    const stream = createReadStream(assetPath);
+    let opened = false;
+    stream.once('open', () => {
+      opened = true;
+    });
+    stream.once('error', (err: NodeJS.ErrnoException) => {
+      if (opened || res.headersSent) {
+        res.destroy(err);
+        return;
+      }
+      res.removeHeader('cache-control');
+      res.removeHeader('content-type');
+      if (err.code === 'ENOENT' || err.code === 'EISDIR' || err.code === 'ENOTDIR') {
+        res.statusCode = 404;
+        res.end('Not found');
+      } else {
+        res.statusCode = 500;
+        res.end('Internal server error');
+      }
+    });
+    stream.pipe(res);
     return true;
   }
 
-  const indexPath = resolve(appDistDir, 'index.html');
-  if (!existsSync(indexPath)) {
-    res.statusCode = 503;
-    res.setHeader('content-type', 'text/plain; charset=utf-8');
-    res.end('Studio app index is not available.');
-    return true;
-  }
   res.setHeader('cache-control', 'no-cache');
   res.setHeader('content-type', 'text/html; charset=utf-8');
-  createReadStream(indexPath).pipe(res);
+  createReadStream(indexHtmlPath).pipe(res);
   return true;
 }
 
