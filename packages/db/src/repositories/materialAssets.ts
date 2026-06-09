@@ -144,7 +144,32 @@ export class MaterialAssetRepository {
     };
 
     const documents = await this.workflowResultCollection()
-      .find(filter)
+      .find(filter, {
+        // Project only the fields toWorkflowResultAssetRecord actually reads.
+        // Without this we pulled the entire `input` field, which on workflow
+        // node results can hold full prompts, base64 image inputs, or
+        // composition clip lists. With limit=200 (default) this materialised
+        // up to 200 large documents per /api/material-assets call just to
+        // surface a thumbnail and a 100-char prompt preview. Restricting to
+        // the small set of fields used downstream cuts network IO and the
+        // Zod parse cost in toWorkflowResultAssetRecord substantially.
+        projection: {
+          run_id: 1,
+          node_id: 1,
+          node_type: 1,
+          user_id: 1,
+          project_id: 1,
+          workflow_id: 1,
+          status: 1,
+          output_type: 1,
+          output_value: 1,
+          asset: 1,
+          'input.prompt': 1,
+          created_at: 1,
+          updated_at: 1,
+          completed_at: 1,
+        },
+      })
       .sort({ completed_at: -1, updated_at: -1, created_at: -1 })
       .limit(parsed.limit)
       .toArray();
@@ -238,6 +263,28 @@ export class MaterialAssetRepository {
           $match: {
             node_id: { $in: ids },
             $or: [{ project_id: projectId }, { workflow_id: projectId }],
+          },
+        },
+        // Project early so the $sort/$group stages move much smaller docs.
+        // toWorkflowNodeResultSnapshot only reads these fields; everything
+        // else (notably `input`, which can hold full prompts/base64 payload)
+        // would otherwise be carried through the pipeline for nothing.
+        {
+          $project: {
+            node_id: 1,
+            run_id: 1,
+            status: 1,
+            output_value: 1,
+            asset: 1,
+            error: 1,
+            error_code: 1,
+            error_name: 1,
+            error_i18n_key: 1,
+            retryable: 1,
+            attempts: 1,
+            created_at: 1,
+            updated_at: 1,
+            completed_at: 1,
           },
         },
         { $sort: { updated_at: -1, completed_at: -1, created_at: -1 } },
