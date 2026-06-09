@@ -1,8 +1,4 @@
-import {
-  extractArkVideoUrl,
-  pollArkVideoTask,
-  submitArkVideoTask,
-} from '../../clients/volcArk.js';
+import { extractArkVideoUrl, pollArkVideoTask, submitArkVideoTask } from '../../clients/volcArk.js';
 import { config } from '../../config.js';
 import { sleep, throwIfCancelled } from '../../engine/cancellation.js';
 import type { ResolvedInput } from '../../engine/resolver.js';
@@ -12,6 +8,14 @@ import type { ExecutionContext, NodeOutput } from '../base.js';
 const SEEDANCE_ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1', '4:3', '3:4', '21:9']);
 const SEEDANCE_RESOLUTIONS = new Set(['480p', '720p', '1080p']);
 const SEEDANCE_DURATIONS = [4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+
+// Hard ceiling for the polling loop. Without this, an Ark Seedance task
+// stuck in `queued`/`running` jams the consumer (COUNT=1, BLOCK) — every
+// other workflow on the same stream is starved until this one completes.
+// 30 minutes is well past any legitimate generation; mirrors the Veo
+// handler. The audio handler `suno-music` already uses 6 minutes.
+const SEEDANCE_MAX_POLL_MS = 30 * 60 * 1000;
+const SEEDANCE_POLL_INTERVAL_MS = 8_000;
 
 export async function execute(
   input: ResolvedInput,
@@ -74,10 +78,16 @@ export async function execute(
   const taskId = await submitArkVideoTask(payload, signal);
   throwIfCancelled(signal);
 
+  const startedAt = Date.now();
   let result = await pollArkVideoTask(taskId, signal);
   while (result.status === 'queued' || result.status === 'running') {
+    if (Date.now() - startedAt > SEEDANCE_MAX_POLL_MS) {
+      throw new Error(
+        `seedance 1.5 pro polling timed out after ${Math.round(SEEDANCE_MAX_POLL_MS / 60_000)} minutes (last status=${result.status})`,
+      );
+    }
     logger.info({ taskId, status: result.status }, 'waiting for seedance 1.5 pro...');
-    await sleep(8_000, signal);
+    await sleep(SEEDANCE_POLL_INTERVAL_MS, signal);
     result = await pollArkVideoTask(taskId, signal);
     throwIfCancelled(signal);
   }
@@ -118,10 +128,7 @@ function readStringSetting(settings: Record<string, unknown>, key: string): stri
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-async function resolveImageUrls(
-  input: ResolvedInput,
-  signal?: AbortSignal,
-): Promise<string[]> {
+async function resolveImageUrls(input: ResolvedInput, signal?: AbortSignal): Promise<string[]> {
   const candidates = [input.image, input.lastFrameImage, ...input.images].filter(
     (value): value is string => typeof value === 'string' && value.trim().length > 0,
   );

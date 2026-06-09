@@ -31,6 +31,15 @@ interface VideoGenerationResult {
 
 const VEO_ASPECT_RATIOS = new Set(['16:9', '9:16']);
 
+// Hard ceiling for the long-poll. Without this, a Veo task that gets
+// stuck in `running` server-side jams the consumer (COUNT=1, BLOCK)
+// indefinitely — every other workflow waits behind it. 30 minutes
+// covers the slowest legitimate generations (1080p with last-frame
+// conditioning) with margin; the audio handler `suno-music` already
+// uses a 6-minute version of the same pattern.
+const VEO_MAX_POLL_MS = 30 * 60 * 1000;
+const VEO_POLL_INTERVAL_MS = 10_000;
+
 export async function execute(
   input: ResolvedInput,
   settings: Record<string, unknown>,
@@ -78,9 +87,15 @@ export async function execute(
   throwIfCancelled(signal);
 
   let result = operation;
+  const startedAt = Date.now();
   while (!result.done) {
+    if (Date.now() - startedAt > VEO_MAX_POLL_MS) {
+      throw new Error(
+        `veo 3.1 polling timed out after ${Math.round(VEO_MAX_POLL_MS / 60_000)} minutes`,
+      );
+    }
     logger.info('waiting for veo 3.1 video generation...');
-    await sleep(10_000, signal);
+    await sleep(VEO_POLL_INTERVAL_MS, signal);
     result = await client.operations.get({ operation: result });
     throwIfCancelled(signal);
   }
