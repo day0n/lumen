@@ -1554,6 +1554,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     if (
       !currentProjectId ||
       !hasHydratedProject.current ||
+      !isCanvasHydrated ||
       !authReady ||
       !isSignedIn ||
       canvasMediaUploading
@@ -1592,7 +1593,17 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [authReady, canvasMediaUploading, currentProjectId, edges, isSignedIn, locale, nodes, t]);
+  }, [
+    authReady,
+    canvasMediaUploading,
+    currentProjectId,
+    edges,
+    isCanvasHydrated,
+    isSignedIn,
+    locale,
+    nodes,
+    t,
+  ]);
 
   const addCanvasNode = useCallback(
     (template = getTemplate(activeKind), position?: XYPosition) => {
