@@ -8,6 +8,8 @@ export const runtime = 'nodejs';
 
 type CanvasUploadKind = 'image' | 'video' | 'audio';
 
+const UPLOAD_AUTH_CLOCK_SKEW_MS = 5 * 60_000;
+
 const uploadConfigs: Record<
   CanvasUploadKind,
   {
@@ -82,7 +84,9 @@ const mediaKindLabels: Record<CanvasUploadKind, string> = {
 export const POST = withApiRouteSpan('POST /api/canvas/uploads', async (request: Request) => {
   const locale = resolveRequestLocale(request);
   try {
-    const user = await requireStudioUser();
+    const user = await requireStudioUser(request, {
+      sessionClockSkewInMs: UPLOAD_AUTH_CLOCK_SKEW_MS,
+    });
     const form = await request.formData();
     const file = form.get('file');
     const kind = readUploadKind(form.get('kind'));
