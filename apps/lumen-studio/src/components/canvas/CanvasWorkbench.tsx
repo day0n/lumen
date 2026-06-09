@@ -311,6 +311,7 @@ type CanvasUploadPresignApiResponse =
     };
 
 const DIRECT_UPLOAD_FIRST_PROGRESS_TIMEOUT_MS = 12_000;
+const DIRECT_UPLOAD_TIMEOUT_MS = 25_000;
 const APP_SERVER_UPLOAD_FIRST_PROGRESS_TIMEOUT_MS = 20_000;
 const APP_SERVER_UPLOAD_EXTRA_TIMEOUT_MS = 60_000;
 
@@ -1455,16 +1456,19 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
               firstProgressTimeoutMs: DIRECT_UPLOAD_FIRST_PROGRESS_TIMEOUT_MS,
               headers: presigned.upload.headers,
               onProgress,
+              timeoutMs: DIRECT_UPLOAD_TIMEOUT_MS,
               uploadUrl: presigned.upload.url,
             });
           } catch (error) {
             if (!(error instanceof DirectUploadError) || !error.retryable) throw error;
+            if (error.code !== 'http_error' || error.status !== 403) throw error;
             presigned = await readPresign();
             await uploadToObjectStorage({
               file,
               firstProgressTimeoutMs: DIRECT_UPLOAD_FIRST_PROGRESS_TIMEOUT_MS,
               headers: presigned.upload.headers,
               onProgress,
+              timeoutMs: DIRECT_UPLOAD_TIMEOUT_MS,
               uploadUrl: presigned.upload.url,
             });
           }
