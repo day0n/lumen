@@ -1,5 +1,9 @@
-import type { CompositionTimeline, CompositionTimelineClip } from '@lumen/shared/domain';
-import { CompositionTimelineSchema } from '@lumen/shared/domain';
+import {
+  type CompositionTimeline,
+  type CompositionTimelineClip,
+  CompositionTimelineSchema,
+  DEFAULT_COMPOSITION_BGM_VOLUME,
+} from '@lumen/shared/domain';
 import { nanoid } from 'nanoid';
 
 import type { CanvasEdgeShape, CanvasNodeShape } from '@/lib/canvas/types';
@@ -85,6 +89,6 @@ export function buildInitialTimeline(
     clips: normalizeOrders(clips),
     aspectRatio: existing.success ? existing.data.aspectRatio : '9:16',
     resolution: existing.success ? existing.data.resolution : '720p',
-    bgmVolume: existing.success ? existing.data.bgmVolume : 0.8,
+    bgmVolume: existing.success ? existing.data.bgmVolume : DEFAULT_COMPOSITION_BGM_VOLUME,
   });
 }

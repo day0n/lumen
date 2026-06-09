@@ -7,6 +7,9 @@ export type CompositionAspectRatio = z.infer<typeof CompositionAspectRatioSchema
 export const CompositionResolutionSchema = z.enum(['720p', '1080p']);
 export type CompositionResolution = z.infer<typeof CompositionResolutionSchema>;
 
+export const DEFAULT_COMPOSITION_BGM_VOLUME = 0.28;
+export const MAX_COMPOSITION_BGM_VOLUME_WITH_SOURCE_AUDIO = 0.32;
+
 export const CompositionTimelineClipSchema = z.object({
   id: z.string().trim().min(1),
   order: z.number().finite(),

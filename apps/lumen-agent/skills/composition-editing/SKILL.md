@@ -39,7 +39,7 @@ then assemble with `composition`.
         "clips": [],
         "aspectRatio": "9:16",
         "resolution": "720p",
-        "bgmVolume": 0.8
+        "bgmVolume": 0.28
       }
     },
     "status": "idle",
@@ -156,7 +156,7 @@ Edges:
             ],
             "aspectRatio": "9:16",
             "resolution": "720p",
-            "bgmVolume": 0.8
+            "bgmVolume": 0.28
           }
         },
         "status": "idle",
@@ -214,7 +214,7 @@ If user wants BGM:
 
 1. Add `audio` node with `modelId: suno-music` or `fish-tts` as appropriate
 2. Connect `audio` → `composition`
-3. Tune `bgmVolume` (default 0.8)
+3. Tune `bgmVolume` (default 0.28)
 
 ## Editing an Existing Timeline
 
@@ -240,7 +240,7 @@ Before running composition, verify every referenced upstream video has `data.out
 |---|---|---|
 | `aspectRatio` | `9:16` | TikTok / Reels |
 | `resolution` | `720p` | Faster first pass |
-| `bgmVolume` | `0.8` | When BGM connected |
+| `bgmVolume` | `0.28` | When BGM connected |
 | clip `volume` | `1` | Full clip audio |
 
 Use `1080p` only when user explicitly asks for higher export quality.

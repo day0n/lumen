@@ -1090,6 +1090,10 @@ interface InspirationCardItem {
   score: number | null;
 }
 
+const MESSAGE_URL_PATTERN =
+  /(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?\/)[^\s<>"'`[\]{}]*/gi;
+const URL_TRAILING_PUNCTUATION_PATTERN = /[),.;!?，。；：！？）】》]+$/u;
+
 function RichMessageText({ blocks }: { blocks: MarkdownBlock[] }) {
   return (
     <div className="space-y-2">
@@ -2123,20 +2127,21 @@ function isUploadedImagesHeading(line: string): boolean {
 }
 
 function parseUploadedImageLine(line: string): { url: string; label: string } | null {
-  const match = /https?:\/\/[^\s<>"'`()\[\]]+/.exec(line);
-  const url = normalizeMessageUrl(match?.[0] ?? '');
-  if (!url) return null;
+  const found = findFirstMessageUrl(line);
+  if (!found) return null;
 
-  const labelMatch =
-    /^\s*(?:[-*]\s*)?(?:\d+[.)]\s*)?([^:\n]+?)(?:\s*[：:]\s*https?:\/\/|\s*$)/.exec(line);
-  const label = labelMatch?.[1]?.trim() || 'image';
-  return { url, label };
+  const label = line
+    .slice(0, found.index)
+    .replace(/^\s*(?:[-*]\s*)?(?:\d+[.)]\s*)?/, '')
+    .replace(/\s*[：:]\s*$/, '')
+    .trim();
+  return { url: found.url, label: label || 'image' };
 }
 
 // Inline markdown: image ![alt](url), link [label](url), bold **text**, and bare URLs.
 function parseInlineMarkdown(text: string, media: Map<string, MediaAttachment>): InlineNode[] {
   const nodes: InlineNode[] = [];
-  const pattern = /(!?)\[([^\]\n]*)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*/g;
+  const pattern = /(!?)\[([^\]\n]*)\]\(([^)]+)\)|\*\*([^*\n]+)\*\*/g;
   let cursor = 0;
 
   for (const match of text.matchAll(pattern)) {
@@ -2176,20 +2181,22 @@ function appendTextWithBareLinks(
   media: Map<string, MediaAttachment>,
 ) {
   if (!text) return;
-  const bareUrlPattern = /https?:\/\/[^\s<>"'`]+/g;
   let cursor = 0;
 
-  for (const match of text.matchAll(bareUrlPattern)) {
+  MESSAGE_URL_PATTERN.lastIndex = 0;
+  for (const match of text.matchAll(MESSAGE_URL_PATTERN)) {
     const matchStart = match.index ?? 0;
     if (matchStart > cursor) {
       nodes.push({ kind: 'text', text: text.slice(cursor, matchStart) });
     }
 
-    const url = normalizeMessageUrl(match[0]);
+    const candidate = trimUrlCandidate(match[0]);
+    const url = normalizeMessageUrl(candidate.value);
     if (url) {
       const label = shortenUrl(url);
       nodes.push({ kind: 'link', text: label, href: url });
       addMediaAttachment(media, url, label);
+      if (candidate.trailing) nodes.push({ kind: 'text', text: candidate.trailing });
     } else {
       nodes.push({ kind: 'text', text: match[0] });
     }
@@ -2233,14 +2240,46 @@ function detectMediaType(url: string): MediaAttachment['type'] | null {
   return null;
 }
 
+function findFirstMessageUrl(text: string): { url: string; index: number } | null {
+  MESSAGE_URL_PATTERN.lastIndex = 0;
+  for (const match of text.matchAll(MESSAGE_URL_PATTERN)) {
+    const candidate = trimUrlCandidate(match[0]);
+    const url = normalizeMessageUrl(candidate.value);
+    if (url) return { url, index: match.index ?? 0 };
+  }
+  return null;
+}
+
+function trimUrlCandidate(raw: string): { value: string; trailing: string } {
+  let value = raw.trim();
+  let trailing = '';
+  while (URL_TRAILING_PUNCTUATION_PATTERN.test(value)) {
+    const next = value.replace(URL_TRAILING_PUNCTUATION_PATTERN, '');
+    trailing = value.slice(next.length) + trailing;
+    value = next;
+  }
+  return { value, trailing };
+}
+
 function normalizeMessageUrl(raw: string): string | null {
-  const trimmed = raw.trim().replace(/[),.;!?]+$/g, '');
-  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return null;
+  const compact = trimUrlCandidate(raw).value.replace(/\s+/g, '');
+  const withProtocol = /^https?:\/\//i.test(compact)
+    ? compact
+    : isProtocolLessMessageUrl(compact)
+      ? `https://${compact}`
+      : '';
+  if (!withProtocol) return null;
   try {
-    return new URL(trimmed).toString();
+    const parsed = new URL(withProtocol);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.toString();
   } catch {
     return null;
   }
+}
+
+function isProtocolLessMessageUrl(value: string): boolean {
+  return /^(?:www\.|(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?\/)[^\s<>"'`[\]{}]*$/i.test(value);
 }
 
 function shortenUrl(url: string): string {

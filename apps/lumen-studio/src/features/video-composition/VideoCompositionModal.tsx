@@ -1,6 +1,6 @@
 'use client';
 
-import type { CompositionTimeline } from '@lumen/shared/domain';
+import { type CompositionTimeline, DEFAULT_COMPOSITION_BGM_VOLUME } from '@lumen/shared/domain';
 import {
   IconArrowLeft,
   IconArrowRight,
@@ -265,7 +265,7 @@ export function VideoCompositionModal({
           playhead={playhead}
           isPlaying={isPlaying}
           bgmUrl={bgmUrl}
-          bgmVolume={timeline.bgmVolume ?? 0.8}
+          bgmVolume={timeline.bgmVolume ?? DEFAULT_COMPOSITION_BGM_VOLUME}
           resolveClipUrl={resolveClipUrl}
         />
 
@@ -329,7 +329,7 @@ export function VideoCompositionModal({
                 min={0}
                 max={1}
                 step={0.05}
-                value={timeline.bgmVolume ?? 0.8}
+                value={timeline.bgmVolume ?? DEFAULT_COMPOSITION_BGM_VOLUME}
                 className="w-20 accent-white"
                 onChange={(event) => updateTimeline({ bgmVolume: Number(event.target.value) })}
               />
@@ -394,7 +394,10 @@ export function VideoCompositionModal({
                   </span>
                   <span className="text-[11px] font-bold">A</span>
                 </div>
-                <BgmTrack bgmUrl={bgmUrl} volume={timeline.bgmVolume ?? 0.8} />
+                <BgmTrack
+                  bgmUrl={bgmUrl}
+                  volume={timeline.bgmVolume ?? DEFAULT_COMPOSITION_BGM_VOLUME}
+                />
               </div>
             </div>
           </div>

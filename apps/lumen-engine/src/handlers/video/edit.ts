@@ -4,7 +4,11 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { VideoClipInput } from '@lumen/shared/domain';
+import {
+  DEFAULT_COMPOSITION_BGM_VOLUME,
+  MAX_COMPOSITION_BGM_VOLUME_WITH_SOURCE_AUDIO,
+  type VideoClipInput,
+} from '@lumen/shared/domain';
 import { config } from '../../config.js';
 import {
   WorkflowCancelledError,
@@ -15,7 +19,7 @@ import type { ResolvedInput } from '../../engine/resolver.js';
 import { logger } from '../../utils/logger.js';
 import type { ExecutionContext, NodeOutput } from '../base.js';
 
-interface PreparedClip {
+export interface PreparedClip {
   index: number;
   inputPath: string;
   sourceUrl: string;
@@ -361,7 +365,7 @@ async function renderConcat(input: {
   await runCommand(config.VIDEO_EDIT_FFMPEG_PATH, args, 20 * 60 * 1000, input.signal);
 }
 
-function buildFilterComplex(input: {
+export function buildFilterComplex(input: {
   clips: PreparedClip[];
   width: number;
   height: number;
@@ -372,7 +376,7 @@ function buildFilterComplex(input: {
   const chains: string[] = [];
   const renderSubtitles = readBooleanSetting(input.settings, 'renderSubtitles');
   const flashTransition = readBooleanSetting(input.settings, 'flashTransition');
-  const bgmVolume = readNumberSetting(input.settings, 'bgmVolume') ?? 0.28;
+  const bgmVolume = resolveBgmVolume(input.settings, input.clips);
   const subtitleFontFile = resolveSubtitleFontFile(input.settings);
 
   for (const clip of input.clips) {
@@ -407,7 +411,7 @@ function buildFilterComplex(input: {
 
     if (clip.hasAudio) {
       chains.push(
-        `[${clip.index}:a]atrim=${trim},asetpts=PTS-STARTPTS,aresample=48000,volume=${formatVolume(clip.volume)}[a${clip.index}]`,
+        `[${clip.index}:a]atrim=${trim},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo,volume=${formatVolume(clip.volume)}[a${clip.index}]`,
       );
     } else {
       chains.push(
@@ -425,10 +429,33 @@ function buildFilterComplex(input: {
   const totalDuration = input.clips.reduce((sum, clip) => sum + clip.duration, 0);
   chains.push(`${concatInputs}concat=n=${input.clips.length}:v=1:a=1[v][acat]`);
   chains.push(
-    `[${input.bgmInputIndex}:a]aresample=48000,volume=${formatVolume(bgmVolume)},atrim=duration=${formatSeconds(totalDuration)},asetpts=PTS-STARTPTS[bgm]`,
+    `[${input.bgmInputIndex}:a]aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo,volume=${formatVolume(bgmVolume)},atrim=duration=${formatSeconds(totalDuration)},asetpts=PTS-STARTPTS[bgmraw]`,
   );
-  chains.push('[acat][bgm]amix=inputs=2:duration=first:dropout_transition=0[a]');
+  if (hasAudibleSourceAudio(input.clips)) {
+    chains.push(
+      '[bgmraw][acat]sidechaincompress=threshold=0.035:ratio=8:attack=35:release=360[bgm]',
+    );
+    chains.push('[acat][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]');
+  } else {
+    chains.push('[acat][bgmraw]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]');
+  }
   return chains.join(';');
+}
+
+function resolveBgmVolume(settings: Record<string, unknown>, clips: PreparedClip[]): number {
+  const requested = clampNumber(
+    readNumberSetting(settings, 'bgmVolume') ??
+      readNestedNumberSetting(settings, 'timeline', 'bgmVolume') ??
+      DEFAULT_COMPOSITION_BGM_VOLUME,
+    0,
+    1,
+  );
+  if (!hasAudibleSourceAudio(clips)) return requested;
+  return Math.min(requested, MAX_COMPOSITION_BGM_VOLUME_WITH_SOURCE_AUDIO);
+}
+
+function hasAudibleSourceAudio(clips: PreparedClip[]): boolean {
+  return clips.some((clip) => clip.hasAudio && clip.volume > 0.001);
 }
 
 function buildSubtitleFilter(
@@ -502,6 +529,16 @@ function readNumberSetting(settings: Record<string, unknown>, key: string): numb
   const parsed =
     typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readNestedNumberSetting(
+  settings: Record<string, unknown>,
+  objectKey: string,
+  numberKey: string,
+): number | null {
+  const value = settings[objectKey];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return readNumberSetting(value as Record<string, unknown>, numberKey);
 }
 
 function readBooleanSetting(settings: Record<string, unknown>, key: string): boolean {
@@ -605,6 +642,19 @@ function formatVolume(value: number): string {
     .replace(/\.?0+$/, '');
 }
 
+// drawtext text inside a filter chain is parsed at two levels:
+//   1. The filter graph parser, which uses ',' and ';' as filter / chain
+//      separators and '[' / ']' as label markers.
+//   2. The drawtext option parser, which uses ':' between key=value pairs.
+//
+// Wrapping the value in single quotes only protects against (2)'s ':'; the
+// outer ',' / ';' / '[' / ']' still terminate the filter expression and
+// either break the run with a ffmpeg parse error or — worse — splice the
+// caller-supplied text into the filter graph as a structural element.
+//
+// Escape every metacharacter that has meaning at either level so user
+// content can never escape its argument slot. The result is still safe
+// inside the surrounding `text='...'` quotes.
 function escapeDrawtextText(value: string): string {
   return value
     .slice(0, 120)
@@ -612,6 +662,10 @@ function escapeDrawtextText(value: string): string {
     .replace(/'/g, "\\'")
     .replace(/:/g, '\\:')
     .replace(/%/g, '\\%')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
     .replace(/\r?\n/g, ' ');
 }
 
