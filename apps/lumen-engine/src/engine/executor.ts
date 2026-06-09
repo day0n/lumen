@@ -84,64 +84,88 @@ export class WorkflowExecutor {
           reason = cancellationReason(signal),
           startedAtByNode = new Map<string, Date>(),
         ) => {
-          for (const nodeId of nodeIdsToCancel) {
-            if (terminalIds.has(nodeId)) continue;
-            const node = graph.getNodeAttributes(nodeId) as WorkflowNode;
-            await this.workflowStore.markNodeCancelled({
-              runId,
-              projectId,
-              workflowId,
-              userId,
-              node,
-              input: resolveInput(graph, nodeId),
-              error: reason,
-              startedAt: startedAtByNode.get(nodeId),
-            });
+          // Filter out already-terminal nodes first (cheap), then fire all
+          // mongo writes + publishes concurrently. Both `markNodeCancelled`
+          // and `publisher.publish` are independent per node — the original
+          // loop awaited them serially, paying N round-trips of latency for
+          // a batch cancel. After all IO settles we mutate the shared
+          // bookkeeping serially (no race because we're already on a single
+          // event-loop tick).
+          const targets = nodeIdsToCancel.filter((id) => !terminalIds.has(id));
+          if (targets.length === 0) return;
+          await Promise.all(
+            targets.map(async (nodeId) => {
+              const node = graph.getNodeAttributes(nodeId) as WorkflowNode;
+              await this.workflowStore.markNodeCancelled({
+                runId,
+                projectId,
+                workflowId,
+                userId,
+                node,
+                input: resolveInput(graph, nodeId),
+                error: reason,
+                startedAt: startedAtByNode.get(nodeId),
+              });
+              await this.publisher.publish(channelId, {
+                event: 'node:cancel',
+                nodeId,
+                reason,
+              });
+            }),
+          );
+          for (const nodeId of targets) {
             terminalIds.add(nodeId);
             summary.cancelled += 1;
-            await this.publisher.publish(channelId, {
-              event: 'node:cancel',
-              nodeId,
-              reason,
-            });
           }
         };
 
-        // Mark all target nodes as queued.
-        for (const nodeId of sorted) {
-          const node = graph.getNodeAttributes(nodeId) as WorkflowNode;
-          try {
-            const input = resolveInput(graph, nodeId);
-            await this.workflowStore.markNodeQueued({
-              runId,
-              projectId,
-              workflowId,
-              userId,
-              node,
-              input,
-            });
-            await this.publisher.publish(channelId, { event: 'node:queued', nodeId });
-          } catch (err) {
-            failedIds.add(nodeId);
-            terminalIds.add(nodeId);
+        // Mark all target nodes as queued — concurrently. Each call is an
+        // independent mongo write + redis publish; serialising them turned
+        // a 20-node workflow's startup latency into 20× round-trip time.
+        // Failures are collected per-node so subsequent stages still see
+        // the right `failedIds` set.
+        const queueResults = await Promise.all(
+          sorted.map(async (nodeId) => {
+            const node = graph.getNodeAttributes(nodeId) as WorkflowNode;
+            try {
+              const input = resolveInput(graph, nodeId);
+              await this.workflowStore.markNodeQueued({
+                runId,
+                projectId,
+                workflowId,
+                userId,
+                node,
+                input,
+              });
+              await this.publisher.publish(channelId, { event: 'node:queued', nodeId });
+              return { nodeId, ok: true as const };
+            } catch (err) {
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              logger.error({ err, nodeId }, 'node input resolution failed');
+              await this.workflowStore.markNodeFailed({
+                runId,
+                projectId,
+                workflowId,
+                userId,
+                node,
+                input: node.input,
+                error: errorMsg,
+                startedAt: new Date(),
+              });
+              await this.publisher.publish(channelId, {
+                event: 'node:error',
+                nodeId,
+                error: errorMsg,
+              });
+              return { nodeId, ok: false as const };
+            }
+          }),
+        );
+        for (const r of queueResults) {
+          if (!r.ok) {
+            failedIds.add(r.nodeId);
+            terminalIds.add(r.nodeId);
             summary.failed += 1;
-            const errorMsg = err instanceof Error ? err.message : String(err);
-            logger.error({ err, nodeId }, 'node input resolution failed');
-            await this.workflowStore.markNodeFailed({
-              runId,
-              projectId,
-              workflowId,
-              userId,
-              node,
-              input: node.input,
-              error: errorMsg,
-              startedAt: new Date(),
-            });
-            await this.publisher.publish(channelId, {
-              event: 'node:error',
-              nodeId,
-              error: errorMsg,
-            });
           }
         }
 
