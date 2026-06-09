@@ -30,8 +30,10 @@ export function setApiTokenGetter(getter: TokenGetter | null) {
 
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   const request = normalizeRequest(input, init);
-  const token = await tokenGetter?.();
-  if (token) request.headers.set('Authorization', `Bearer ${token}`);
+  if (!request.headers.has('Authorization')) {
+    const token = await readApiToken();
+    if (token) request.headers.set('Authorization', `Bearer ${token}`);
+  }
   request.headers.set('x-lumen-locale', readLocale());
   return fetch(request);
 }
@@ -47,8 +49,9 @@ export function installApiFetchInterceptor() {
 
     const request = normalizeRequest(input, init);
     const method = request.method.toUpperCase();
-    const token = await tokenGetter?.();
-    if (token && !request.headers.has('Authorization')) {
+    const skipToken = request.headers.has('Authorization') || isCanvasUploadRequest(apiUrl, method);
+    const token = skipToken ? null : await readApiToken();
+    if (token) {
       request.headers.set('Authorization', `Bearer ${token}`);
     }
     if (!request.headers.has('x-lumen-locale')) {
@@ -61,7 +64,11 @@ export function installApiFetchInterceptor() {
     }
 
     const response = await nativeFetch(request);
-    if ((response.status === 401 || response.status === 403) && !isPrefetchRequest(request)) {
+    if (
+      (response.status === 401 || response.status === 403) &&
+      !isPrefetchRequest(request) &&
+      !isCanvasUploadRequest(apiUrl, method)
+    ) {
       const redirectUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       window.location.assign(`/sign-in?redirect_url=${encodeURIComponent(redirectUrl)}`);
     }
@@ -74,8 +81,27 @@ export function installApiFetchInterceptor() {
   };
 }
 
+async function readApiToken(timeoutMs = 1500): Promise<string | null> {
+  if (!tokenGetter) return null;
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timeout = setTimeout(() => resolve(null), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([tokenGetter().catch(() => null), timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 function isPrefetchRequest(request: Request) {
   return request.headers.get('x-lumen-prefetch') === '1';
+}
+
+function isCanvasUploadRequest(url: URL, method: string) {
+  return method === 'POST' && url.pathname === '/api/canvas/uploads';
 }
 
 function normalizeRequest(input: RequestInfo | URL, init: RequestInit) {
