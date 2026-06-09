@@ -153,6 +153,11 @@ type CanvasSaveState = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 import type { MaterialAssetKind } from '@/components/canvas/canvas-actions-context';
 type MaterialAssetCategory = 'my_assets' | 'character' | 'scene' | 'item';
 
+type MediaUploadDisplayState = {
+  progress: number | null;
+  uploading: boolean;
+};
+
 type MaterialAssetRecord = {
   id: string;
   category: MaterialAssetCategory;
@@ -3821,6 +3826,10 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const { t } = useI18n();
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [outputUploadState, setOutputUploadState] = useState<MediaUploadDisplayState>({
+    progress: null,
+    uploading: false,
+  });
   const {
     runSingleNode,
     cancelNodes,
@@ -3935,14 +3944,19 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
     async (file: File, kind: MaterialAssetKind, onProgress?: UploadProgressCallback) => {
       const previousValue = data.output ?? null;
       const previewUrl = URL.createObjectURL(file);
+      setOutputUploadState({ progress: 1, uploading: true });
       updateNodeData(id, { output: previewUrl });
       try {
-        const uploadedUrl = await uploadCanvasMedia(file, kind, id, onProgress);
+        const uploadedUrl = await uploadCanvasMedia(file, kind, id, (event) => {
+          setOutputUploadState({ progress: event.percent, uploading: true });
+          onProgress?.(event);
+        });
         updateNodeData(id, { output: uploadedUrl });
       } catch (error) {
         console.error(error);
         updateNodeData(id, { output: previousValue });
       } finally {
+        setOutputUploadState({ progress: null, uploading: false });
         URL.revokeObjectURL(previewUrl);
       }
     },
@@ -4080,6 +4094,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
           kind={outputUploadKind}
           onUpload={handleOutputMediaUpload}
           showLabel
+          showUploadingLabel={false}
           className="-top-4 right-14 z-[90] h-8 w-auto rounded-full bg-white px-3 text-[#111315] shadow-[0_12px_30px_rgba(0,0,0,0.32)] ring-transparent hover:scale-[1.03] hover:bg-white"
         />
       ) : null}
@@ -4115,6 +4130,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
               data={data}
               onChange={(output) => updateNodeData(id, { output: output || null })}
               onMediaUpload={handleOutputMediaUpload}
+              uploadState={outputUploadState}
             />
             {status === 'error' && nodeError ? <NodeErrorOverlay message={nodeError} /> : null}
             {isNodeBusy ? <div className="lumen-node-running-overlay absolute inset-0" /> : null}
@@ -4324,6 +4340,7 @@ function NodeOutputEditor({
   data,
   onChange,
   onMediaUpload,
+  uploadState,
 }: {
   data: LumenNodeData;
   onChange: (output: string) => void;
@@ -4332,6 +4349,7 @@ function NodeOutputEditor({
     kind: MaterialAssetKind,
     onProgress?: UploadProgressCallback,
   ) => Promise<void>;
+  uploadState?: MediaUploadDisplayState;
 }) {
   const { t } = useI18n();
   const output = data.output ?? '';
@@ -4367,7 +4385,12 @@ function NodeOutputEditor({
     }
 
     return (
-      <MediaOutputUpload aspectRatio={previewAspectRatio} kind="image" onUpload={onMediaUpload} />
+      <MediaOutputUpload
+        aspectRatio={previewAspectRatio}
+        kind="image"
+        onUpload={onMediaUpload}
+        uploadState={uploadState}
+      />
     );
   }
 
@@ -4432,6 +4455,7 @@ function NodeOutputEditor({
       aspectRatio={data.kind === 'video' ? previewAspectRatio : undefined}
       kind={data.kind === 'composition' ? 'video' : data.kind}
       onUpload={onMediaUpload}
+      uploadState={uploadState}
     />
   );
 }
@@ -4528,6 +4552,7 @@ function MediaOutputUpload({
   aspectRatio,
   kind,
   onUpload,
+  uploadState,
 }: {
   aspectRatio?: string;
   kind: MaterialAssetKind;
@@ -4536,14 +4561,18 @@ function MediaOutputUpload({
     kind: MaterialAssetKind,
     onProgress?: UploadProgressCallback,
   ) => Promise<void>;
+  uploadState?: MediaUploadDisplayState;
 }) {
   const { t } = useI18n();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const Icon = mediaOutputIcon(kind);
+  const displayedUploading = uploadState?.uploading || uploading;
+  const displayedProgress = uploadState?.uploading ? uploadState.progress : progress;
+  const progressValue = Math.max(1, Math.min(100, displayedProgress ?? 1));
   const uploadingLabel =
-    uploading && progress !== null
-      ? `${t('materials.uploading')} ${progress}%`
+    displayedUploading && displayedProgress !== null
+      ? `${t('materials.uploading')} ${displayedProgress}%`
       : t('materials.uploading');
 
   return (
@@ -4553,15 +4582,23 @@ function MediaOutputUpload({
       }`}
       style={aspectRatio ? { aspectRatio: toCssAspectRatio(aspectRatio) } : undefined}
     >
-      <div className="pointer-events-none flex flex-col items-center justify-center gap-2">
-        {uploading ? (
+      <div className="pointer-events-none flex w-full max-w-[160px] flex-col items-center justify-center gap-2">
+        {displayedUploading ? (
           <IconLoader2 size={26} stroke={1.8} className="animate-spin opacity-70" />
         ) : (
           <Icon size={30} stroke={1.6} className="opacity-70" />
         )}
         <span className="text-[12px] font-bold text-white/38">
-          {uploading ? uploadingLabel : t('canvas.node.output')}
+          {displayedUploading ? uploadingLabel : t('canvas.node.output')}
         </span>
+        {displayedUploading ? (
+          <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.1]">
+            <div
+              className="h-full rounded-full bg-white/70 transition-[width] duration-200"
+              style={{ width: `${progressValue}%` }}
+            />
+          </div>
+        ) : null}
       </div>
       <MediaOutputUploadButton
         kind={kind}
@@ -4605,6 +4642,7 @@ function MediaOutputUploadButton({
   onUploadProgress,
   onUploadingChange,
   showLabel = false,
+  showUploadingLabel = true,
 }: {
   className?: string;
   kind: MaterialAssetKind;
@@ -4616,6 +4654,7 @@ function MediaOutputUploadButton({
   onUploadProgress?: (progress: number | null) => void;
   onUploadingChange?: (uploading: boolean) => void;
   showLabel?: boolean;
+  showUploadingLabel?: boolean;
 }) {
   const { t } = useI18n();
   const [uploading, setUploading] = useState(false);
@@ -4676,7 +4715,7 @@ function MediaOutputUploadButton({
         ) : (
           <IconUpload size={15} stroke={2.2} />
         )}
-        {showLabel ? (
+        {showLabel && (!uploading || showUploadingLabel) ? (
           <span>
             {uploading
               ? progress !== null
