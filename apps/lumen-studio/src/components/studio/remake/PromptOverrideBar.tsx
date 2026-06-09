@@ -51,9 +51,9 @@ export interface PromptOverrideCopy {
 export interface PromptOverrideBarProps {
   /** 当前真实生效 prompt（用于折叠态预览 + Drawer 内"自动版预览"）。 */
   effectivePrompt: string | null;
-  /** 用户在 plan 上已经设置的覆盖。undefined = 未覆盖。 */
+  /** 覆盖值；undefined = 未覆盖。 */
   overrideValue: string | undefined;
-  /** stage running / locked 时禁用编辑。 */
+  /** @deprecated 保留兼容；prompt 任意时刻可编辑，不再因 stage running 禁用。 */
   disabled?: boolean;
   /**
    * 保存。传 null = 用户点了"重置为自动"；传字符串 = 写入覆盖。

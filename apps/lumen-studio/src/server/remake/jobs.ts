@@ -247,7 +247,7 @@ export async function updateSceneParams(input: {
   const tasks = await repository.listTasksByJob(input.jobId);
   const statuses = deriveJobStageStatuses(job, tasks);
 
-  // 编辑 imagePrompt 只需要 storyboard 不在跑且未锁；编辑视频字段时仍要求 video 阶段可访问。
+  // 编辑 imagePrompt 只需要 storyboard 未锁；编辑视频字段时仍要求 video 阶段可访问。
   const touchesVideoOnly =
     input.action !== undefined ||
     input.dialogue !== undefined ||
@@ -255,21 +255,11 @@ export async function updateSceneParams(input: {
     input.videoPrompt !== undefined;
   const touchesImageOnly = input.imagePrompt !== undefined;
 
-  if (touchesVideoOnly) {
-    if (statuses.video === 'locked') {
-      throw new Error('Video stage is locked. Confirm storyboards first.');
-    }
-    if (statuses.video === 'running' || statuses.final === 'running') {
-      throw new Error('Cannot edit scene params while video or final stage is running.');
-    }
+  if (touchesVideoOnly && statuses.video === 'locked') {
+    throw new Error('Video stage is locked. Confirm storyboards first.');
   }
-  if (touchesImageOnly) {
-    if (statuses.storyboard === 'locked') {
-      throw new Error('Storyboard stage is locked. Confirm creator/product lock first.');
-    }
-    if (statuses.storyboard === 'running') {
-      throw new Error('Cannot edit storyboard prompt while storyboard stage is running.');
-    }
+  if (touchesImageOnly && statuses.storyboard === 'locked') {
+    throw new Error('Storyboard stage is locked. Confirm creator/product lock first.');
   }
 
   const sceneExists = job.plan.scenes.some((scene) => scene.index === input.sceneIndex);
@@ -312,22 +302,6 @@ export async function updatePlanPrompts(input: {
   const repository = await getRemakeJobRepository();
   const job = await repository.getJob(input.jobId, input.ownerId);
   if (!job) return null;
-
-  const tasks = await repository.listTasksByJob(input.jobId);
-  const statuses = deriveJobStageStatuses(job, tasks);
-
-  const touchesLock =
-    input.creatorPrompt !== undefined ||
-    input.productPrompt !== undefined ||
-    (input.environmentPrompts?.length ?? 0) > 0;
-  const touchesVideo = input.bgmPrompt !== undefined;
-
-  if (touchesLock && statuses.lock === 'running') {
-    throw new Error('Cannot edit lock prompts while lock stage is running.');
-  }
-  if (touchesVideo && (statuses.video === 'running' || statuses.final === 'running')) {
-    throw new Error('Cannot edit BGM prompt while video or final stage is running.');
-  }
 
   if (input.environmentPrompts?.length) {
     const validIndexes = new Set(job.plan.environments.map((env) => env.index));

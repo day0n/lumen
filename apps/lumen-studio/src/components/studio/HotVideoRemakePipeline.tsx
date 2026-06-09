@@ -692,8 +692,6 @@ function LockStage({
     environmentPrompts?: Array<{ environmentIndex: number; prompt: string | null }>;
   }) => Promise<void>;
 }) {
-  // 只在 stage 正在跑或被锁时禁用 prompt 编辑；上游 (script) 没确认时整个 LockStage 都不会渲染。
-  const promptDisabled = status === 'running' || status === 'locked';
   return (
     <div>
       <StageHeader title={copy.creatorLock} description={copy.creatorLockDesc} status={status} />
@@ -724,7 +722,6 @@ function LockStage({
                 null
               }
               overrideValue={job.plan.creatorPrompt}
-              disabled={promptDisabled}
               onSave={(value) => onUpdatePlanPrompts({ creatorPrompt: value })}
               copy={{
                 ...copy.promptBar,
@@ -752,7 +749,6 @@ function LockStage({
                 null
               }
               overrideValue={job.plan.productPrompt}
-              disabled={promptDisabled}
               onSave={(value) => onUpdatePlanPrompts({ productPrompt: value })}
               copy={{
                 ...copy.promptBar,
@@ -790,7 +786,6 @@ function LockStage({
                     null
                   }
                   overrideValue={environment.prompt}
-                  disabled={promptDisabled}
                   onSave={(value) =>
                     onUpdatePlanPrompts({
                       environmentPrompts: [{ environmentIndex: environment.index, prompt: value }],
@@ -837,7 +832,6 @@ function StoryboardStage({
     videoPrompt?: string | null;
   }) => Promise<void>;
 }) {
-  const promptDisabled = status === 'running' || status === 'locked';
   return (
     <div>
       <StageHeader title={copy.storyboardTitle} description={copy.storyboardDesc} status={status} />
@@ -869,7 +863,6 @@ function StoryboardStage({
                   <PromptOverrideBar
                     effectivePrompt={overrideValue ?? task?.inputPrompt ?? null}
                     overrideValue={overrideValue || undefined}
-                    disabled={promptDisabled}
                     onSave={(value) =>
                       onUpdateScene({ sceneIndex: scene.index, imagePrompt: value })
                     }
@@ -929,7 +922,6 @@ function VideoStage({
     environmentPrompts?: Array<{ environmentIndex: number; prompt: string | null }>;
   }) => Promise<void>;
 }) {
-  const promptDisabled = status === 'running' || status === 'locked';
   return (
     <div>
       <StageHeader title={copy.videoTitle} description={copy.videoDesc} status={status} />
@@ -961,7 +953,6 @@ function VideoStage({
                   <PromptOverrideBar
                     effectivePrompt={overrideValue ?? task?.inputPrompt ?? null}
                     overrideValue={overrideValue || undefined}
-                    disabled={promptDisabled}
                     onSave={(value) =>
                       onUpdateScene({ sceneIndex: scene.index, videoPrompt: value })
                     }
@@ -1002,7 +993,6 @@ function VideoStage({
                 null
               }
               overrideValue={job.plan.bgmPrompt}
-              disabled={promptDisabled}
               onSave={(value) => onUpdatePlanPrompts({ bgmPrompt: value })}
               copy={{
                 ...copy.promptBar,
@@ -1591,7 +1581,7 @@ function getCopy(locale: 'en' | 'zh') {
         label: 'Prompt',
         placeholder:
           '该步骤还没有真实生效的 prompt（任务跑过后会自动同步进来）。你也可以现在就写一段自定义 prompt。',
-        hint: '保存后下次重跑该步骤会使用此 prompt；清空再保存可恢复自动生成。',
+        hint: '保存后下次重跑该步骤会使用此 prompt；清空再保存可恢复自动生成。运行中也可随时修改。',
         save: '保存',
         cancel: '取消',
         reset: '恢复自动',
@@ -1708,7 +1698,7 @@ function getCopy(locale: 'en' | 'zh') {
       label: 'Prompt',
       placeholder:
         'No effective prompt yet — it will sync in once the step runs. You can also write a custom prompt now.',
-      hint: 'Saved prompt will be used the next time this step runs. Clear it to fall back to auto.',
+      hint: 'Saved prompt applies on the next rerun of this step. Clear to reset to auto. Editable anytime, even while running.',
       save: 'Save',
       cancel: 'Cancel',
       reset: 'Reset to auto',
