@@ -8,10 +8,10 @@
  */
 
 import { MobileSheet } from '@/components/mobile';
-import { VoiceInputControl } from '@/components/voice/VoiceInputControl';
 import { LumenMark } from '@/components/ui/LumenMark';
-import { appendSpeechTranscript, useSpeechToText } from '@/hooks/use-speech-to-text';
+import { VoiceInputControl } from '@/components/voice/VoiceInputControl';
 import { useIsMobile } from '@/hooks/use-is-mobile';
+import { appendSpeechTranscript, useSpeechToText } from '@/hooks/use-speech-to-text';
 import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
@@ -1039,6 +1039,7 @@ interface MediaAttachment {
   type: 'image' | 'video' | 'audio';
   url: string;
   label: string;
+  hideLabel?: boolean;
 }
 
 interface InspirationCardItem {
@@ -1175,14 +1176,16 @@ function MediaPreviewList({ media }: { media: MediaAttachment[] }) {
             </div>
           ) : null}
 
-          <a
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            className="block truncate border-t border-white/[0.08] px-3 py-2 text-[14px] font-medium leading-6 text-white/54 transition-colors hover:text-white/82"
-          >
-            {item.label}
-          </a>
+          {!item.hideLabel ? (
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className="block truncate border-t border-white/[0.08] px-3 py-2 text-[14px] font-medium leading-6 text-white/54 transition-colors hover:text-white/82"
+            >
+              {item.label}
+            </a>
+          ) : null}
         </div>
       ))}
     </div>
@@ -1762,7 +1765,13 @@ function Composer({
   const { locale, t } = useI18n();
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  const { listening, supported, error: speechError, toggle, cancel } = useSpeechToText({
+  const {
+    listening,
+    supported,
+    error: speechError,
+    toggle,
+    cancel,
+  } = useSpeechToText({
     language: locale === 'zh' ? 'zh-CN' : 'en-US',
     errors: {
       micPermission: t('home.micPermission'),
@@ -2001,6 +2010,7 @@ function parseRichMessageContent(content: string): {
   media: MediaAttachment[];
 } {
   const media = new Map<string, MediaAttachment>();
+  const visibleContent = stripUploadedImageSection(content, media);
   const blocks: MarkdownBlock[] = [];
   let paragraph: string[] = [];
 
@@ -2012,7 +2022,7 @@ function parseRichMessageContent(content: string): {
     blocks.push({ type: 'paragraph', level: 0, inlines: parseInlineMarkdown(text, media) });
   };
 
-  for (const rawLine of content.split('\n')) {
+  for (const rawLine of visibleContent.split('\n')) {
     const trimmed = rawLine.trim();
     const heading = /^(#{1,6})\s+(.*\S)\s*$/.exec(trimmed);
     if (heading) {
@@ -2033,6 +2043,56 @@ function parseRichMessageContent(content: string): {
   flushParagraph();
 
   return { blocks, media: [...media.values()] };
+}
+
+function stripUploadedImageSection(content: string, media: Map<string, MediaAttachment>): string {
+  const lines = content.split('\n');
+  const kept: string[] = [];
+  let inUploadedImages = false;
+
+  for (const line of lines) {
+    if (isUploadedImagesHeading(line)) {
+      inUploadedImages = true;
+      continue;
+    }
+
+    if (inUploadedImages) {
+      const attachment = parseUploadedImageLine(line);
+      if (attachment) {
+        addMediaAttachment(media, attachment.url, attachment.label, { hideLabel: true });
+        continue;
+      }
+
+      if (line.trim() === '') {
+        continue;
+      }
+
+      inUploadedImages = false;
+    }
+
+    kept.push(line);
+  }
+
+  return kept.join('\n').trim();
+}
+
+function isUploadedImagesHeading(line: string): boolean {
+  const normalized = line
+    .trim()
+    .replace(/[：:]\s*$/, '')
+    .toLowerCase();
+  return normalized === 'uploaded images' || normalized === '上传图片';
+}
+
+function parseUploadedImageLine(line: string): { url: string; label: string } | null {
+  const match = /https?:\/\/[^\s<>"'`()\[\]]+/.exec(line);
+  const url = normalizeMessageUrl(match?.[0] ?? '');
+  if (!url) return null;
+
+  const labelMatch =
+    /^\s*(?:[-*]\s*)?(?:\d+[.)]\s*)?([^:\n]+?)(?:\s*[：:]\s*https?:\/\/|\s*$)/.exec(line);
+  const label = labelMatch?.[1]?.trim() || 'image';
+  return { url, label };
 }
 
 // Inline markdown: image ![alt](url), link [label](url), bold **text**, and bare URLs.
@@ -2103,11 +2163,22 @@ function appendTextWithBareLinks(
   }
 }
 
-function addMediaAttachment(media: Map<string, MediaAttachment>, url: string, label: string) {
-  if (media.has(url)) return;
+function addMediaAttachment(
+  media: Map<string, MediaAttachment>,
+  url: string,
+  label: string,
+  options: { hideLabel?: boolean } = {},
+) {
+  const existing = media.get(url);
+  if (existing) {
+    if (options.hideLabel && !existing.hideLabel) {
+      media.set(url, { ...existing, hideLabel: true });
+    }
+    return;
+  }
   const type = detectMediaType(url);
   if (!type) return;
-  media.set(url, { type, url, label });
+  media.set(url, { type, url, label, hideLabel: options.hideLabel });
 }
 
 function detectMediaType(url: string): MediaAttachment['type'] | null {
