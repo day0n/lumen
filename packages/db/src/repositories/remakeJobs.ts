@@ -156,6 +156,42 @@ export class RemakeJobRepository {
   }
 
   /**
+   * 条件式更新单个 stage 状态，避免并发 task:done 事件互相覆盖。
+   *
+   * 背景：两个 task 几乎同时到 success 时，事件 A、B 各自执行
+   * "listTasks → derive → write"。事件 A 在 B 之前读 listTasks，看到 B=running，
+   * 派生出 stage=running；B 之后读，看到 B=success，派生出 stage=success。
+   * 写入顺序不保证 → 可能出现 B 先写 success，A 后写 running，stage 永久卡 running。
+   *
+   * 修法：如果要写的新状态是非终态（locked/ready/running），加 filter 拒绝覆盖
+   * 已经处于终态（success/error/cancelled）的 stage。终态写入则允许覆盖任何状态
+   * （task 失败后重跑成功的合理路径）。
+   */
+  async patchStageGuarded(
+    jobId: string,
+    ownerId: string,
+    stageName: RemakeStageName,
+    state: RemakeStageState,
+  ): Promise<boolean> {
+    const TERMINAL: RemakeStageState['status'][] = ['success', 'error', 'cancelled'];
+    const writingTerminal = TERMINAL.includes(state.status);
+
+    const filter: Filter<RemakeJobDocument> = { _id: jobId, owner_id: ownerId };
+    if (!writingTerminal) {
+      // 不允许把 stage 从终态拉回非终态。
+      filter[`stages.${stageName}.status`] = { $nin: TERMINAL };
+    }
+
+    const result = await this.jobs().updateOne(filter, {
+      $set: {
+        [`stages.${stageName}`]: state,
+        updated_at: new Date(),
+      },
+    });
+    return result.matchedCount > 0;
+  }
+
+  /**
    * 更新 plan.scenes 里某一场的可编辑字段（口播 / 字幕 / 动作 / 分镜 prompt / 视频 prompt 覆盖）。
    * sceneIndex 为 plan.scenes[].index（从 1 起）。
    */
