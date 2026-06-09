@@ -4,7 +4,7 @@ import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { isLoginRequiredPath } from '@/lib/protected-paths';
-import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
+import { IconArrowUpRight, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { motion } from 'motion/react';
 import { type MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -36,45 +36,47 @@ type HomeFeaturedApiResponse =
       };
     };
 
+// 文案走「任务驱动」：说清用户能用它做成什么，而不是「某功能上线」。
+// href 深链到对应任务的真实入口，点一下就进到能直接干活的地方。
 const FEATURED_POSTERS: Slide[] = [
   {
     id: 'agent-mode-pop',
-    title: 'Agent mode is live',
+    title: 'Describe a product, get a shoppable video',
     href: '/canvas/new?agent=chat',
     coverUrl: '/home-posters/selected/agent-pop.png',
     accent: '#ff4aa2',
   },
   {
     id: 'material-mythic',
-    title: 'Asset library is live',
-    href: '/canvas/new',
+    title: 'Turn library assets into a finished cut',
+    href: '/materials',
     coverUrl: '/home-posters/selected/material-mythic.png',
     accent: '#f1d1a4',
   },
   {
     id: 'hot-remix-collage',
-    title: 'Viral remix is live',
+    title: 'Remix a viral video in one click',
     href: '/hot-videos',
     coverUrl: '/home-posters/selected/hot-remix-collage.png',
     accent: '#f36b5f',
   },
   {
     id: 'agent-chat-minimal',
-    title: 'Agent Chat is live',
+    title: 'Paste a link, let the agent build the cut',
     href: '/canvas/new?agent=chat',
     coverUrl: '/home-posters/selected/agent-chat-minimal.png',
     accent: '#c7e8ff',
   },
   {
     id: 'material-archive',
-    title: 'Asset library is live',
-    href: '/canvas/new',
+    title: 'Tons of assets, instant shoppable cuts',
+    href: '/materials',
     coverUrl: '/home-posters/selected/material-archive.png',
     accent: '#63e5cb',
   },
   {
     id: 'agent-glass',
-    title: 'Agent mode is live',
+    title: 'Describe once, generate the whole video',
     href: '/canvas/new?agent=chat',
     coverUrl: '/home-posters/selected/agent-glass.png',
     accent: '#a5f6ff',
@@ -82,12 +84,12 @@ const FEATURED_POSTERS: Slide[] = [
 ];
 
 const ZH_FALLBACK_TITLES: Record<string, string> = {
-  'agent-mode-pop': 'Agent 模式上线',
-  'material-mythic': '素材库上线',
-  'hot-remix-collage': '爆款复刻上线',
-  'agent-chat-minimal': 'Agent Chat 上线',
-  'material-archive': '素材库上线',
-  'agent-glass': 'Agent 模式上线',
+  'agent-mode-pop': '描述一个商品，生成带货视频',
+  'material-mythic': '把素材库的图做成成片',
+  'hot-remix-collage': '一键复刻这条爆款',
+  'agent-chat-minimal': '贴个链接，Agent 帮你出片',
+  'material-archive': '海量素材，随手成片',
+  'agent-glass': '描述一次，生成整条视频',
 };
 
 function localizeFallbackSlides(locale: 'en' | 'zh'): Slide[] {
@@ -311,7 +313,17 @@ function PosterSlide({
       />
       <span className="pointer-events-none absolute inset-0 rounded-[22px] ring-1 ring-inset ring-white/[0.08]" />
       <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05)_0%,transparent_28%,rgba(0,0,0,0.1)_100%)] opacity-70" />
-      <span className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-[linear-gradient(180deg,transparent_0%,rgba(9,10,11,0.42)_72%,rgba(9,10,11,0.82)_100%)]" />
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-[linear-gradient(180deg,transparent_0%,rgba(9,10,11,0.58)_64%,rgba(9,10,11,0.92)_100%)]" />
+      {isCenter ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] flex items-end justify-between gap-3 p-4 md:p-5">
+          <span className="min-w-0 flex-1 text-[15px] font-black leading-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.6)] md:text-[19px]">
+            {slide.title}
+          </span>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_8px_22px_-10px_rgba(0,0,0,0.7)]">
+            <IconArrowUpRight size={18} stroke={2.6} />
+          </span>
+        </div>
+      ) : null}
     </motion.a>
   );
 }

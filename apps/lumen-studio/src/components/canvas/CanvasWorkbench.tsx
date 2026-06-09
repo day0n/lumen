@@ -65,6 +65,7 @@ import {
   useNodesState,
   useOnViewportChange,
   useReactFlow,
+  useStore,
   useStoreApi,
 } from '@xyflow/react';
 import type {
@@ -95,7 +96,12 @@ import { createPortal } from 'react-dom';
 
 import { CanvasHydrationOverlay } from '@/components/canvas/CanvasHydrationOverlay';
 import { CompositionFlowNode } from '@/components/canvas/CompositionFlowNode';
+import { NodeLodOverlay } from '@/components/canvas/NodeLodOverlay';
 import { CanvasActionsContext } from '@/components/canvas/canvas-actions-context';
+import {
+  CANVAS_LOD_ZOOM_THRESHOLD,
+  CanvasLodContext,
+} from '@/components/canvas/canvas-lod-context';
 import { ChatPanel } from '@/features/agent-chat/ChatPanel';
 import { VideoCompositionModal } from '@/features/video-composition/VideoCompositionModal';
 import { useWorkflowReconcile } from '@/features/workflow/use-workflow-reconcile';
@@ -1624,11 +1630,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         output: readEventString(data.output),
         error: readEventString(data.error),
         activeRunId:
-          status === 'queued' || status === 'running'
-            ? runId === null
-              ? undefined
-              : runId
-            : null,
+          status === 'queued' || status === 'running' ? (runId === null ? undefined : runId) : null,
         errorCode: readEventNumber(data.error_code) ?? undefined,
         errorName: readPublicErrorName(data.error_name),
         errorI18nKey: readEventString(data.error_i18n_key) ?? undefined,
@@ -2246,89 +2248,91 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       <CanvasActionsContext.Provider value={canvasActions}>
         <div className="absolute inset-0 z-10">
           {isMobileCanvas ? <MobileCanvasFitView enabled /> : null}
-          <ReactFlow
-            className="lumen-flow"
-            nodes={displayNodes}
-            edges={displayEdges}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onConnectStart={onConnectStart}
-            onConnectEnd={onConnectEnd}
-            onReconnect={onReconnect}
-            onDragOver={handleFlowDragOver}
-            onDrop={handleFlowDrop}
-            onSelectionEnd={collapseSingleNodeSelectionFrame}
-            isValidConnection={isValidConnection}
-            edgesFocusable
-            edgesReconnectable
-            reconnectRadius={14}
-            onPaneClick={onPaneClick}
-            connectionLineComponent={LumenConnectionLine}
-            connectionRadius={isMobileCanvas ? 58 : 42}
-            deleteKeyCode={['Backspace', 'Delete']}
-            disableKeyboardA11y={false}
-            elementsSelectable
-            elevateEdgesOnSelect={false}
-            elevateNodesOnSelect
-            multiSelectionKeyCode={['Meta', 'Control']}
-            panActivationKeyCode="Space"
-            panOnDrag={[1, 2]}
-            selectionKeyCode="Shift"
-            selectionMode={SelectionMode.Partial}
-            selectionOnDrag
-            selectNodesOnDrag
-            zoomActivationKeyCode={['Meta', 'Control']}
-            defaultEdgeOptions={{
-              type: 'lumenSmooth',
-              reconnectable: true,
-              zIndex: 0,
-              data: {},
-            }}
-            fitView
-            fitViewOptions={{ padding: 0.36, maxZoom: 1 }}
-            minZoom={0.35}
-            maxZoom={1.75}
-            nodeOrigin={[0, 0]}
-            onlyRenderVisibleElements
-            panOnScroll={!isMobileCanvas}
-            snapToGrid
-            snapGrid={[24, 24]}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background
-              color="rgba(255,255,255,0.14)"
-              gap={24}
-              size={1}
-              variant={BackgroundVariant.Dots}
-            />
-            <ViewportPortal>
-              {nodeGroups.map((group) =>
-                group.bounds ? (
-                  <GroupFrame
-                    key={group.id}
-                    bounds={group.bounds}
-                    canRun={group.canRun}
-                    name={group.name}
-                    onStop={() => cancelGroup(group.id)}
-                    onRun={() => runGroup(group.id)}
-                    onUngroup={() => ungroupNodes(group.id)}
-                    running={group.running}
-                    selected={group.selected}
+          <CanvasLodProvider>
+            <ReactFlow
+              className="lumen-flow"
+              nodes={displayNodes}
+              edges={displayEdges}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onConnectStart={onConnectStart}
+              onConnectEnd={onConnectEnd}
+              onReconnect={onReconnect}
+              onDragOver={handleFlowDragOver}
+              onDrop={handleFlowDrop}
+              onSelectionEnd={collapseSingleNodeSelectionFrame}
+              isValidConnection={isValidConnection}
+              edgesFocusable
+              edgesReconnectable
+              reconnectRadius={14}
+              onPaneClick={onPaneClick}
+              connectionLineComponent={LumenConnectionLine}
+              connectionRadius={isMobileCanvas ? 58 : 42}
+              deleteKeyCode={['Backspace', 'Delete']}
+              disableKeyboardA11y={false}
+              elementsSelectable
+              elevateEdgesOnSelect={false}
+              elevateNodesOnSelect
+              multiSelectionKeyCode={['Meta', 'Control']}
+              panActivationKeyCode="Space"
+              panOnDrag={[1, 2]}
+              selectionKeyCode="Shift"
+              selectionMode={SelectionMode.Partial}
+              selectionOnDrag
+              selectNodesOnDrag
+              zoomActivationKeyCode={['Meta', 'Control']}
+              defaultEdgeOptions={{
+                type: 'lumenSmooth',
+                reconnectable: true,
+                zIndex: 0,
+                data: {},
+              }}
+              fitView
+              fitViewOptions={{ padding: 0.22, maxZoom: 1 }}
+              minZoom={0.35}
+              maxZoom={1.75}
+              nodeOrigin={[0, 0]}
+              onlyRenderVisibleElements
+              panOnScroll={!isMobileCanvas}
+              snapToGrid
+              snapGrid={[24, 24]}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background
+                color="rgba(255,255,255,0.14)"
+                gap={24}
+                size={1}
+                variant={BackgroundVariant.Dots}
+              />
+              <ViewportPortal>
+                {nodeGroups.map((group) =>
+                  group.bounds ? (
+                    <GroupFrame
+                      key={group.id}
+                      bounds={group.bounds}
+                      canRun={group.canRun}
+                      name={group.name}
+                      onStop={() => cancelGroup(group.id)}
+                      onRun={() => runGroup(group.id)}
+                      onUngroup={() => ungroupNodes(group.id)}
+                      running={group.running}
+                      selected={group.selected}
+                    />
+                  ) : null,
+                )}
+                {ungroupedSelectionBounds ? (
+                  <SelectionGroupToolbar
+                    bounds={ungroupedSelectionBounds}
+                    onGroup={groupSelectedNodes}
+                    selectedCount={selectedNodes.length}
                   />
-                ) : null,
-              )}
-              {ungroupedSelectionBounds ? (
-                <SelectionGroupToolbar
-                  bounds={ungroupedSelectionBounds}
-                  onGroup={groupSelectedNodes}
-                  selectedCount={selectedNodes.length}
-                />
-              ) : null}
-            </ViewportPortal>
-          </ReactFlow>
+                ) : null}
+              </ViewportPortal>
+            </ReactFlow>
+          </CanvasLodProvider>
         </div>
 
         <CanvasTopbar
@@ -3576,6 +3580,14 @@ function QuickNodeMenu({
   );
 }
 
+// 概览态（低缩放）下，节点改渲一个只含类型色点 + 大号标题的简化视图。
+// useStore 的 selector 直接返回布尔，React Flow 只在布尔翻转时重渲本组件，
+// 而 <ReactFlow> 作为稳定 children 不会因缩放重渲；节点也只在跨阈值时切换一次。
+function CanvasLodProvider({ children }: { children: ReactNode }) {
+  const lowDetail = useStore((state) => state.transform[2] < CANVAS_LOD_ZOOM_THRESHOLD);
+  return <CanvasLodContext.Provider value={lowDetail}>{children}</CanvasLodContext.Provider>;
+}
+
 const nodeKindStyles: Record<
   NodeKind,
   {
@@ -3881,6 +3893,7 @@ function LumenFlowNodeImpl({ data, id, selected }: NodeProps<LumenNode>) {
   }
 
   const { t } = useI18n();
+  const lowDetail = useContext(CanvasLodContext);
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const wasNodeBusyRef = useRef(false);
@@ -4260,6 +4273,7 @@ function LumenFlowNodeImpl({ data, id, selected }: NodeProps<LumenNode>) {
         }`}
         data-run-state={isNodeVisuallyBusy ? status : undefined}
       >
+        {lowDetail ? <NodeLodOverlay kind={data.kind} title={nodeTitle} /> : null}
         <div className="border-b border-white/[0.06] p-2.5">
           <input
             aria-label={t('canvas.node.title')}

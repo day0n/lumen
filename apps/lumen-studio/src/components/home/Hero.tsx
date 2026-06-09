@@ -2,8 +2,8 @@
 
 import { VoiceInputControl } from '@/components/voice/VoiceInputControl';
 import { appendSpeechTranscript, useSpeechToText } from '@/hooks/use-speech-to-text';
-import { useI18n } from '@/i18n/provider';
 import { readMessageObjectArray } from '@/i18n/messages';
+import { useI18n } from '@/i18n/provider';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import {
   IconArrowUp,
@@ -63,6 +63,7 @@ export function Hero() {
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState('');
   const [recents, setRecents] = useState<RecentProject[]>([]);
+  const [recentsLoaded, setRecentsLoaded] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const {
@@ -105,6 +106,8 @@ export function Hero() {
         setRecents(payload.data.projects.slice(0, 3));
       } catch {
         if (!controller.signal.aborted) setRecents([]);
+      } finally {
+        if (!controller.signal.aborted) setRecentsLoaded(true);
       }
     }
 
@@ -170,8 +173,8 @@ export function Hero() {
     setAttachError(null);
   };
 
-  const goCreate = async () => {
-    const prompt = value.trim();
+  const goCreate = async (promptOverride?: string) => {
+    const prompt = (promptOverride ?? value).trim();
     const params = new URLSearchParams({ agent: 'chat' });
     if (prompt) params.set('prompt', prompt);
     const target = `/canvas/new?${params.toString()}`;
@@ -379,48 +382,79 @@ export function Hero() {
           ))}
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-4">
-          <button
-            type="button"
-            onClick={() => {
-              void goCreate();
-            }}
-            className="group flex h-[116px] flex-col items-center justify-center gap-2 rounded-xl bg-[#222426] text-white/68 ring-1 ring-white/[0.08] transition-colors hover:bg-[#282b2e] hover:text-white"
-          >
-            <IconPlus size={20} stroke={2.4} />
-            <span className="text-[12px] font-semibold">{t('home.newProject')}</span>
-          </button>
-
-          {recents.map((project, index) => (
-            <Link
-              key={project.id}
-              href={localePath(`/canvas/${project.id}`)}
-              className="group overflow-hidden rounded-xl bg-[#202121] text-left ring-1 ring-white/[0.08] transition-colors hover:bg-[#262829]"
-            >
-              <div
-                className="h-[68px]"
-                style={{ background: COVER_GRADIENTS[index % COVER_GRADIENTS.length] }}
-              />
-              <div className="flex items-start gap-2 px-2.5 py-2">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[11.5px] font-bold text-white/76">
-                    {project.title}
-                  </div>
-                  <div className="mt-1 truncate text-[10.5px] text-white/35">
-                    {t('home.edited', {
-                      time: formatRelativeTime(project.updatedAt, locale, t),
-                    })}
-                  </div>
+        {recentsLoaded && recents.length === 0 ? (
+          <div className="mt-5 overflow-hidden rounded-2xl bg-[linear-gradient(135deg,rgba(192,132,252,0.14),rgba(56,189,248,0.1)_58%,rgba(29,31,33,0.92))] p-5 ring-1 ring-white/[0.1]">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.1] text-white ring-1 ring-white/[0.12]">
+                <IconSparkles size={20} stroke={2.2} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[15px] font-bold text-white">{t('home.firstTaskTitle')}</div>
+                <div className="mt-1 text-[12.5px] leading-5 text-white/55">
+                  {t('home.firstTaskSubtitle')}
                 </div>
-                <IconArrowUpRight
-                  size={13}
-                  className="mt-0.5 text-white/35 transition-colors group-hover:text-white/75"
-                  stroke={2.1}
-                />
               </div>
-            </Link>
-          ))}
-        </div>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  void goCreate(quickActions[0]?.prompt);
+                }}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white px-4 text-[13px] font-bold text-[#111315] transition-transform active:scale-[0.97]"
+              >
+                {t('home.firstTaskCta')}
+                <IconArrowUpRight size={15} stroke={2.6} />
+              </button>
+              {quickActions[0] ? (
+                <span className="text-[12px] text-white/42">{quickActions[0].label}</span>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => {
+                void goCreate();
+              }}
+              className="group flex h-[116px] flex-col items-center justify-center gap-2 rounded-xl bg-[#222426] text-white/68 ring-1 ring-white/[0.08] transition-colors hover:bg-[#282b2e] hover:text-white"
+            >
+              <IconPlus size={20} stroke={2.4} />
+              <span className="text-[12px] font-semibold">{t('home.newProject')}</span>
+            </button>
+
+            {recents.map((project, index) => (
+              <Link
+                key={project.id}
+                href={localePath(`/canvas/${project.id}`)}
+                className="group overflow-hidden rounded-xl bg-[#202121] text-left ring-1 ring-white/[0.08] transition-colors hover:bg-[#262829]"
+              >
+                <div
+                  className="h-[68px]"
+                  style={{ background: COVER_GRADIENTS[index % COVER_GRADIENTS.length] }}
+                />
+                <div className="flex items-start gap-2 px-2.5 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[11.5px] font-bold text-white/76">
+                      {project.title}
+                    </div>
+                    <div className="mt-1 truncate text-[10.5px] text-white/35">
+                      {t('home.edited', {
+                        time: formatRelativeTime(project.updatedAt, locale, t),
+                      })}
+                    </div>
+                  </div>
+                  <IconArrowUpRight
+                    size={13}
+                    className="mt-0.5 text-white/35 transition-colors group-hover:text-white/75"
+                    stroke={2.1}
+                  />
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </motion.div>
     </section>
   );

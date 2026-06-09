@@ -21,6 +21,8 @@ import {
   useState,
 } from 'react';
 
+import { NodeLodOverlay } from '@/components/canvas/NodeLodOverlay';
+import { CanvasLodContext } from '@/components/canvas/canvas-lod-context';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { getTimelineDuration } from '@/features/video-composition/resolvePlayheadClip';
 import { useI18n } from '@/i18n/provider';
@@ -71,6 +73,7 @@ function CompositionFlowNodeImpl({
   selected?: boolean;
 }) {
   const { t } = useI18n();
+  const lowDetail = useContext(CanvasLodContext);
   const { setNodes: setFlowNodes } = useReactFlow();
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const {
@@ -218,6 +221,7 @@ function CompositionFlowNodeImpl({
               : 'ring-white/[0.1] hover:ring-white/[0.16]'
         }`}
       >
+        {lowDetail ? <NodeLodOverlay kind="composition" title={nodeTitle} /> : null}
         <div className="border-b border-white/[0.06] p-2.5">
           <input
             aria-label={t('canvas.node.title')}
