@@ -1,7 +1,7 @@
 import { useLocation } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { warmAppRouteResources } from '../lib/app-warmup';
-import { getLocaleFromPathname, toAppPath, toRouterPath } from '../lib/path-map';
+import { toAppPath, toRouterPath } from '../lib/path-map';
 import { router } from '../router';
 
 type NavigateOptions = {
@@ -31,10 +31,9 @@ export function useRouter() {
 
 export function usePathname() {
   const location = useLocation();
-  return useMemo(() => {
-    if (typeof window !== 'undefined') return window.location.pathname;
-    return `/app${location.pathname}`;
-  }, [location.pathname, location.searchStr, location.hash]);
+  // SPA URL 始终是 /app/... 形态（没有 /zh 前缀）。这里把 tanstack
+  // 的内部相对路径还原回 /app/... 让上层组件按完整 pathname 判断。
+  return useMemo(() => `/app${location.pathname}`, [location.pathname]);
 }
 
 export function useSearchParams() {
@@ -63,14 +62,6 @@ export function notFound(): never {
 
 function navigateTo(href: string, replace: boolean) {
   const normalizedHref = toAppPath(href);
-  const currentLocale = getLocaleFromPathname(window.location.pathname);
-  const targetLocale = getLocaleFromPathname(normalizedHref);
-  if (currentLocale !== targetLocale) {
-    if (replace) window.location.replace(normalizedHref);
-    else window.location.assign(normalizedHref);
-    return;
-  }
-
   const target = toRouterPath(normalizedHref);
   if (!target) {
     if (replace) window.location.replace(normalizedHref);

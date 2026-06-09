@@ -340,6 +340,7 @@ function PipelineView({
                     setStageBusy(null);
                   }
                 }}
+                onNext={() => setActiveStep(2)}
                 busy={stageBusy === 'script'}
               />
             )}
@@ -558,6 +559,7 @@ function ScriptStage({
   gateStatus,
   busy,
   onConfirm,
+  onNext,
 }: {
   copy: ReturnType<typeof getCopy>;
   job: RemakeJobRecord;
@@ -569,6 +571,7 @@ function ScriptStage({
     audienceTags: string[];
     voiceLanguage?: 'zh' | 'en';
   }) => Promise<void>;
+  onNext: () => void;
 }) {
   const [scriptText, setScriptText] = useState(job.plan.scriptText);
   const [sellingPointsText, setSellingPointsText] = useState(job.plan.sellingPoints.join('\n'));
@@ -627,32 +630,39 @@ function ScriptStage({
       </div>
       <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
         {isDone ? (
-          <span className="rounded-full bg-[#3ae08a]/12 px-3 py-1.5 text-[12px] font-bold text-[#3ae08a] ring-1 ring-[#3ae08a]/22">
-            {copy.gate1Confirmed}
-          </span>
-        ) : null}
-        <PrimaryButton
-          disabled={busy}
-          onClick={() => {
-            const points = sellingPointsText
-              .split('\n')
-              .map((item) => item.trim())
-              .filter(Boolean);
-            const audiences = audienceTagsText
-              .split('\n')
-              .map((item) => item.trim())
-              .filter(Boolean);
-            void onConfirm({
-              scriptText,
-              sellingPoints: points,
-              audienceTags: audiences,
-              voiceLanguage,
-            });
-          }}
-        >
-          {busy ? <IconLoader2 size={15} className="animate-spin" /> : <IconCheck size={15} />}
-          {busy ? copy.gate1Loading : copy.confirmGate1}
-        </PrimaryButton>
+          <>
+            <span className="rounded-full bg-[#3ae08a]/12 px-3 py-1.5 text-[12px] font-bold text-[#3ae08a] ring-1 ring-[#3ae08a]/22">
+              {copy.gate1Confirmed}
+            </span>
+            <PrimaryButton onClick={onNext}>
+              <IconCheck size={15} />
+              {copy.nextLock}
+            </PrimaryButton>
+          </>
+        ) : (
+          <PrimaryButton
+            disabled={busy}
+            onClick={() => {
+              const points = sellingPointsText
+                .split('\n')
+                .map((item) => item.trim())
+                .filter(Boolean);
+              const audiences = audienceTagsText
+                .split('\n')
+                .map((item) => item.trim())
+                .filter(Boolean);
+              void onConfirm({
+                scriptText,
+                sellingPoints: points,
+                audienceTags: audiences,
+                voiceLanguage,
+              });
+            }}
+          >
+            {busy ? <IconLoader2 size={15} className="animate-spin" /> : <IconCheck size={15} />}
+            {busy ? copy.gate1Loading : copy.confirmGate1}
+          </PrimaryButton>
+        )}
       </div>
     </div>
   );
@@ -797,12 +807,7 @@ function LockStage({
           ))}
         </div>
       ) : null}
-      <StageActions
-        status={status}
-        nextLabel={copy.nextStoryboard}
-        pendingLabel={copy.autoRunning}
-        onNext={onNext}
-      />
+      <StageActions status={status} nextLabel={copy.nextStoryboard} onNext={onNext} />
     </div>
   );
 }
@@ -887,12 +892,7 @@ function StoryboardStage({
           );
         })}
       </div>
-      <StageActions
-        status={status}
-        nextLabel={copy.confirmGate2}
-        pendingLabel={copy.autoRunning}
-        onNext={onNext}
-      />
+      <StageActions status={status} nextLabel={copy.confirmGate2} onNext={onNext} />
     </div>
   );
 }
@@ -1014,12 +1014,7 @@ function VideoStage({
         />
       </Section>
 
-      <StageActions
-        status={status}
-        nextLabel={copy.nextFinal}
-        pendingLabel={copy.autoRunning}
-        onNext={onNext}
-      />
+      <StageActions status={status} nextLabel={copy.nextFinal} onNext={onNext} />
     </div>
   );
 }
@@ -1114,34 +1109,24 @@ function StageHeader({
 }
 
 /**
- * 右下"进入下一步"按钮（单按钮版本）。
- *
- * 设计选择：
- * - 不再带「生成 XXX」按钮 —— 用户进入 stage 就自动开跑，不要手动点。
- * - 按钮可点条件：status === 'success'。其它状态都禁用并显示对应状态文案：
- *     running → 「生成中… 进入下一步」
- *     ready   → 「生成中… 进入下一步」（自动跑触发的瞬间状态）
- *     error   → 仍禁用，由 StageErrorBanner 提供重试入口
- *     locked  → 不该走到这（上游门控会阻挡渲染）
- *   失败重试 / 单张重跑入口分别在 StageErrorBanner / SlicePreview 旁边的按钮里。
+ * 右下「进入下一步」——仅在当前步骤已成功时出现。
+ * 生成中的反馈放在各 SlicePreview 预览区，不在按钮上重复展示。
  */
 function StageActions({
   status,
   nextLabel,
-  pendingLabel,
   onNext,
 }: {
   status: RemakeStageStatus;
   nextLabel: string;
-  pendingLabel: string;
   onNext: () => void;
 }) {
-  const isSuccess = status === 'success';
+  if (status !== 'success') return null;
   return (
     <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
-      <PrimaryButton onClick={onNext} disabled={!isSuccess}>
-        {isSuccess ? <IconCheck size={15} /> : <IconLoader2 size={15} className="animate-spin" />}
-        {isSuccess ? nextLabel : pendingLabel}
+      <PrimaryButton onClick={onNext}>
+        <IconCheck size={15} />
+        {nextLabel}
       </PrimaryButton>
     </div>
   );
@@ -1306,14 +1291,20 @@ function SlicePreview({
             </div>
           )
         ) : isBusy ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-5 text-center text-[12px] text-white/52">
-            <IconLoader2 size={22} className="animate-spin" />
-            <div className="text-white/72">
-              {copy.generating}
+          <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(121,228,255,0.14),transparent_58%),linear-gradient(145deg,#14181d,#090b0d)]" />
+            <div className="absolute inset-0 bg-[#050608]/55 backdrop-blur-[10px]" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-5 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#79e4ff]/14 ring-1 ring-[#79e4ff]/35 shadow-[0_0_28px_rgba(121,228,255,0.22)]">
+                <IconLoader2 size={26} stroke={2.2} className="animate-spin text-[#79e4ff]" />
+              </div>
+              <div className="text-[15px] font-extrabold tracking-wide text-white drop-shadow-[0_1px_10px_rgba(0,0,0,0.55)]">
+                {copy.generating}...
+              </div>
               {rawProgress > 0 ? (
-                <span className="ml-1 font-bold text-white/88">
+                <div className="text-[12px] font-bold text-white/78">
                   {Math.min(99, Math.round(rawProgress * 100))}%
-                </span>
+                </div>
               ) : null}
             </div>
           </div>
@@ -1565,6 +1556,7 @@ function getCopy(locale: 'en' | 'zh') {
       gate1Loading: '重写下游中...',
       gate1Confirmed: '脚本已确认',
       confirmGate1: '确认脚本，重算下游',
+      nextLock: '进入形象锁定',
       creatorLock: '形象锁定',
       creatorLockDesc: '锁定同一个创作者、产品和场景环境，后续每一帧都引用这些锁定图。',
       creatorLockTitle: '创作者定妆照',
@@ -1590,6 +1582,7 @@ function getCopy(locale: 'en' | 'zh') {
       runFinal: '生成成片',
       download: '下载',
       generating: '生成中',
+      stageRunningHint: '正在生成，预览区会显示进度',
       failed: '生成失败',
       waiting: '等待生成',
       loadingJob: '加载复刻任务中...',
@@ -1677,6 +1670,7 @@ function getCopy(locale: 'en' | 'zh') {
     gate1Loading: 'Rewriting downstream...',
     gate1Confirmed: 'Script confirmed',
     confirmGate1: 'Confirm script, replan downstream',
+    nextLock: 'Go to identity lock',
     creatorLock: 'Identity lock',
     creatorLockDesc:
       'Lock one creator, one product, and reusable scene environments so every later frame references the same identities.',

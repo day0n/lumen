@@ -32,12 +32,46 @@ export default clerkMiddleware(
 
     const locale = resolveMiddlewareLocale(request);
     const normalizedPath = stripLocalePrefix(pathname);
-    const localizedPathname = localePath(pathname, locale);
+
+    // 1) 历史脏 URL 清理：/app/zh/app/...、/app/en/app/... 这类递归前缀
+    //    把它一次性压平回干净的 /app/...，避免用户卡在坏地址。
+    const collapsedAppPath = collapseStudioAppPath(pathname);
+    if (collapsedAppPath !== pathname) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = collapsedAppPath;
+      const redirectResponse = NextResponse.redirect(redirectUrl);
+      redirectResponse.cookies.set(LUMEN_LOCALE_COOKIE, locale, {
+        path: '/',
+        maxAge: 60 * 60 * 24 * 365,
+        sameSite: 'lax',
+      });
+      return redirectResponse;
+    }
+
+    // 2) SPA (/app/*) 路径不带 /zh 前缀。如果有人访问 /zh/app/* 或 /en/app/*，
+    //    立刻 strip 掉前缀重定向到 /app/*，并用 cookie 记住语言。
     if (
-      !pathname.startsWith('/api') &&
-      !pathname.startsWith('/trpc') &&
-      localizedPathname !== pathname
+      pathname.startsWith('/zh/app/') ||
+      pathname === '/zh/app' ||
+      pathname.startsWith('/en/app/') ||
+      pathname === '/en/app'
     ) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = pathname.slice(3) || '/app';
+      const redirectResponse = NextResponse.redirect(redirectUrl);
+      redirectResponse.cookies.set(LUMEN_LOCALE_COOKIE, locale, {
+        path: '/',
+        maxAge: 60 * 60 * 24 * 365,
+        sameSite: 'lax',
+      });
+      return redirectResponse;
+    }
+
+    // 3) 非 SPA 的 Next.js 页面（/home、/canvas/* 等）按 cookie 把语言体现在 URL 里。
+    const isStudioAppPath = pathname === '/app' || pathname.startsWith('/app/');
+    const isApiPath = pathname.startsWith('/api') || pathname.startsWith('/trpc');
+    const localizedPathname = localePath(pathname, locale);
+    if (!isStudioAppPath && !isApiPath && localizedPathname !== pathname) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = localizedPathname;
       const redirectResponse = NextResponse.redirect(redirectUrl);
@@ -52,7 +86,8 @@ export default clerkMiddleware(
     const appRedirectPath = getLegacyAppRedirectPath(normalizedPath);
     if (appRedirectPath) {
       const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = localePath(appRedirectPath, locale);
+      // 历史 /dashboard 等路径只指向 SPA（/app/*），不再带 locale 前缀。
+      redirectUrl.pathname = appRedirectPath;
       if (normalizedPath === '/agent-chat') {
         redirectUrl.searchParams.set('agent', 'chat');
       }
@@ -152,4 +187,18 @@ function readCookieLocale(request: Request): string | null {
     .find((part) => part.startsWith(`${LUMEN_LOCALE_COOKIE}=`))
     ?.split('=')[1];
   return raw ?? null;
+}
+
+/**
+ * 把 /app/zh/app/...、/app/en/app/... 这种递归脏前缀压平回 /app/...
+ * 该函数与 lumen-app/src/lib/path-map.ts 内的同名函数语义一致，
+ * 只用于服务端兜底重定向。
+ */
+function collapseStudioAppPath(pathname: string): string {
+  let next = pathname;
+  while (true) {
+    const cleaned = next.replace(/^\/app\/(?:zh|en)\/app\//, '/app/');
+    if (cleaned === next) return cleaned;
+    next = cleaned;
+  }
 }

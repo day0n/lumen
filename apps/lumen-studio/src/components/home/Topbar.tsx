@@ -64,7 +64,8 @@ export function Topbar() {
   const authRedirect = encodeURIComponent(pathname || '/');
   const inAppShell = normalizedPath === '/app' || normalizedPath.startsWith('/app/');
   const activePath = pendingPath ?? normalizedPath;
-  const homeHref = localePath(inAppShell ? '/app/home' : '/home');
+  // SPA (/app/*) 路径不带 locale 前缀，语言靠 cookie；Next.js 页面才走 localePath。
+  const homeHref = inAppShell ? '/app/home' : localePath('/home');
 
   useEffect(() => {
     if (!pendingPath) return;
@@ -112,7 +113,7 @@ export function Topbar() {
           <nav className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-white/[0.035] p-1 ring-1 ring-white/[0.06] lg:flex">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const href = localePath(inAppShell ? item.appHref : item.href);
+              const href = inAppShell ? item.appHref : localePath(item.href);
               const active = isNavItemActive(activePath, item.activePaths);
               const label = t(item.labelKey);
 
@@ -184,7 +185,7 @@ export function Topbar() {
       <nav className="fixed inset-x-4 bottom-4 z-50 grid grid-cols-5 gap-1 rounded-2xl bg-[#111315]/92 p-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] ring-1 ring-white/[0.08] backdrop-blur-xl lg:hidden">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const href = localePath(inAppShell ? item.appHref : item.href);
+          const href = inAppShell ? item.appHref : localePath(item.href);
           const active = isNavItemActive(activePath, item.activePaths);
           const label = t(item.labelKey);
 

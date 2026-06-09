@@ -39,13 +39,18 @@ export function I18nProvider({
 }) {
   const pathname = usePathname();
   const [locale, setLocaleState] = useState<Locale>(() => resolveClientLocale(initialLocale, pathname));
-  const routeLocale = useMemo(() => getLocaleFromPathname(pathname || '/'), [pathname]);
+  // SPA (/app/*) 路径不带 locale 前缀，语言只由 cookie / 客户端 state 决定。
+  // 只有非 /app 的 Next.js 页面，URL 才是 locale 的权威来源。
+  const isStudioAppRoute = (pathname || '/').startsWith('/app');
+  const routeLocale = useMemo(
+    () => (isStudioAppRoute ? null : getLocaleFromPathname(pathname || '/')),
+    [pathname, isStudioAppRoute],
+  );
 
   useEffect(() => {
-    if (routeLocale !== locale) {
+    if (routeLocale && routeLocale !== locale) {
       setLocaleState(routeLocale);
     }
-    // The route is canonical: unprefixed paths are English and /zh paths are Chinese.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeLocale]);
 
@@ -83,17 +88,45 @@ export function useI18n(): I18nContextValue {
 }
 
 function resolveClientLocale(initialLocale: Locale | undefined, pathname: string): Locale {
+  const path = pathname || '';
+  const isStudioAppRoute = path.startsWith('/app');
+
+  if (typeof window !== 'undefined') {
+    // 浏览器内：优先 cookie/localStorage（用户上次手动选过的语言）。
+    const stored = readClientStoredLocale();
+    if (stored) return stored;
+  }
+
   if (initialLocale) return initialLocale;
-  if (pathname) {
-    const routeLocale = getLocaleFromPathname(pathname);
+
+  if (!isStudioAppRoute && path) {
+    const routeLocale = getLocaleFromPathname(path);
     if (routeLocale !== DEFAULT_LOCALE) return routeLocale;
+  }
+
+  if (typeof window !== 'undefined' && !isStudioAppRoute) {
+    return getLocaleFromPathname(window.location.pathname);
+  }
+
+  return DEFAULT_LOCALE;
+}
+
+function readClientStoredLocale(): Locale | null {
+  if (typeof document !== 'undefined') {
+    const match = document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${LUMEN_LOCALE_COOKIE}=`));
+    if (match) {
+      const value = decodeURIComponent(match.slice(LUMEN_LOCALE_COOKIE.length + 1));
+      if (isLocale(value)) return value;
+    }
   }
   if (typeof window !== 'undefined') {
     const stored = window.localStorage.getItem(LUMEN_LOCALE_COOKIE);
     if (isLocale(stored)) return stored;
-    return getLocaleFromPathname(window.location.pathname);
   }
-  return DEFAULT_LOCALE;
+  return null;
 }
 
 function persistLocale(locale: Locale) {

@@ -52,6 +52,9 @@ export function LanguageToggle({
     setOpen(false);
     if (targetLocale === locale) return;
     setLocale(targetLocale);
+    // SPA (/app/*) 上语言完全靠 cookie + state，URL 不带 /zh 前缀，
+    // 也不需要导航；setLocale 会同步把 cookie 与 localStorage 写入，组件树自动重渲染。
+    if ((pathname || '/').startsWith('/app')) return;
     const search = searchParams.toString();
     const hash = typeof window !== 'undefined' ? window.location.hash : '';
     router.push(

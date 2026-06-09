@@ -25,6 +25,11 @@ export async function getRequestLocale(): Promise<Locale> {
 }
 
 export async function redirectWithLocale(href: string): Promise<never> {
+  // SPA 路径（/app/*）不带 locale 前缀，直接跳就行；非 /app 的 Next.js
+  // 页面才需要按当前 locale 加 /zh 前缀。
+  if (href.startsWith('/app/') || href === '/app') {
+    redirect(href);
+  }
   const locale = await getRequestLocale();
   redirect(localePath(href, locale));
 }
