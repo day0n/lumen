@@ -11,6 +11,8 @@
  */
 
 import { Buffer } from 'node:buffer';
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 
 import { type ToolResult, makeToolResult } from '../../../domain/contracts/tools.js';
 import { GoogleTokenCache, parseServiceAccount } from '../../../platform/googleAuth.js';
@@ -20,6 +22,17 @@ import { type JsonSchema, Tool } from './base.js';
 const MODEL = 'gemini-3.5-flash';
 const DEFAULT_PROMPT =
   'Describe this media in detail: who/what is in it, what happens over time, key visual and audio cues, and anything noteworthy a creator should know.';
+
+// Hard ceiling on bytes downloaded. Without this, an LLM-supplied URL to a
+// large video can OOM the agent: 1GB Buffer + base64 inflation (~1.4GB
+// string) + a single Vertex POST body that contains all of it. 50MB covers
+// every realistic creator-asset case (Vertex itself rejects much larger
+// inline_data payloads).
+const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
+// Maximum redirect hops to follow manually. Each hop is re-validated
+// against the SSRF rules below.
+const MAX_REDIRECTS = 5;
+const FETCH_TIMEOUT_MS = 60_000;
 
 // 按大类维护扩展名 → MIME，便于一眼看出某后缀归属哪种媒体。
 const MIME_BY_KIND: Record<string, Record<string, string>> = {
@@ -131,10 +144,9 @@ export class MediaUnderstandingTool extends Tool {
     let fileBytes: Buffer;
     let contentType: string | null;
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-      if (!res.ok) return `Error: Failed to download media (HTTP ${res.status}).`;
-      fileBytes = Buffer.from(await res.arrayBuffer());
-      contentType = res.headers.get('content-type');
+      const fetched = await safeFetchMedia(url);
+      fileBytes = fetched.body;
+      contentType = fetched.contentType;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return `Error downloading media: ${msg}`;
@@ -228,4 +240,187 @@ export class MediaUnderstandingTool extends Tool {
       return `Error calling Gemini: ${msg}`;
     }
   }
+}
+
+/**
+ * Fetch the LLM-supplied URL with SSRF + size protection.
+ *
+ * Risks the LLM can invent without this:
+ *   - http://169.254.169.254/...      cloud metadata (AWS / GCP)
+ *   - http://localhost:6379/          local Redis / Mongo / private services
+ *   - http://10.0.0.1/                RFC1918 LAN
+ *   - file:///etc/passwd              local files
+ *   - https://attacker/redirect → http://localhost
+ *
+ * Defence:
+ *   1. Protocol whitelist: https only (most production media is on R2/CDN
+ *      so we can be strict; relax to http if a use case appears).
+ *   2. DNS-resolve the host and reject every loopback / link-local /
+ *      private / cloud-metadata / IPv4-mapped IPv6 result. We re-resolve
+ *      on every redirect hop because TOCTOU is a real concern with
+ *      attacker-controlled redirects.
+ *   3. Manual redirect handling (`redirect: 'manual'`) so we can re-apply
+ *      step 2 to every Location: header rather than trusting fetch's
+ *      auto-follow.
+ *   4. Length cap: refuse Content-Length over MAX_MEDIA_BYTES up-front,
+ *      and abort the stream as soon as accumulated bytes exceed it.
+ */
+async function safeFetchMedia(
+  rawUrl: string,
+): Promise<{ body: Buffer; contentType: string | null }> {
+  let target: URL;
+  try {
+    target = new URL(rawUrl);
+  } catch {
+    throw new Error('invalid URL');
+  }
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (target.protocol !== 'https:') {
+      throw new Error(`refusing non-https URL (${target.protocol})`);
+    }
+    await assertHostNotInternal(target.hostname);
+
+    const res = await fetch(target.toString(), {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      if (!location) throw new Error(`redirect status ${res.status} without Location header`);
+      // Drain so the socket is released before we re-fetch.
+      try {
+        await res.body?.cancel();
+      } catch {
+        // ignore
+      }
+      try {
+        target = new URL(location, target);
+      } catch {
+        throw new Error(`invalid redirect target: ${location}`);
+      }
+      continue;
+    }
+
+    if (!res.ok) {
+      throw new Error(`Failed to download media (HTTP ${res.status})`);
+    }
+
+    const declared = Number(res.headers.get('content-length') ?? '');
+    if (Number.isFinite(declared) && declared > MAX_MEDIA_BYTES) {
+      try {
+        await res.body?.cancel();
+      } catch {
+        // ignore
+      }
+      throw new Error(
+        `media exceeds ${Math.round(MAX_MEDIA_BYTES / 1024 / 1024)}MB limit (declared ${declared} bytes)`,
+      );
+    }
+
+    if (!res.body) {
+      throw new Error('upstream returned no body stream');
+    }
+
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > MAX_MEDIA_BYTES) {
+        try {
+          await reader.cancel();
+        } catch {
+          // ignore
+        }
+        throw new Error(
+          `media exceeds ${Math.round(MAX_MEDIA_BYTES / 1024 / 1024)}MB limit (got >${total} bytes)`,
+        );
+      }
+      chunks.push(value);
+    }
+
+    return {
+      body: Buffer.concat(chunks),
+      contentType: res.headers.get('content-type'),
+    };
+  }
+  throw new Error(`too many redirects (>${MAX_REDIRECTS})`);
+}
+
+/**
+ * Reject hostnames that resolve to addresses we should never fetch from
+ * the agent process. Covers loopback, RFC1918, link-local (incl. AWS/GCP
+ * 169.254.169.254 metadata service), CGNAT, and the IPv6 equivalents.
+ *
+ * If the hostname resolves to multiple addresses, we reject if any one is
+ * internal (defence against split-horizon DNS where an attacker arranges
+ * the public resolver to return one safe + one private record).
+ */
+async function assertHostNotInternal(hostname: string): Promise<void> {
+  const lower = hostname.toLowerCase();
+  if (lower === 'localhost' || lower.endsWith('.localhost') || lower.endsWith('.internal')) {
+    throw new Error(`refusing internal hostname: ${hostname}`);
+  }
+
+  // If the URL is already an IP literal, check it directly without DNS.
+  if (isIP(hostname)) {
+    if (isInternalAddress(hostname)) {
+      throw new Error(`refusing internal address: ${hostname}`);
+    }
+    return;
+  }
+
+  let addresses: { address: string }[];
+  try {
+    addresses = await dnsLookup(hostname, { all: true, verbatim: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`DNS lookup failed for ${hostname}: ${msg}`);
+  }
+  for (const { address } of addresses) {
+    if (isInternalAddress(address)) {
+      throw new Error(`hostname ${hostname} resolves to internal address ${address}`);
+    }
+  }
+}
+
+function isInternalAddress(address: string): boolean {
+  const family = isIP(address);
+  if (family === 4) return isInternalIPv4(address);
+  if (family === 6) return isInternalIPv6(address);
+  return true; // unknown format → reject
+}
+
+function isInternalIPv4(address: string): boolean {
+  const parts = address.split('.').map((p) => Number(p));
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+    return true;
+  }
+  const [a, b] = parts as [number, number, number, number];
+  if (a === 0) return true; // 0.0.0.0/8
+  if (a === 10) return true; // 10.0.0.0/8 RFC1918
+  if (a === 127) return true; // loopback
+  if (a === 169 && b === 254) return true; // link-local (incl. cloud metadata)
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 RFC1918
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16 RFC1918
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
+  if (a >= 224) return true; // multicast + reserved
+  return false;
+}
+
+function isInternalIPv6(address: string): boolean {
+  const lower = address.toLowerCase();
+  if (lower === '::' || lower === '::1') return true;
+  if (lower.startsWith('fe80:') || lower.startsWith('fe8') || lower.startsWith('fec0:'))
+    return true;
+  if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // ULA fc00::/7
+  // IPv4-mapped (::ffff:a.b.c.d) — re-check the embedded IPv4 portion.
+  const mapped = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(lower);
+  if (mapped?.[1]) return isInternalIPv4(mapped[1]);
+  return false;
 }
