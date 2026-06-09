@@ -163,7 +163,7 @@ async function runGemini(
 
   try {
     const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: [{ role: 'user', parts: [...imageParts, { text: prompt }] }],
       config: { temperature: 0.3, maxOutputTokens: 1024 },
     });

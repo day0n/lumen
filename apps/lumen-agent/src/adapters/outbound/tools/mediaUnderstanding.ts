@@ -17,7 +17,7 @@ import { GoogleTokenCache, parseServiceAccount } from '../../../platform/googleA
 import { logger } from '../../../platform/logger.js';
 import { type JsonSchema, Tool } from './base.js';
 
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-3.5-flash';
 const DEFAULT_PROMPT =
   'Describe this media in detail: who/what is in it, what happens over time, key visual and audio cues, and anything noteworthy a creator should know.';
 
@@ -218,7 +218,7 @@ export class MediaUnderstandingTool extends Tool {
       const usage = json.usageMetadata ?? {};
       const inTok = usage.promptTokenCount ?? 0;
       const outTok = usage.candidatesTokenCount ?? 0;
-      // Gemini 2.5 Flash 价格按 google 定价取近似（仅作记录）
+      // Gemini 3.5 Flash 价格按 google 定价取近似（仅作记录）
       const costUsd = (inTok * 0.075 + outTok * 0.3) / 1_000_000;
 
       return makeToolResult(text, { cost_usd: costUsd > 0 ? costUsd : null });

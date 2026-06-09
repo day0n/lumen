@@ -12,7 +12,7 @@ import { PublicErrorFieldsSchema } from './public-error.js';
 
 export const WorkflowModelCatalog = {
   text: [
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
     { id: 'doubao-seed-2.0-pro', label: 'Doubao Seed 2.0' },
   ],
   image: [

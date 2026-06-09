@@ -41,7 +41,7 @@ export function getStudioGoogleClient(): GoogleGenAI {
 export async function generateGeminiText(prompt: string): Promise<string> {
   const client = getStudioGoogleClient();
   const response = await client.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.5-flash',
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
   });
 
@@ -89,7 +89,7 @@ export async function generateGeminiMultimodalText(input: MultimodalInput): Prom
   parts.push({ text: input.prompt });
 
   const response = await client.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.5-flash',
     contents: [{ role: 'user', parts }],
     config: {
       temperature: input.temperature ?? 0.2,

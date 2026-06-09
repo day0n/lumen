@@ -4,7 +4,6 @@ import type { ExecuteFn, ExecutionContext, NodeOutput } from '../base.js';
 
 const registry: Record<string, () => Promise<{ execute: ExecuteFn }>> = {
   'doubao-seed-2.0-pro': () => import('./doubao-seed.js'),
-  'gemini-2.5-flash': () => import('./gemini-flash-lite.js'),
   'gemini-3.5-flash': () => import('./gemini-flash-lite.js'),
 };
 

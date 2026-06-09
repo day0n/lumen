@@ -1505,7 +1505,7 @@ function textNode({
       title,
       prompt,
       output,
-      modelId: 'gemini-2.5-flash',
+      modelId: 'gemini-3.5-flash',
       settings: {},
       status: 'success',
       progress: 1,

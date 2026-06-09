@@ -295,7 +295,7 @@ Rules:
 
   try {
     const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: [{ role: 'user', parts: [...imageParts, { text: prompt }] }],
       config: { temperature: 0.2, maxOutputTokens: 2048 },
     });
@@ -410,7 +410,7 @@ Rules:
 
   try {
     const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: [{ role: 'user', parts: [...imageParts, { text: prompt }] }],
       config: { temperature: 0.18, maxOutputTokens: 1200 },
     });
