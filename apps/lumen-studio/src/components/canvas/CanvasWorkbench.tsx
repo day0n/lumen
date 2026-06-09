@@ -3833,6 +3833,9 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const { t } = useI18n();
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const wasNodeBusyRef = useRef(false);
+  const lastRunProgressRef = useRef(0);
+  const [completionProgress, setCompletionProgress] = useState<number | null>(null);
   const [estimatedRunProgress, setEstimatedRunProgress] = useState(0);
   const [outputUploadState, setOutputUploadState] = useState<MediaUploadDisplayState>({
     progress: null,
@@ -3858,6 +3861,16 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const runProgressPercent = isNodeBusy
     ? Math.max(status === 'queued' ? 8 : 14, backendProgressPercent, estimatedRunProgress)
     : 0;
+  const outputHasResult = Boolean((data.output ?? '').trim());
+  const shouldStartCompletion =
+    wasNodeBusyRef.current && !isNodeBusy && status === 'success' && outputHasResult;
+  const completionStartProgress = Math.min(
+    98,
+    Math.max(14, backendProgressPercent, estimatedRunProgress, lastRunProgressRef.current),
+  );
+  const outputCompletionProgress =
+    completionProgress ?? (shouldStartCompletion ? completionStartProgress : null);
+  const isNodeVisuallyBusy = isNodeBusy || outputCompletionProgress !== null;
   const outputActivityState: MediaActivityDisplayState | undefined = outputUploadState.uploading
     ? {
         active: true,
@@ -3868,11 +3881,13 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
         progress: outputUploadState.progress,
         tone: 'upload',
       }
-    : isNodeBusy
+    : isNodeBusy || outputCompletionProgress !== null
       ? {
           active: true,
-          label: `${status === 'queued' ? t('canvas.timeline.statusQueued') : t('canvas.node.running')} ${runProgressPercent}%`,
-          progress: runProgressPercent,
+          label: `${status === 'queued' ? t('canvas.timeline.statusQueued') : t('canvas.node.running')} ${
+            outputCompletionProgress ?? runProgressPercent
+          }%`,
+          progress: outputCompletionProgress ?? runProgressPercent,
           tone: 'run',
         }
       : undefined;
@@ -3922,6 +3937,40 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   );
   const firstFromUpstream = !inputImage && Boolean(resolvedFirstFrame);
   const lastFromUpstream = !inputLastFrameImage && Boolean(resolvedLastFrame);
+
+  useEffect(() => {
+    if (!isNodeBusy) return;
+    lastRunProgressRef.current = runProgressPercent;
+  }, [isNodeBusy, runProgressPercent]);
+
+  useEffect(() => {
+    if (!shouldStartCompletion || completionProgress !== null) return;
+    setCompletionProgress(completionStartProgress);
+  }, [completionProgress, completionStartProgress, shouldStartCompletion]);
+
+  useEffect(() => {
+    if (completionProgress === null) return;
+    if (completionProgress >= 100) {
+      const timer = window.setTimeout(() => setCompletionProgress(null), 260);
+      return () => window.clearTimeout(timer);
+    }
+
+    const timer = window.setTimeout(() => {
+      setCompletionProgress((current) => {
+        if (current === null) return null;
+        const remaining = 100 - current;
+        const step = Math.max(4, Math.ceil(remaining * 0.34));
+        return Math.min(100, current + step);
+      });
+    }, 90);
+
+    return () => window.clearTimeout(timer);
+  }, [completionProgress]);
+
+  useEffect(() => {
+    wasNodeBusyRef.current = isNodeBusy;
+    if (isNodeBusy) setCompletionProgress(null);
+  }, [isNodeBusy]);
 
   useEffect(() => {
     if (!isNodeBusy) {
@@ -4123,7 +4172,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   return (
     <div
       className={`group relative ${styles.shell} text-white`}
-      aria-busy={isNodeBusy}
+      aria-busy={isNodeVisuallyBusy}
       onMouseDownCapture={handleNodePointerDownCapture}
       onPointerDownCapture={handleNodePointerDownCapture}
     >
@@ -4153,13 +4202,13 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
 
       <div
         className={`lumen-node-card relative overflow-hidden rounded-[13px] bg-[#202123] ring-1 transition-all duration-200 ${
-          isNodeBusy
+          isNodeVisuallyBusy
             ? 'lumen-node-card--running ring-[#79e4ff]/42 shadow-[0_18px_60px_rgba(0,0,0,0.42),0_0_34px_rgba(121,228,255,0.12)]'
             : selected
               ? `ring-white/28 ${styles.glow}`
               : 'ring-white/[0.1] hover:ring-white/[0.16]'
         }`}
-        data-run-state={isNodeBusy ? status : undefined}
+        data-run-state={isNodeVisuallyBusy ? status : undefined}
       >
         <div className="border-b border-white/[0.06] p-2.5">
           <input
@@ -4170,7 +4219,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
           />
           <div
             className={`relative overflow-hidden rounded-[10px] ${styles.preview} ${
-              isNodeBusy ? 'lumen-node-preview--running' : ''
+              isNodeVisuallyBusy ? 'lumen-node-preview--running' : ''
             }`}
           >
             <NodeOutputEditor
