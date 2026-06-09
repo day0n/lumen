@@ -432,10 +432,13 @@ export function buildFilterComplex(input: {
     `[${input.bgmInputIndex}:a]aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo,volume=${formatVolume(bgmVolume)},atrim=duration=${formatSeconds(totalDuration)},asetpts=PTS-STARTPTS[bgmraw]`,
   );
   if (hasAudibleSourceAudio(input.clips)) {
+    chains.push('[acat]asplit=2[acatForDucking][acatForMix]');
     chains.push(
-      '[bgmraw][acat]sidechaincompress=threshold=0.035:ratio=8:attack=35:release=360[bgm]',
+      '[bgmraw][acatForDucking]sidechaincompress=threshold=0.035:ratio=8:attack=35:release=360[bgm]',
     );
-    chains.push('[acat][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]');
+    chains.push(
+      '[acatForMix][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]',
+    );
   } else {
     chains.push('[acat][bgmraw]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]');
   }

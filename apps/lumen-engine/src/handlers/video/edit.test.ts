@@ -23,8 +23,12 @@ test('composition mix keeps source audio primary when BGM is present', () => {
   });
 
   assert.match(filter, /volume=0\.32/);
+  assert.match(filter, /asplit=2\[acatForDucking\]\[acatForMix\]/);
   assert.match(filter, /sidechaincompress=/);
-  assert.match(filter, /amix=inputs=2:duration=first:dropout_transition=0:normalize=0/);
+  assert.match(
+    filter,
+    /\[acatForMix\]\[bgm\]amix=inputs=2:duration=first:dropout_transition=0:normalize=0/,
+  );
 });
 
 test('composition mix lets BGM stay full when source clips have no audio', () => {
