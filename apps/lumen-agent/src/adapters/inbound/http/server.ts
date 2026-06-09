@@ -23,6 +23,8 @@ import * as Sentry from '@sentry/node';
 import type { ChatRunner } from '../../../application/chatRunner.js';
 import type { AgentEvent } from '../../../domain/events.js';
 import { logger } from '../../../platform/logger.js';
+import { cancelWorkflowRunsForAgentRun } from '../../outbound/canvas/workflowCancellation.js';
+import { getRedis } from '../../outbound/persistence/redis.js';
 import type { SessionManager } from '../../outbound/persistence/session.js';
 
 import type { AuthUser } from './auth.js';
@@ -288,14 +290,20 @@ export function buildApp(deps: ServerDeps): Hono<Env> {
   });
 
   // ── 3. 取消 run ──────────────────────────────────────────────────
-  app.post('/v1/agent/runs/:runId/cancel', (c) => {
+  app.post('/v1/agent/runs/:runId/cancel', async (c) => {
     const runId = c.req.param('runId');
     const authUser = c.get('authUser') as AuthUser;
     const ok = runStore.cancel(runId, authUser.userId);
     if (!ok) return c.json({ error: 'run_not_found' }, 404);
+    let workflowRunIds: string[] = [];
+    try {
+      workflowRunIds = await cancelWorkflowRunsForAgentRun(getRedis(), runId);
+    } catch (err) {
+      logger.warn({ err, run_id: runId }, 'failed to cancel workflow runs for agent run');
+    }
     runStore.publish(runId, { event: 'run:halt', data: { run_id: runId } });
     runStore.publish(runId, { event: 'run:cancel', data: { run_id: runId } });
-    return c.json({ ok: true });
+    return c.json({ ok: true, workflow_run_ids: workflowRunIds });
   });
 
   return app;

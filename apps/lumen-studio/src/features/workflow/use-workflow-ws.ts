@@ -460,13 +460,13 @@ export function useWorkflowWs({
       }
 
       if (externalRuns.size > 0) {
-        const externalNodeIds = [...externalRuns.values()].flat();
-        markNodesCancelled(externalNodeIds, reason);
         if (!projectId) return;
         for (const [runId, targetNodeIds] of externalRuns) {
-          void cancelWorkflowRun(projectId, runId, targetNodeIds, reason).catch((err) => {
-            Sentry.captureException(err);
-          });
+          void cancelWorkflowRun(projectId, runId, targetNodeIds, reason)
+            .then(() => markNodesCancelled(targetNodeIds, reason))
+            .catch((err) => {
+              Sentry.captureException(err);
+            });
         }
       }
     },

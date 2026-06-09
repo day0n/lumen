@@ -3,7 +3,8 @@
 import { cn } from '@/lib/cn';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export type ConfirmDialogProps = {
   open: boolean;
@@ -26,6 +27,12 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const previous = document.body.style.overflow;
@@ -40,11 +47,12 @@ export function ConfirmDialog({
     };
   }, [open, onCancel]);
 
-  return (
+  const content = (
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 px-4 py-8 backdrop-blur-xl"
+          className="nodrag nopan fixed inset-0 z-[1000] flex items-center justify-center bg-black/75 px-4 py-8 backdrop-blur-xl"
+          data-skip-node-select="true"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -60,6 +68,7 @@ export function ConfirmDialog({
             exit={{ opacity: 0, y: 10, scale: 0.98 }}
             transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
             className="w-full max-w-[420px] overflow-hidden rounded-[20px] bg-[#17191c] p-6 text-white shadow-[0_40px_120px_-50px_rgba(0,0,0,0.95)] ring-1 ring-white/[0.09]"
+            data-skip-node-select="true"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start gap-3">
@@ -117,4 +126,7 @@ export function ConfirmDialog({
       ) : null}
     </AnimatePresence>
   );
+
+  if (!mounted || typeof document === 'undefined') return null;
+  return createPortal(content, document.body);
 }

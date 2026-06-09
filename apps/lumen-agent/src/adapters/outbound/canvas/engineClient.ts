@@ -16,10 +16,15 @@ import {
 } from '@lumen/shared/domain';
 import type { ClientRunMessage, ServerEvent } from '@lumen/shared/protocols';
 
+import { getAgentRequestContext } from '../../../application/requestContext.js';
 import { getConfig } from '../../../bootstrap/config.js';
 import { logger } from '../../../platform/logger.js';
 import { emitToolEvent } from '../tools/runtime.js';
 import type { ProjectWorkflowStore, WorkflowProject } from './projectStore.js';
+import {
+  registerWorkflowRunForAgentRun,
+  unregisterWorkflowRunForAgentRun,
+} from './workflowCancellation.js';
 
 export interface RunWorkflowNodeResult {
   runId: string;
@@ -96,6 +101,7 @@ export class WorkflowEngineClient {
     await this.updateNodeState(input.project, target.id, {
       status: 'queued',
       error: null,
+      activeRunId: runId,
       errorCode: undefined,
       errorName: undefined,
       errorI18nKey: undefined,
@@ -132,6 +138,7 @@ export class WorkflowEngineClient {
       const errorCanvas = updateCanvasNodeData(input.project.canvas, target.id, {
         status: cancelled ? 'cancelled' : 'error',
         error: message,
+        activeRunId: null,
         ...workflowErrorFields(err),
         progress: 1,
       });
@@ -158,6 +165,7 @@ export class WorkflowEngineClient {
       status: 'success',
       output,
       error: null,
+      activeRunId: null,
       errorCode: undefined,
       errorName: undefined,
       errorI18nKey: undefined,
@@ -219,9 +227,11 @@ export class WorkflowEngineClient {
   }): Promise<string> {
     const subscriber = this.redis!.duplicate({ maxRetriesPerRequest: null });
     const cfg = getConfig();
+    const agentRunId = getAgentRequestContext()?.runId ?? null;
     let settled = false;
 
     try {
+      await registerWorkflowRunForAgentRun(this.redis, agentRunId, input.runId);
       await subscriber.subscribe(input.channelId);
       const waitForResult = new Promise<string>((resolve, reject) => {
         const timer = setTimeout(
@@ -305,6 +315,7 @@ export class WorkflowEngineClient {
 
       return await waitForResult;
     } finally {
+      await unregisterWorkflowRunForAgentRun(this.redis, agentRunId, input.runId);
       try {
         await subscriber.unsubscribe(input.channelId);
         await subscriber.quit();
