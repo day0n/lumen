@@ -11,6 +11,7 @@ import {
   IconAlertTriangle,
   IconCheck,
   IconChevronDown,
+  IconLayoutCollage,
   IconLoader2,
   IconPhoto,
   IconPlus,
@@ -342,7 +343,7 @@ export function MaterialsPage() {
           <div className="relative z-10 flex min-h-[248px] flex-col p-2 sm:p-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.055] px-2.5 text-[12px] font-bold text-white/70 ring-1 ring-white/[0.07]">
-                <IconPhoto size={15} stroke={2.1} />
+                <IconLayoutCollage size={15} stroke={2.1} />
                 {t('materials.title')}
               </span>
               <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-lg bg-white/[0.045] px-2 text-[12px] font-bold text-white/48 ring-1 ring-white/[0.06]">
@@ -385,7 +386,7 @@ export function MaterialsPage() {
                             : 'bg-white/[0.045] text-white/38 ring-white/[0.07] group-hover:text-white/58',
                         )}
                       >
-                        <IconPhoto size={14} stroke={2.1} />
+                        <IconLayoutCollage size={14} stroke={2.1} />
                       </span>
                       <span className="min-w-0 truncate text-[13px] font-bold">
                         {t(`materials.categories.${category.id}.title`)}
@@ -466,7 +467,7 @@ export function MaterialsPage() {
           <div className="mb-5 flex flex-wrap items-center gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.055] text-white/60 ring-1 ring-white/[0.08]">
-                <IconPhoto size={17} stroke={2.1} />
+                <IconLayoutCollage size={17} stroke={2.1} />
               </span>
               <h2 className="text-[18px] font-extrabold text-white">
                 {t(`materials.categories.${activeCategory}.title`)}
@@ -493,7 +494,7 @@ export function MaterialsPage() {
           ) : visibleAssets.length === 0 ? (
             <div className="flex h-[300px] flex-col items-center justify-center rounded-[18px] bg-[#1c1e20]/92 text-center ring-1 ring-white/[0.07]">
               <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.04] text-white/30 ring-1 ring-white/[0.06]">
-                <IconPhoto size={30} stroke={1.6} />
+                <IconLayoutCollage size={30} stroke={1.6} />
               </span>
               <div className="mt-4 text-[14px] font-semibold text-white/56">
                 {t('materials.empty')}
