@@ -369,27 +369,31 @@ export async function runStage(input: {
 
   if (planned.length === 0) return composeView(job, tasks);
 
-  if (input.stage === 'video' && input.sliceKeys?.length) {
-    const sceneIndexes = input.sliceKeys
-      .map((sliceKey) => {
+  if (input.stage === 'video') {
+    const sceneIndexes = planned
+      .map((task) => {
+        const sliceKey = task.sliceKey;
         const match = /^scene-video-(\d+)$/.exec(sliceKey);
         return match ? Number(match[1]) : null;
       })
       .filter((value): value is number => value !== null);
     if (sceneIndexes.length > 0) {
-      const nextScenes = job.outputs.scenes.map((scene) => {
-        if (!sceneIndexes.includes(scene.sceneIndex)) return scene;
-        const { videoUrl: _videoUrl, ...rest } = scene;
-        return rest;
-      });
-      await repository.updateJob(input.jobId, input.ownerId, {
-        outputsPatch: { scenes: nextScenes },
-        stagePatch: {
-          name: 'final',
-          state: { status: 'ready' },
-        },
-      });
+      await repository.clearSceneOutputFields(input.jobId, input.ownerId, sceneIndexes, [
+        'videoUrl',
+      ]);
     }
+
+    await repository.deleteTasksByStages(input.jobId, ['final']);
+    await repository.clearOutputFields(input.jobId, input.ownerId, [
+      ...(planned.some((task) => task.sliceKey === SliceKeys.bgm) ? (['bgmUrl'] as const) : []),
+      'finalUrl',
+    ]);
+    await repository.updateJob(input.jobId, input.ownerId, {
+      stagePatch: {
+        name: 'final',
+        state: { status: 'ready' },
+      },
+    });
   }
 
   // 1. 创建 task 文档（upsert by sliceKey）

@@ -401,6 +401,94 @@ export class RemakeJobRepository {
   }
 
   /**
+   * 原子清掉指定 scene output 字段（例如单场视频重跑前删除 videoUrl）。
+   *
+   * 不要在调用方用旧 job snapshot 过滤后整体 `$set outputs.scenes`：那会和
+   * 并发 task output 回写互相覆盖。这里用 Mongo pipeline 在服务端逐个 scene
+   * 删除目标 key，保留同一 scene 的 imageUrl/voiceUrl/mixUrl 等其它字段。
+   */
+  async clearSceneOutputFields(
+    jobId: string,
+    ownerId: string,
+    sceneIndexes: number[],
+    fields: Array<keyof Omit<RemakeJobSceneOutput, 'sceneIndex'>>,
+  ): Promise<RemakeJobRecord | null> {
+    const indexes = [
+      ...new Set(sceneIndexes.filter((value) => Number.isInteger(value) && value > 0)),
+    ];
+    const fieldNames = [...new Set(fields.map((field) => String(field)))];
+    if (indexes.length === 0 || fieldNames.length === 0) {
+      const existing = await this.jobs().findOne({
+        _id: jobId,
+        owner_id: ownerId,
+      });
+      return existing ? toJobRecord(existing) : null;
+    }
+
+    const result = await this.jobs().findOneAndUpdate(
+      { _id: jobId, owner_id: ownerId },
+      [
+        {
+          $set: {
+            'outputs.scenes': {
+              $map: {
+                input: { $ifNull: ['$outputs.scenes', []] },
+                as: 's',
+                in: {
+                  $cond: [
+                    { $in: ['$$s.sceneIndex', indexes] },
+                    {
+                      $arrayToObject: {
+                        $filter: {
+                          input: { $objectToArray: '$$s' },
+                          as: 'kv',
+                          cond: { $not: [{ $in: ['$$kv.k', fieldNames] }] },
+                        },
+                      },
+                    },
+                    '$$s',
+                  ],
+                },
+              },
+            },
+            updated_at: new Date(),
+          },
+        },
+      ] satisfies UpdateFilter<RemakeJobDocument>[],
+      { returnDocument: 'after' },
+    );
+    return result ? toJobRecord(result) : null;
+  }
+
+  async clearOutputFields(
+    jobId: string,
+    ownerId: string,
+    fields: Array<keyof Omit<RemakeJobOutputs, 'scenes' | 'environmentLocks'>>,
+  ): Promise<RemakeJobRecord | null> {
+    const unset: Record<string, ''> = {};
+    for (const field of new Set(fields.map((value) => String(value)))) {
+      unset[`outputs.${field}`] = '';
+    }
+    if (Object.keys(unset).length === 0) {
+      const existing = await this.jobs().findOne({
+        _id: jobId,
+        owner_id: ownerId,
+      });
+      return existing ? toJobRecord(existing) : null;
+    }
+
+    const result = await this.jobs().findOneAndUpdate(
+      { _id: jobId, owner_id: ownerId },
+      {
+        $set: { updated_at: new Date() },
+        $unset: unset,
+      },
+      { returnDocument: 'after' },
+    );
+    return result ? toJobRecord(result) : null;
+  }
+
+  /**
    * 同上：environment lock 的 image url 也走 mongo 端原子 upsert，避免
    * 多个 environment 并发回写时互相覆盖。
    */

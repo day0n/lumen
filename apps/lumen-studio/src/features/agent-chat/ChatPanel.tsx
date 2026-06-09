@@ -105,6 +105,10 @@ function clearInitialPromptFromUrl() {
   window.history.replaceState(window.history.state, '', nextUrl);
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
 export function ChatPanel({
   projectId,
   sessionId,
@@ -120,6 +124,11 @@ export function ChatPanel({
   const [sessions, setSessions] = useState<AgentSessionSummary[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const sessionsRequestRef = useRef<{
+    key: string;
+    controller: AbortController;
+    promise: Promise<AgentSessionSummary[]>;
+  } | null>(null);
   const interactionStartedRef = useRef(false);
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
@@ -215,6 +224,36 @@ export function ChatPanel({
     [handleResizeMove, stopResize],
   );
 
+  const fetchSessionsOnce = useCallback(async (): Promise<AgentSessionSummary[]> => {
+    if (!projectId) return [];
+    const token = await getToken().catch(() => null);
+    const key = `${projectId}:${token ?? ''}`;
+    const existing = sessionsRequestRef.current;
+    if (existing?.key === key) return existing.promise;
+
+    existing?.controller.abort();
+    const controller = new AbortController();
+    const promise = fetchAgentSessions({
+      workflowId: projectId,
+      token,
+      signal: controller.signal,
+    }).finally(() => {
+      if (sessionsRequestRef.current?.promise === promise) {
+        sessionsRequestRef.current = null;
+      }
+    });
+    sessionsRequestRef.current = { key, controller, promise };
+    return promise;
+  }, [getToken, projectId]);
+
+  useEffect(
+    () => () => {
+      sessionsRequestRef.current?.controller.abort();
+      sessionsRequestRef.current = null;
+    },
+    [projectId],
+  );
+
   const loadSessions = useCallback(
     async (opts: { autoSelectLatest?: boolean } = {}) => {
       if (!projectId || !authReady || !isSignedIn) {
@@ -225,19 +264,14 @@ export function ChatPanel({
       const controller = new AbortController();
       setSessionsLoading(true);
       try {
-        const token = await getToken().catch(() => null);
-        const nextSessions = await fetchAgentSessions({
-          workflowId: projectId,
-          token,
-          signal: controller.signal,
-        });
+        const nextSessions = await fetchSessionsOnce();
         if (controller.signal.aborted) return;
         setSessions(nextSessions);
         if (opts.autoSelectLatest && !interactionStartedRef.current && nextSessions.length > 0) {
           setActiveSessionId(nextSessions[0]!.session_id);
         }
       } catch (err) {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && !isAbortError(err)) {
           console.error('failed to load agent sessions', err);
         }
       } finally {
@@ -246,7 +280,7 @@ export function ChatPanel({
         }
       }
     },
-    [authReady, getToken, isSignedIn, projectId],
+    [authReady, fetchSessionsOnce, isSignedIn, projectId],
   );
 
   useEffect(() => {
@@ -266,15 +300,7 @@ export function ChatPanel({
     if (!authReady || !isSignedIn || !projectId) return;
     const controller = new AbortController();
     setSessionsLoading(true);
-    void getToken()
-      .catch(() => null)
-      .then((token) =>
-        fetchAgentSessions({
-          workflowId: projectId,
-          token,
-          signal: controller.signal,
-        }),
-      )
+    void fetchSessionsOnce()
       .then((nextSessions) => {
         if (controller.signal.aborted) return;
         setSessions(nextSessions);
@@ -285,6 +311,7 @@ export function ChatPanel({
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
+        if (isAbortError(err)) return;
         console.error('failed to load agent sessions', err);
       })
       .finally(() => {
@@ -292,7 +319,7 @@ export function ChatPanel({
       });
 
     return () => controller.abort();
-  }, [authReady, getToken, isSignedIn, projectId, sessionId]);
+  }, [authReady, fetchSessionsOnce, isSignedIn, projectId, sessionId]);
 
   useEffect(() => {
     if (autoSentRef.current || !authReady) return;
