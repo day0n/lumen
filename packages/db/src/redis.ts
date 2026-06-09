@@ -94,14 +94,28 @@ export class JsonCache {
   async deletePattern(pattern: string, keyPrefix?: string): Promise<number> {
     if (!this.redis) return 0;
     const fullPattern = keyPrefix ? `${keyPrefix}${pattern}` : pattern;
+    // Use SCAN, not KEYS. KEYS is O(N) over the full keyspace and blocks
+    // the Redis server until it returns. With patterns like
+    // `hot-videos:list:*` or `materials:${ownerId}:list:v1:*` we cannot
+    // bound N — every concurrent request waits behind it. Many managed
+    // Redis providers also disable KEYS by policy. SCAN is incremental
+    // and non-blocking: small bounded batches per RTT, server stays
+    // responsive to other clients.
+    let total = 0;
+    let cursor = '0';
     try {
-      const keys = await this.redis.keys(fullPattern);
-      if (keys.length === 0) return 0;
-      // ioredis with keyPrefix re-prefixes on .del, strip prefix back to bare keys.
-      const bare = keyPrefix ? keys.map((k) => k.replace(keyPrefix, '')) : keys;
-      return await this.redis.del(...bare);
+      do {
+        const [next, batch] = await this.redis.scan(cursor, 'MATCH', fullPattern, 'COUNT', 200);
+        cursor = next;
+        if (batch.length > 0) {
+          // ioredis with keyPrefix re-prefixes on .del; strip back to bare keys.
+          const bare = keyPrefix ? batch.map((k) => k.replace(keyPrefix, '')) : batch;
+          total += await this.redis.del(...bare);
+        }
+      } while (cursor !== '0');
+      return total;
     } catch {
-      return 0;
+      return total;
     }
   }
 }
