@@ -150,7 +150,18 @@ export function Topbar() {
             {authLoaded && isSignedIn ? <NotificationsPopover /> : null}
             <LanguageToggle compact iconOnlyOnMobile />
 
-            {(!authLoaded || !isSignedIn) && (
+            {/*
+              auth 解析完成前不渲染登录/注册按钮：否则已登录用户每次进页面都会先看到
+              「登录/注册」再闪成头像。加载期间用一个等尺寸占位骨架，避免按钮闪烁和布局跳动。
+            */}
+            {!authLoaded && (
+              <div
+                aria-hidden
+                className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-white/[0.08]"
+              />
+            )}
+
+            {authLoaded && !isSignedIn && (
               <div className="flex items-center gap-1">
                 <Link
                   href={localePath(`/sign-in?redirect_url=${authRedirect}`)}

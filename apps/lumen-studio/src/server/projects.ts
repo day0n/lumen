@@ -11,6 +11,8 @@ import {
   type UpdateProjectInput,
 } from '@lumen/db';
 
+import { translate } from '@/i18n/messages';
+import { DEFAULT_LOCALE, type Locale } from '@/i18n/routing';
 import { requireStudioUser } from './auth';
 import { getProjectHistoryRepository, getProjectRepository, getStudioCache } from './db';
 import { traceStudioStep } from './telemetry';
@@ -32,6 +34,8 @@ export interface CreateStudioProjectOptions {
   thumbnail?: string;
   folderId?: string;
   canvas?: ProjectCanvas;
+  /** 未显式传 title 时，按此语言生成默认项目名，保证默认命名跟随 UI 语言。 */
+  locale?: Locale;
 }
 
 export async function listStudioProjects(
@@ -90,7 +94,7 @@ export async function createStudioProject(
 
   const project = await repository.create({
     ownerId: user.id,
-    title: options.title ?? 'Untitled canvas',
+    title: options.title ?? translate(options.locale ?? DEFAULT_LOCALE, 'canvas.untitled'),
     description: options.description,
     thumbnail: options.thumbnail,
     folderId: options.folderId,

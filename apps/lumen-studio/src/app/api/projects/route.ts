@@ -35,7 +35,7 @@ export const POST = withApiRouteSpan('POST /api/projects', async (request: Reque
     const input = CreateProjectInputSchema.omit({ ownerId: true }).partial().parse(body);
     const project = await createStudioProject({
       ...input,
-      title: input.title ?? translate(locale, 'canvas.untitled'),
+      locale,
     });
     return okJson({ project }, { status: 201 });
   } catch (error) {

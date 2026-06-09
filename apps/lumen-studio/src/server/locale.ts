@@ -5,6 +5,7 @@ import {
   LUMEN_LOCALE_HEADER,
   getLocaleFromPathname,
   isLocale,
+  localeFromAcceptLanguage,
 } from '@/i18n/routing';
 
 export function resolveRequestLocale(request: Request): Locale {
@@ -21,11 +22,18 @@ export function resolveRequestLocale(request: Request): Locale {
   const referer = request.headers.get('referer');
   if (referer) {
     try {
-      return getLocaleFromPathname(new URL(referer).pathname);
+      const refererPath = new URL(referer).pathname;
+      // SPA (/app/*) referer 不带 locale 前缀，这里命不中 zh，继续往下用 Accept-Language 兜底。
+      if (!refererPath.startsWith('/app')) {
+        return getLocaleFromPathname(refererPath);
+      }
     } catch {
       /* ignore malformed referer */
     }
   }
+
+  const acceptLanguageLocale = localeFromAcceptLanguage(request.headers.get('accept-language'));
+  if (acceptLanguageLocale) return acceptLanguageLocale;
 
   return DEFAULT_LOCALE;
 }

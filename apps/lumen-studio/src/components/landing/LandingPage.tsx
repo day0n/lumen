@@ -3,8 +3,11 @@
 import { LandingNav } from '@/components/landing/LandingNav';
 import { ParticleStory } from '@/components/landing/ParticleStory';
 import {
+  APP_CANVAS_NEW_ROUTE,
+  APP_DASHBOARD_ROUTE,
   APP_HOME_ROUTE,
   APP_HOT_VIDEOS_ROUTE,
+  APP_MATERIALS_ROUTE,
   APP_PROJECTS_ROUTE,
   useHomeRoutePreload,
 } from '@/components/landing/useHomeRoutePreload';
@@ -18,15 +21,15 @@ const footerGroups = [
     links: [
       { href: APP_HOME_ROUTE, labelKey: 'landing.footerGroups.studio' },
       { href: APP_PROJECTS_ROUTE, labelKey: 'landing.footerGroups.canvas' },
-      { href: APP_HOT_VIDEOS_ROUTE, labelKey: 'landing.footerGroups.hotAssets' },
+      { href: APP_CANVAS_NEW_ROUTE, labelKey: 'landing.footerGroups.create' },
     ],
   },
   {
-    titleKey: 'landing.footerGroups.workflow',
+    titleKey: 'landing.footerGroups.resources',
     links: [
-      { href: APP_PROJECTS_ROUTE, labelKey: 'landing.footerGroups.script' },
-      { href: APP_PROJECTS_ROUTE, labelKey: 'landing.footerGroups.shots' },
-      { href: APP_PROJECTS_ROUTE, labelKey: 'landing.footerGroups.review' },
+      { href: APP_HOT_VIDEOS_ROUTE, labelKey: 'landing.footerGroups.hotAssets' },
+      { href: APP_MATERIALS_ROUTE, labelKey: 'landing.footerGroups.materials' },
+      { href: APP_DASHBOARD_ROUTE, labelKey: 'landing.footerGroups.dashboard' },
     ],
   },
 ] as const;

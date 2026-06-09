@@ -7,6 +7,7 @@ import {
   getLocaleFromPathname,
   hasEnglishPrefix,
   isLocale,
+  localeFromAcceptLanguage,
   localePath,
   stripLocalePrefix,
   withoutEnglishPrefix,
@@ -175,6 +176,10 @@ function resolveMiddlewareLocale(request: Request) {
 
   const cookieLocale = readCookieLocale(request);
   if (isLocale(cookieLocale)) return cookieLocale;
+
+  // 没有显式选择时，按浏览器 Accept-Language 兜底，让中文用户首次访问就拿到中文。
+  const acceptLanguageLocale = localeFromAcceptLanguage(request.headers.get('accept-language'));
+  if (acceptLanguageLocale) return acceptLanguageLocale;
 
   return pathLocale;
 }

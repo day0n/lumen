@@ -1,14 +1,15 @@
 'use client';
 
+import { readMessageArray, translate } from '@/i18n/messages';
 import {
   DEFAULT_LOCALE,
   LUMEN_LOCALE_COOKIE,
   type Locale,
   getLocaleFromPathname,
   isLocale,
+  localeFromLanguageTag,
   localePath,
 } from '@/i18n/routing';
-import { readMessageArray, translate } from '@/i18n/messages';
 import { usePathname } from 'next/navigation';
 import {
   type ReactNode,
@@ -38,7 +39,9 @@ export function I18nProvider({
   initialLocale?: Locale;
 }) {
   const pathname = usePathname();
-  const [locale, setLocaleState] = useState<Locale>(() => resolveClientLocale(initialLocale, pathname));
+  const [locale, setLocaleState] = useState<Locale>(() =>
+    resolveClientLocale(initialLocale, pathname),
+  );
   // SPA (/app/*) 路径不带 locale 前缀，语言只由 cookie / 客户端 state 决定。
   // 只有非 /app 的 Next.js 页面，URL 才是 locale 的权威来源。
   const isStudioAppRoute = (pathname || '/').startsWith('/app');
@@ -108,7 +111,26 @@ function resolveClientLocale(initialLocale: Locale | undefined, pathname: string
     return getLocaleFromPathname(window.location.pathname);
   }
 
+  // 用户从未手动选过语言（无 cookie / localStorage）：按浏览器语言兜底。
+  // SPA (/app/*) 路径不带 locale 前缀，这里是中文用户首次进入时唯一能命中中文的入口，
+  // 否则 UI 与默认项目名都会被钉死成英文。
+  const browserLocale = readBrowserLocale();
+  if (browserLocale) return browserLocale;
+
   return DEFAULT_LOCALE;
+}
+
+function readBrowserLocale(): Locale | null {
+  if (typeof navigator === 'undefined') return null;
+  const tags =
+    Array.isArray(navigator.languages) && navigator.languages.length > 0
+      ? navigator.languages
+      : [navigator.language];
+  for (const tag of tags) {
+    const locale = localeFromLanguageTag(tag);
+    if (locale) return locale;
+  }
+  return null;
 }
 
 function readClientStoredLocale(): Locale | null {
