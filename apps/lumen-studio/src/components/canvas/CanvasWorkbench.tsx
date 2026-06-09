@@ -158,6 +158,13 @@ type MediaUploadDisplayState = {
   uploading: boolean;
 };
 
+type MediaActivityDisplayState = {
+  active: boolean;
+  label: string;
+  progress: number | null;
+  tone: 'run' | 'upload';
+};
+
 type MaterialAssetRecord = {
   id: string;
   category: MaterialAssetCategory;
@@ -3826,6 +3833,7 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const { t } = useI18n();
   const { setNodes: setFlowNodes } = useReactFlow<LumenNode, LumenEdge>();
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [estimatedRunProgress, setEstimatedRunProgress] = useState(0);
   const [outputUploadState, setOutputUploadState] = useState<MediaUploadDisplayState>({
     progress: null,
     uploading: false,
@@ -3843,10 +3851,31 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   const upstreamOutputCount =
     typeof data.upstreamOutputCount === 'number' ? data.upstreamOutputCount : 0;
   const modelId = resolveModelId(data);
-  const progress = data.progress ?? (status === 'running' ? 0.45 : 0);
   const canRun = canRunNode(id);
   const isNodeBusy = isWorkflowNodeBusy(status);
-  const progressPercent = Math.max(isNodeBusy ? 14 : 0, Math.round(progress * 100));
+  const backendProgressPercent =
+    typeof data.progress === 'number' ? Math.round(data.progress * 100) : 0;
+  const runProgressPercent = isNodeBusy
+    ? Math.max(status === 'queued' ? 8 : 14, backendProgressPercent, estimatedRunProgress)
+    : 0;
+  const outputActivityState: MediaActivityDisplayState | undefined = outputUploadState.uploading
+    ? {
+        active: true,
+        label:
+          outputUploadState.progress !== null
+            ? `${t('materials.uploading')} ${outputUploadState.progress}%`
+            : t('materials.uploading'),
+        progress: outputUploadState.progress,
+        tone: 'upload',
+      }
+    : isNodeBusy
+      ? {
+          active: true,
+          label: `${status === 'queued' ? t('canvas.timeline.statusQueued') : t('canvas.node.running')} ${runProgressPercent}%`,
+          progress: runProgressPercent,
+          tone: 'run',
+        }
+      : undefined;
   const nodeTitle = getNodeTitle(data, t);
   const nodeError = formatPublicWorkflowError(data, t, data.error);
   const inputImage = getSettingString(data.settings, 'inputImage');
@@ -3893,6 +3922,24 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
   );
   const firstFromUpstream = !inputImage && Boolean(resolvedFirstFrame);
   const lastFromUpstream = !inputLastFrameImage && Boolean(resolvedLastFrame);
+
+  useEffect(() => {
+    if (!isNodeBusy) {
+      setEstimatedRunProgress(0);
+      return;
+    }
+
+    setEstimatedRunProgress((current) => Math.max(current, status === 'queued' ? 8 : 14));
+    const timer = window.setInterval(() => {
+      setEstimatedRunProgress((current) => {
+        const cap = status === 'queued' ? 22 : 92;
+        const step = current < 34 ? 4 : current < 68 ? 2 : 1;
+        return Math.min(cap, current + step);
+      });
+    }, 1100);
+
+    return () => window.clearInterval(timer);
+  }, [isNodeBusy, status]);
 
   const selectSelf = useCallback(() => {
     setFlowNodes((currentNodes) =>
@@ -4128,20 +4175,12 @@ function LumenFlowNode({ data, id, selected }: NodeProps<LumenNode>) {
           >
             <NodeOutputEditor
               data={data}
+              activityState={outputActivityState}
               onChange={(output) => updateNodeData(id, { output: output || null })}
               onMediaUpload={handleOutputMediaUpload}
               uploadState={outputUploadState}
             />
             {status === 'error' && nodeError ? <NodeErrorOverlay message={nodeError} /> : null}
-            {isNodeBusy ? <div className="lumen-node-running-overlay absolute inset-0" /> : null}
-            {isNodeBusy ? (
-              <div className="absolute inset-x-0 bottom-0 h-1 bg-white/[0.06]">
-                <div
-                  className="lumen-node-progress-bar h-full rounded-r-full transition-all duration-300"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-            ) : null}
           </div>
         </div>
 
@@ -4337,11 +4376,13 @@ function NodeErrorOverlay({ message }: { message: string }) {
 }
 
 function NodeOutputEditor({
+  activityState,
   data,
   onChange,
   onMediaUpload,
   uploadState,
 }: {
+  activityState?: MediaActivityDisplayState;
   data: LumenNodeData;
   onChange: (output: string) => void;
   onMediaUpload: (
@@ -4364,6 +4405,7 @@ function NodeOutputEditor({
     if (trimmedOutput && (trimmedOutput.startsWith('data:image') || isHttpUrl(trimmedOutput))) {
       return (
         <MediaOutputFrame
+          activityState={activityState}
           aspectRatio={previewAspectRatio}
           kind="image"
           onUpload={onMediaUpload}
@@ -4387,6 +4429,7 @@ function NodeOutputEditor({
     return (
       <MediaOutputUpload
         aspectRatio={previewAspectRatio}
+        activityState={activityState}
         kind="image"
         onUpload={onMediaUpload}
         uploadState={uploadState}
@@ -4401,6 +4444,7 @@ function NodeOutputEditor({
   ) {
     return (
       <MediaOutputFrame
+        activityState={activityState}
         aspectRatio={previewAspectRatio}
         kind="video"
         onUpload={onMediaUpload}
@@ -4427,7 +4471,12 @@ function NodeOutputEditor({
     (trimmedOutput.startsWith('data:audio') || isHttpUrl(trimmedOutput))
   ) {
     return (
-      <MediaOutputFrame kind="audio" onUpload={onMediaUpload} url={trimmedOutput}>
+      <MediaOutputFrame
+        activityState={activityState}
+        kind="audio"
+        onUpload={onMediaUpload}
+        url={trimmedOutput}
+      >
         <div className="pointer-events-none flex min-h-[104px] w-full flex-col justify-center gap-3 px-3">
           <div className="flex items-center gap-1.5">
             {waveformBars.map((bar) => (
@@ -4452,6 +4501,7 @@ function NodeOutputEditor({
 
   return (
     <MediaOutputUpload
+      activityState={activityState}
       aspectRatio={data.kind === 'video' ? previewAspectRatio : undefined}
       kind={data.kind === 'composition' ? 'video' : data.kind}
       onUpload={onMediaUpload}
@@ -4518,12 +4568,14 @@ function TextOutputEditor({
 }
 
 function MediaOutputFrame({
+  activityState,
   aspectRatio,
   children,
   kind,
   onUpload,
   url,
 }: {
+  activityState?: MediaActivityDisplayState;
   aspectRatio?: string;
   children: ReactNode;
   kind: MaterialAssetKind;
@@ -4542,6 +4594,7 @@ function MediaOutputFrame({
       style={aspectRatio ? { aspectRatio: toCssAspectRatio(aspectRatio) } : undefined}
     >
       {children}
+      {activityState?.active ? <MediaOutputActivityOverlay activity={activityState} /> : null}
       {url ? <MediaOutputOpenButton url={url} /> : null}
       <MediaOutputUploadButton kind={kind} onUpload={onUpload} />
     </div>
@@ -4549,11 +4602,13 @@ function MediaOutputFrame({
 }
 
 function MediaOutputUpload({
+  activityState,
   aspectRatio,
   kind,
   onUpload,
   uploadState,
 }: {
+  activityState?: MediaActivityDisplayState;
   aspectRatio?: string;
   kind: MaterialAssetKind;
   onUpload: (
@@ -4569,11 +4624,20 @@ function MediaOutputUpload({
   const Icon = mediaOutputIcon(kind);
   const displayedUploading = uploadState?.uploading || uploading;
   const displayedProgress = uploadState?.uploading ? uploadState.progress : progress;
-  const progressValue = Math.max(1, Math.min(100, displayedProgress ?? 1));
-  const uploadingLabel =
-    displayedUploading && displayedProgress !== null
-      ? `${t('materials.uploading')} ${displayedProgress}%`
-      : t('materials.uploading');
+  const displayedActivity: MediaActivityDisplayState | undefined =
+    activityState?.active && !displayedUploading
+      ? activityState
+      : displayedUploading
+        ? {
+            active: true,
+            label:
+              displayedProgress !== null
+                ? `${t('materials.uploading')} ${displayedProgress}%`
+                : t('materials.uploading'),
+            progress: displayedProgress,
+            tone: 'upload',
+          }
+        : undefined;
 
   return (
     <div
@@ -4582,30 +4646,56 @@ function MediaOutputUpload({
       }`}
       style={aspectRatio ? { aspectRatio: toCssAspectRatio(aspectRatio) } : undefined}
     >
-      <div className="pointer-events-none flex w-full max-w-[160px] flex-col items-center justify-center gap-2">
-        {displayedUploading ? (
-          <IconLoader2 size={26} stroke={1.8} className="animate-spin opacity-70" />
-        ) : (
+      {displayedActivity ? (
+        <MediaOutputActivityOverlay activity={displayedActivity} embedded />
+      ) : null}
+      {!displayedActivity ? (
+        <div className="pointer-events-none flex w-full max-w-[160px] flex-col items-center justify-center gap-2">
           <Icon size={30} stroke={1.6} className="opacity-70" />
-        )}
-        <span className="text-[12px] font-bold text-white/38">
-          {displayedUploading ? uploadingLabel : t('canvas.node.output')}
-        </span>
-        {displayedUploading ? (
-          <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.1]">
-            <div
-              className="h-full rounded-full bg-white/70 transition-[width] duration-200"
-              style={{ width: `${progressValue}%` }}
-            />
-          </div>
-        ) : null}
-      </div>
+          <span className="text-[12px] font-bold text-white/38">{t('canvas.node.output')}</span>
+        </div>
+      ) : null}
       <MediaOutputUploadButton
         kind={kind}
         onUpload={onUpload}
         onUploadProgress={setProgress}
         onUploadingChange={setUploading}
       />
+    </div>
+  );
+}
+
+function MediaOutputActivityOverlay({
+  activity,
+  embedded = false,
+}: {
+  activity: MediaActivityDisplayState;
+  embedded?: boolean;
+}) {
+  const progressValue = Math.max(1, Math.min(100, activity.progress ?? 1));
+
+  return (
+    <div
+      className={cn(
+        'lumen-output-activity pointer-events-none absolute inset-0 flex items-center justify-center',
+        activity.tone === 'upload' ? 'lumen-output-activity--upload' : 'lumen-output-activity--run',
+        embedded ? 'rounded-[inherit]' : '',
+      )}
+    >
+      <div className="relative z-10 flex w-[min(68%,190px)] flex-col items-center gap-2.5">
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-black/34 text-white shadow-[0_0_26px_rgba(255,255,255,0.12)] ring-1 ring-white/[0.18] backdrop-blur">
+          <IconLoader2 size={18} stroke={2.2} className="animate-spin" />
+        </div>
+        <div className="max-w-full truncate text-center text-[12px] font-black text-white/82 drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]">
+          {activity.label}
+        </div>
+        <div className="lumen-output-activity__track h-1.5 w-full overflow-hidden rounded-full bg-white/[0.12]">
+          <div
+            className="lumen-output-activity__bar h-full rounded-full transition-[width] duration-300"
+            style={{ width: `${progressValue}%` }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
