@@ -329,7 +329,12 @@ export class RemakeJobRepository {
 
   /**
    * 原子地把 scene N 的某一字段（image/video/voice/mix Url）写进 outputs.scenes 数组。
-   * 找不到对应 sceneIndex 就 push 一个新条目；找得到就 patch。
+   *
+   * 用 aggregation-pipeline update 让 mongo 在服务端单文档原子事务里完成
+   * "存在则 patch，不存在则 push"。之前的实现是 Node 端 read-modify-write：
+   *   findOne → mutate scenes 数组 → $set 'outputs.scenes' 为整个新数组
+   * 两个 scene 几乎同时回写时，后写者拿到的是落后的快照（不含对方刚写入的字段），
+   * `$set` 整个数组会**覆盖丢失对方的写入**——表现为「图片/视频生成成功但页面查不到」。
    */
   async patchSceneOutput(
     jobId: string,
@@ -337,45 +342,112 @@ export class RemakeJobRepository {
     sceneIndex: number,
     patch: Partial<Omit<RemakeJobSceneOutput, 'sceneIndex'>>,
   ): Promise<RemakeJobRecord | null> {
-    const job = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
-    if (!job) return null;
-    const scenes = [...(job.outputs?.scenes ?? [])];
-    const existingIndex = scenes.findIndex((scene) => scene.sceneIndex === sceneIndex);
-    if (existingIndex >= 0) {
-      scenes[existingIndex] = { ...scenes[existingIndex], ...patch, sceneIndex };
-    } else {
-      scenes.push({ sceneIndex, ...patch });
+    const patchEntries = Object.entries(patch).filter(([, value]) => value !== undefined);
+    if (patchEntries.length === 0) {
+      const existing = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
+      return existing ? toJobRecord(existing) : null;
     }
-    scenes.sort((a, b) => a.sceneIndex - b.sceneIndex);
+    const patchObject: Record<string, unknown> = { sceneIndex };
+    for (const [key, value] of patchEntries) patchObject[key] = value;
+
+    const existingScenes = { $ifNull: ['$outputs.scenes', []] };
+
     const result = await this.jobs().findOneAndUpdate(
       { _id: jobId, owner_id: ownerId },
-      { $set: { 'outputs.scenes': scenes, updated_at: new Date() } },
+      [
+        {
+          $set: {
+            'outputs.scenes': {
+              $cond: [
+                { $in: [sceneIndex, { $ifNull: ['$outputs.scenes.sceneIndex', []] }] },
+                {
+                  $map: {
+                    input: existingScenes,
+                    as: 's',
+                    in: {
+                      $cond: [
+                        { $eq: ['$$s.sceneIndex', sceneIndex] },
+                        { $mergeObjects: ['$$s', patchObject] },
+                        '$$s',
+                      ],
+                    },
+                  },
+                },
+                { $concatArrays: [existingScenes, [patchObject]] },
+              ],
+            },
+            updated_at: new Date(),
+          },
+        },
+        {
+          $set: {
+            'outputs.scenes': {
+              $sortArray: { input: '$outputs.scenes', sortBy: { sceneIndex: 1 } },
+            },
+          },
+        },
+      ] satisfies UpdateFilter<RemakeJobDocument>[],
       { returnDocument: 'after' },
     );
     return result ? toJobRecord(result) : null;
   }
 
+  /**
+   * 同上：environment lock 的 image url 也走 mongo 端原子 upsert，避免
+   * 多个 environment 并发回写时互相覆盖。
+   */
   async patchEnvironmentOutput(
     jobId: string,
     ownerId: string,
     environmentIndex: number,
     imageUrl: string,
   ): Promise<RemakeJobRecord | null> {
-    const job = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
-    if (!job) return null;
-    const environmentLocks = [...(job.outputs?.environmentLocks ?? [])];
-    const existingIndex = environmentLocks.findIndex(
-      (item) => item.environmentIndex === environmentIndex,
-    );
-    if (existingIndex >= 0) {
-      environmentLocks[existingIndex] = { environmentIndex, imageUrl };
-    } else {
-      environmentLocks.push({ environmentIndex, imageUrl });
-    }
-    environmentLocks.sort((a, b) => a.environmentIndex - b.environmentIndex);
+    const existingLocks = { $ifNull: ['$outputs.environmentLocks', []] };
+    const lockObject = { environmentIndex, imageUrl };
+
     const result = await this.jobs().findOneAndUpdate(
       { _id: jobId, owner_id: ownerId },
-      { $set: { 'outputs.environmentLocks': environmentLocks, updated_at: new Date() } },
+      [
+        {
+          $set: {
+            'outputs.environmentLocks': {
+              $cond: [
+                {
+                  $in: [
+                    environmentIndex,
+                    { $ifNull: ['$outputs.environmentLocks.environmentIndex', []] },
+                  ],
+                },
+                {
+                  $map: {
+                    input: existingLocks,
+                    as: 'e',
+                    in: {
+                      $cond: [
+                        { $eq: ['$$e.environmentIndex', environmentIndex] },
+                        lockObject,
+                        '$$e',
+                      ],
+                    },
+                  },
+                },
+                { $concatArrays: [existingLocks, [lockObject]] },
+              ],
+            },
+            updated_at: new Date(),
+          },
+        },
+        {
+          $set: {
+            'outputs.environmentLocks': {
+              $sortArray: {
+                input: '$outputs.environmentLocks',
+                sortBy: { environmentIndex: 1 },
+              },
+            },
+          },
+        },
+      ] satisfies UpdateFilter<RemakeJobDocument>[],
       { returnDocument: 'after' },
     );
     return result ? toJobRecord(result) : null;
