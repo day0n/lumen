@@ -151,17 +151,29 @@ export class ChatRunner {
                   const instance = this.buildInstance(profile);
                   span.setAttribute('gen_ai.request.model', instance.model);
 
-                  // 检索长期记忆并注入 system prompt
-                  let systemPrompt = instance.systemPrompt;
+                  // Long-term memory used to be concatenated to the system
+                  // prompt. That made the system prompt change every turn
+                  // (the recall results vary with the user's query) and
+                  // therefore busted Anthropic's prefix cache — every turn
+                  // re-billed the entire system prompt at full price.
+                  //
+                  // The fix is to keep `systemPrompt` byte-stable across
+                  // turns, and inject the memory block as a prefix of the
+                  // current user message instead. Memory is per-turn-relevant
+                  // anyway (it's recalled against this turn's query), so the
+                  // user message is the more semantically correct location.
+                  // System prompt now stays cacheable.
+                  const systemPrompt = instance.systemPrompt;
                   const userQuery =
                     typeof input.message === 'string'
                       ? input.message
                       : JSON.stringify(input.message);
+                  let userMessage: string | Array<Record<string, unknown>> = input.message;
                   if (this.opts.memory && input.userId && input.userId !== 'anonymous') {
                     const memories = await this.opts.memory.retrieve(input.userId, userQuery);
                     const memoryBlock = formatMemoriesForPrompt(memories);
                     if (memoryBlock) {
-                      systemPrompt = systemPrompt + memoryBlock;
+                      userMessage = prependMemoryToUserMessage(memoryBlock, input.message);
                     }
                   }
 
@@ -170,7 +182,7 @@ export class ChatRunner {
                   const messages: MessageList = buildMessages({
                     systemPrompt,
                     history: history.messages,
-                    userMessage: input.message,
+                    userMessage,
                   });
                   const initialMessageCount = messages.length;
                   span.setAttributes({
@@ -421,6 +433,26 @@ function readContextString(
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return null;
+}
+
+/**
+ * Inject the recalled-memory block as a prefix on the current user
+ * message instead of appending to the system prompt. The system prompt
+ * stays byte-stable across turns, so Anthropic's prefix cache can hit
+ * even when memory recall results vary per turn.
+ *
+ * Handles both string and multimodal (content-block) message shapes:
+ *   - string  → prepended as plain text with a blank line separator
+ *   - blocks  → prepended as a new {type:'text', text: memoryBlock} entry
+ */
+function prependMemoryToUserMessage(
+  memoryBlock: string,
+  message: string | Array<Record<string, unknown>>,
+): string | Array<Record<string, unknown>> {
+  if (typeof message === 'string') {
+    return `${memoryBlock}\n\n${message}`;
+  }
+  return [{ type: 'text', text: memoryBlock }, ...message];
 }
 
 function appendDisplayMessage(session: Session, message: Session['messages'][number]): void {
