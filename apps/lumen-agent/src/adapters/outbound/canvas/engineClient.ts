@@ -5,7 +5,11 @@ import {
   type LumenCanvas,
   type LumenCanvasNode,
   type LumenCanvasNodeData,
+  type NodeInput,
   type PublicErrorFields,
+  type WorkflowEdge,
+  type WorkflowNode,
+  canvasEdgesToWorkflowEdges,
   canvasNodeToWorkflowNodeWithContext,
   computeSingleNodeInput,
   updateCanvasNodeData,
@@ -81,11 +85,11 @@ export class WorkflowEngineClient {
       );
     }
 
-    const workflowNode = {
-      ...canvasNodeToWorkflowNodeWithContext(input.project.canvas, target),
-      input: resolvedInput,
-      output: null,
-    };
+    const { nodes: workflowNodes, edges: workflowEdges } = buildSingleNodeRunPayload(
+      input.project.canvas,
+      target,
+      resolvedInput,
+    );
     const runId = nanoid(16);
     const channelId = `flow:events:agent:${runId}:${nanoid(8)}`;
 
@@ -119,7 +123,8 @@ export class WorkflowEngineClient {
         nodeId: target.id,
         nodeTitle: target.data.title,
         nodeKind: target.data.kind,
-        node: workflowNode,
+        nodes: workflowNodes,
+        edges: workflowEdges,
       });
     } catch (err) {
       const message = workflowErrorDisplayMessage(err);
@@ -209,7 +214,8 @@ export class WorkflowEngineClient {
     nodeId: string;
     nodeTitle: string;
     nodeKind: string;
-    node: ReturnType<typeof canvasNodeToWorkflowNodeWithContext>;
+    nodes: WorkflowNode[];
+    edges: WorkflowEdge[];
   }): Promise<string> {
     const subscriber = this.redis!.duplicate({ maxRetriesPerRequest: null });
     const cfg = getConfig();
@@ -270,8 +276,8 @@ export class WorkflowEngineClient {
         workflowId: input.projectId,
         userId: input.userId,
         nodeIds: [input.nodeId],
-        nodes: [input.node],
-        edges: [],
+        nodes: input.nodes,
+        edges: input.edges,
       };
 
       await emitToolEvent('workflow_node_status', {
@@ -399,6 +405,28 @@ export class WorkflowEngineClient {
         break;
     }
   }
+}
+
+function buildSingleNodeRunPayload(
+  canvas: LumenCanvas,
+  target: LumenCanvasNode,
+  resolvedInput: NodeInput,
+): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  const incomingEdges = canvas.edges.filter((edge) => edge.target === target.id);
+  const upstreamIds = new Set(incomingEdges.map((edge) => edge.source));
+  const upstreamNodes = canvas.nodes.filter((node) => upstreamIds.has(node.id));
+
+  const nodes: WorkflowNode[] = [
+    ...upstreamNodes.map((node) => canvasNodeToWorkflowNodeWithContext(canvas, node)),
+    {
+      ...canvasNodeToWorkflowNodeWithContext(canvas, target),
+      input: resolvedInput,
+      output: null,
+    },
+  ];
+  const edges = canvasEdgesToWorkflowEdges(incomingEdges);
+
+  return { nodes, edges };
 }
 
 function workflowErrorDisplayMessage(error: unknown): string {

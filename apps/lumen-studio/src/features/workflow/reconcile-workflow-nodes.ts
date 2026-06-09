@@ -14,6 +14,7 @@ export interface ReconcileNodeState extends PublicErrorFields {
   status: NodeStatus;
   output: string | null;
   error: string | null;
+  activeRunId?: string | null;
   progress: number;
 }
 
@@ -41,6 +42,7 @@ export function mapWorkflowResultToNodeState(
     status,
     output: status === 'success' ? result.output : null,
     error: status === 'error' || status === 'cancelled' ? result.error : null,
+    activeRunId: status === 'queued' || status === 'running' ? result.runId : null,
     errorCode: result.errorCode,
     errorName: result.errorName,
     errorI18nKey: result.errorI18nKey,

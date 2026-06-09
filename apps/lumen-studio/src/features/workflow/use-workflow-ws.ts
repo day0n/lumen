@@ -44,6 +44,7 @@ export interface NodeState extends PublicErrorFields {
   status: NodeStatus;
   output: string | null;
   error: string | null;
+  activeRunId?: string | null;
   progress: number;
 }
 
@@ -53,6 +54,7 @@ interface UseWorkflowWsOptions {
   workflowId?: string | null;
   userId?: string | null;
   locale?: Locale;
+  getActiveRunId?: (nodeId: string) => string | null | undefined;
   onNodeStateChange?: (nodeId: string, state: NodeState) => void;
   onFlowDone?: () => void;
 }
@@ -73,6 +75,7 @@ export function useWorkflowWs({
   workflowId,
   userId,
   locale = 'en',
+  getActiveRunId,
   onNodeStateChange,
   onFlowDone,
 }: UseWorkflowWsOptions) {
@@ -126,10 +129,22 @@ export function useWorkflowWs({
     (event: ServerEvent) => {
       switch (event.event) {
         case 'node:queued':
-          updateNode(event.nodeId, { status: 'queued', output: null, error: null, progress: 0 });
+          updateNode(event.nodeId, (prev) => ({
+            ...prev,
+            status: 'queued',
+            output: null,
+            error: null,
+            progress: 0,
+          }));
           break;
         case 'node:start':
-          updateNode(event.nodeId, { status: 'running', output: null, error: null, progress: 0 });
+          updateNode(event.nodeId, (prev) => ({
+            ...prev,
+            status: 'running',
+            output: null,
+            error: null,
+            progress: 0,
+          }));
           break;
         case 'node:progress':
           updateNode(event.nodeId, (prev) => ({ ...prev, progress: event.progress }));
@@ -139,6 +154,7 @@ export function useWorkflowWs({
             status: 'success',
             output: event.output,
             error: null,
+            activeRunId: null,
             progress: 1,
           });
           break;
@@ -147,6 +163,7 @@ export function useWorkflowWs({
             ...prev,
             status: 'error',
             error: event.error,
+            activeRunId: null,
             errorCode: event.errorCode,
             errorName: event.errorName,
             errorI18nKey: event.errorI18nKey,
@@ -161,6 +178,7 @@ export function useWorkflowWs({
               ...prev,
               status: 'cancelled',
               error: event.reason ?? translate(locale, 'canvas.node.cancelled'),
+              activeRunId: null,
             };
           });
           break;
@@ -190,6 +208,7 @@ export function useWorkflowWs({
             ...current,
             status: 'error',
             error,
+            activeRunId: null,
           };
           nextStates[nodeId] = next;
           onNodeStateChange?.(nodeId, next);
@@ -217,6 +236,34 @@ export function useWorkflowWs({
             ...current,
             status: 'cancelled',
             error: reason,
+            activeRunId: null,
+          };
+          nextStates[nodeId] = next;
+          onNodeStateChange?.(nodeId, next);
+        }
+        return nextStates;
+      });
+    },
+    [onNodeStateChange],
+  );
+
+  const markNodesCancelled = useCallback(
+    (nodeIds: string[], reason: string) => {
+      setNodeStates((prev) => {
+        const nextStates = { ...prev };
+        for (const nodeId of nodeIds) {
+          const current = nextStates[nodeId] ?? {
+            status: 'idle',
+            output: null,
+            error: null,
+            progress: 0,
+          };
+          if (current.status === 'success') continue;
+          const next: NodeState = {
+            ...current,
+            status: 'cancelled',
+            error: reason,
+            activeRunId: null,
           };
           nextStates[nodeId] = next;
           onNodeStateChange?.(nodeId, next);
@@ -231,11 +278,19 @@ export function useWorkflowWs({
     (nodeIds: string[] | undefined, nodes: WorkflowNode[], edges: WorkflowEdge[]) => {
       const targetNodeIds = nodeIds && nodeIds.length > 0 ? nodeIds : nodes.map((node) => node.id);
 
+      const runId = nanoid(16);
+
       // 立即把目标节点标记为排队中，不等 websocket 握手 —— 点击运行就有反馈。
       setNodeStates((prev) => {
         const nextStates = { ...prev };
         for (const nodeId of targetNodeIds) {
-          const next: NodeState = { status: 'queued', output: null, error: null, progress: 0 };
+          const next: NodeState = {
+            status: 'queued',
+            output: null,
+            error: null,
+            activeRunId: runId,
+            progress: 0,
+          };
           nextStates[nodeId] = next;
           onNodeStateChange?.(nodeId, next);
         }
@@ -249,7 +304,6 @@ export function useWorkflowWs({
         return;
       }
 
-      const runId = nanoid(16);
       // 客户端 ws.flow.run span：量用户视角的整条工作流耗时，onclose 时收尾。
       // 在它的 scope 内取 trace 注入消息，让 engine 的 workflow.execute 挂到它下面。
       const flowSpan = Sentry.startInactiveSpan({
@@ -376,8 +430,15 @@ export function useWorkflowWs({
   const cancelNodes = useCallback(
     (nodeIds: string[], reason = translate(locale, 'canvas.node.cancelled')) => {
       const runIds = new Set<string>();
+      const externalRuns = new Map<string, string[]>();
       for (const nodeId of nodeIds) {
         for (const runId of nodeRunIndexRef.current.get(nodeId) ?? []) runIds.add(runId);
+        const activeRunId = nodeStates[nodeId]?.activeRunId ?? getActiveRunId?.(nodeId);
+        if (activeRunId && !activeRunsRef.current.has(activeRunId)) {
+          const targetNodeIds = externalRuns.get(activeRunId) ?? [];
+          targetNodeIds.push(nodeId);
+          externalRuns.set(activeRunId, targetNodeIds);
+        }
       }
 
       for (const runId of runIds) {
@@ -397,11 +458,43 @@ export function useWorkflowWs({
           run.ws.close();
         }
       }
+
+      if (externalRuns.size > 0) {
+        const externalNodeIds = [...externalRuns.values()].flat();
+        markNodesCancelled(externalNodeIds, reason);
+        if (!projectId) return;
+        for (const [runId, targetNodeIds] of externalRuns) {
+          void cancelWorkflowRun(projectId, runId, targetNodeIds, reason).catch((err) => {
+            Sentry.captureException(err);
+          });
+        }
+      }
     },
-    [locale, markRunCancelled],
+    [getActiveRunId, locale, markNodesCancelled, markRunCancelled, nodeStates, projectId],
   );
 
   return { cancelNodes, connectionError, nodeStates, runNodes };
+}
+
+async function cancelWorkflowRun(
+  projectId: string,
+  runId: string,
+  nodeIds: string[],
+  reason: string,
+): Promise<void> {
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/workflow-runs/${encodeURIComponent(
+      runId,
+    )}/cancel`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nodeIds, reason }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`workflow run cancel failed: HTTP ${response.status}`);
+  }
 }
 
 function toWebSocketUrl(url: string): string {

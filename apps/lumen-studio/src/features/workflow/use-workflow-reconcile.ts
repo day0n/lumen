@@ -27,6 +27,7 @@ interface UseWorkflowReconcileOptions {
       status: NodeStatus;
       output: string | null;
       error: string | null;
+      activeRunId?: string | null;
       progress: number;
     } & PublicErrorFields,
   ) => void;

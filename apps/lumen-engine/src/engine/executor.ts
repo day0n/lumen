@@ -110,16 +110,39 @@ export class WorkflowExecutor {
         // Mark all target nodes as queued.
         for (const nodeId of sorted) {
           const node = graph.getNodeAttributes(nodeId) as WorkflowNode;
-          const input = resolveInput(graph, nodeId);
-          await this.workflowStore.markNodeQueued({
-            runId,
-            projectId,
-            workflowId,
-            userId,
-            node,
-            input,
-          });
-          await this.publisher.publish(channelId, { event: 'node:queued', nodeId });
+          try {
+            const input = resolveInput(graph, nodeId);
+            await this.workflowStore.markNodeQueued({
+              runId,
+              projectId,
+              workflowId,
+              userId,
+              node,
+              input,
+            });
+            await this.publisher.publish(channelId, { event: 'node:queued', nodeId });
+          } catch (err) {
+            failedIds.add(nodeId);
+            terminalIds.add(nodeId);
+            summary.failed += 1;
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            logger.error({ err, nodeId }, 'node input resolution failed');
+            await this.workflowStore.markNodeFailed({
+              runId,
+              projectId,
+              workflowId,
+              userId,
+              node,
+              input: node.input,
+              error: errorMsg,
+              startedAt: new Date(),
+            });
+            await this.publisher.publish(channelId, {
+              event: 'node:error',
+              nodeId,
+              error: errorMsg,
+            });
+          }
         }
 
         if (signal?.aborted) {
@@ -131,6 +154,7 @@ export class WorkflowExecutor {
         // Execute in topological order.
         for (const nodeId of sorted) {
           if (cancelled) break;
+          if (failedIds.has(nodeId)) continue;
           const node = graph.getNodeAttributes(nodeId) as WorkflowNode;
 
           try {

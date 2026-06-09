@@ -145,6 +145,7 @@ type LumenNodeData = Record<string, unknown> &
     error?: string | null;
     groupId?: string | null;
     groupName?: string | null;
+    activeRunId?: string | null;
     progress?: number;
     previewAspectRatio?: string;
   };
@@ -484,6 +485,7 @@ function createNodeData(template: NodeTemplate): LumenNodeData {
     settings: {},
     status: 'idle',
     error: null,
+    activeRunId: null,
     progress: 0,
   };
 }
@@ -1228,6 +1230,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
               errorI18nKey: state.errorI18nKey,
               retryable: state.retryable,
               attempts: state.attempts,
+              activeRunId:
+                state.activeRunId === undefined ? node.data.activeRunId : state.activeRunId,
               progress: state.progress,
             },
           };
@@ -1237,12 +1241,21 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     [setNodes],
   );
 
+  const getNodeActiveRunId = useCallback(
+    (nodeId: string) => {
+      const value = nodes.find((node) => node.id === nodeId)?.data.activeRunId;
+      return typeof value === 'string' && value.trim() ? value : null;
+    },
+    [nodes],
+  );
+
   const { cancelNodes, connectionError, runNodes } = useWorkflowWs({
     url: wsUrl,
     projectId: currentProjectId,
     workflowId: currentProjectId,
     userId: currentOwnerId,
     locale,
+    getActiveRunId: getNodeActiveRunId,
     onNodeStateChange: handleNodeStateChange,
   });
 
@@ -1604,11 +1617,18 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       const eventProjectId = readEventString(data.project_id);
       const nodeId = readEventString(data.node_id);
       const status = readNodeStatus(data.status);
+      const runId = readEventString(data.run_id);
       if (!currentProjectId || eventProjectId !== currentProjectId || !nodeId || !status) return;
       handleNodeStateChange(nodeId, {
         status,
         output: readEventString(data.output),
         error: readEventString(data.error),
+        activeRunId:
+          status === 'queued' || status === 'running'
+            ? runId === null
+              ? undefined
+              : runId
+            : null,
         errorCode: readEventNumber(data.error_code) ?? undefined,
         errorName: readPublicErrorName(data.error_name),
         errorI18nKey: readEventString(data.error_i18n_key) ?? undefined,

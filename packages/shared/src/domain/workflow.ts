@@ -44,6 +44,7 @@ export const LumenCanvasNodeDataSchema = z
     ...PublicErrorFieldsSchema.shape,
     groupId: z.string().nullable().optional(),
     groupName: z.string().nullable().optional(),
+    activeRunId: z.string().nullable().optional(),
     progress: z.number().min(0).max(1).optional(),
   })
   .passthrough();

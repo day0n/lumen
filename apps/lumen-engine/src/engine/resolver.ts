@@ -2,9 +2,10 @@ import {
   type NodeType,
   type VideoClipInput,
   type WorkflowNode,
-  compileCompositionClips,
+  CompositionCompileError,
   mergeTextOutputIntoNodePrompt,
   parseCompositionTimeline,
+  tryCompileCompositionClips,
 } from '@lumen/shared/domain';
 
 import type { WorkflowGraph } from './graph.js';
@@ -71,7 +72,17 @@ function resolveCompositionInput(
   }
 
   const timeline = parseCompositionTimeline(node.model.settings ?? {});
-  resolved.clips = compileCompositionClips(timeline, videoUrlByNodeId);
+  const compiled = tryCompileCompositionClips(timeline, videoUrlByNodeId);
+  if (compiled.ok) {
+    resolved.clips = compiled.clips;
+  } else {
+    const preResolved = node.input.clips.filter((clip) => clip.url.trim());
+    if (preResolved.length > 0) {
+      resolved.clips = preResolved;
+    } else {
+      throw new CompositionCompileError(compiled.missing);
+    }
+  }
   resolved.video = null;
   resolved.videos = [];
 }
