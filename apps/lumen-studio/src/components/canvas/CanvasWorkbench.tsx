@@ -4585,11 +4585,11 @@ function TextOutputEditor({
 
   if (editing) {
     return (
-      <div className="relative min-h-[104px] overflow-hidden">
+      <div className="relative max-h-[260px] min-h-[104px] overflow-hidden">
         <ImeTextarea
           aria-label={t('canvas.node.output')}
           autoFocus
-          className="nodrag nowheel block min-h-[104px] w-full resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/26"
+          className="nodrag nowheel block max-h-[260px] min-h-[104px] w-full resize-none overflow-y-auto bg-transparent px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none placeholder:text-white/26"
           onBlur={() => setEditing(false)}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
@@ -4608,7 +4608,7 @@ function TextOutputEditor({
 
   return (
     <div
-      className="relative min-h-[104px] w-full cursor-grab overflow-hidden whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none transition-colors hover:text-white/86 active:cursor-grabbing"
+      className="nodrag nowheel relative max-h-[260px] min-h-[104px] w-full cursor-grab overflow-y-auto whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-relaxed text-white/78 outline-none transition-colors hover:text-white/86 active:cursor-grabbing"
       onDoubleClick={(event) => {
         event.stopPropagation();
         setEditing(true);
@@ -4643,7 +4643,7 @@ function MediaOutputFrame({
 }) {
   return (
     <div
-      className={`group/output relative w-full cursor-grab overflow-hidden active:cursor-grabbing ${
+      className={`group/output relative max-h-[320px] w-full cursor-grab overflow-hidden active:cursor-grabbing ${
         aspectRatio ? '' : 'min-h-[104px]'
       }`}
       style={aspectRatio ? { aspectRatio: toCssAspectRatio(aspectRatio) } : undefined}
@@ -4696,7 +4696,7 @@ function MediaOutputUpload({
 
   return (
     <div
-      className={`group/output relative flex w-full cursor-grab flex-col items-center justify-center gap-2 px-3 py-2.5 text-white/30 transition-colors hover:text-white/64 active:cursor-grabbing ${
+      className={`group/output relative flex max-h-[320px] w-full cursor-grab flex-col items-center justify-center gap-2 overflow-hidden px-3 py-2.5 text-white/30 transition-colors hover:text-white/64 active:cursor-grabbing ${
         aspectRatio ? '' : 'min-h-[104px]'
       }`}
       style={aspectRatio ? { aspectRatio: toCssAspectRatio(aspectRatio) } : undefined}

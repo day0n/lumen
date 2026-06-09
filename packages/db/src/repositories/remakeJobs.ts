@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { AnyBulkWriteOperation, Db, Filter, UpdateFilter } from 'mongodb';
+import type { AnyBulkWriteOperation, Db, Document, Filter, UpdateFilter } from 'mongodb';
 
 import {
   type CreateRemakeJobInput,
@@ -592,7 +592,7 @@ export class RemakeJobRepository {
       // Mongo has no "set on first only" outside of upsert, so use an
       // aggregation-pipeline update with $ifNull to preserve the existing
       // value when present.
-      const pipeline: UpdateFilter<RemakeTaskDocument>[] = [
+      const pipeline: Document[] = [
         {
           $set: {
             ...set,
