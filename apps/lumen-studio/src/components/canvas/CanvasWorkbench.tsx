@@ -1296,24 +1296,46 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       setCanvasMediaUploading(true);
 
       try {
-        const form = new FormData();
-        form.set('file', file);
-        form.set('kind', kind);
-        if (currentProjectId) form.set('workflowId', currentProjectId);
-        if (nodeId) form.set('nodeId', nodeId);
+        if (!authReady || !isSignedIn) {
+          if (authReady) requireLogin();
+          throw new Error(t('api.unauthorized'));
+        }
 
-        const token = await getToken().catch(() => null);
-        const headers: Record<string, string> = { 'x-lumen-locale': locale };
-        if (token) headers.Authorization = `Bearer ${token}`;
+        const buildForm = () => {
+          const form = new FormData();
+          form.set('file', file);
+          form.set('kind', kind);
+          if (currentProjectId) form.set('workflowId', currentProjectId);
+          if (nodeId) form.set('nodeId', nodeId);
+          return form;
+        };
 
-        const response = await fetch('/api/canvas/uploads', {
-          method: 'POST',
-          headers,
-          body: form,
-        });
+        const buildHeaders = async (freshToken: boolean) => {
+          const token = await getToken(freshToken ? { skipCache: true } : undefined).catch(
+            () => null,
+          );
+          const headers: Record<string, string> = { 'x-lumen-locale': locale };
+          if (token) headers.Authorization = `Bearer ${token}`;
+          return headers;
+        };
+
+        const upload = async (freshToken = false) =>
+          fetch('/api/canvas/uploads', {
+            method: 'POST',
+            headers: await buildHeaders(freshToken),
+            body: buildForm(),
+            credentials: 'include',
+            cache: 'no-store',
+          });
+
+        let response = await upload();
+        if (response.status === 401) {
+          response = await upload(true);
+        }
+
         const payload = (await response.json().catch(() => null)) as CanvasUploadApiResponse | null;
         if (!response.ok || !payload?.ok) {
-          if (response.status === 401) requireLogin();
+          if (response.status === 401 && !isSignedIn) requireLogin();
           throw new Error(
             payload && !payload.ok ? payload.error.message : t('materials.uploadFailed'),
           );
@@ -1324,7 +1346,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         if (pendingCanvasUploads.current === 0) setCanvasMediaUploading(false);
       }
     },
-    [currentProjectId, getToken, locale, requireLogin, t],
+    [authReady, currentProjectId, getToken, isSignedIn, locale, requireLogin, t],
   );
 
   useEffect(() => {

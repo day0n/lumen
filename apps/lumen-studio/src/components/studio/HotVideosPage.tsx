@@ -1337,21 +1337,36 @@ function ReplicaConfigModal({
     signal?: AbortSignal,
   ) => {
     if (image.uploadedUrl) return image.uploadedUrl;
-    const form = new FormData();
-    form.set('file', image.file);
-    form.set('kind', 'image');
-    form.set('nodeId', nodeId);
 
-    const token = await getToken().catch(() => null);
-    const headers: Record<string, string> = { 'x-lumen-locale': locale };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    const buildForm = () => {
+      const form = new FormData();
+      form.set('file', image.file);
+      form.set('kind', 'image');
+      form.set('nodeId', nodeId);
+      return form;
+    };
 
-    const response = await fetch('/api/canvas/uploads', {
-      method: 'POST',
-      headers,
-      body: form,
-      signal,
-    });
+    const buildHeaders = async (freshToken: boolean) => {
+      const token = await getToken(freshToken ? { skipCache: true } : undefined).catch(() => null);
+      const headers: Record<string, string> = { 'x-lumen-locale': locale };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      return headers;
+    };
+
+    const upload = async (freshToken = false) =>
+      fetch('/api/canvas/uploads', {
+        method: 'POST',
+        headers: await buildHeaders(freshToken),
+        body: buildForm(),
+        signal,
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+    let response = await upload();
+    if (response.status === 401 && !signal?.aborted) {
+      response = await upload(true);
+    }
     const payload = await readClientApiJson<CanvasUploadApiResponse>(
       response,
       t('hotVideos.apiUnavailable'),
