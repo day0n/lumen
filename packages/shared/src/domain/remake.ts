@@ -42,6 +42,11 @@ export interface RemakeEnvironment {
   description: string;
   /** 复用该环境的场次索引。 */
   usedSceneIndexes: number[];
+  /**
+   * 用户对该环境锁定 prompt 的显式 override；空 / undefined = 不覆盖，
+   * 走 buildEnvironmentLockPrompt 的自动版本。
+   */
+  prompt?: string;
 }
 
 export interface RemakeSettings {

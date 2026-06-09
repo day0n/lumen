@@ -44,6 +44,11 @@ const RemakeEnvironmentSchema = z
     name: z.string().trim().min(1).max(120),
     description: z.string().trim().min(1).max(600),
     usedSceneIndexes: z.array(z.number().int().min(1)).min(1).max(10),
+    /**
+     * 用户对该环境锁定 prompt 的显式覆盖；未设置时走自动生成。
+     * 与 plan.creatorPrompt / productPrompt 同语义，但放在环境对象上更对位。
+     */
+    prompt: z.string().trim().max(4000).optional(),
   })
   .strict();
 export type RemakeJobEnvironment = z.infer<typeof RemakeEnvironmentSchema>;

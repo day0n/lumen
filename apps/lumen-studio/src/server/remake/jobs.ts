@@ -231,6 +231,7 @@ export async function updateSceneParams(input: {
   action?: string;
   dialogue?: string;
   voiceLine?: string;
+  imagePrompt?: string | null;
   videoPrompt?: string | null;
 }): Promise<RemakeJobView | null> {
   const repository = await getRemakeJobRepository();
@@ -239,11 +240,30 @@ export async function updateSceneParams(input: {
 
   const tasks = await repository.listTasksByJob(input.jobId);
   const statuses = deriveJobStageStatuses(job, tasks);
-  if (statuses.video === 'locked') {
-    throw new Error('Video stage is locked. Confirm storyboards first.');
+
+  // 编辑 imagePrompt 只需要 storyboard 不在跑且未锁；编辑视频字段时仍要求 video 阶段可访问。
+  const touchesVideoOnly =
+    input.action !== undefined ||
+    input.dialogue !== undefined ||
+    input.voiceLine !== undefined ||
+    input.videoPrompt !== undefined;
+  const touchesImageOnly = input.imagePrompt !== undefined;
+
+  if (touchesVideoOnly) {
+    if (statuses.video === 'locked') {
+      throw new Error('Video stage is locked. Confirm storyboards first.');
+    }
+    if (statuses.video === 'running' || statuses.final === 'running') {
+      throw new Error('Cannot edit scene params while video or final stage is running.');
+    }
   }
-  if (statuses.video === 'running' || statuses.final === 'running') {
-    throw new Error('Cannot edit scene params while video or final stage is running.');
+  if (touchesImageOnly) {
+    if (statuses.storyboard === 'locked') {
+      throw new Error('Storyboard stage is locked. Confirm creator/product lock first.');
+    }
+    if (statuses.storyboard === 'running') {
+      throw new Error('Cannot edit storyboard prompt while storyboard stage is running.');
+    }
   }
 
   const sceneExists = job.plan.scenes.some((scene) => scene.index === input.sceneIndex);
@@ -255,7 +275,68 @@ export async function updateSceneParams(input: {
     ...(input.action !== undefined ? { action: input.action } : {}),
     ...(input.dialogue !== undefined ? { dialogue: input.dialogue } : {}),
     ...(input.voiceLine !== undefined ? { voiceLine: input.voiceLine } : {}),
+    ...(input.imagePrompt !== undefined ? { imagePrompt: input.imagePrompt } : {}),
     ...(input.videoPrompt !== undefined ? { videoPrompt: input.videoPrompt } : {}),
+  });
+  if (!updated) return null;
+
+  return getRemakeJobView(input.jobId, input.ownerId);
+}
+
+// ============================================================
+// 全局 prompt 覆盖（lock / bgm / environment）
+// ============================================================
+
+/**
+ * 更新 plan 上的"全局 prompt 覆盖"。覆盖只影响下一次 stage 触发，不会自动重跑。
+ *
+ * - creatorPrompt / productPrompt / bgmPrompt：lock + video 阶段读
+ * - environmentPrompts[i]：lock 阶段的环境锁定 task 读
+ *
+ * 任意字段传 null / 空串 = 清除覆盖回到自动生成；undefined = 不动。
+ */
+export async function updatePlanPrompts(input: {
+  jobId: string;
+  ownerId: string;
+  creatorPrompt?: string | null;
+  productPrompt?: string | null;
+  bgmPrompt?: string | null;
+  environmentPrompts?: Array<{ environmentIndex: number; prompt: string | null }>;
+}): Promise<RemakeJobView | null> {
+  const repository = await getRemakeJobRepository();
+  const job = await repository.getJob(input.jobId, input.ownerId);
+  if (!job) return null;
+
+  const tasks = await repository.listTasksByJob(input.jobId);
+  const statuses = deriveJobStageStatuses(job, tasks);
+
+  const touchesLock =
+    input.creatorPrompt !== undefined ||
+    input.productPrompt !== undefined ||
+    (input.environmentPrompts?.length ?? 0) > 0;
+  const touchesVideo = input.bgmPrompt !== undefined;
+
+  if (touchesLock && statuses.lock === 'running') {
+    throw new Error('Cannot edit lock prompts while lock stage is running.');
+  }
+  if (touchesVideo && (statuses.video === 'running' || statuses.final === 'running')) {
+    throw new Error('Cannot edit BGM prompt while video or final stage is running.');
+  }
+
+  if (input.environmentPrompts?.length) {
+    const validIndexes = new Set(job.plan.environments.map((env) => env.index));
+    for (const entry of input.environmentPrompts) {
+      if (!validIndexes.has(entry.environmentIndex)) {
+        throw new Error(`Environment ${entry.environmentIndex} not found.`);
+      }
+    }
+  }
+
+  const updated = await repository.patchPlanPrompts(input.jobId, input.ownerId, {
+    ...(input.creatorPrompt !== undefined ? { creatorPrompt: input.creatorPrompt } : {}),
+    ...(input.productPrompt !== undefined ? { productPrompt: input.productPrompt } : {}),
+    ...(input.bgmPrompt !== undefined ? { bgmPrompt: input.bgmPrompt } : {}),
+    ...(input.environmentPrompts?.length ? { environmentPrompts: input.environmentPrompts } : {}),
   });
   if (!updated) return null;
 

@@ -12,6 +12,8 @@ const Body = z
     action: z.string().trim().min(1).max(400).optional(),
     dialogue: z.string().trim().min(1).max(400).optional(),
     voiceLine: z.string().trim().min(1).max(400).optional(),
+    /** 传 null 或空串表示清除自定义分镜首帧 prompt，回退到自动生成。 */
+    imagePrompt: z.string().trim().max(4000).nullable().optional(),
     /** 传 null 或空串表示清除自定义视频 prompt，回退到自动生成。 */
     videoPrompt: z.string().trim().max(4000).nullable().optional(),
   })
@@ -21,16 +23,14 @@ const Body = z
       value.action !== undefined ||
       value.dialogue !== undefined ||
       value.voiceLine !== undefined ||
+      value.imagePrompt !== undefined ||
       value.videoPrompt !== undefined,
     { message: 'At least one field must be provided.' },
   );
 
 export const PATCH = withApiRouteSpan(
   'PATCH /api/remake/jobs/[id]/scenes/[sceneIndex]',
-  async (
-    request: Request,
-    context: { params: Promise<{ id: string; sceneIndex: string }> },
-  ) => {
+  async (request: Request, context: { params: Promise<{ id: string; sceneIndex: string }> }) => {
     const locale = resolveRequestLocale(request);
     try {
       const { id, sceneIndex: sceneIndexRaw } = await context.params;
@@ -48,6 +48,7 @@ export const PATCH = withApiRouteSpan(
         ...(body.action !== undefined ? { action: body.action } : {}),
         ...(body.dialogue !== undefined ? { dialogue: body.dialogue } : {}),
         ...(body.voiceLine !== undefined ? { voiceLine: body.voiceLine } : {}),
+        ...(body.imagePrompt !== undefined ? { imagePrompt: body.imagePrompt } : {}),
         ...(body.videoPrompt !== undefined ? { videoPrompt: body.videoPrompt } : {}),
       });
       if (!view) {
@@ -62,6 +63,9 @@ export const PATCH = withApiRouteSpan(
         return failJson(error.message, 409);
       }
       if (error instanceof Error && error.message.startsWith('Video stage')) {
+        return failJson(error.message, 409);
+      }
+      if (error instanceof Error && error.message.startsWith('Storyboard stage')) {
         return failJson(error.message, 409);
       }
       if (error instanceof Error && error.message.startsWith('Scene ')) {

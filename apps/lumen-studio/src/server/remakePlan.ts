@@ -487,6 +487,7 @@ function normalizeEnvironments(
           .filter((sceneIndex) => scenes.some((scene) => scene.index === sceneIndex))
       : [];
     if (!name || !description) continue;
+    const promptOverride = readString(record.prompt);
     environments.push({
       index: rawIndex,
       name,
@@ -494,6 +495,7 @@ function normalizeEnvironments(
       usedSceneIndexes: usedSceneIndexes.length
         ? usedSceneIndexes
         : scenes.map((scene) => scene.index),
+      ...(promptOverride ? { prompt: promptOverride } : {}),
     });
     if (environments.length >= 4) break;
   }

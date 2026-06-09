@@ -1,5 +1,6 @@
 'use client';
 
+import { PromptOverrideBar } from '@/components/studio/remake/PromptOverrideBar';
 import {
   type RemakeJobView,
   RemakeSliceKeys,
@@ -52,7 +53,8 @@ export function HotVideoRemakePipeline({
 }) {
   const { locale } = useI18n();
   const copy = getCopy(locale);
-  const { state, runStage, confirmGate1, confirmGate2, cancel } = useRemakeJob(jobId, { locale });
+  const { state, runStage, confirmGate1, confirmGate2, cancel, updatePlanPrompts, updateScene } =
+    useRemakeJob(jobId, { locale });
 
   if (state.phase === 'loading') {
     return (
@@ -91,6 +93,8 @@ export function HotVideoRemakePipeline({
       onConfirmGate1={confirmGate1}
       onConfirmGate2={confirmGate2}
       onCancel={cancel}
+      onUpdatePlanPrompts={updatePlanPrompts}
+      onUpdateScene={updateScene}
     />
   );
 }
@@ -108,6 +112,8 @@ function PipelineView({
   onConfirmGate1,
   onConfirmGate2,
   onCancel,
+  onUpdatePlanPrompts,
+  onUpdateScene,
 }: {
   view: RemakeJobView;
   error: string | null;
@@ -122,6 +128,17 @@ function PipelineView({
   }) => Promise<void>;
   onConfirmGate2: () => Promise<void>;
   onCancel: (reason?: string) => Promise<void>;
+  onUpdatePlanPrompts: (input: {
+    creatorPrompt?: string | null;
+    productPrompt?: string | null;
+    bgmPrompt?: string | null;
+    environmentPrompts?: Array<{ environmentIndex: number; prompt: string | null }>;
+  }) => Promise<void>;
+  onUpdateScene: (input: {
+    sceneIndex: number;
+    imagePrompt?: string | null;
+    videoPrompt?: string | null;
+  }) => Promise<void>;
 }) {
   const { job, tasks, stageStatuses } = view;
   const [activeStep, setActiveStep] = useState(() => firstNonSuccessStep(stageStatuses, job));
@@ -302,6 +319,7 @@ function PipelineView({
               tasks={tasks}
               status={stageStatuses.lock}
               busy={stageBusy === 'lock'}
+              onUpdatePlanPrompts={onUpdatePlanPrompts}
               onRun={() => handleRunStage('lock')}
               onNext={() => setActiveStep(3)}
             />
@@ -313,6 +331,7 @@ function PipelineView({
               tasks={tasks}
               status={stageStatuses.storyboard}
               busy={stageBusy === 'storyboard'}
+              onUpdateScene={onUpdateScene}
               onRunAll={() => handleRunStage('storyboard')}
               onRunOne={(sliceKey) => handleRunStage('storyboard', [sliceKey])}
               onNext={async () => {
@@ -333,6 +352,8 @@ function PipelineView({
               tasks={tasks}
               status={stageStatuses.video}
               busy={stageBusy === 'video'}
+              onUpdateScene={onUpdateScene}
+              onUpdatePlanPrompts={onUpdatePlanPrompts}
               onRunAll={() => handleRunStage('video')}
               onRunOne={(sliceKey) => handleRunStage('video', [sliceKey])}
               onNext={() => setActiveStep(5)}
@@ -681,6 +702,7 @@ function LockStage({
   busy,
   onRun,
   onNext,
+  onUpdatePlanPrompts,
 }: {
   copy: ReturnType<typeof getCopy>;
   job: RemakeJobRecord;
@@ -689,42 +711,92 @@ function LockStage({
   busy: boolean;
   onRun: () => void;
   onNext: () => void;
+  onUpdatePlanPrompts: (input: {
+    creatorPrompt?: string | null;
+    productPrompt?: string | null;
+    bgmPrompt?: string | null;
+    environmentPrompts?: Array<{ environmentIndex: number; prompt: string | null }>;
+  }) => Promise<void>;
 }) {
+  // 只在 stage 正在跑或被锁时禁用 prompt 编辑；上游 (script) 没确认时整个 LockStage 都不会渲染。
+  const promptDisabled = status === 'running' || status === 'locked';
   return (
     <div>
       <StageHeader title={copy.creatorLock} description={copy.creatorLockDesc} status={status} />
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <SlicePreview
-          copy={copy}
-          title={copy.creatorLockTitle}
-          task={findTaskBySliceKey(tasks, RemakeSliceKeys.creatorLock)}
-          outputUrl={job.outputs.creatorLockUrl}
-          kind="image"
-        />
-        <SlicePreview
-          copy={copy}
-          title={copy.productLockTitle}
-          task={findTaskBySliceKey(tasks, RemakeSliceKeys.productLock)}
-          outputUrl={job.outputs.productLockUrl}
-          kind="image"
-        />
+        <div>
+          <SlicePreview
+            copy={copy}
+            title={copy.creatorLockTitle}
+            task={findTaskBySliceKey(tasks, RemakeSliceKeys.creatorLock)}
+            outputUrl={job.outputs.creatorLockUrl}
+            kind="image"
+          />
+          <PromptOverrideBar
+            effectivePrompt={job.plan.creatorPrompt ?? null}
+            overrideValue={job.plan.creatorPrompt}
+            disabled={promptDisabled}
+            onSave={(value) => onUpdatePlanPrompts({ creatorPrompt: value })}
+            copy={{
+              ...copy.promptBar,
+              title: copy.promptCreatorTitle,
+              subtitle: copy.promptCreatorSub,
+            }}
+          />
+        </div>
+        <div>
+          <SlicePreview
+            copy={copy}
+            title={copy.productLockTitle}
+            task={findTaskBySliceKey(tasks, RemakeSliceKeys.productLock)}
+            outputUrl={job.outputs.productLockUrl}
+            kind="image"
+          />
+          <PromptOverrideBar
+            effectivePrompt={job.plan.productPrompt ?? null}
+            overrideValue={job.plan.productPrompt}
+            disabled={promptDisabled}
+            onSave={(value) => onUpdatePlanPrompts({ productPrompt: value })}
+            copy={{
+              ...copy.promptBar,
+              title: copy.promptProductTitle,
+              subtitle: copy.promptProductSub,
+            }}
+          />
+        </div>
       </div>
       {job.plan.environments.length > 0 ? (
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {job.plan.environments.map((environment) => (
-            <SlicePreview
-              key={environment.index}
-              copy={copy}
-              title={`${copy.environmentLockTitle} ${environment.index}`}
-              subtitle={environment.name}
-              task={findTaskBySliceKey(tasks, RemakeSliceKeys.environmentLock(environment.index))}
-              outputUrl={
-                job.outputs.environmentLocks.find(
-                  (item) => item.environmentIndex === environment.index,
-                )?.imageUrl
-              }
-              kind="image"
-            />
+            <div key={environment.index}>
+              <SlicePreview
+                copy={copy}
+                title={`${copy.environmentLockTitle} ${environment.index}`}
+                subtitle={environment.name}
+                task={findTaskBySliceKey(tasks, RemakeSliceKeys.environmentLock(environment.index))}
+                outputUrl={
+                  job.outputs.environmentLocks.find(
+                    (item) => item.environmentIndex === environment.index,
+                  )?.imageUrl
+                }
+                kind="image"
+              />
+              <PromptOverrideBar
+                effectivePrompt={environment.prompt ?? null}
+                overrideValue={environment.prompt}
+                disabled={promptDisabled}
+                onSave={(value) =>
+                  onUpdatePlanPrompts({
+                    environmentPrompts: [{ environmentIndex: environment.index, prompt: value }],
+                  })
+                }
+                copy={{
+                  ...copy.promptBar,
+                  title: `${copy.promptEnvTitle} · ${environment.name}`,
+                  subtitle: copy.promptEnvSub,
+                }}
+              />
+            </div>
           ))}
         </div>
       ) : null}
@@ -750,6 +822,7 @@ function StoryboardStage({
   onRunAll,
   onRunOne,
   onNext,
+  onUpdateScene,
 }: {
   copy: ReturnType<typeof getCopy>;
   job: RemakeJobRecord;
@@ -759,14 +832,21 @@ function StoryboardStage({
   onRunAll: () => void;
   onRunOne: (sliceKey: string) => void;
   onNext: () => void;
+  onUpdateScene: (input: {
+    sceneIndex: number;
+    imagePrompt?: string | null;
+    videoPrompt?: string | null;
+  }) => Promise<void>;
 }) {
+  const promptDisabled = status === 'running' || status === 'locked';
   return (
     <div>
       <StageHeader title={copy.storyboardTitle} description={copy.storyboardDesc} status={status} />
       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {job.plan.scenes.map((scene) => {
+        {job.plan.scenes.map((scene, sceneIdx) => {
           const sliceKey = RemakeSliceKeys.sceneImage(scene.index);
           const sceneOutput = findSceneOutput(job.outputs.scenes, scene.index);
+          const overrideValue = job.plan.sceneImagePrompts?.[sceneIdx];
           return (
             <div key={sliceKey} className="space-y-2">
               <SlicePreview
@@ -776,6 +856,17 @@ function StoryboardStage({
                 task={findTaskBySliceKey(tasks, sliceKey)}
                 outputUrl={sceneOutput?.imageUrl}
                 kind="image"
+              />
+              <PromptOverrideBar
+                effectivePrompt={overrideValue ?? null}
+                overrideValue={overrideValue || undefined}
+                disabled={promptDisabled}
+                onSave={(value) => onUpdateScene({ sceneIndex: scene.index, imagePrompt: value })}
+                copy={{
+                  ...copy.promptBar,
+                  title: `${copy.promptSceneImageTitle} · ${copy.scene} ${scene.index}`,
+                  subtitle: copy.promptSceneImageSub,
+                }}
               />
               <button
                 type="button"
@@ -810,6 +901,8 @@ function VideoStage({
   onRunAll,
   onRunOne,
   onNext,
+  onUpdateScene,
+  onUpdatePlanPrompts,
 }: {
   copy: ReturnType<typeof getCopy>;
   job: RemakeJobRecord;
@@ -819,15 +912,28 @@ function VideoStage({
   onRunAll: () => void;
   onRunOne: (sliceKey: string) => void;
   onNext: () => void;
+  onUpdateScene: (input: {
+    sceneIndex: number;
+    imagePrompt?: string | null;
+    videoPrompt?: string | null;
+  }) => Promise<void>;
+  onUpdatePlanPrompts: (input: {
+    creatorPrompt?: string | null;
+    productPrompt?: string | null;
+    bgmPrompt?: string | null;
+    environmentPrompts?: Array<{ environmentIndex: number; prompt: string | null }>;
+  }) => Promise<void>;
 }) {
+  const promptDisabled = status === 'running' || status === 'locked';
   return (
     <div>
       <StageHeader title={copy.videoTitle} description={copy.videoDesc} status={status} />
 
       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {job.plan.scenes.map((scene) => {
+        {job.plan.scenes.map((scene, sceneIdx) => {
           const sliceKey = RemakeSliceKeys.sceneVideo(scene.index);
           const sceneOutput = findSceneOutput(job.outputs.scenes, scene.index);
+          const overrideValue = job.plan.sceneVideoPrompts?.[sceneIdx];
           return (
             <div key={sliceKey} className="space-y-2">
               <SlicePreview
@@ -837,6 +943,17 @@ function VideoStage({
                 task={findTaskBySliceKey(tasks, sliceKey)}
                 outputUrl={sceneOutput?.videoUrl}
                 kind="video"
+              />
+              <PromptOverrideBar
+                effectivePrompt={overrideValue ?? null}
+                overrideValue={overrideValue || undefined}
+                disabled={promptDisabled}
+                onSave={(value) => onUpdateScene({ sceneIndex: scene.index, videoPrompt: value })}
+                copy={{
+                  ...copy.promptBar,
+                  title: `${copy.promptSceneVideoTitle} · ${copy.scene} ${scene.index}`,
+                  subtitle: copy.promptSceneVideoSub,
+                }}
               />
               <button
                 type="button"
@@ -851,14 +968,27 @@ function VideoStage({
       </div>
 
       <Section title={copy.sectionBgm}>
-        <SlicePreview
-          copy={copy}
-          title={copy.sectionBgm}
-          task={findTaskBySliceKey(tasks, RemakeSliceKeys.bgm)}
-          outputUrl={job.outputs.bgmUrl}
-          kind="audio"
-          icon={<IconMusic size={18} />}
-        />
+        <div>
+          <SlicePreview
+            copy={copy}
+            title={copy.sectionBgm}
+            task={findTaskBySliceKey(tasks, RemakeSliceKeys.bgm)}
+            outputUrl={job.outputs.bgmUrl}
+            kind="audio"
+            icon={<IconMusic size={18} />}
+          />
+          <PromptOverrideBar
+            effectivePrompt={job.plan.bgmPrompt ?? null}
+            overrideValue={job.plan.bgmPrompt}
+            disabled={promptDisabled}
+            onSave={(value) => onUpdatePlanPrompts({ bgmPrompt: value })}
+            copy={{
+              ...copy.promptBar,
+              title: copy.promptBgmTitle,
+              subtitle: copy.promptBgmSub,
+            }}
+          />
+        </div>
       </Section>
 
       <StageActions
@@ -1346,6 +1476,33 @@ function getCopy(locale: 'en' | 'zh') {
       waiting: '等待生成',
       loadingJob: '加载复刻任务中...',
       loadFailed: '加载失败',
+      promptBar: {
+        label: 'Prompt',
+        overrideBadge: '已自定义',
+        autoBadge: '自动',
+        emptyHint: '该步骤运行时由 AI 实时生成 prompt，跑完后会显示真实生效内容',
+        placeholder: '留空保存即视作恢复为自动生成…',
+        hint: '保存后下次重跑该步骤会使用此 prompt；清空再保存可恢复自动生成。',
+        effectiveLabel: '当前自动生成预览',
+        effectivePlaceholder: '该 prompt 由 AI 在 stage 跑前实时生成，需先跑过对应步骤后才能看到。',
+        save: '保存',
+        cancel: '取消',
+        reset: '恢复自动',
+        saving: '保存中',
+        disabledTooltip: '当前步骤正在运行或被锁定，请稍后再编辑',
+      },
+      promptCreatorTitle: '创作者锁定 · Prompt',
+      promptCreatorSub: '控制创作者多视图参考表的画法（face / pose / outfit 锁定）',
+      promptProductTitle: '商品锁定 · Prompt',
+      promptProductSub: '控制商品多视图参考表（包装 / 材质 / 颜色锁定）',
+      promptEnvTitle: '场景锁定 · Prompt',
+      promptEnvSub: '控制可复用环境参考图的画法（空间 / 光线 / 机位）',
+      promptSceneImageTitle: '分镜首帧 · Prompt',
+      promptSceneImageSub: '控制该场首帧画面构图、相机、动作摆位',
+      promptSceneVideoTitle: '视频 + 口播 · Prompt',
+      promptSceneVideoSub: '控制该场运动 / 相机推拉 / 口播台词 / 嘴型',
+      promptBgmTitle: 'BGM · Prompt',
+      promptBgmSub: '控制全片 BGM 的风格、节奏、时长',
     };
   }
   return {
@@ -1430,5 +1587,35 @@ function getCopy(locale: 'en' | 'zh') {
     waiting: 'Waiting',
     loadingJob: 'Loading remake job...',
     loadFailed: 'Failed to load',
+    promptBar: {
+      label: 'Prompt',
+      overrideBadge: 'Custom',
+      autoBadge: 'Auto',
+      emptyHint: 'Prompt is generated live when this step runs — preview appears after the run.',
+      placeholder: 'Leave empty and save to fall back to auto-generated…',
+      hint: 'Saved prompt will be used the next time this step runs. Clear it to fall back to auto.',
+      effectiveLabel: 'Auto-generated preview',
+      effectivePlaceholder:
+        'This prompt is generated live before each run. Run the stage at least once to see it.',
+      save: 'Save',
+      cancel: 'Cancel',
+      reset: 'Reset to auto',
+      saving: 'Saving',
+      disabledTooltip: 'This stage is running or locked. Edit again later.',
+    },
+    promptCreatorTitle: 'Creator lock · Prompt',
+    promptCreatorSub: 'Controls how the creator multi-view reference sheet is drawn.',
+    promptProductTitle: 'Product lock · Prompt',
+    promptProductSub: 'Controls how the product multi-view reference sheet is drawn.',
+    promptEnvTitle: 'Environment lock · Prompt',
+    promptEnvSub: 'Controls how the reusable environment plate is drawn.',
+    promptSceneImageTitle: 'Storyboard keyframe · Prompt',
+    promptSceneImageSub:
+      'Controls composition, camera, and action placement of this scene’s first frame.',
+    promptSceneVideoTitle: 'Video + voiceover · Prompt',
+    promptSceneVideoSub:
+      'Controls motion, camera movement, spoken line, and lip-sync for this scene.',
+    promptBgmTitle: 'BGM · Prompt',
+    promptBgmSub: 'Controls full-film BGM style, tempo, and duration.',
   };
 }

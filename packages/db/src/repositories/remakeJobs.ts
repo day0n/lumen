@@ -156,7 +156,7 @@ export class RemakeJobRepository {
   }
 
   /**
-   * 更新 plan.scenes 里某一场的可编辑字段（口播 / 字幕 / 动作 / 视频 prompt 覆盖）。
+   * 更新 plan.scenes 里某一场的可编辑字段（口播 / 字幕 / 动作 / 分镜 prompt / 视频 prompt 覆盖）。
    * sceneIndex 为 plan.scenes[].index（从 1 起）。
    */
   async patchScenePlan(
@@ -167,6 +167,8 @@ export class RemakeJobRepository {
       action?: string;
       dialogue?: string;
       voiceLine?: string;
+      /** 非 null = 写入覆盖；null / 空串 = 清除覆盖，回退到自动生成。 */
+      imagePrompt?: string | null;
       /** 非 null = 写入覆盖；null / 空串 = 清除覆盖，回退到自动生成。 */
       videoPrompt?: string | null;
     },
@@ -190,6 +192,20 @@ export class RemakeJobRepository {
     const touchesGenerationInput =
       patch.action !== undefined || patch.dialogue !== undefined || patch.voiceLine !== undefined;
 
+    // 分镜首帧 prompt override：与 sceneVideoPrompts 同样的稀疏数组语义
+    if (patch.imagePrompt !== undefined) {
+      const prompts = [...(job.plan.sceneImagePrompts ?? [])];
+      while (prompts.length < scenes.length) prompts.push('');
+      const trimmed = patch.imagePrompt?.trim() ?? '';
+      prompts[idx] = trimmed;
+      nextPlan.sceneImagePrompts = prompts.some((entry) => entry.trim()) ? prompts : undefined;
+    } else if (touchesGenerationInput && job.plan.sceneImagePrompts?.[idx]?.trim()) {
+      const prompts = [...(job.plan.sceneImagePrompts ?? [])];
+      while (prompts.length < scenes.length) prompts.push('');
+      prompts[idx] = '';
+      nextPlan.sceneImagePrompts = prompts.some((entry) => entry.trim()) ? prompts : undefined;
+    }
+
     if (patch.videoPrompt !== undefined) {
       const prompts = [...(job.plan.sceneVideoPrompts ?? [])];
       while (prompts.length < scenes.length) prompts.push('');
@@ -201,6 +217,70 @@ export class RemakeJobRepository {
       while (prompts.length < scenes.length) prompts.push('');
       prompts[idx] = '';
       nextPlan.sceneVideoPrompts = prompts.some((entry) => entry.trim()) ? prompts : undefined;
+    }
+
+    const result = await this.jobs().findOneAndUpdate(
+      { _id: jobId, owner_id: ownerId },
+      { $set: { plan: nextPlan, updated_at: new Date() } },
+      { returnDocument: 'after' },
+    );
+    return result ? toJobRecord(result) : null;
+  }
+
+  /**
+   * 更新 plan 上的"全局 prompt 覆盖"字段：
+   * - creatorPrompt / productPrompt / bgmPrompt（顶层字符串）
+   * - environmentPrompt（按 environment.index 写到 plan.environments[i].prompt）
+   *
+   * 任何字段传 null = 清除该 override；undefined = 不动；string = 写入。
+   */
+  async patchPlanPrompts(
+    jobId: string,
+    ownerId: string,
+    patch: {
+      creatorPrompt?: string | null;
+      productPrompt?: string | null;
+      bgmPrompt?: string | null;
+      environmentPrompts?: Array<{ environmentIndex: number; prompt: string | null }>;
+    },
+  ): Promise<RemakeJobRecord | null> {
+    const job = await this.jobs().findOne({ _id: jobId, owner_id: ownerId });
+    if (!job) return null;
+
+    const nextPlan = { ...job.plan };
+
+    const applyTop = (
+      key: 'creatorPrompt' | 'productPrompt' | 'bgmPrompt',
+      value: string | null | undefined,
+    ): void => {
+      if (value === undefined) return;
+      const trimmed = value?.trim() ?? '';
+      if (trimmed) {
+        nextPlan[key] = trimmed;
+      } else {
+        nextPlan[key] = undefined;
+      }
+    };
+
+    applyTop('creatorPrompt', patch.creatorPrompt);
+    applyTop('productPrompt', patch.productPrompt);
+    applyTop('bgmPrompt', patch.bgmPrompt);
+
+    if (patch.environmentPrompts?.length) {
+      const environments = [...(job.plan.environments ?? [])];
+      for (const entry of patch.environmentPrompts) {
+        const idx = environments.findIndex((env) => env.index === entry.environmentIndex);
+        if (idx < 0) continue;
+        const trimmed = entry.prompt?.trim() ?? '';
+        const next = { ...environments[idx]! };
+        if (trimmed) {
+          next.prompt = trimmed;
+        } else {
+          next.prompt = undefined;
+        }
+        environments[idx] = next;
+      }
+      nextPlan.environments = environments;
     }
 
     const result = await this.jobs().findOneAndUpdate(

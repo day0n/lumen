@@ -163,12 +163,15 @@ export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
 
   for (const environment of environments) {
     const sourceImage = job.environmentImageUrls[environment.index - 1] ?? null;
+    const overridePrompt = environment.prompt?.trim();
     tasks.push({
       stage: 'lock',
       sliceKey: SliceKeys.environmentLock(environment.index),
       handler: 'nano-banana2',
       input: makeInput({
-        prompt: buildEnvironmentLockPrompt(environment, Boolean(sourceImage)),
+        // 用户对该环境锁定 prompt 显式 override 优先；否则用 buildEnvironmentLockPrompt
+        // 按是否有参考图自动生成"附图模式"或"纯文字模式"的 prompt。
+        prompt: overridePrompt || buildEnvironmentLockPrompt(environment, Boolean(sourceImage)),
         image: sourceImage,
         lastFrameImage: null,
         images: compactRefs(sourceImage ? [sourceImage] : []),
@@ -215,6 +218,7 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
 
   return job.plan.scenes.map((scene, i) => {
     const generated = prompts[i];
+    const overridePrompt = job.plan.sceneImagePrompts?.[i]?.trim();
     // Fallback：不描述实体视觉细节，只用 token 引用。
     const characterToken = `@${(job.plan.character?.name ?? 'creator').replace(/\s+/g, '_')}`;
     const productToken = `@${productName.toLowerCase().replace(/\s+/g, '-')}`;
@@ -234,7 +238,8 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
       sliceKey: SliceKeys.sceneImage(scene.index),
       handler: 'nano-banana2',
       input: makeInput({
-        prompt: generated ?? fallback,
+        // 优先级：用户 override > Gemini 看 lock 图动态生成 > 兜底硬编码 fallback
+        prompt: overridePrompt || generated || fallback,
         // 多图角色顺序与 promptGenerators.ts 保持一致：
         // Image 1 = creator, Image 2 = product, Image 3 = environment。
         image: creatorLock,

@@ -140,7 +140,15 @@ export interface UseRemakeJobResult {
     action?: string;
     dialogue?: string;
     voiceLine?: string;
+    imagePrompt?: string | null;
     videoPrompt?: string | null;
+  }) => Promise<void>;
+  /** 编辑 plan 上的全局 prompt 覆盖（lock / bgm / environment）。 */
+  updatePlanPrompts: (input: {
+    creatorPrompt?: string | null;
+    productPrompt?: string | null;
+    bgmPrompt?: string | null;
+    environmentPrompts?: Array<{ environmentIndex: number; prompt: string | null }>;
   }) => Promise<void>;
   confirmGate1: (input: {
     scriptText: string;
@@ -294,6 +302,7 @@ export function useRemakeJob(
       action?: string;
       dialogue?: string;
       voiceLine?: string;
+      imagePrompt?: string | null;
       videoPrompt?: string | null;
     }) => {
       if (!jobId) return;
@@ -302,7 +311,27 @@ export function useRemakeJob(
         ...(input.action !== undefined ? { action: input.action } : {}),
         ...(input.dialogue !== undefined ? { dialogue: input.dialogue } : {}),
         ...(input.voiceLine !== undefined ? { voiceLine: input.voiceLine } : {}),
+        ...(input.imagePrompt !== undefined ? { imagePrompt: input.imagePrompt } : {}),
         ...(input.videoPrompt !== undefined ? { videoPrompt: input.videoPrompt } : {}),
+      });
+    },
+    [jobId, patch],
+  );
+
+  const updatePlanPrompts = useCallback(
+    async (input: {
+      creatorPrompt?: string | null;
+      productPrompt?: string | null;
+      bgmPrompt?: string | null;
+      environmentPrompts?: Array<{ environmentIndex: number; prompt: string | null }>;
+    }) => {
+      if (!jobId) return;
+      dispatch({ type: 'set-error', error: null });
+      await patch(`/api/remake/jobs/${jobId}/prompts`, {
+        ...(input.creatorPrompt !== undefined ? { creatorPrompt: input.creatorPrompt } : {}),
+        ...(input.productPrompt !== undefined ? { productPrompt: input.productPrompt } : {}),
+        ...(input.bgmPrompt !== undefined ? { bgmPrompt: input.bgmPrompt } : {}),
+        ...(input.environmentPrompts ? { environmentPrompts: input.environmentPrompts } : {}),
       });
     },
     [jobId, patch],
@@ -348,6 +377,7 @@ export function useRemakeJob(
     refresh: fetchView,
     runStage,
     updateScene,
+    updatePlanPrompts,
     confirmGate1,
     confirmGate2,
     cancel,
