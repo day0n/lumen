@@ -11,6 +11,7 @@ import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { toHotVideoMediaUrl } from '@/lib/hot-video-media-url';
 import { readClientApiJson } from '@/lib/read-api-json';
+import { getUploadAuthToken } from '@/lib/upload-auth-token';
 import { useAuth, useUser } from '@clerk/nextjs';
 import type { HotVideoRecord } from '@lumen/db';
 import {
@@ -1347,7 +1348,11 @@ function ReplicaConfigModal({
     };
 
     const buildHeaders = async (freshToken: boolean) => {
-      const token = await getToken(freshToken ? { skipCache: true } : undefined).catch(() => null);
+      const token = await getUploadAuthToken(
+        getToken,
+        freshToken ? { skipCache: true } : undefined,
+        freshToken ? 2500 : 1200,
+      );
       const headers: Record<string, string> = { 'x-lumen-locale': locale };
       if (token) headers.Authorization = `Bearer ${token}`;
       return headers;

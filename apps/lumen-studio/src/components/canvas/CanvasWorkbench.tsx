@@ -105,6 +105,7 @@ import { checkCycle } from '@/lib/canvas/cycle-detection';
 import { canRunSelectedNodes, canRunSingleNode } from '@/lib/canvas/node-run-check';
 import type { NodeKind } from '@/lib/canvas/types';
 import { formatPublicWorkflowError } from '@/lib/public-workflow-error';
+import { getUploadAuthToken } from '@/lib/upload-auth-token';
 import { useAuth } from '@clerk/nextjs';
 
 import { ImeTextarea } from './ImeTextarea';
@@ -1311,8 +1312,10 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         };
 
         const buildHeaders = async (freshToken: boolean) => {
-          const token = await getToken(freshToken ? { skipCache: true } : undefined).catch(
-            () => null,
+          const token = await getUploadAuthToken(
+            getToken,
+            freshToken ? { skipCache: true } : undefined,
+            freshToken ? 2500 : 1200,
           );
           const headers: Record<string, string> = { 'x-lumen-locale': locale };
           if (token) headers.Authorization = `Bearer ${token}`;
