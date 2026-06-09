@@ -26,7 +26,12 @@ export async function executeNode(
   switch (type) {
     case 'text': {
       const { executeText } = await import('../handlers/text/index.js');
-      return executeText(input, model, context);
+      return executeMediaModelWithRetry({
+        nodeType: 'text',
+        modelId: model.id,
+        signal: context.signal,
+        execute: () => executeText(input, model, context),
+      });
     }
     case 'image': {
       const { executeImage } = await import('../handlers/image/index.js');
@@ -40,6 +45,8 @@ export async function executeNode(
     case 'video': {
       const { executeVideo } = await import('../handlers/video/index.js');
       if (model.id === 'lumen-video-edit') {
+        // The internal ffmpeg "edit" pseudo-model is fully deterministic and
+        // not a remote API call; retrying it cannot fix transient errors.
         return executeVideo(input, model, context);
       }
       return executeMediaModelWithRetry({
@@ -51,10 +58,18 @@ export async function executeNode(
     }
     case 'audio': {
       const { executeAudio } = await import('../handlers/audio/index.js');
-      return executeAudio(input, model, context);
+      return executeMediaModelWithRetry({
+        nodeType: 'audio',
+        modelId: model.id,
+        signal: context.signal,
+        execute: () => executeAudio(input, model, context),
+      });
     }
     case 'composition': {
       const { executeComposition } = await import('../handlers/composition/index.js');
+      // composition is local ffmpeg; same reason as 'lumen-video-edit' above —
+      // retrying does not help, and side effects (temp files, R2 uploads)
+      // make a redo more expensive than a clean failure.
       return executeComposition(input, model.settings, context);
     }
   }

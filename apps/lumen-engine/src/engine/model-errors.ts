@@ -95,7 +95,14 @@ export function publicErrorMessage(error: unknown): string {
 }
 
 export async function executeMediaModelWithRetry<T>(input: {
-  nodeType: Extract<NodeType, 'image' | 'video'>;
+  // All node types go through this wrapper so the retry policy and
+  // error-classification (i.e. mapping raw provider exceptions to
+  // PublicWorkflowError with errorCode / i18n key) is applied uniformly.
+  // Previously only image/video were wrapped, leaving raw error text from
+  // text/audio/composition handlers leaking to the browser. The
+  // `nodeType` field is reported for telemetry only — retry behaviour is
+  // identical across types.
+  nodeType: NodeType;
   modelId: string;
   signal?: AbortSignal;
   execute: () => Promise<T>;
