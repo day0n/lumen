@@ -171,9 +171,19 @@ export function summarizeWorkflowEdit(
   const beforeEdgeIds = new Set((before?.edges ?? []).map((edge) => edge.id));
   const afterEdgeIds = new Set(after.edges.map((edge) => edge.id));
   let changedNodes = 0;
-  const beforeNodes = new Map((before?.nodes ?? []).map((node) => [node.id, JSON.stringify(node)]));
+  // Compare on the meaningful node fields with order-independent equality.
+  // Previously we did `beforeNodes.get(id) !== JSON.stringify(node)`, which
+  // depended on the insertion order of object keys: a node that round-tripped
+  // through `LumenCanvasNodeSchema.parse` (which rebuilds the object in
+  // schema-declared key order) would not equal the same node coming straight
+  // from React Flow state (which keeps the runtime insertion order, plus
+  // transient fields like `selected`, `dragging`, `measured`). The result was
+  // either every node reading as "changed" or none of them — both wrong.
+  // Skip transient RF/UX-only fields that should not count as semantic edits.
+  const beforeById = new Map((before?.nodes ?? []).map((node) => [node.id, node]));
   for (const node of after.nodes) {
-    if (beforeNodeIds.has(node.id) && beforeNodes.get(node.id) !== JSON.stringify(node)) {
+    const prev = beforeById.get(node.id);
+    if (prev && !nodesSemanticallyEqual(prev, node)) {
       changedNodes += 1;
     }
   }
@@ -186,6 +196,63 @@ export function summarizeWorkflowEdit(
     addedEdges: countAdded(beforeEdgeIds, afterEdgeIds),
     removedEdges: countAdded(afterEdgeIds, beforeEdgeIds),
   };
+}
+
+/**
+ * Order-independent deep equality scoped to the fields that count as a
+ * semantic node edit. Transient React Flow fields (`selected`, `dragging`,
+ * `measured`, etc.) and node-level metadata that doesn't change behaviour are
+ * ignored — those flip on every drag without representing a real change.
+ */
+function nodesSemanticallyEqual(a: LumenCanvasNode, b: LumenCanvasNode): boolean {
+  if (a.id !== b.id) return false;
+  if ((a.type ?? '') !== (b.type ?? '')) return false;
+  if (a.position.x !== b.position.x || a.position.y !== b.position.y) return false;
+  return nodeDataSemanticallyEqual(a.data, b.data);
+}
+
+function nodeDataSemanticallyEqual(a: LumenCanvasNodeData, b: LumenCanvasNodeData): boolean {
+  const fields: Array<keyof LumenCanvasNodeData> = [
+    'kind',
+    'title',
+    'prompt',
+    'output',
+    'modelId',
+    'status',
+    'error',
+    'groupId',
+    'groupName',
+  ];
+  for (const f of fields) {
+    if (!Object.is(a[f] ?? null, b[f] ?? null)) return false;
+  }
+  return stableDeepEqual(a.settings ?? {}, b.settings ?? {});
+}
+
+function stableDeepEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== typeof b) return false;
+  if (a === null || b === null) return a === b;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!stableDeepEqual(a[i], b[i])) return false;
+    return true;
+  }
+  if (typeof a !== 'object') return false;
+  const aKeys = Object.keys(a as Record<string, unknown>).sort();
+  const bKeys = Object.keys(b as Record<string, unknown>).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return false;
+  }
+  for (const key of aKeys) {
+    if (
+      !stableDeepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function resolveCanvasNodeModelId(node: LumenCanvasNode): string {
