@@ -147,13 +147,19 @@ export async function confirmGate1(input: {
   }
 
   const video = await resolveReferenceVideo(job.videoId, input.locale);
+  // 用户在 Gate 1 显式选过的口播语言优先 —— 这是决定 LLM 生成的 scriptText / scene.voiceLine /
+  // dialogue / sellingPoints 用什么语言写的真源。
+  // 没选时回退到 HTTP 请求头的浏览器界面语言（旧行为）。这里同时决定下游 veo-3.1 native_audio
+  // 口播语言 —— 因为 veo-3.1 按 voiceLine 字面的语言生成音频。
+  const planLocale: 'zh' | 'en' = input.voiceLanguage ?? (input.locale === 'zh' ? 'zh' : 'en');
+
   const { plan, breakdown, targetProductName, targetProductCategory } = await buildPlanForJob({
     reference: job.reference,
     video,
     productImageUrls: job.productImageUrls,
     environmentImageUrls: job.environmentImageUrls,
     creatorImageCount: job.creatorImageUrls.length,
-    locale: input.locale,
+    locale: planLocale,
     userPrompt: job.userPrompt,
     targetDurationSeconds: job.settings.durationSeconds,
     gateOverrides: {

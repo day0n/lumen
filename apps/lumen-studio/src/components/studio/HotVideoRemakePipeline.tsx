@@ -26,6 +26,7 @@ import {
   IconMusic,
   IconPlayerPlay,
   IconPlayerStopFilled,
+  IconRotate,
 } from '@tabler/icons-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -183,6 +184,27 @@ function PipelineView({
     [onRunStage],
   );
 
+  // 自动开跑：进入 lock / storyboard / video / final 步骤且该 stage 处于 ready 状态时，
+  // 自动 trigger runStage —— 用户不需要点"生成"按钮。
+  // 用 ref 记录已经自动跑过的 (job, stage) 组合，避免 stageStatuses 抖动 / 用户来回切步骤
+  // 导致同一 stage 被重复 trigger。已经 success / running / error / cancelled 的不会自动跑。
+  const autoRunFiredRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const stage = STEP_TO_STAGE[activeStep];
+    if (!stage || !AUTO_RUN_STAGES.has(stage)) return;
+    const status = stageStatuses[stage];
+    if (status !== 'ready') return;
+    const key = `${job.id}:${stage}`;
+    if (autoRunFiredRef.current.has(key)) return;
+    autoRunFiredRef.current.add(key);
+    void handleRunStage(stage);
+  }, [activeStep, stageStatuses, handleRunStage, job.id]);
+
+  // job 切换时清空"已自动跑过"记录，让新 job 重新走一遍自动跑。
+  useEffect(() => {
+    autoRunFiredRef.current = new Set();
+  }, []);
+
   return (
     <main className="relative z-10 mx-auto max-w-[1260px] px-6 pb-20 pt-28">
       <div className="mb-5 flex flex-wrap items-center gap-3">
@@ -320,7 +342,7 @@ function PipelineView({
               status={stageStatuses.lock}
               busy={stageBusy === 'lock'}
               onUpdatePlanPrompts={onUpdatePlanPrompts}
-              onRun={() => handleRunStage('lock')}
+              onRetry={(sliceKeys) => handleRunStage('lock', sliceKeys)}
               onNext={() => setActiveStep(3)}
             />
           )}
@@ -332,7 +354,7 @@ function PipelineView({
               status={stageStatuses.storyboard}
               busy={stageBusy === 'storyboard'}
               onUpdateScene={onUpdateScene}
-              onRunAll={() => handleRunStage('storyboard')}
+              onRetry={(sliceKeys) => handleRunStage('storyboard', sliceKeys)}
               onRunOne={(sliceKey) => handleRunStage('storyboard', [sliceKey])}
               onNext={async () => {
                 setStageBusy('storyboard');
@@ -354,7 +376,7 @@ function PipelineView({
               busy={stageBusy === 'video'}
               onUpdateScene={onUpdateScene}
               onUpdatePlanPrompts={onUpdatePlanPrompts}
-              onRunAll={() => handleRunStage('video')}
+              onRetry={(sliceKeys) => handleRunStage('video', sliceKeys)}
               onRunOne={(sliceKey) => handleRunStage('video', [sliceKey])}
               onNext={() => setActiveStep(5)}
             />
@@ -365,9 +387,8 @@ function PipelineView({
               job={job}
               tasks={tasks}
               status={stageStatuses.final}
-              videoStatus={stageStatuses.video}
               busy={stageBusy === 'final'}
-              onRun={() => handleRunStage('final')}
+              onRetry={(sliceKeys) => handleRunStage('final', sliceKeys)}
             />
           )}
         </section>
@@ -388,6 +409,12 @@ const STEP_TO_STAGE: Record<number, RemakeStageName> = {
   4: 'video',
   5: 'final',
 };
+
+/**
+ * 进入这些 stage 时自动 trigger runStage —— breakdown 已在 job 创建前算完，
+ * script 是 Gate1 需要用户手动编辑后确认，所以不走自动跑。
+ */
+const AUTO_RUN_STAGES = new Set<RemakeStageName>(['lock', 'storyboard', 'video', 'final']);
 
 function Stepper({
   copy,
@@ -700,7 +727,7 @@ function LockStage({
   tasks,
   status,
   busy,
-  onRun,
+  onRetry,
   onNext,
   onUpdatePlanPrompts,
 }: {
@@ -709,7 +736,7 @@ function LockStage({
   tasks: RemakeTaskRecord[];
   status: RemakeStageStatus;
   busy: boolean;
-  onRun: () => void;
+  onRetry: (sliceKeys: string[]) => void;
   onNext: () => void;
   onUpdatePlanPrompts: (input: {
     creatorPrompt?: string | null;
@@ -723,6 +750,14 @@ function LockStage({
   return (
     <div>
       <StageHeader title={copy.creatorLock} description={copy.creatorLockDesc} status={status} />
+      <StageErrorBanner
+        copy={copy}
+        status={status}
+        tasks={tasks}
+        stage="lock"
+        busy={busy}
+        onRetry={onRetry}
+      />
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <div>
           <SlicePreview
@@ -801,12 +836,9 @@ function LockStage({
         </div>
       ) : null}
       <StageActions
-        copy={copy}
         status={status}
-        busy={busy}
-        runLabel={copy.runCreatorLock}
         nextLabel={copy.nextStoryboard}
-        onRun={onRun}
+        pendingLabel={copy.autoRunning}
         onNext={onNext}
       />
     </div>
@@ -819,7 +851,7 @@ function StoryboardStage({
   tasks,
   status,
   busy,
-  onRunAll,
+  onRetry,
   onRunOne,
   onNext,
   onUpdateScene,
@@ -829,7 +861,7 @@ function StoryboardStage({
   tasks: RemakeTaskRecord[];
   status: RemakeStageStatus;
   busy: boolean;
-  onRunAll: () => void;
+  onRetry: (sliceKeys: string[]) => void;
   onRunOne: (sliceKey: string) => void;
   onNext: () => void;
   onUpdateScene: (input: {
@@ -842,6 +874,14 @@ function StoryboardStage({
   return (
     <div>
       <StageHeader title={copy.storyboardTitle} description={copy.storyboardDesc} status={status} />
+      <StageErrorBanner
+        copy={copy}
+        status={status}
+        tasks={tasks}
+        stage="storyboard"
+        busy={busy}
+        onRetry={onRetry}
+      />
       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {job.plan.scenes.map((scene, sceneIdx) => {
           const sliceKey = RemakeSliceKeys.sceneImage(scene.index);
@@ -880,12 +920,9 @@ function StoryboardStage({
         })}
       </div>
       <StageActions
-        copy={copy}
         status={status}
-        busy={busy}
-        runLabel={copy.runStoryboard}
         nextLabel={copy.confirmGate2}
-        onRun={onRunAll}
+        pendingLabel={copy.autoRunning}
         onNext={onNext}
       />
     </div>
@@ -898,7 +935,7 @@ function VideoStage({
   tasks,
   status,
   busy,
-  onRunAll,
+  onRetry,
   onRunOne,
   onNext,
   onUpdateScene,
@@ -909,7 +946,7 @@ function VideoStage({
   tasks: RemakeTaskRecord[];
   status: RemakeStageStatus;
   busy: boolean;
-  onRunAll: () => void;
+  onRetry: (sliceKeys: string[]) => void;
   onRunOne: (sliceKey: string) => void;
   onNext: () => void;
   onUpdateScene: (input: {
@@ -928,6 +965,14 @@ function VideoStage({
   return (
     <div>
       <StageHeader title={copy.videoTitle} description={copy.videoDesc} status={status} />
+      <StageErrorBanner
+        copy={copy}
+        status={status}
+        tasks={tasks}
+        stage="video"
+        busy={busy}
+        onRetry={onRetry}
+      />
 
       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {job.plan.scenes.map((scene, sceneIdx) => {
@@ -992,12 +1037,9 @@ function VideoStage({
       </Section>
 
       <StageActions
-        copy={copy}
         status={status}
-        busy={busy}
-        runLabel={copy.runVideos}
         nextLabel={copy.nextFinal}
-        onRun={onRunAll}
+        pendingLabel={copy.autoRunning}
         onNext={onNext}
       />
     </div>
@@ -1009,25 +1051,29 @@ function FinalStage({
   job,
   tasks,
   status,
-  videoStatus,
   busy,
-  onRun,
+  onRetry,
 }: {
   copy: ReturnType<typeof getCopy>;
   job: RemakeJobRecord;
   tasks: RemakeTaskRecord[];
   status: RemakeStageStatus;
-  videoStatus: RemakeStageStatus;
   busy: boolean;
-  onRun: () => void;
+  onRetry: (sliceKeys: string[]) => void;
 }) {
   const task = findTaskBySliceKey(tasks, RemakeSliceKeys.final);
   const outputUrl = job.outputs.finalUrl ?? task?.outputUrl ?? null;
-  const running = status === 'running' || busy;
-  const canRun = videoStatus === 'success' && !running;
   return (
     <div>
       <StageHeader title={copy.finalTitle} description={copy.finalDesc} status={status} />
+      <StageErrorBanner
+        copy={copy}
+        status={status}
+        tasks={tasks}
+        stage="final"
+        busy={busy}
+        onRetry={onRetry}
+      />
       <div className="mt-5">
         <SlicePreview
           copy={copy}
@@ -1038,28 +1084,20 @@ function FinalStage({
           className="mx-auto max-w-[360px]"
         />
       </div>
-      <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
-        {outputUrl ? (
+      {outputUrl ? (
+        <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
           <a
             href={outputUrl}
             download
             target="_blank"
             rel="noreferrer"
-            className="flex h-11 items-center gap-2 rounded-xl bg-white/[0.07] px-4 text-[13px] font-bold text-white/70 ring-1 ring-white/[0.08] hover:bg-white/[0.1] hover:text-white"
+            className="flex h-11 items-center gap-2 rounded-xl bg-white px-4 text-[13px] font-bold text-[#111315] transition-transform active:scale-[0.98]"
           >
             <IconDownload size={15} stroke={2.2} />
             {copy.download}
           </a>
-        ) : null}
-        <PrimaryButton onClick={onRun} disabled={!canRun}>
-          {running ? (
-            <IconLoader2 size={15} className="animate-spin" />
-          ) : (
-            <IconPlayerPlay size={15} />
-          )}
-          {copy.runFinal}
-        </PrimaryButton>
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1088,44 +1126,99 @@ function StageHeader({
   );
 }
 
+/**
+ * 右下"进入下一步"按钮（单按钮版本）。
+ *
+ * 设计选择：
+ * - 不再带「生成 XXX」按钮 —— 用户进入 stage 就自动开跑，不要手动点。
+ * - 按钮可点条件：status === 'success'。其它状态都禁用并显示对应状态文案：
+ *     running → 「生成中… 进入下一步」
+ *     ready   → 「生成中… 进入下一步」（自动跑触发的瞬间状态）
+ *     error   → 仍禁用，由 StageErrorBanner 提供重试入口
+ *     locked  → 不该走到这（上游门控会阻挡渲染）
+ *   失败重试 / 单张重跑入口分别在 StageErrorBanner / SlicePreview 旁边的按钮里。
+ */
 function StageActions({
+  status,
+  nextLabel,
+  pendingLabel,
+  onNext,
+}: {
+  status: RemakeStageStatus;
+  nextLabel: string;
+  pendingLabel: string;
+  onNext: () => void;
+}) {
+  const isSuccess = status === 'success';
+  return (
+    <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
+      <PrimaryButton onClick={onNext} disabled={!isSuccess}>
+        {isSuccess ? <IconCheck size={15} /> : <IconLoader2 size={15} className="animate-spin" />}
+        {isSuccess ? nextLabel : pendingLabel}
+      </PrimaryButton>
+    </div>
+  );
+}
+
+/**
+ * Stage error 横幅 —— 当 stage status === 'error' 时显示。
+ * 列出失败 task 的 error message，并给一个「重试本步骤失败任务」按钮，
+ * 调 runStage(stage, sliceKeys=失败 task 列表) 只重跑这些 task。
+ */
+function StageErrorBanner({
   copy,
   status,
+  tasks,
+  stage,
   busy,
-  runLabel,
-  nextLabel,
-  onRun,
-  onNext,
+  onRetry,
 }: {
   copy: ReturnType<typeof getCopy>;
   status: RemakeStageStatus;
+  tasks: RemakeTaskRecord[];
+  stage: RemakeStageName;
   busy: boolean;
-  runLabel: string;
-  nextLabel: string;
-  onRun: () => void;
-  onNext: () => void;
+  onRetry: (sliceKeys: string[]) => void;
 }) {
-  void copy;
-  const running = status === 'running' || busy;
+  if (status !== 'error') return null;
+  const failedTasks = tasks.filter((task) => task.stage === stage && task.status === 'error');
+  if (!failedTasks.length) return null;
+
   return (
-    <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
-      <button
-        type="button"
-        onClick={onRun}
-        disabled={running}
-        className="flex h-11 items-center gap-2 rounded-xl bg-white/[0.07] px-4 text-[13px] font-bold text-white/70 ring-1 ring-white/[0.08] hover:bg-white/[0.1] hover:text-white disabled:cursor-wait disabled:opacity-55"
-      >
-        {running ? (
-          <IconLoader2 size={15} className="animate-spin" />
-        ) : (
-          <IconPlayerPlay size={15} />
-        )}
-        {runLabel}
-      </button>
-      <PrimaryButton onClick={onNext} disabled={status !== 'success'}>
-        <IconCheck size={15} />
-        {nextLabel}
-      </PrimaryButton>
+    <div className="mt-4 rounded-[16px] bg-[#f5c76a]/8 px-4 py-3 ring-1 ring-[#f5c76a]/22">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-bold uppercase tracking-wide text-[#f5c76a]">
+            {copy.stageErrorTitle}
+          </div>
+          <div className="mt-1 text-[12px] leading-5 text-white/72">
+            {copy.stageErrorSummary.replace('{count}', String(failedTasks.length))}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onRetry(failedTasks.map((task) => task.sliceKey))}
+          disabled={busy}
+          className="flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-[#f5c76a]/14 px-3 text-[12px] font-bold text-[#f5c76a] ring-1 ring-[#f5c76a]/24 transition-colors hover:bg-[#f5c76a]/22 disabled:cursor-wait disabled:opacity-55"
+        >
+          {busy ? (
+            <IconLoader2 size={13} className="animate-spin" />
+          ) : (
+            <IconRotate size={13} stroke={2.4} />
+          )}
+          {copy.stageErrorRetry}
+        </button>
+      </div>
+      <ul className="mt-3 space-y-1.5 text-[11px] leading-4 text-white/56">
+        {failedTasks.slice(0, 6).map((task) => (
+          <li key={task.sliceKey} className="grid grid-cols-[140px_minmax(0,1fr)] gap-2">
+            <span className="truncate font-mono text-white/40">{task.sliceKey}</span>
+            <span className="truncate text-white/64">
+              {task.error?.trim() || copy.stageErrorUnknown}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -1503,6 +1596,11 @@ function getCopy(locale: 'en' | 'zh') {
       promptSceneVideoSub: '控制该场运动 / 相机推拉 / 口播台词 / 嘴型',
       promptBgmTitle: 'BGM · Prompt',
       promptBgmSub: '控制全片 BGM 的风格、节奏、时长',
+      autoRunning: '生成中…',
+      stageErrorTitle: '本步骤生成失败',
+      stageErrorSummary: '本步骤有 {count} 个任务失败。点右侧按钮重试这些失败任务。',
+      stageErrorRetry: '重试失败任务',
+      stageErrorUnknown: '未知错误',
     };
   }
   return {
@@ -1617,5 +1715,11 @@ function getCopy(locale: 'en' | 'zh') {
       'Controls motion, camera movement, spoken line, and lip-sync for this scene.',
     promptBgmTitle: 'BGM · Prompt',
     promptBgmSub: 'Controls full-film BGM style, tempo, and duration.',
+    autoRunning: 'Generating…',
+    stageErrorTitle: 'This step failed',
+    stageErrorSummary:
+      '{count} task(s) failed in this step. Click retry to re-run the failed ones.',
+    stageErrorRetry: 'Retry failed tasks',
+    stageErrorUnknown: 'Unknown error',
   };
 }
