@@ -32,6 +32,9 @@ const envSchema = z.object({
 
   DEFAULT_MODEL: z.string().default('claude-opus-4-7'),
   DEFAULT_MAX_TOKENS: z.coerce.number().int().positive().default(8192),
+  SESSION_HISTORY_MAX_MESSAGES: z.coerce.number().int().nonnegative().default(500),
+  SESSION_HISTORY_TOKEN_BUDGET: z.coerce.number().int().positive().default(64_000),
+  SESSION_HISTORY_COMPACT_TOKEN_BUDGET: z.coerce.number().int().positive().default(3_000),
 
   // storage
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),

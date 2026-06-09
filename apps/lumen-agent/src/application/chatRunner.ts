@@ -19,7 +19,11 @@ import type { Span } from '@sentry/node';
 
 import type { LLMProvider } from '../adapters/outbound/llm/base.js';
 import type { ModelRouter } from '../adapters/outbound/llm/router.js';
-import type { Session, SessionManager } from '../adapters/outbound/persistence/session.js';
+import type {
+  LLMHistoryOptions,
+  Session,
+  SessionManager,
+} from '../adapters/outbound/persistence/session.js';
 import type { MessageList } from '../domain/contracts/messages.js';
 import { logger, withLogContext } from '../platform/logger.js';
 
@@ -75,6 +79,7 @@ export interface ChatRunnerOptions {
   providerRouter: ModelRouter;
   defaultModel: string;
   defaultMaxTokens?: number;
+  history?: LLMHistoryOptions;
   memory?: MemoryManager | null;
 }
 
@@ -161,12 +166,28 @@ export class ChatRunner {
                   }
 
                   const provider = this.resolveProvider(instance.model);
+                  const history = session.toLLMHistoryWithStats(this.opts.history);
                   const messages: MessageList = buildMessages({
                     systemPrompt,
-                    history: session.toLLMHistory(),
+                    history: history.messages,
                     userMessage: input.message,
                   });
                   const initialMessageCount = messages.length;
+                  span.setAttributes({
+                    'lumen.agent.context.source_messages': history.stats.sourceMessages,
+                    'lumen.agent.context.eligible_messages': history.stats.eligibleMessages,
+                    'lumen.agent.context.returned_messages': history.stats.returnedMessages,
+                    'lumen.agent.context.compacted_messages': history.stats.compactedMessages,
+                    'lumen.agent.context.estimated_tokens_before':
+                      history.stats.estimatedTokensBefore,
+                    'lumen.agent.context.estimated_tokens_after':
+                      history.stats.estimatedTokensAfter,
+                    'lumen.agent.context.token_budget': history.stats.tokenBudget,
+                    'lumen.agent.context.truncated_tool_results':
+                      history.stats.truncatedToolResults,
+                    'lumen.agent.context.compacted': history.stats.compacted,
+                  });
+                  logger.info(history.stats, 'LLM history prepared');
 
                   setJsonAttribute(span, 'gen_ai.request.messages', messages);
                   setJsonAttribute(

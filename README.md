@@ -295,16 +295,25 @@ Agent 与画布共享同一条 `lumen:flow:tasks` Stream；执行结果通过独
 
 ### 7. 上下文管理
 
-会话历史存 Mongo（append-only）+ Redis 上下文缓存；喂给 LLM 时 `Session.toLLMHistory()` 做四件事：
+会话历史存 Mongo（append-only）+ Redis 上下文缓存；喂给 LLM 时 `Session.toLLMHistoryWithStats()` 在请求侧做预算控制，原始会话不被改写：
 
 | 处理 | 规则 |
 |---|---|
-| 滑动窗口 | 最多保留最近 500 条消息 |
 | 角色过滤 | `act_call` / `act_event` / `act_result` / `flow_event` 仅前端展示，不进 LLM 上下文 |
+| 滑动窗口 | 默认最多保留最近 500 条可入模消息，超出的旧消息进入 microcompact 源 |
+| token 预算 | 本地估算历史 token，默认 `SESSION_HISTORY_TOKEN_BUDGET=64000`；超过预算时按完整 turn 从旧到新压缩 |
+| microcompact | 被窗口 / token 预算挤出的旧上下文压成 `<auto_compacted_chat_history>` system 背景摘要，默认摘要预算 `SESSION_HISTORY_COMPACT_TOKEN_BUDGET=3000` |
 | tool_call 边界对齐 | 窗口起点出现孤立 `tool` 消息（对应的 `assistant.tool_calls` 已被截断）时往后滑到下一条完整 `user`，避免 provider 报错 |
-| 工具结果截断 | 单条 tool result 超过 20k 字符尾部截断并标注 `[...truncated N chars]`，原文进 Sentry |
+| 工具结果截断 | 本轮 tool result 回填上下文前最多 20k 字符；历史里若存在旧版长 tool 消息，也会在构建上下文时再次截断 |
+| 可观测性 | 每轮 trace/log 记录压缩前后估算 token、返回消息数、被压缩消息数、旧 tool result 截断数 |
 
-> 真正的上下文压缩 / microcompact / token 计数还没做（builder.ts 标记为「第二阶段」），目前依赖滑动窗口 + Anthropic 前缀缓存控成本。
+可调 env：
+
+| 变量 | 默认 | 说明 |
+|---|---:|---|
+| `SESSION_HISTORY_MAX_MESSAGES` | `500` | 最多保留多少条原始历史消息进入预算计算 |
+| `SESSION_HISTORY_TOKEN_BUDGET` | `64000` | 历史消息估算 token 上限，不含 system prompt、工具定义和当前用户消息 |
+| `SESSION_HISTORY_COMPACT_TOKEN_BUDGET` | `3000` | microcompact 摘要自身的估算 token 上限 |
 
 ### 8. RAG（向量库）
 

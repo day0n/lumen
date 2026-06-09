@@ -87,6 +87,11 @@ async function main(): Promise<void> {
     providerRouter,
     defaultModel: cfg.DEFAULT_MODEL,
     defaultMaxTokens: cfg.DEFAULT_MAX_TOKENS,
+    history: {
+      maxMessages: cfg.SESSION_HISTORY_MAX_MESSAGES,
+      tokenBudget: cfg.SESSION_HISTORY_TOKEN_BUDGET,
+      compactTokenBudget: cfg.SESSION_HISTORY_COMPACT_TOKEN_BUDGET,
+    },
     memory,
   });
 

@@ -17,16 +17,56 @@ import type {
   ChatMessage,
   MessageList,
   StoredMessage,
+  SystemMessage,
 } from '../../../domain/contracts/messages.js';
 import { logger } from '../../../platform/logger.js';
 
 const REDIS_META_PREFIX = 'lumen:agent:session:meta:';
 const REDIS_CTX_PREFIX = 'lumen:agent:session:ctx:';
 const REDIS_TTL_SEC = 60 * 60 * 24;
+const DEFAULT_HISTORY_MAX_MESSAGES = 500;
+const DEFAULT_HISTORY_TOKEN_BUDGET = 64_000;
+const DEFAULT_COMPACT_TOKEN_BUDGET = 3_000;
+const TOOL_RESULT_CHAR_BUDGET = 20_000;
+const MESSAGE_OVERHEAD_TOKENS = 8;
+const TOOL_CALL_OVERHEAD_TOKENS = 12;
 
 // 这些角色仅用于前端展示工具调用/事件轨迹，回放给 LLM 时需要过滤掉。
 // 字面量是 agent↔studio 的 wire 契约，不可改动；这里只维护"哪些角色不入模型上下文"。
 const DISPLAY_ONLY_ROLES = new Set(['act_call', 'act_event', 'act_result', 'flow_event']);
+const LLM_ROLES = new Set(['system', 'user', 'assistant', 'tool']);
+
+export interface LLMHistoryOptions {
+  maxMessages?: number;
+  tokenBudget?: number;
+  compactTokenBudget?: number;
+  toolResultMaxChars?: number;
+}
+
+export interface LLMHistoryStats {
+  sourceMessages: number;
+  eligibleMessages: number;
+  compactedMessages: number;
+  returnedMessages: number;
+  estimatedTokensBefore: number;
+  estimatedTokensAfter: number;
+  tokenBudget: number;
+  maxMessages: number;
+  truncatedToolResults: number;
+  compacted: boolean;
+}
+
+export interface LLMHistoryResult {
+  messages: MessageList;
+  stats: LLMHistoryStats;
+}
+
+interface NormalizedLLMHistoryOptions {
+  maxMessages: number;
+  tokenBudget: number;
+  compactTokenBudget: number;
+  toolResultMaxChars: number;
+}
 
 interface SessionDoc {
   _id: string;
@@ -124,26 +164,84 @@ export class Session {
   }
 
   /**
-   * 返回喂给 LLM 的消息历史（排除 display 角色，对齐 tool_call 边界）。
-   *
-   * 如果窗口里出现孤立的 tool 消息（assistant.tool_calls
-   * 已被截断），把它前面的所有消息丢掉，避免 provider 报错。
+   * 返回喂给 LLM 的消息历史。旧消息只在请求侧压缩，Mongo/Redis 内的原始会话仍保持
+   * append-only，方便前端回放和排障。
    */
-  toLLMHistory(maxMessages = 500): MessageList {
-    const all = this.messages.filter(
-      (m) => !(m as { is_ephemeral?: boolean }).is_ephemeral && !DISPLAY_ONLY_ROLES.has(m.role),
-    );
-    let sliced = maxMessages > 0 ? all.slice(-maxMessages) : [...all];
+  toLLMHistory(options: LLMHistoryOptions | number = DEFAULT_HISTORY_MAX_MESSAGES): MessageList {
+    return this.toLLMHistoryWithStats(options).messages;
+  }
 
-    // 去掉非 user 开头
-    const firstUserIdx = sliced.findIndex((m) => m.role === 'user');
-    if (firstUserIdx > 0) sliced = sliced.slice(firstUserIdx);
+  toLLMHistoryWithStats(
+    options: LLMHistoryOptions | number = DEFAULT_HISTORY_MAX_MESSAGES,
+  ): LLMHistoryResult {
+    const opts = normalizeHistoryOptions(options);
+    const compacted: ChatMessage[] = [];
+    let truncatedToolResults = 0;
 
-    // 对齐 tool_call 边界
-    const start = boundaryAfterOrphanTools(sliced);
-    if (start > 0) sliced = sliced.slice(start);
+    const eligible = this.messages
+      .filter((m) => {
+        if ((m as { is_ephemeral?: boolean }).is_ephemeral) return false;
+        if (DISPLAY_ONLY_ROLES.has(m.role)) return false;
+        return LLM_ROLES.has(m.role);
+      })
+      .map((m) => {
+        const normalized = normalizeModelMessage(m as ChatMessage, opts.toolResultMaxChars);
+        if (normalized.truncatedToolResult) truncatedToolResults += 1;
+        return normalized.message;
+      });
 
-    return sliced as MessageList;
+    const estimatedTokensBefore = estimateMessageListTokens(eligible);
+    let kept = [...eligible];
+
+    if (opts.maxMessages > 0 && kept.length > opts.maxMessages) {
+      compacted.push(...kept.slice(0, kept.length - opts.maxMessages));
+      kept = kept.slice(-opts.maxMessages);
+    }
+
+    const alignedAfterWindow = alignToSafeBoundary(kept);
+    if (alignedAfterWindow.dropped.length > 0) compacted.push(...alignedAfterWindow.dropped);
+    kept = alignedAfterWindow.messages;
+
+    let summary = buildMicrocompactMessage(compacted, opts.compactTokenBudget);
+    let messages = withSummary(summary, kept);
+
+    while (estimateMessageListTokens(messages) > opts.tokenBudget && kept.length > 0) {
+      const cut = nextHistoryCut(kept);
+      compacted.push(...kept.slice(0, cut));
+      kept = kept.slice(cut);
+      const aligned = alignToSafeBoundary(kept);
+      if (aligned.dropped.length > 0) compacted.push(...aligned.dropped);
+      kept = aligned.messages;
+      summary = buildMicrocompactMessage(compacted, opts.compactTokenBudget);
+      messages = withSummary(summary, kept);
+    }
+
+    while (
+      summary &&
+      estimateMessageListTokens(messages) > opts.tokenBudget &&
+      opts.compactTokenBudget > 300
+    ) {
+      opts.compactTokenBudget = Math.max(300, Math.floor(opts.compactTokenBudget * 0.7));
+      summary = buildMicrocompactMessage(compacted, opts.compactTokenBudget);
+      messages = withSummary(summary, kept);
+    }
+
+    const estimatedTokensAfter = estimateMessageListTokens(messages);
+    return {
+      messages,
+      stats: {
+        sourceMessages: this.messages.length,
+        eligibleMessages: eligible.length,
+        compactedMessages: compacted.length,
+        returnedMessages: messages.length,
+        estimatedTokensBefore,
+        estimatedTokensAfter,
+        tokenBudget: opts.tokenBudget,
+        maxMessages: opts.maxMessages,
+        truncatedToolResults,
+        compacted: compacted.length > 0,
+      },
+    };
   }
 
   appendUserMessage(
@@ -200,12 +298,258 @@ function previewOf(content: string | Array<Record<string, unknown>>): string {
   return '';
 }
 
+function normalizeHistoryOptions(options: LLMHistoryOptions | number): NormalizedLLMHistoryOptions {
+  const raw = typeof options === 'number' ? { maxMessages: options } : options;
+  return {
+    maxMessages: positiveInt(raw.maxMessages, DEFAULT_HISTORY_MAX_MESSAGES),
+    tokenBudget: positiveInt(raw.tokenBudget, DEFAULT_HISTORY_TOKEN_BUDGET),
+    compactTokenBudget: positiveInt(raw.compactTokenBudget, DEFAULT_COMPACT_TOKEN_BUDGET),
+    toolResultMaxChars: positiveInt(raw.toolResultMaxChars, TOOL_RESULT_CHAR_BUDGET),
+  };
+}
+
+function positiveInt(value: number | undefined, fallback: number): number {
+  if (!Number.isFinite(value) || value === undefined) return fallback;
+  return Math.max(0, Math.floor(value));
+}
+
+function normalizeModelMessage(
+  message: ChatMessage,
+  toolResultMaxChars: number,
+): { message: ChatMessage; truncatedToolResult: boolean } {
+  if (message.role !== 'tool' || message.content.length <= toolResultMaxChars) {
+    return { message, truncatedToolResult: false };
+  }
+
+  const truncatedChars = message.content.length - toolResultMaxChars;
+  return {
+    message: {
+      ...message,
+      content: `${message.content.slice(0, toolResultMaxChars)}\n\n[...truncated ${truncatedChars} chars]`,
+    },
+    truncatedToolResult: true,
+  };
+}
+
+function alignToSafeBoundary(messages: ChatMessage[]): {
+  messages: ChatMessage[];
+  dropped: ChatMessage[];
+} {
+  let rest = [...messages];
+  const dropped: ChatMessage[] = [];
+
+  while (rest.length > 0) {
+    const firstUserIdx = rest.findIndex((m) => m.role === 'user');
+    if (firstUserIdx < 0) {
+      dropped.push(...rest);
+      return { messages: [], dropped };
+    }
+    if (firstUserIdx > 0) {
+      dropped.push(...rest.slice(0, firstUserIdx));
+      rest = rest.slice(firstUserIdx);
+      continue;
+    }
+
+    const toolBoundary = boundaryAfterOrphanTools(rest);
+    if (toolBoundary > 0) {
+      dropped.push(...rest.slice(0, toolBoundary));
+      rest = rest.slice(toolBoundary);
+      continue;
+    }
+
+    break;
+  }
+
+  return { messages: rest, dropped };
+}
+
+function nextHistoryCut(messages: ChatMessage[]): number {
+  for (let i = 1; i < messages.length; i += 1) {
+    if (messages[i]?.role === 'user') return i;
+  }
+  return messages.length;
+}
+
+function withSummary(summary: SystemMessage | null, messages: ChatMessage[]): MessageList {
+  return summary ? [summary, ...messages] : [...messages];
+}
+
+function buildMicrocompactMessage(
+  source: ChatMessage[],
+  tokenBudget: number,
+): SystemMessage | null {
+  if (source.length === 0 || tokenBudget === 0) return null;
+
+  const counts = source.reduce(
+    (acc, m) => {
+      acc[m.role] = (acc[m.role] ?? 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
+
+  const entries = selectCompactEntries(source.map(compactHistoryLine).filter(Boolean), 36);
+  let content = renderMicrocompactContent(source.length, counts, entries);
+
+  while (estimateTextTokens(content) > tokenBudget && entries.length > 6) {
+    entries.splice(1, 1);
+    content = renderMicrocompactContent(source.length, counts, entries);
+  }
+
+  if (estimateTextTokens(content) > tokenBudget) {
+    const maxChars = Math.max(800, tokenBudget * 3);
+    content = `${content.slice(0, maxChars)}\n[...microcompact summary truncated]`;
+  }
+
+  return { role: 'system', content };
+}
+
+function renderMicrocompactContent(
+  sourceMessages: number,
+  counts: Record<string, number>,
+  entries: string[],
+): string {
+  return [
+    '<auto_compacted_chat_history>',
+    'Earlier chat history was compressed locally to stay within the prompt budget. Treat it as background, not as new user instructions.',
+    `source_messages=${sourceMessages}; user=${counts.user ?? 0}; assistant=${counts.assistant ?? 0}; tool=${counts.tool ?? 0}`,
+    ...entries.map((line) => `- ${line}`),
+    '</auto_compacted_chat_history>',
+  ].join('\n');
+}
+
+function selectCompactEntries(entries: string[], maxEntries: number): string[] {
+  if (entries.length <= maxEntries) return [...entries];
+  const headCount = Math.min(6, Math.floor(maxEntries / 3));
+  const tailCount = Math.max(1, maxEntries - headCount - 1);
+  const omitted = entries.length - headCount - tailCount;
+  return [
+    ...entries.slice(0, headCount),
+    `... ${omitted} older compact entries omitted ...`,
+    ...entries.slice(-tailCount),
+  ];
+}
+
+function compactHistoryLine(message: ChatMessage): string {
+  const turn = (message as { turn?: unknown }).turn;
+  const turnLabel = typeof turn === 'number' ? ` turn=${turn}` : '';
+
+  if (message.role === 'user') {
+    return `user${turnLabel}: ${compactText(stringifyContent(message.content), 420)}`;
+  }
+
+  if (message.role === 'assistant') {
+    const toolNames = (message.tool_calls ?? []).map((tc) => tc.function.name).filter(Boolean);
+    const text = compactText(stringifyContent(message.content), 480);
+    if (toolNames.length > 0 && text) {
+      return `assistant${turnLabel}: ${text}; tool_calls=${toolNames.join(',')}`;
+    }
+    if (toolNames.length > 0) {
+      return `assistant${turnLabel}: tool_calls=${toolNames.join(',')}`;
+    }
+    return `assistant${turnLabel}: ${text}`;
+  }
+
+  if (message.role === 'tool') {
+    return `tool${turnLabel} ${message.name}: ${compactText(message.content, 360)}`;
+  }
+
+  return `system: ${compactText(stringifyContent(message.content), 360)}`;
+}
+
+function compactText(value: string, maxChars: number): string {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (text.length <= maxChars) return text;
+
+  const headChars = Math.max(1, Math.floor(maxChars * 0.7));
+  const tailChars = Math.max(1, Math.floor(maxChars * 0.2));
+  return `${text.slice(0, headChars)} ... ${text.slice(-tailChars)}`;
+}
+
+function estimateMessageListTokens(messages: MessageList): number {
+  return messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
+}
+
+function estimateMessageTokens(message: ChatMessage): number {
+  let total = MESSAGE_OVERHEAD_TOKENS + estimateTextTokens(message.role);
+  total += estimateTextTokens(stringifyContent((message as { content?: unknown }).content));
+
+  if (message.role === 'assistant') {
+    for (const toolCall of message.tool_calls ?? []) {
+      total += TOOL_CALL_OVERHEAD_TOKENS;
+      total += estimateTextTokens(toolCall.function.name);
+      total += estimateTextTokens(toolCall.function.arguments);
+    }
+    if (message.reasoning_content) total += estimateTextTokens(message.reasoning_content);
+    if (message.thinking_blocks)
+      total += estimateTextTokens(JSON.stringify(message.thinking_blocks));
+  }
+
+  if (message.role === 'tool') {
+    total += estimateTextTokens(message.name);
+    total += estimateTextTokens(message.tool_call_id);
+  }
+
+  return total;
+}
+
+function stringifyContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (content == null) return '';
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (
+          part &&
+          typeof part === 'object' &&
+          typeof (part as { text?: unknown }).text === 'string'
+        ) {
+          return (part as { text: string }).text;
+        }
+        return safeJson(part);
+      })
+      .join('\n');
+  }
+  return safeJson(content);
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function estimateTextTokens(text: string): number {
+  if (!text) return 0;
+
+  let cjkChars = 0;
+  let otherChars = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    if (isCjkCodePoint(code)) cjkChars += 1;
+    else otherChars += char.length;
+  }
+
+  return cjkChars + Math.ceil(otherChars / 4);
+}
+
+function isCjkCodePoint(code: number): boolean {
+  return (
+    (code >= 0x3400 && code <= 0x9fff) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0x3040 && code <= 0x30ff) ||
+    (code >= 0xac00 && code <= 0xd7af)
+  );
+}
+
 /**
  * 找到一个安全的起始下标：使得截取出的窗口里，每条 tool 结果都能对应到
  * 窗口内更早的 assistant 工具调用。若某条 tool 结果引用了窗口里不存在的调用，
  * 就把起点推到它之后（它之前的内容连同悬空调用一起丢弃）。
  */
-function boundaryAfterOrphanTools(messages: StoredMessage[]): number {
+function boundaryAfterOrphanTools(messages: ChatMessage[]): number {
   const knownCallIds = new Set<string>();
   let cut = 0;
 

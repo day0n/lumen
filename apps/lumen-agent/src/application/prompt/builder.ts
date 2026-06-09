@@ -4,8 +4,7 @@
  * 提供：
  *  - buildMessages：把 system prompt + 历史 + 当前用户消息组装成 MessageList
  *  - addAssistantMessage / addToolResult：在 executor 循环内追加消息
- *
- * 不做：context compaction / microcompact / token 计数（第二阶段再加）。
+ * 历史窗口、microcompact 和 token 预算在 Session.toLLMHistoryWithStats() 里处理。
  */
 
 import { toToolCallDict } from '../../adapters/outbound/llm/anthropic.js';
