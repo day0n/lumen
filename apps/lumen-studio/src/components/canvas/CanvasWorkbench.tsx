@@ -1315,7 +1315,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           const token = await getUploadAuthToken(
             getToken,
             freshToken ? { skipCache: true } : undefined,
-            freshToken ? 2500 : 1200,
+            freshToken ? 6000 : 3000,
           );
           const headers: Record<string, string> = { 'x-lumen-locale': locale };
           if (token) headers.Authorization = `Bearer ${token}`;

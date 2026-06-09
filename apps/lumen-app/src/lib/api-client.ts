@@ -49,8 +49,10 @@ export function installApiFetchInterceptor() {
 
     const request = normalizeRequest(input, init);
     const method = request.method.toUpperCase();
-    const skipToken = request.headers.has('Authorization') || isCanvasUploadRequest(apiUrl, method);
-    const token = skipToken ? null : await readApiToken();
+    const uploadRequest = isCanvasUploadRequest(apiUrl, method);
+    const token = request.headers.has('Authorization')
+      ? null
+      : await readApiToken(uploadRequest ? 6000 : 1500);
     if (token) {
       request.headers.set('Authorization', `Bearer ${token}`);
     }
@@ -67,7 +69,7 @@ export function installApiFetchInterceptor() {
     if (
       (response.status === 401 || response.status === 403) &&
       !isPrefetchRequest(request) &&
-      !isCanvasUploadRequest(apiUrl, method)
+      !uploadRequest
     ) {
       const redirectUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       window.location.assign(`/sign-in?redirect_url=${encodeURIComponent(redirectUrl)}`);
