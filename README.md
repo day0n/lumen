@@ -353,7 +353,7 @@ Sentry 串一条 trace_id 贯通四个进程，pino / 浏览器 console 与 Sent
 
 ## 部署
 
-- **生产服务器**：DigitalOcean Droplet `root@159.89.192.52`，域名 `https://lumenstudio.tech`
+- **生产服务器**：DigitalOcean Droplet ，域名 `https://lumenstudio.tech`
 - **进程管理**：PM2，按 `ecosystem.config.cjs` 同机起三个进程 — `lumen-studio :3000`（tsx 直跑 `server.ts`，自定义 Node server 同时挂 Next.js + WebSocket + lumen-app SPA 静态资源）、`lumen-agent :3001`（编译后 `dist/main.js`）、`lumen-engine`（后台 consumer，`dist/main.js`）
 - **CI / CD**：GitHub Actions `.github/workflows/deploy.yml`，`push origin main` 触发 → `appleboy/ssh-action` SSH 到生产机执行 `~/lumen/deploy.sh`：拉代码、`pnpm install`、按需构建 lumen-app（Vite）/ lumen-studio（Next）/ lumen-agent / lumen-engine、`pm2 reload ecosystem.config.cjs`，全过程在 `flock` 锁内串行，避免并发部署冲突
 - **静态资源**：`lumen-app` Vite 产物 `dist/` 由 `lumen-studio` 自定义 server 直接吐到 `/app/*`，不走 CDN
