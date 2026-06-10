@@ -97,17 +97,17 @@ const en = {
       {
         label: 'Red lipstick brand ad',
         prompt:
-          'Help me make a 9:16, 30-second premium lipstick brand ad. First look up how lipstick brands usually talk about their products and what strong beauty ads are doing lately, then find visual inspiration like red-lip editorials, retro vanity setups, and makeup texture shots. If my material library has matching model or product assets, use them too. Build the full workflow on the canvas—script, storyboard, 3-5 polished commercial scenes, voiceover, and background music—then deliver a publish-ready video with the link, visual direction, and caption ideas.',
+          'In one shot, deliver a finished 9:16, 15-second premium lipstick brand ad. First learn how lipstick brands talk and what strong beauty ads look like lately, then find inspiration like red-lip editorials, retro vanity setups, and makeup texture shots; use matching assets from my library if you find any. Keep the workflow lean for a 15-second cut, then run the entire workflow through to the final stitched video—do not stop at canvas setup, do not ask me follow-up questions. When done, give me only the final video link, visual direction, and caption ideas.',
       },
       {
         label: 'Glass-skin UGC skincare',
         prompt:
-          'Help me make a 9:16, 30-second authentic UGC skincare shoppable video. First understand the key selling points and what high-converting skincare UGC hooks look like, then find inspiration like bathroom mirror routines, glass-skin shelf shots, and calm botanical spa visuals. If my material library has skincare products or creator footage, work those in. Finish the script, storyboard, and 3-5 hands-on demo scenes on the canvas with voiceover and background music, then give me a publish-ready video link, opening hook, and title or hashtag suggestions.',
+          'In one shot, deliver a finished 9:16, 15-second authentic UGC skincare shoppable video. First learn the key selling points and what high-converting skincare UGC hooks look like, then find inspiration like bathroom mirror routines, glass-skin shelf shots, and calm botanical spa visuals; use matching skincare or creator assets from my library if you find any. Keep the workflow lean for a 15-second cut, then run the entire workflow through to the final stitched video—do not stop at canvas setup, do not ask me follow-up questions. When done, give me only the final video link, opening hook, and title or hashtag suggestions.',
       },
       {
         label: 'Vintage denim jacket',
         prompt:
-          'Help me make a 9:16, 30-second vintage denim jacket seeding video. First learn how this category is being talked about and how outfit videos are usually structured, then find late-90s street-style visual inspiration. If my material library has jacket, model, or street scene assets, pick the best ones. Build the full canvas workflow from script and storyboard through 3-5 scenes covering fabric details and one-jacket-three-looks, add voiceover and background music, and deliver a publish-ready video with the link, visual direction, and caption ideas.',
+          'In one shot, deliver a finished 9:16, 15-second vintage denim jacket seeding video. First learn how this category is being talked about and how outfit videos are usually structured, then find late-90s street-style visual inspiration; use matching jacket, model, or street assets from my library if you find any. Keep the workflow lean for a 15-second cut, then run the entire workflow through to the final stitched video—do not stop at canvas setup, do not ask me follow-up questions. When done, give me only the final video link, visual direction, and caption ideas.',
       },
     ],
     templatesTitle: 'Recommended canvases',
@@ -842,17 +842,17 @@ const zh: typeof en = {
       {
         label: '红唇口红广告',
         prompt:
-          '帮我做一条 9:16、30 秒的红唇口红品牌宣传视频。先了解一下口红品类该怎么表达、最近有哪些高转化的美妆广告可以参考，再从灵感库里找一些红唇大片、复古化妆台、妆刷质感这类视觉参考；如果我素材库里有合适的模特或产品图，也可以拿来用。在画布上搭好脚本和分镜，生成 3-5 个商业感镜头，配上口播和背景音乐，合成一条能直接发布的成片，并告诉我视频链接、视觉方向和发布文案。',
+          '一句话直接出一条 9:16、15 秒的红唇口红品牌宣传成片。先了解口红品类表达和最近高转化的美妆广告，再从灵感库找红唇大片、复古化妆台、妆刷质感等参考；素材库里有合适的就用上。工作流按 15 秒精简设计，搭好后立刻跑完全流程并合成最终可发布视频，不要只停在画布设计，也不要中途问我。完成后只给我成片链接、视觉方向和发布文案。',
       },
       {
         label: '玻璃肌 UGC 带货',
         prompt:
-          '帮我做一条 9:16、30 秒的玻璃肌护肤 UGC 带货视频。先了解一下护肤品的卖点该怎么讲、最近哪些 UGC 种草视频开场比较好，再从灵感库里找浴室镜前护肤、清爽货架、植物 spa 这类真实感参考；如果我素材库里有护肤产品或真人素材，也可以一起用上。在画布上完成脚本、分镜和 3-5 个上手演示镜头，配上口播和背景音乐，合成能直接发布的成片，并给我视频链接、开场钩子和标题标签建议。',
+          '一句话直接出一条 9:16、15 秒的玻璃肌护肤 UGC 带货成片。先了解护肤卖点和高转化 UGC 开场，再从灵感库找镜前护肤、清爽货架、植物 spa 等真实感参考；素材库里有合适的就用上。工作流按 15 秒精简设计，搭好后立刻跑完全流程并合成最终可发布视频，不要只停在画布，也不要中途问我。完成后只给我成片链接、开场钩子和标题标签。',
       },
       {
         label: '复古牛仔外套',
         prompt:
-          '帮我做一条 9:16、30 秒的复古牛仔外套种草视频。先了解一下这个品类最近怎么表达、穿搭类短视频通常怎么拍，再从灵感库找 90 年代街头复古的视觉参考；如果我素材库里有外套、模特或街景素材，也帮我选合适的用上。在画布上搭好从脚本、分镜到 3-5 个视频镜头（面料细节、一衣三穿）的完整流程，加上口播和背景音乐，合成一条能直接发布的成片，并给我视频链接、视觉方向和标题标签。',
+          '一句话直接出一条 9:16、15 秒的复古牛仔外套种草成片。先了解这个品类怎么表达、穿搭短视频通常怎么拍，再从灵感库找 90 年代街头复古参考；素材库里有外套、模特或街景素材就用上。工作流按 15 秒精简设计，搭好后立刻跑完全流程并合成最终可发布视频，不要只停在画布，也不要中途问我。完成后只给我成片链接、视觉方向和标题标签。',
       },
     ],
     templatesTitle: '推荐画布',
