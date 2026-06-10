@@ -2495,7 +2495,6 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             canArrange={nodes.length > 1}
             onArrange={arrangeCanvas}
             onDeleteSelected={deleteSelectedElements}
-            onSelectAll={selectAllElements}
             selectedElementCount={selectedElementCount}
           />
         )}
@@ -5346,13 +5345,11 @@ function BottomControls({
   canArrange,
   onArrange,
   onDeleteSelected,
-  onSelectAll,
   selectedElementCount,
 }: {
   canArrange: boolean;
   onArrange: () => void;
   onDeleteSelected: () => void;
-  onSelectAll: () => void;
   selectedElementCount: number;
 }) {
   const { t } = useI18n();
@@ -5367,24 +5364,6 @@ function BottomControls({
     <div className="absolute bottom-5 left-5 z-30 flex items-center gap-2 rounded-2xl bg-[#17191c]/88 p-2 text-white/64 shadow-[0_16px_48px_rgba(0,0,0,0.4)] ring-1 ring-white/[0.08] backdrop-blur-xl">
       <button
         type="button"
-        aria-label={t('canvas.toolbar.fit')}
-        onClick={() => reactFlow.fitView({ padding: 0.28, duration: 260 })}
-        className="group relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
-      >
-        <IconLayoutGrid size={17} stroke={2.1} />
-        <ControlTooltip label={t('canvas.toolbar.fit')} />
-      </button>
-      <button
-        type="button"
-        aria-label={t('canvas.toolbar.selectAll')}
-        onClick={onSelectAll}
-        className="group relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-white/[0.08] hover:text-white"
-      >
-        <IconSelectAll size={17} stroke={2.1} />
-        <ControlTooltip label={t('canvas.toolbar.selectAll')} />
-      </button>
-      <button
-        type="button"
         aria-label={t('canvas.toolbar.arrange')}
         title={t('canvas.toolbar.arrange')}
         onClick={onArrange}
@@ -5393,14 +5372,6 @@ function BottomControls({
       >
         <IconHierarchy2 size={17} stroke={2.1} />
         <ControlTooltip label={t('canvas.toolbar.arrange')} />
-      </button>
-      <button
-        type="button"
-        aria-label={t('canvas.toolbar.grid')}
-        className="group relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.08] text-white"
-      >
-        <IconGridDots size={17} stroke={2.1} />
-        <ControlTooltip label={t('canvas.toolbar.grid')} />
       </button>
       <button
         type="button"
