@@ -247,6 +247,11 @@ export function useAgentChat({
           return;
         }
         setMessages((prev) => (prev.length === 0 ? historyMessages : prev));
+        void replayWorkflowTimelineHandlers(historyMessages, {
+          onWorkflowUpdate,
+          onWorkflowNodeStatus,
+          workflowProjectId,
+        });
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
@@ -255,7 +260,15 @@ export function useAgentChat({
       });
 
     return () => controller.abort();
-  }, [getToken, loadHistory, locale, sessionId]);
+  }, [
+    getToken,
+    loadHistory,
+    locale,
+    onWorkflowNodeStatus,
+    onWorkflowUpdate,
+    sessionId,
+    workflowProjectId,
+  ]);
 
   const updateMessage = useCallback(
     (id: string, patch: Partial<ChatMessage> | ((prev: ChatMessage) => Partial<ChatMessage>)) => {
@@ -1258,6 +1271,51 @@ function notifyWorkflowHandler(
   void Promise.resolve(handler(data)).catch((error) => {
     console.error('workflow event handler failed', error);
   });
+}
+
+async function replayWorkflowTimelineHandlers(
+  messages: ChatMessage[],
+  handlers: {
+    onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
+    onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
+    workflowProjectId?: string | null;
+  },
+) {
+  const nodeEvents = new Map<string, ChatTimelineItem>();
+  let workflowUpdate: ChatTimelineItem | null = null;
+
+  for (const message of messages) {
+    for (const event of message.events ?? []) {
+      if (event.kind !== 'act_event' || !event.eventName || !event.payload) continue;
+      const eventProjectId = readString(event.payload.project_id);
+      if (
+        handlers.workflowProjectId &&
+        eventProjectId &&
+        eventProjectId !== handlers.workflowProjectId
+      ) {
+        continue;
+      }
+      if (event.eventName === 'workflow_update') {
+        if (!workflowUpdate || event.createdAt >= workflowUpdate.createdAt) workflowUpdate = event;
+        continue;
+      }
+      if (event.eventName !== 'workflow_node_status') continue;
+      const nodeId = readString(event.payload.node_id);
+      if (!nodeId) continue;
+      const current = nodeEvents.get(nodeId);
+      if (!current || event.createdAt >= current.createdAt) nodeEvents.set(nodeId, event);
+    }
+  }
+
+  try {
+    if (workflowUpdate?.payload) await handlers.onWorkflowUpdate?.(workflowUpdate.payload);
+    const sortedNodeEvents = [...nodeEvents.values()].sort((a, b) => a.createdAt - b.createdAt);
+    for (const event of sortedNodeEvents) {
+      if (event.payload) await handlers.onWorkflowNodeStatus?.(event.payload);
+    }
+  } catch (error) {
+    console.error('workflow history replay failed', error);
+  }
 }
 
 function workflowTimelineStatus(
