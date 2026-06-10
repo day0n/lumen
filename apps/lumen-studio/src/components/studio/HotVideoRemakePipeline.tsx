@@ -760,7 +760,10 @@ function LockStage({
               />
             }
           />
-          <RerunButton label={copy.rerunOne} onClick={() => onRetry([RemakeSliceKeys.creatorLock])} />
+          <RerunButton
+            label={copy.rerunOne}
+            onClick={() => onRetry([RemakeSliceKeys.creatorLock])}
+          />
         </div>
         <div className="space-y-2">
           <SlicePreview
@@ -790,7 +793,10 @@ function LockStage({
               />
             }
           />
-          <RerunButton label={copy.rerunOne} onClick={() => onRetry([RemakeSliceKeys.productLock])} />
+          <RerunButton
+            label={copy.rerunOne}
+            onClick={() => onRetry([RemakeSliceKeys.productLock])}
+          />
         </div>
       </div>
       {job.plan.environments.length > 0 ? (
@@ -1131,8 +1137,7 @@ function StageHeader({
 }
 
 /**
- * 右下「进入下一步」——仅在当前步骤已成功时出现。
- * 生成中的反馈放在各 SlicePreview 预览区，不在按钮上重复展示。
+ * 右下「进入下一步」——成功后可点击，运行中保留禁用态占位。
  */
 function StageActions({
   status,
@@ -1143,10 +1148,13 @@ function StageActions({
   nextLabel: string;
   onNext: () => void;
 }) {
-  if (status !== 'success') return null;
+  const visible = status === 'success' || status === 'running';
+  if (!visible) return null;
+  const disabled = status !== 'success';
+
   return (
     <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
-      <PrimaryButton onClick={onNext}>
+      <PrimaryButton onClick={onNext} disabled={disabled}>
         <IconCheck size={15} />
         {nextLabel}
       </PrimaryButton>
