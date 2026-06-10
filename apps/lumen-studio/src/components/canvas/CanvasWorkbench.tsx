@@ -1135,6 +1135,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const [saveState, setSaveState] = useState<CanvasSaveState>(projectId ? 'loading' : 'idle');
   const [nodes, setNodes, onNodesChange] = useNodesState<LumenNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<LumenEdge>([]);
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
   const reactFlow = useReactFlow<LumenNode, LumenEdge>();
   const reactFlowStore = useStoreApi<LumenNode, LumenEdge>();
   const hasRequestedCreate = useRef(false);
@@ -1666,8 +1668,10 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
   const refreshAgentWorkflowIfMissing = useCallback(
     async (nodeId: string | null, options: { force?: boolean } = {}) => {
+      const currentNodes = nodesRef.current;
       const isMissingLocalWorkflow =
-        nodes.length === 0 || (nodeId !== null && !nodes.some((node) => node.id === nodeId));
+        currentNodes.length === 0 ||
+        (nodeId !== null && !currentNodes.some((node) => node.id === nodeId));
       if (!options.force && !isMissingLocalWorkflow) return false;
 
       if (agentWorkflowRefreshRef.current) {
@@ -1705,7 +1709,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       await refreshPromise;
       return true;
     },
-    [applyAgentWorkflowLayout, cancelPendingAutosave, nodes, refreshProject],
+    [applyAgentWorkflowLayout, cancelPendingAutosave, refreshProject],
   );
 
   const refreshAgentWorkflowNodeStatus = useCallback(
@@ -1819,11 +1823,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       const status = readNodeStatus(data.status);
       const runId = readEventString(data.run_id);
       if (!currentProjectId || eventProjectId !== currentProjectId || !nodeId || !status) return;
-      if (nodes.length === 0 || !nodes.some((node) => node.id === nodeId)) {
-        void refreshAgentWorkflowIfMissing(nodeId);
-        return;
-      }
-      handleNodeStateChange(nodeId, {
+      const nextState: NodeState = {
         status,
         output: readEventString(data.output),
         error: readEventString(data.error),
@@ -1835,9 +1835,21 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         retryable: readEventBoolean(data.retryable) ?? undefined,
         attempts: readEventNumber(data.attempts) ?? undefined,
         progress: readEventNumber(data.progress) ?? (status === 'success' ? 1 : 0),
-      });
+      };
+      const currentNodes = nodesRef.current;
+      if (currentNodes.length === 0 || !currentNodes.some((node) => node.id === nodeId)) {
+        void refreshAgentWorkflowIfMissing(nodeId)
+          .catch((error) => {
+            console.error(error);
+          })
+          .finally(() => {
+            handleNodeStateChange(nodeId, nextState);
+          });
+        return;
+      }
+      handleNodeStateChange(nodeId, nextState);
     },
-    [currentProjectId, handleNodeStateChange, nodes, refreshAgentWorkflowIfMissing],
+    [currentProjectId, handleNodeStateChange, refreshAgentWorkflowIfMissing],
   );
 
   useEffect(() => {

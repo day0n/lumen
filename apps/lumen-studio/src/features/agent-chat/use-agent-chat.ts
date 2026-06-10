@@ -81,6 +81,12 @@ interface SseEnvelope {
   data: Record<string, unknown>;
 }
 
+type WorkflowEventHandlers = {
+  onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
+  onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
+  workflowProjectId?: string | null;
+};
+
 class TerminalSignal extends Error {
   constructor(readonly reason: 'completed' | 'failed' | 'stopped') {
     super(`agent stream terminal: ${reason}`);
@@ -205,6 +211,19 @@ export function useAgentChat({
   const activeAssistantIdRef = useRef<string | null>(null);
   const loadedHistoryKeyRef = useRef<string | null>(null);
   const resetHistoryKeyRef = useRef<string | null>(null);
+  const workflowHandlersRef = useRef<WorkflowEventHandlers>({
+    onWorkflowUpdate,
+    onWorkflowNodeStatus,
+    workflowProjectId,
+  });
+
+  useEffect(() => {
+    workflowHandlersRef.current = {
+      onWorkflowUpdate,
+      onWorkflowNodeStatus,
+      workflowProjectId,
+    };
+  }, [onWorkflowNodeStatus, onWorkflowUpdate, workflowProjectId]);
 
   useEffect(() => {
     return () => abortRef.current?.abort();
@@ -247,11 +266,7 @@ export function useAgentChat({
           return;
         }
         setMessages((prev) => (prev.length === 0 ? historyMessages : prev));
-        void replayWorkflowTimelineHandlers(historyMessages, {
-          onWorkflowUpdate,
-          onWorkflowNodeStatus,
-          workflowProjectId,
-        });
+        void replayWorkflowTimelineHandlers(historyMessages, workflowHandlersRef.current);
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
@@ -260,15 +275,7 @@ export function useAgentChat({
       });
 
     return () => controller.abort();
-  }, [
-    getToken,
-    loadHistory,
-    locale,
-    onWorkflowNodeStatus,
-    onWorkflowUpdate,
-    sessionId,
-    workflowProjectId,
-  ]);
+  }, [getToken, loadHistory, locale, sessionId]);
 
   const updateMessage = useCallback(
     (id: string, patch: Partial<ChatMessage> | ((prev: ChatMessage) => Partial<ChatMessage>)) => {
@@ -486,11 +493,12 @@ export function useAgentChat({
             }
 
             const env: SseEnvelope = { event: msg.event, data };
+            const workflowHandlers = workflowHandlersRef.current;
             handleEvent(env, assistantMessage.id, updateMessage, {
-              onWorkflowUpdate,
-              onWorkflowNodeStatus,
+              onWorkflowUpdate: workflowHandlers.onWorkflowUpdate,
+              onWorkflowNodeStatus: workflowHandlers.onWorkflowNodeStatus,
               locale,
-              workflowProjectId,
+              workflowProjectId: workflowHandlers.workflowProjectId,
             });
 
             if (env.event === 'run:answer' || env.event === 'run:done') {
@@ -578,18 +586,7 @@ export function useAgentChat({
           activeAssistantIdRef.current = null;
       }
     },
-    [
-      profile,
-      sid,
-      context,
-      locale,
-      onWorkflowUpdate,
-      onWorkflowNodeStatus,
-      workflowProjectId,
-      updateMessage,
-      getToken,
-      tt,
-    ],
+    [profile, sid, context, locale, updateMessage, getToken, tt],
   );
 
   const setMessageFeedback = useCallback(
@@ -953,12 +950,7 @@ function handleEvent(
     id: string,
     patch: Partial<ChatMessage> | ((prev: ChatMessage) => Partial<ChatMessage>),
   ) => void,
-  handlers: {
-    locale?: Locale;
-    onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
-    onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
-    workflowProjectId?: string | null;
-  } = {},
+  handlers: { locale?: Locale } & WorkflowEventHandlers = {},
 ) {
   const locale = handlers.locale ?? 'en';
   const tt = (key: string, params?: Record<string, string | number | boolean | null | undefined>) =>
@@ -1256,10 +1248,7 @@ function readApiError(
 function notifyWorkflowHandler(
   eventName: string,
   data: Record<string, unknown>,
-  handlers: {
-    onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
-    onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
-  },
+  handlers: WorkflowEventHandlers,
 ) {
   const handler =
     eventName === 'workflow_update'
@@ -1275,11 +1264,7 @@ function notifyWorkflowHandler(
 
 async function replayWorkflowTimelineHandlers(
   messages: ChatMessage[],
-  handlers: {
-    onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
-    onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
-    workflowProjectId?: string | null;
-  },
+  handlers: WorkflowEventHandlers,
 ) {
   const nodeEvents = new Map<string, ChatTimelineItem>();
   let workflowUpdate: ChatTimelineItem | null = null;
