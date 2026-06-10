@@ -11,6 +11,14 @@ const STREAM_KEY = 'lumen:flow:tasks';
 const GROUP_NAME = 'engine-group';
 const CONSUMER_NAME = `engine-${process.pid}`;
 const DEFAULT_CANCEL_REASON = 'cancelled by user';
+const DEFAULT_MAX_CONCURRENT_RUNS = 4;
+
+function resolveMaxConcurrentRuns(): number {
+  const raw = process.env.ENGINE_MAX_CONCURRENT_RUNS;
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_MAX_CONCURRENT_RUNS;
+  return parsed;
+}
 
 interface CancelPayload {
   runId: string;
@@ -23,6 +31,9 @@ export class StreamConsumer {
   private cancelSubscriber: Redis | null = null;
   private activeRuns = new Map<string, AbortController>();
   private cancelledRuns = new Map<string, string>();
+  private readonly maxConcurrentRuns = resolveMaxConcurrentRuns();
+  private inflight = 0;
+  private slotWaiters: Array<() => void> = [];
 
   constructor(
     private redis: Redis,
@@ -37,9 +48,23 @@ export class StreamConsumer {
     await this.reclaimAbandonedMessages();
     await this.startCancelSubscriber();
     this.running = true;
-    logger.info('stream consumer started, waiting for tasks...');
+    logger.info(
+      { maxConcurrentRuns: this.maxConcurrentRuns },
+      'stream consumer started, waiting for tasks...',
+    );
 
     while (this.running) {
+      // Don't pull more work off the stream while every slot is busy. This is
+      // the simplest form of backpressure — XREADGROUP has no built-in
+      // concurrency knob, but we can just not call it until a slot frees up.
+      // Without this gate the consumer would happily mark every queued task
+      // delivered, then run them serially under the original `await
+      // processMessage` pattern.
+      if (this.inflight >= this.maxConcurrentRuns) {
+        await this.waitForFreeSlot();
+        continue;
+      }
+
       try {
         const results = (await this.redis.xreadgroup(
           'GROUP',
@@ -58,7 +83,15 @@ export class StreamConsumer {
 
         for (const [, messages] of results) {
           for (const [messageId, fields] of messages) {
-            await this.processMessage(messageId, fields as string[]);
+            this.inflight += 1;
+            // Detached on purpose — outer loop should immediately fetch more
+            // work up to the concurrency cap. processMessage already routes
+            // its own errors through Sentry/logger.
+            void this.processMessage(messageId, fields as string[]).finally(() => {
+              this.inflight -= 1;
+              const next = this.slotWaiters.shift();
+              if (next) next();
+            });
           }
         }
       } catch (err) {
@@ -68,6 +101,12 @@ export class StreamConsumer {
         }
       }
     }
+  }
+
+  private waitForFreeSlot(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.slotWaiters.push(resolve);
+    });
   }
 
   stop(): void {

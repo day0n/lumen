@@ -3,6 +3,7 @@ import type { Collection, Db } from 'mongodb';
 
 import {
   type LumenCanvas,
+  type LumenCanvasNodeData,
   type WorkflowEditSummary,
   normalizeWorkflowCanvas,
   summarizeWorkflowEdit,
@@ -125,6 +126,57 @@ export class ProjectWorkflowStore {
       .toArray();
     if (stale.length === 0) return;
     await this.history.deleteMany({ _id: { $in: stale.map((doc) => doc._id) } });
+  }
+
+  /**
+   * Atomically patch a single node's data fields without rewriting the whole
+   * canvas. Required when multiple `run_canvas_node` calls execute in parallel
+   * — a read-modify-write of the full canvas would let later writers clobber
+   * earlier writers' outputs based on a stale in-memory snapshot. Mongo
+   * guarantees single-document updates are atomic, so concurrent patches to
+   * different nodes (different positional matches) both apply.
+   *
+   * Patch values of `undefined` are translated to `$unset` so callers can
+   * clear optional fields the same way the in-memory `updateCanvasNodeData`
+   * helper did.
+   *
+   * Returns null if no node with that id was found, so callers can surface a
+   * clear error instead of silently no-oping.
+   */
+  async patchNodeData(input: {
+    userId: string;
+    projectId: string;
+    nodeId: string;
+    patch: Partial<LumenCanvasNodeData>;
+  }): Promise<WorkflowProject | null> {
+    const set: Record<string, unknown> = {};
+    const unset: Record<string, ''> = {};
+    for (const [key, value] of Object.entries(input.patch)) {
+      const path = `canvas.nodes.$.data.${key}`;
+      if (value === undefined) {
+        unset[path] = '';
+      } else {
+        set[path] = value;
+      }
+    }
+    set.updated_at = new Date();
+
+    const update: Record<string, unknown> = { $set: set };
+    if (Object.keys(unset).length > 0) update.$unset = unset;
+
+    const doc = await this.projects.findOneAndUpdate(
+      {
+        _id: input.projectId,
+        owner_id: input.userId,
+        'canvas.nodes.id': input.nodeId,
+        deleted_at: { $exists: false },
+      },
+      update,
+      { returnDocument: 'after' },
+    );
+    if (!doc) return null;
+    await invalidateStudioProjectCache(input.userId, input.projectId);
+    return toProject(doc);
   }
 }
 

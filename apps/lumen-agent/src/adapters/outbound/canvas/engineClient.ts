@@ -12,7 +12,6 @@ import {
   canvasEdgesToWorkflowEdges,
   canvasNodeToWorkflowNodeWithContext,
   computeSingleNodeInput,
-  updateCanvasNodeData,
 } from '@lumen/shared/domain';
 import type { ClientRunMessage, ServerEvent } from '@lumen/shared/protocols';
 
@@ -135,18 +134,22 @@ export class WorkflowEngineClient {
     } catch (err) {
       const message = workflowErrorDisplayMessage(err);
       const cancelled = err instanceof WorkflowNodeCancelledError;
-      const errorCanvas = updateCanvasNodeData(input.project.canvas, target.id, {
+      const errorPatch: Partial<LumenCanvasNodeData> = {
         status: cancelled ? 'cancelled' : 'error',
         error: message,
         activeRunId: null,
         ...workflowErrorFields(err),
         progress: 1,
-      });
-      await this.store.updateCanvas({
+      };
+      const errorUpdated = await this.store.patchNodeData({
         userId: input.userId,
         projectId: input.project.id,
-        canvas: errorCanvas,
+        nodeId: target.id,
+        patch: errorPatch,
       });
+      if (!errorUpdated) {
+        throw new Error(`project or node disappeared while saving workflow error: ${target.id}`);
+      }
       await emitToolEvent('workflow_update', {
         project_id: input.project.id,
         reason: cancelled ? 'run_canvas_node_cancelled' : 'run_canvas_node_error',
@@ -154,14 +157,14 @@ export class WorkflowEngineClient {
         node_title: target.data.title,
         node_kind: target.data.kind,
         run_id: runId,
-        node_count: errorCanvas.nodes.length,
-        edge_count: errorCanvas.edges.length,
+        node_count: errorUpdated.canvas.nodes.length,
+        edge_count: errorUpdated.canvas.edges.length,
         ...workflowErrorEventFields(err),
       });
       throw err;
     }
 
-    const nextCanvas = updateCanvasNodeData(input.project.canvas, target.id, {
+    const successPatch: Partial<LumenCanvasNodeData> = {
       status: 'success',
       output,
       error: null,
@@ -172,13 +175,16 @@ export class WorkflowEngineClient {
       retryable: undefined,
       attempts: undefined,
       progress: 1,
-    });
-    const update = await this.store.updateCanvas({
+    };
+    const updated = await this.store.patchNodeData({
       userId: input.userId,
       projectId: input.project.id,
-      canvas: nextCanvas,
+      nodeId: target.id,
+      patch: successPatch,
     });
-    if (!update) throw new Error('project disappeared while saving workflow result');
+    if (!updated) {
+      throw new Error(`project or node disappeared while saving workflow result: ${target.id}`);
+    }
 
     await emitToolEvent('workflow_update', {
       project_id: input.project.id,
@@ -187,14 +193,14 @@ export class WorkflowEngineClient {
       node_title: target.data.title,
       node_kind: target.data.kind,
       run_id: runId,
-      node_count: nextCanvas.nodes.length,
-      edge_count: nextCanvas.edges.length,
+      node_count: updated.canvas.nodes.length,
+      edge_count: updated.canvas.edges.length,
     });
 
-    const savedNode = update.project.canvas.nodes.find((node) => node.id === target.id) ?? target;
+    const savedNode = updated.canvas.nodes.find((node) => node.id === target.id) ?? target;
     return {
       runId,
-      project: update.project,
+      project: updated,
       node: savedNode,
       output,
     };
@@ -205,12 +211,11 @@ export class WorkflowEngineClient {
     nodeId: string,
     patch: Partial<LumenCanvasNodeData>,
   ): Promise<void> {
-    const canvas = updateCanvasNodeData(project.canvas, nodeId, patch);
-    await this.store.updateCanvas({
+    await this.store.patchNodeData({
       userId: project.ownerId,
       projectId: project.id,
-      canvas,
-      recordHistory: false,
+      nodeId,
+      patch,
     });
   }
 

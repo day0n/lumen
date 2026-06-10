@@ -240,7 +240,7 @@ export class RunWorkflowNodeTool extends Tool {
   override readonly name = 'run_canvas_node';
   override readonly timeoutSeconds = 10 * 60 + 30;
   override readonly description =
-    'Run exactly one workflow node through the Lumen engine and save its output back to the canvas. For composition nodes, upstream video/audio outputs must exist and settings.timeline must be valid.';
+    'Run exactly one workflow node per call through the Lumen engine and save its output back to the canvas. To run independent sibling nodes faster, emit multiple parallel calls to this tool in the same turn — each call still targets one node, and the runtime executes them concurrently. For composition nodes, upstream video/audio outputs must exist and settings.timeline must be valid.';
 
   override readonly parameters: JsonSchema = {
     type: 'object',
