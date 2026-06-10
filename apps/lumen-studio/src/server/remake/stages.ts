@@ -10,8 +10,6 @@ import type {
   RemakeTaskRecord,
 } from '@lumen/db';
 
-import { sanitizeVideoPromptText } from './promptSafety';
-
 /**
  * Stage → Task 展开逻辑（纯函数）。
  *
@@ -317,27 +315,24 @@ export async function expandVideoStage(
     const characterGender = character?.gender ?? 'unspecified';
     const characterAge = character?.ageRange ?? 'adult';
     const characterTone = character?.tone ?? 'warm friendly UGC creator';
-    const safeAction = sanitizeVideoPromptText(scene.action);
-    const safeCamera = sanitizeVideoPromptText(scene.camera);
-    const voiceLine = sanitizeVideoPromptText((scene.voiceLine ?? scene.dialogue ?? '').trim());
-    const safePromptOverride = promptOverride ? sanitizeVideoPromptText(promptOverride) : null;
+    const voiceLine = (scene.voiceLine ?? scene.dialogue ?? '').trim();
 
     // Fallback 严格按统一语法（@-token + Speaker voice + (VO, gender) says）。
     // 不再描述实体视觉细节 —— @keyframe 已喂图。
-    const fallback = `Continue motion forward from @keyframe. Keep ${characterToken}'s identity and ${productToken}'s appearance stable across the clip. Over ~${scene.durationSeconds}s, ${characterToken} performs: ${safeAction}. Camera: ${safeCamera}.
+    const fallback = `Continue motion forward from @keyframe. Keep ${characterToken}'s identity and ${productToken}'s appearance stable across the clip. Over ~${scene.durationSeconds}s, ${characterToken} performs: ${scene.action}. Camera: ${scene.camera}.
 
 Speaker voice: ${characterToken} — ${characterGender}, ${characterAge}, ${characterTone}.
 
 ${characterToken} (VO, ${characterGender}) says: "${voiceLine}"
 
-Generate the spoken audio natively in ${characterToken}'s voice. The spoken timing must match the line above.`;
+Generate the spoken audio natively in ${characterToken}'s voice. The on-screen mouth shapes must match the spoken line above.`;
 
     tasks.push({
       stage: 'video',
       sliceKey: SliceKeys.sceneVideo(scene.index),
       handler: 'veo-3.1',
       input: makeInput({
-        prompt: safePromptOverride || generated || fallback,
+        prompt: promptOverride || generated || fallback,
         image: sceneImageOutput ?? null,
       }),
       settings: {
