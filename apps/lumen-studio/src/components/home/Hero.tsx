@@ -8,6 +8,7 @@ import { useLoginRedirect } from '@/lib/auth-redirect';
 import {
   IconArrowUp,
   IconArrowUpRight,
+  IconPhoto,
   IconPhotoPlus,
   IconPlus,
   IconSparkles,
@@ -23,6 +24,7 @@ interface RecentProject {
   id: string;
   title: string;
   updatedAt: string;
+  thumbnail?: string;
 }
 
 type ProjectsApiResponse =
@@ -431,9 +433,32 @@ export function Hero() {
                 className="group overflow-hidden rounded-xl bg-[#202121] text-left ring-1 ring-white/[0.08] transition-colors hover:bg-[#262829]"
               >
                 <div
-                  className="h-[68px]"
-                  style={{ background: COVER_GRADIENTS[index % COVER_GRADIENTS.length] }}
-                />
+                  className="relative h-[68px] overflow-hidden"
+                  style={
+                    project.thumbnail
+                      ? undefined
+                      : { background: COVER_GRADIENTS[index % COVER_GRADIENTS.length] }
+                  }
+                >
+                  {project.thumbnail ? (
+                    <>
+                      <img
+                        src={project.thumbnail}
+                        alt=""
+                        decoding="async"
+                        loading="lazy"
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                      <div className="absolute inset-0 opacity-40 mix-blend-soft-light [background-image:linear-gradient(120deg,transparent_20%,rgba(255,255,255,0.35)_48%,transparent_62%)]" />
+                    </>
+                  ) : project.id.charCodeAt(0) % 3 === 0 ? (
+                    <IconPhoto
+                      size={24}
+                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/18"
+                      stroke={1.7}
+                    />
+                  ) : null}
+                </div>
                 <div className="flex items-start gap-2 px-2.5 py-2">
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[11.5px] font-bold text-white/76">
