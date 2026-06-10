@@ -31,6 +31,10 @@ export interface PlannedTask {
   settings: Record<string, unknown>;
 }
 
+interface ExpandStageOptions {
+  sliceKeys?: readonly string[];
+}
+
 const EMPTY_INPUT: RemakeTaskInput = {
   prompt: '',
   image: null,
@@ -111,7 +115,10 @@ export function sliceOutputField(
 // Lock stage：创作者锁定 + 产品锁定 + 环境锁定
 // ============================================================
 
-export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
+export function expandLockStage(
+  job: RemakeJobRecord,
+  options: ExpandStageOptions = {},
+): PlannedTask[] {
   const aspectRatio = job.settings.aspectRatio;
   const [creator0, creator1] = job.creatorImageUrls;
   const [product0, product1] = job.productImageUrls;
@@ -182,7 +189,7 @@ export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
     });
   }
 
-  return tasks;
+  return filterPlannedTasks(tasks, options.sliceKeys);
 }
 
 // ============================================================
@@ -190,16 +197,22 @@ export function expandLockStage(job: RemakeJobRecord): PlannedTask[] {
 // 改 async：在派发任务前用 Gemini 多模态"看着 lock 图"生成具体的分镜 prompt。
 // ============================================================
 
-export async function expandStoryboardStage(job: RemakeJobRecord): Promise<PlannedTask[]> {
+export async function expandStoryboardStage(
+  job: RemakeJobRecord,
+  options: ExpandStageOptions = {},
+): Promise<PlannedTask[]> {
   const { generateStoryboardPrompt } = await import('./promptGenerators');
   const aspectRatio = job.settings.aspectRatio;
   const creatorLock = job.outputs.creatorLockUrl ?? null;
   const productLock = job.outputs.productLockUrl ?? null;
   const productName = job.reference.productName ?? job.reference.label;
   const environments = planEnvironments(job);
+  const scenes = job.plan.scenes
+    .map((scene, planIndex) => ({ scene, planIndex }))
+    .filter(({ scene }) => shouldPlanSlice(SliceKeys.sceneImage(scene.index), options.sliceKeys));
 
   const prompts = await Promise.all(
-    job.plan.scenes.map((scene) => {
+    scenes.map(({ scene }) => {
       const environmentIndex =
         scene.environmentIndex ?? job.plan.sceneEnvironmentMap[String(scene.index)] ?? 1;
       const environment =
@@ -218,9 +231,9 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
     }),
   );
 
-  return job.plan.scenes.map((scene, i) => {
+  return scenes.map(({ scene, planIndex }, i) => {
     const generated = prompts[i];
-    const overridePrompt = job.plan.sceneImagePrompts?.[i]?.trim();
+    const overridePrompt = job.plan.sceneImagePrompts?.[planIndex]?.trim();
     // Fallback：不描述实体视觉细节，只用 token 引用。
     const characterToken = `@${(job.plan.character?.name ?? 'creator').replace(/\s+/g, '_')}`;
     const productToken = `@${productName.toLowerCase().replace(/\s+/g, '-')}`;
@@ -260,15 +273,21 @@ export async function expandStoryboardStage(job: RemakeJobRecord): Promise<Plann
 // 视频模型一次推理同时产出嘴型和对应音频，从根本上解决口型对不上的问题。
 // ============================================================
 
-export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTask[]> {
+export async function expandVideoStage(
+  job: RemakeJobRecord,
+  options: ExpandStageOptions = {},
+): Promise<PlannedTask[]> {
   const { generateVideoPrompt } = await import('./promptGenerators');
   const aspectRatio = job.settings.aspectRatio;
   const videoResolution = '720p'; // veo-3.1 约束：720p 才尊重 per-scene duration
   const productName = job.reference.productName ?? job.reference.label;
   const bgmDurationSeconds = estimateFinalDurationSeconds(job);
+  const scenes = job.plan.scenes
+    .map((scene, planIndex) => ({ scene, planIndex }))
+    .filter(({ scene }) => shouldPlanSlice(SliceKeys.sceneVideo(scene.index), options.sliceKeys));
 
   const generatedVideoPrompts = await Promise.all(
-    job.plan.scenes.map((scene) => {
+    scenes.map(({ scene }) => {
       const sceneImageUrl = job.outputs.scenes.find(
         (entry) => entry.sceneIndex === scene.index,
       )?.imageUrl;
@@ -284,9 +303,9 @@ export async function expandVideoStage(job: RemakeJobRecord): Promise<PlannedTas
 
   const tasks: PlannedTask[] = [];
 
-  for (const [i, scene] of job.plan.scenes.entries()) {
+  for (const [i, { scene, planIndex }] of scenes.entries()) {
     const generated = generatedVideoPrompts[i];
-    const promptOverride = job.plan.sceneVideoPrompts?.[i]?.trim();
+    const promptOverride = job.plan.sceneVideoPrompts?.[planIndex]?.trim();
     const sceneImageOutput = job.outputs.scenes.find(
       (entry) => entry.sceneIndex === scene.index,
     )?.imageUrl;
@@ -329,15 +348,17 @@ Generate the spoken audio natively in ${characterToken}'s voice. The spoken timi
     });
   }
 
-  tasks.push({
-    stage: 'video',
-    sliceKey: SliceKeys.bgm,
-    handler: 'suno-music',
-    input: makeInput({
-      prompt: buildBgmPrompt(job, bgmDurationSeconds),
-    }),
-    settings: { instrumental: true, suno_model: 'V5', durationSeconds: bgmDurationSeconds },
-  });
+  if (shouldPlanSlice(SliceKeys.bgm, options.sliceKeys)) {
+    tasks.push({
+      stage: 'video',
+      sliceKey: SliceKeys.bgm,
+      handler: 'suno-music',
+      input: makeInput({
+        prompt: buildBgmPrompt(job, bgmDurationSeconds),
+      }),
+      settings: { instrumental: true, suno_model: 'V5', durationSeconds: bgmDurationSeconds },
+    });
+  }
 
   return tasks;
 }
@@ -467,6 +488,15 @@ function compactRefs(values: Array<string | null | undefined>): string[] {
     if (trimmed && !refs.includes(trimmed)) refs.push(trimmed);
   }
   return refs;
+}
+
+function shouldPlanSlice(sliceKey: string, sliceKeys?: readonly string[]): boolean {
+  return !sliceKeys || sliceKeys.length === 0 || sliceKeys.includes(sliceKey);
+}
+
+function filterPlannedTasks(tasks: PlannedTask[], sliceKeys?: readonly string[]): PlannedTask[] {
+  if (!sliceKeys || sliceKeys.length === 0) return tasks;
+  return tasks.filter((task) => sliceKeys.includes(task.sliceKey));
 }
 
 // ============================================================

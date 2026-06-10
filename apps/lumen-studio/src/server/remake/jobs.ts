@@ -350,11 +350,11 @@ export async function runStage(input: {
 
   let planned: PlannedTask[] = [];
   if (input.stage === 'lock') {
-    planned = expandLockStage(job);
+    planned = expandLockStage(job, { sliceKeys: input.sliceKeys });
   } else if (input.stage === 'storyboard') {
-    planned = await expandStoryboardStage(job);
+    planned = await expandStoryboardStage(job, { sliceKeys: input.sliceKeys });
   } else if (input.stage === 'video') {
-    planned = await expandVideoStage(job);
+    planned = await expandVideoStage(job, { sliceKeys: input.sliceKeys });
   } else if (input.stage === 'final') {
     const final = expandFinalStage(job);
     if (!final) {
@@ -363,11 +363,6 @@ export async function runStage(input: {
     planned = [final];
   } else {
     throw new Error(`Stage "${input.stage}" is not directly runnable.`);
-  }
-
-  if (input.sliceKeys && input.sliceKeys.length > 0) {
-    const wanted = new Set(input.sliceKeys);
-    planned = planned.filter((task) => wanted.has(task.sliceKey));
   }
 
   if (planned.length === 0) return composeView(job, tasks);

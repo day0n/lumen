@@ -54,6 +54,14 @@ interface ApiErr {
 }
 type ApiResp<T> = ApiOk<T> | ApiErr;
 
+interface OptimisticRun {
+  key: string;
+  jobId: string;
+  stage: RemakeStageName;
+  sliceKeys?: string[];
+  at: string;
+}
+
 type State =
   | { phase: 'loading'; view: null; error: null }
   | { phase: 'ready'; view: RemakeJobView; error: string | null }
@@ -63,6 +71,13 @@ type Action =
   | { type: 'load:success'; view: RemakeJobView }
   | { type: 'load:error'; error: string }
   | { type: 'set-view'; view: RemakeJobView }
+  | {
+      type: 'run:optimistic';
+      jobId: string;
+      stage: RemakeStageName;
+      sliceKeys?: string[];
+      at: string;
+    }
   | { type: 'patch-task'; task: Partial<RemakeTaskRecord> & { id: string; sliceKey: string } }
   | { type: 'patch-stage'; stage: RemakeStageName; status: RemakeStageStatus }
   | { type: 'set-error'; error: string | null };
@@ -77,6 +92,34 @@ function reducer(state: State, action: Action): State {
         : { phase: 'error', view: null, error: action.error };
     case 'set-view':
       return { phase: 'ready', view: action.view, error: null };
+    case 'run:optimistic': {
+      if (!state.view) return state;
+      const sliceKeys = resolveRunSliceKeys(state.view.job, action.stage, action.sliceKeys);
+      if (sliceKeys.length === 0) return state;
+      let tasks = state.view.tasks;
+      for (const sliceKey of sliceKeys) {
+        const existing = tasks.find((task) => task.sliceKey === sliceKey);
+        tasks = patchOrAppendTask(
+          tasks,
+          buildOptimisticTask({
+            existing,
+            jobId: action.jobId,
+            stage: action.stage,
+            sliceKey,
+            at: action.at,
+          }),
+        );
+      }
+      return {
+        ...state,
+        view: {
+          ...state.view,
+          job: clearOutputsForRun(state.view.job, sliceKeys),
+          tasks,
+          stageStatuses: { ...state.view.stageStatuses, [action.stage]: 'running' },
+        },
+      };
+    }
     case 'patch-task': {
       if (!state.view) return state;
       const tasks = patchOrAppendTask(state.view.tasks, action.task);
@@ -131,6 +174,163 @@ function patchOrAppendTask(
   const next = [...existing];
   next[idx] = { ...next[idx]!, ...patch, updatedAt: new Date().toISOString() };
   return next;
+}
+
+function resolveRunSliceKeys(
+  job: RemakeJobRecord,
+  stage: RemakeStageName,
+  sliceKeys?: string[],
+): string[] {
+  if (sliceKeys?.length) return [...new Set(sliceKeys)];
+  if (stage === 'lock') {
+    return [
+      RemakeSliceKeys.creatorLock,
+      RemakeSliceKeys.productLock,
+      ...job.plan.environments.map((environment) =>
+        RemakeSliceKeys.environmentLock(environment.index),
+      ),
+    ];
+  }
+  if (stage === 'storyboard') {
+    return job.plan.scenes.map((scene) => RemakeSliceKeys.sceneImage(scene.index));
+  }
+  if (stage === 'video') {
+    return [
+      ...job.plan.scenes.map((scene) => RemakeSliceKeys.sceneVideo(scene.index)),
+      RemakeSliceKeys.bgm,
+    ];
+  }
+  if (stage === 'final') return [RemakeSliceKeys.final];
+  return [];
+}
+
+function buildOptimisticTask(input: {
+  existing?: RemakeTaskRecord;
+  jobId: string;
+  stage: RemakeStageName;
+  sliceKey: string;
+  at: string;
+}): Partial<RemakeTaskRecord> & { id: string; sliceKey: string } {
+  return {
+    id: input.existing?.id ?? `optimistic-${input.sliceKey}`,
+    jobId: input.jobId,
+    stage: input.stage,
+    sliceKey: input.sliceKey,
+    handler: inferOptimisticHandler(input.stage, input.sliceKey),
+    status: 'queued',
+    progress: 0,
+    outputUrl: undefined,
+    outputKind: undefined,
+    error: undefined,
+    settledAt: undefined,
+    createdAt: input.existing?.createdAt ?? input.at,
+    updatedAt: input.at,
+  };
+}
+
+function inferOptimisticHandler(
+  stage: RemakeStageName,
+  sliceKey: string,
+): RemakeTaskRecord['handler'] {
+  if (stage === 'video') return sliceKey === RemakeSliceKeys.bgm ? 'suno-music' : 'veo-3.1';
+  if (stage === 'final') return 'lumen-video-edit';
+  return 'nano-banana2';
+}
+
+function clearOutputsForRun(job: RemakeJobRecord, sliceKeys: string[]): RemakeJobRecord {
+  const outputs: RemakeJobRecord['outputs'] = {
+    ...job.outputs,
+    scenes: job.outputs.scenes.map((scene) => ({ ...scene })),
+    environmentLocks: job.outputs.environmentLocks.map((environment) => ({ ...environment })),
+  };
+
+  if (
+    sliceKeys.some(
+      (sliceKey) => sliceKey.startsWith('scene-video-') || sliceKey === RemakeSliceKeys.bgm,
+    )
+  ) {
+    outputs.finalUrl = undefined;
+  }
+
+  for (const sliceKey of sliceKeys) {
+    if (sliceKey === RemakeSliceKeys.creatorLock) {
+      outputs.creatorLockUrl = undefined;
+    } else if (sliceKey === RemakeSliceKeys.productLock) {
+      outputs.productLockUrl = undefined;
+    } else if (sliceKey === RemakeSliceKeys.bgm) {
+      outputs.bgmUrl = undefined;
+    } else if (sliceKey === RemakeSliceKeys.final) {
+      outputs.finalUrl = undefined;
+    } else if (sliceKey.startsWith('environment-lock-')) {
+      const environmentIndex = readTrailingIndex(sliceKey);
+      if (environmentIndex !== null) {
+        const output = outputs.environmentLocks.find(
+          (item) => item.environmentIndex === environmentIndex,
+        );
+        if (output) output.imageUrl = undefined;
+      }
+    } else if (sliceKey.startsWith('scene-image-')) {
+      clearSceneOutput(outputs.scenes, sliceKey, 'imageUrl');
+    } else if (sliceKey.startsWith('scene-video-')) {
+      clearSceneOutput(outputs.scenes, sliceKey, 'videoUrl');
+    } else if (sliceKey.startsWith('scene-voice-')) {
+      clearSceneOutput(outputs.scenes, sliceKey, 'voiceUrl');
+    } else if (sliceKey.startsWith('scene-mix-')) {
+      clearSceneOutput(outputs.scenes, sliceKey, 'mixUrl');
+    }
+  }
+
+  return { ...job, outputs };
+}
+
+function applyOptimisticRuns(view: RemakeJobView, runs: OptimisticRun[]): RemakeJobView {
+  let next = view;
+  for (const run of runs) {
+    if (next.job.id !== run.jobId) continue;
+    const sliceKeys = resolveRunSliceKeys(next.job, run.stage, run.sliceKeys);
+    if (sliceKeys.length === 0) continue;
+
+    let tasks = next.tasks;
+    for (const sliceKey of sliceKeys) {
+      const existing = tasks.find((task) => task.sliceKey === sliceKey);
+      tasks = patchOrAppendTask(
+        tasks,
+        buildOptimisticTask({
+          existing,
+          jobId: run.jobId,
+          stage: run.stage,
+          sliceKey,
+          at: run.at,
+        }),
+      );
+    }
+
+    next = {
+      ...next,
+      job: clearOutputsForRun(next.job, sliceKeys),
+      tasks,
+      stageStatuses: { ...next.stageStatuses, [run.stage]: 'running' },
+    };
+  }
+  return next;
+}
+
+function clearSceneOutput(
+  scenes: RemakeJobRecord['outputs']['scenes'],
+  sliceKey: string,
+  field: 'imageUrl' | 'videoUrl' | 'voiceUrl' | 'mixUrl',
+) {
+  const sceneIndex = readTrailingIndex(sliceKey);
+  if (sceneIndex === null) return;
+  const output = scenes.find((scene) => scene.sceneIndex === sceneIndex);
+  if (output) output[field] = undefined;
+}
+
+function readTrailingIndex(value: string): number | null {
+  const raw = value.split('-').at(-1);
+  if (!raw) return null;
+  const index = Number.parseInt(raw, 10);
+  return Number.isFinite(index) && index >= 1 ? index : null;
 }
 
 // ============================================================
@@ -189,6 +389,7 @@ export function useRemakeJob(
   useEffect(() => {
     stateRef.current = state;
   });
+  const pendingOptimisticRunsRef = useRef<OptimisticRun[]>([]);
 
   const fetchView = useCallback(async () => {
     if (!jobId) return;
@@ -207,7 +408,10 @@ export function useRemakeJob(
         });
         return;
       }
-      dispatch({ type: 'load:success', view: payload.data });
+      dispatch({
+        type: 'load:success',
+        view: applyOptimisticRuns(payload.data, pendingOptimisticRunsRef.current),
+      });
     } catch (error) {
       // 已经有 view 数据（轮询失败）= 服务短暂抖动，静默重试下一 tick，
       // 不打扰用户。否则刷新一闪一闪的红 banner 体验很糟糕。
@@ -302,7 +506,10 @@ export function useRemakeJob(
         }
         // 接口约定返回 RemakeJobView
         const view = payload.data as unknown as RemakeJobView;
-        dispatch({ type: 'set-view', view });
+        dispatch({
+          type: 'set-view',
+          view: applyOptimisticRuns(view, pendingOptimisticRunsRef.current),
+        });
         return view;
       } catch (error) {
         dispatch({
@@ -335,7 +542,10 @@ export function useRemakeJob(
           return null;
         }
         const view = payload.data as unknown as RemakeJobView;
-        dispatch({ type: 'set-view', view });
+        dispatch({
+          type: 'set-view',
+          view: applyOptimisticRuns(view, pendingOptimisticRunsRef.current),
+        });
         return view;
       } catch (error) {
         dispatch({
@@ -352,12 +562,38 @@ export function useRemakeJob(
     async (input: { stage: RemakeStageName; sliceKeys?: string[] }) => {
       if (!jobId) return;
       dispatch({ type: 'set-error', error: null });
-      await post(`/api/remake/jobs/${jobId}/run-stage`, {
+      const optimisticRun: OptimisticRun = {
+        key: `${input.stage}:${input.sliceKeys?.join(',') ?? '*'}:${Date.now()}`,
+        jobId,
+        stage: input.stage,
+        ...(input.sliceKeys ? { sliceKeys: input.sliceKeys } : {}),
+        at: new Date().toISOString(),
+      };
+      pendingOptimisticRunsRef.current = [...pendingOptimisticRunsRef.current, optimisticRun];
+      dispatch({
+        type: 'run:optimistic',
+        jobId: optimisticRun.jobId,
+        stage: optimisticRun.stage,
+        ...(optimisticRun.sliceKeys ? { sliceKeys: optimisticRun.sliceKeys } : {}),
+        at: optimisticRun.at,
+      });
+      const view = await post(`/api/remake/jobs/${jobId}/run-stage`, {
         stage: input.stage,
         ...(input.sliceKeys ? { sliceKeys: input.sliceKeys } : {}),
       });
+      pendingOptimisticRunsRef.current = pendingOptimisticRunsRef.current.filter(
+        (run) => run.key !== optimisticRun.key,
+      );
+      if (view) {
+        dispatch({
+          type: 'set-view',
+          view: applyOptimisticRuns(view, pendingOptimisticRunsRef.current),
+        });
+      } else {
+        await fetchView();
+      }
     },
-    [jobId, post],
+    [fetchView, jobId, post],
   );
 
   const updateScene = useCallback(
