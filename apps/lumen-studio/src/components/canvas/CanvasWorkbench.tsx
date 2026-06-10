@@ -1151,6 +1151,9 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const pendingCanvasUploads = useRef(0);
   const agentLayoutTimersRef = useRef<number[]>([]);
   const agentWorkflowRefreshRef = useRef<Promise<void> | null>(null);
+  const agentWorkflowRefreshEpochRef = useRef(0);
+  const autosaveControllerRef = useRef<AbortController | null>(null);
+  const autosaveTimerRef = useRef<number | null>(null);
   const [canvasMediaUploading, setCanvasMediaUploading] = useState(false);
   const [cancelGroupId, setCancelGroupId] = useState<string | null>(null);
   const [compositionEditorNodeId, setCompositionEditorNodeId] = useState<string | null>(null);
@@ -1579,6 +1582,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
       const response = await fetch(`/api/projects/${currentProjectId}`, {
         signal: options.signal,
+        cache: 'no-store',
         headers: { 'x-lumen-locale': locale },
       });
       const project = await readProjectResponse(response, t('canvas.projectFailed'));
@@ -1593,6 +1597,15 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     },
     [currentProjectId, locale, setEdges, setNodes, t],
   );
+
+  const cancelPendingAutosave = useCallback(() => {
+    if (autosaveTimerRef.current !== null) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    autosaveControllerRef.current?.abort();
+    autosaveControllerRef.current = null;
+  }, []);
 
   const arrangeRenderedCanvas = useCallback(
     (duration = 320) => {
@@ -1633,6 +1646,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         return true;
       }
 
+      cancelPendingAutosave();
+      agentWorkflowRefreshEpochRef.current += 1;
       const refreshPromise = refreshProject({ silent: true })
         .then((project) => {
           if (project && project.canvas.nodes.length > 0) {
@@ -1655,33 +1670,58 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       await refreshPromise;
       return true;
     },
-    [nodes, reactFlow, refreshProject],
+    [cancelPendingAutosave, nodes, reactFlow, refreshProject],
   );
 
   const handleAgentWorkflowUpdate = useCallback(
     async (data: Record<string, unknown>) => {
       const eventProjectId = readEventString(data.project_id);
-      if (!currentProjectId || eventProjectId !== currentProjectId) return;
+      if (!currentProjectId || (eventProjectId !== null && eventProjectId !== currentProjectId)) {
+        return;
+      }
       const reason = readEventString(data.reason);
       if (reason !== 'write_canvas') {
         await refreshAgentWorkflowIfMissing(readEventString(data.node_id));
         return;
       }
-      try {
+      if (agentWorkflowRefreshRef.current) {
+        await agentWorkflowRefreshRef.current;
+        return;
+      }
+
+      cancelPendingAutosave();
+      agentWorkflowRefreshEpochRef.current += 1;
+      const refreshPromise = (async () => {
         const project = await refreshProject({ silent: true });
-        if (project) {
-          // agent 改写画布结构后基于刚拉到的 nodes/edges 算布局，
-          // 不读 reactFlow.getEdges() 以避开 React/Flow 内部 store 的同步时机。
-          const arranged = arrangeCanvasNodes(
-            withCanvasNodeLayering(project.canvas.nodes),
-            project.canvas.edges,
-          );
-          setNodes(arranged);
-          window.requestAnimationFrame(() => {
-            reactFlow.fitView({ padding: 0.28, duration: 320, maxZoom: 1 });
-          });
-          scheduleAgentPostLayout();
-        }
+        if (!project) return;
+
+        const nextEdges = withCanvasEdgeLayering(project.canvas.edges);
+        // agent 改写画布结构后基于刚拉到的 nodes/edges 算布局，
+        // 不读 reactFlow.getEdges() 以避开 React/Flow 内部 store 的同步时机。
+        const arranged = arrangeCanvasNodes(
+          withCanvasNodeLayering(project.canvas.nodes),
+          project.canvas.edges,
+        );
+        setEdges(nextEdges);
+        setNodes(arranged);
+        window.requestAnimationFrame(() => {
+          reactFlow.fitView({ padding: 0.28, duration: 320, maxZoom: 1 });
+        });
+        scheduleAgentPostLayout();
+      })()
+        .catch((error) => {
+          console.error(error);
+          setSaveState('error');
+        })
+        .finally(() => {
+          if (agentWorkflowRefreshRef.current === refreshPromise) {
+            agentWorkflowRefreshRef.current = null;
+          }
+        });
+
+      agentWorkflowRefreshRef.current = refreshPromise;
+      try {
+        await refreshPromise;
       } catch (error) {
         console.error(error);
         setSaveState('error');
@@ -1693,6 +1733,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       refreshAgentWorkflowIfMissing,
       refreshProject,
       scheduleAgentPostLayout,
+      cancelPendingAutosave,
+      setEdges,
       setNodes,
     ],
   );
@@ -1860,6 +1902,9 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     ) {
       return;
     }
+    if (agentWorkflowRefreshRef.current) {
+      return;
+    }
 
     const canvas = serializeCanvas(nodes, edges);
     const serializedCanvas = JSON.stringify(canvas);
@@ -1869,8 +1914,16 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
     setSaveState('saving');
     const controller = new AbortController();
+    const autosaveEpoch = agentWorkflowRefreshEpochRef.current;
     const timer = window.setTimeout(async () => {
       try {
+        if (
+          controller.signal.aborted ||
+          agentWorkflowRefreshRef.current ||
+          autosaveEpoch !== agentWorkflowRefreshEpochRef.current
+        ) {
+          return;
+        }
         const response = await fetch(`/api/projects/${currentProjectId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'x-lumen-locale': locale },
@@ -1885,11 +1938,18 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           console.error(error);
           setSaveState('error');
         }
+      } finally {
+        if (autosaveControllerRef.current === controller) autosaveControllerRef.current = null;
+        if (autosaveTimerRef.current === timer) autosaveTimerRef.current = null;
       }
     }, 700);
+    autosaveControllerRef.current = controller;
+    autosaveTimerRef.current = timer;
 
     return () => {
       window.clearTimeout(timer);
+      if (autosaveTimerRef.current === timer) autosaveTimerRef.current = null;
+      if (autosaveControllerRef.current === controller) autosaveControllerRef.current = null;
       controller.abort();
     };
   }, [
