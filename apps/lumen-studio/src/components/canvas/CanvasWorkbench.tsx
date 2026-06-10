@@ -469,6 +469,7 @@ const seedanceDurationOptions = [4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 const videoResolutionOptions = ['720p', '1080p', '4k'] as const;
 const seedanceResolutionOptions = ['480p', '720p', '1080p'] as const;
 const MATERIAL_ASSET_DRAG_TYPE = 'application/x-lumen-material-asset';
+const AGENT_WORKFLOW_REFRESH_RETRY_DELAYS_MS = [350, 1000] as const;
 // 1080p / 4k 仅支持 8s（Veo 约束）
 const resolutionRequiresEightSeconds = (resolution: string) =>
   resolution === '1080p' || resolution === '4k';
@@ -529,6 +530,12 @@ function withCanvasEdgeLayering(edges: LumenEdge[]) {
     reconnectable: edge.reconnectable ?? true,
     zIndex: 0,
   }));
+}
+
+function waitForAgentWorkflowRefreshRetry(attempt: number): Promise<void> {
+  const delay = AGENT_WORKFLOW_REFRESH_RETRY_DELAYS_MS[attempt];
+  if (delay === undefined) return Promise.resolve();
+  return new Promise((resolve) => window.setTimeout(resolve, delay));
 }
 
 const TEMPLATE_NODE_LANES: Array<[string, number]> = [
@@ -1576,11 +1583,12 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   }, [authReady, isSignedIn, requireLogin]);
 
   const refreshProject = useCallback(
-    async (options: { signal?: AbortSignal; silent?: boolean } = {}) => {
+    async (options: { signal?: AbortSignal; silent?: boolean; fresh?: boolean } = {}) => {
       if (!currentProjectId) return null;
       if (!options.silent) setSaveState('loading');
 
-      const response = await fetch(`/api/projects/${currentProjectId}`, {
+      const query = options.fresh ? '?fresh=1' : '';
+      const response = await fetch(`/api/projects/${currentProjectId}${query}`, {
         signal: options.signal,
         cache: 'no-store',
         headers: { 'x-lumen-locale': locale },
@@ -1648,14 +1656,22 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
       cancelPendingAutosave();
       agentWorkflowRefreshEpochRef.current += 1;
-      const refreshPromise = refreshProject({ silent: true })
-        .then((project) => {
-          if (project && project.canvas.nodes.length > 0) {
+      const refreshPromise = (async () => {
+        for (let attempt = 0; attempt <= AGENT_WORKFLOW_REFRESH_RETRY_DELAYS_MS.length; attempt++) {
+          const project = await refreshProject({ silent: true, fresh: true });
+          const hasExpectedNode =
+            project &&
+            project.canvas.nodes.length > 0 &&
+            (nodeId === null || project.canvas.nodes.some((node) => node.id === nodeId));
+          if (hasExpectedNode) {
             window.requestAnimationFrame(() => {
               reactFlow.fitView({ padding: 0.28, duration: 260, maxZoom: 1 });
             });
+            return;
           }
-        })
+          await waitForAgentWorkflowRefreshRetry(attempt);
+        }
+      })()
         .catch((error) => {
           console.error(error);
           setSaveState('error');
@@ -1691,9 +1707,19 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
       cancelPendingAutosave();
       agentWorkflowRefreshEpochRef.current += 1;
+      const expectedNodeCount = readEventNumber(data.node_count);
       const refreshPromise = (async () => {
-        const project = await refreshProject({ silent: true });
-        if (!project) return;
+        let project = null;
+        for (let attempt = 0; attempt <= AGENT_WORKFLOW_REFRESH_RETRY_DELAYS_MS.length; attempt++) {
+          project = await refreshProject({ silent: true, fresh: true });
+          const hasExpectedCanvas =
+            project &&
+            project.canvas.nodes.length > 0 &&
+            (expectedNodeCount === null || project.canvas.nodes.length >= expectedNodeCount);
+          if (hasExpectedCanvas) break;
+          await waitForAgentWorkflowRefreshRetry(attempt);
+        }
+        if (!project || project.canvas.nodes.length === 0) return;
 
         const nextEdges = withCanvasEdgeLayering(project.canvas.edges);
         // agent 改写画布结构后基于刚拉到的 nodes/edges 算布局，

@@ -111,11 +111,14 @@ export async function createStudioProject(
   return project;
 }
 
-export async function getStudioProject(projectId: string): Promise<ProjectRecord | null> {
+export async function getStudioProject(
+  projectId: string,
+  options: { bypassCache?: boolean } = {},
+): Promise<ProjectRecord | null> {
   const user = await requireStudioUser();
   const cache = getStudioCache();
   const cacheKey = projectCacheKey(user.id, projectId);
-  const cached = await cache.get(cacheKey, ProjectRecordSchema);
+  const cached = options.bypassCache ? null : await cache.get(cacheKey, ProjectRecordSchema);
 
   if (cached) return cached;
 

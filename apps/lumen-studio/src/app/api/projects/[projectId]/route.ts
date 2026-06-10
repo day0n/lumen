@@ -18,7 +18,8 @@ export const GET = withApiRouteSpan(
     const locale = resolveRequestLocale(request);
     try {
       const { projectId } = await context.params;
-      const project = await getStudioProject(projectId);
+      const fresh = new URL(request.url).searchParams.get('fresh') === '1';
+      const project = await getStudioProject(projectId, { bypassCache: fresh });
 
       if (!project) {
         return failJson(translate(locale, 'api.projectNotFound'), 404);
