@@ -1150,6 +1150,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   const lastSavedCanvas = useRef('');
   const pendingCanvasUploads = useRef(0);
   const agentLayoutTimersRef = useRef<number[]>([]);
+  const agentWorkflowRefreshRef = useRef<Promise<void> | null>(null);
   const [canvasMediaUploading, setCanvasMediaUploading] = useState(false);
   const [cancelGroupId, setCancelGroupId] = useState<string | null>(null);
   const [compositionEditorNodeId, setCompositionEditorNodeId] = useState<string | null>(null);
@@ -1621,28 +1622,49 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
   useEffect(() => clearAgentLayoutTimers, [clearAgentLayoutTimers]);
 
+  const refreshAgentWorkflowIfMissing = useCallback(
+    async (nodeId: string | null) => {
+      const isMissingLocalWorkflow =
+        nodes.length === 0 || (nodeId !== null && !nodes.some((node) => node.id === nodeId));
+      if (!isMissingLocalWorkflow) return false;
+
+      if (agentWorkflowRefreshRef.current) {
+        await agentWorkflowRefreshRef.current;
+        return true;
+      }
+
+      const refreshPromise = refreshProject({ silent: true })
+        .then((project) => {
+          if (project && project.canvas.nodes.length > 0) {
+            window.requestAnimationFrame(() => {
+              reactFlow.fitView({ padding: 0.28, duration: 260, maxZoom: 1 });
+            });
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+          setSaveState('error');
+        })
+        .finally(() => {
+          if (agentWorkflowRefreshRef.current === refreshPromise) {
+            agentWorkflowRefreshRef.current = null;
+          }
+        });
+
+      agentWorkflowRefreshRef.current = refreshPromise;
+      await refreshPromise;
+      return true;
+    },
+    [nodes, reactFlow, refreshProject],
+  );
+
   const handleAgentWorkflowUpdate = useCallback(
     async (data: Record<string, unknown>) => {
       const eventProjectId = readEventString(data.project_id);
       if (!currentProjectId || eventProjectId !== currentProjectId) return;
       const reason = readEventString(data.reason);
       if (reason !== 'write_canvas') {
-        const nodeId = readEventString(data.node_id);
-        const isMissingLocalWorkflow =
-          nodes.length === 0 || (nodeId !== null && !nodes.some((node) => node.id === nodeId));
-        if (isMissingLocalWorkflow) {
-          try {
-            const project = await refreshProject({ silent: true });
-            if (project && project.canvas.nodes.length > 0) {
-              window.requestAnimationFrame(() => {
-                reactFlow.fitView({ padding: 0.28, duration: 260, maxZoom: 1 });
-              });
-            }
-          } catch (error) {
-            console.error(error);
-            setSaveState('error');
-          }
-        }
+        await refreshAgentWorkflowIfMissing(readEventString(data.node_id));
         return;
       }
       try {
@@ -1665,7 +1687,14 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         setSaveState('error');
       }
     },
-    [currentProjectId, nodes, reactFlow, refreshProject, scheduleAgentPostLayout, setNodes],
+    [
+      currentProjectId,
+      reactFlow,
+      refreshAgentWorkflowIfMissing,
+      refreshProject,
+      scheduleAgentPostLayout,
+      setNodes,
+    ],
   );
 
   const handleAgentWorkflowNodeStatus = useCallback(
@@ -1675,6 +1704,10 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       const status = readNodeStatus(data.status);
       const runId = readEventString(data.run_id);
       if (!currentProjectId || eventProjectId !== currentProjectId || !nodeId || !status) return;
+      if (nodes.length === 0 || !nodes.some((node) => node.id === nodeId)) {
+        void refreshAgentWorkflowIfMissing(nodeId);
+        return;
+      }
       handleNodeStateChange(nodeId, {
         status,
         output: readEventString(data.output),
@@ -1689,7 +1722,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         progress: readEventNumber(data.progress) ?? (status === 'success' ? 1 : 0),
       });
     },
-    [currentProjectId, handleNodeStateChange],
+    [currentProjectId, handleNodeStateChange, nodes, refreshAgentWorkflowIfMissing],
   );
 
   useEffect(() => {
