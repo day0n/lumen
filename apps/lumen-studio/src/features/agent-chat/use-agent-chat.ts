@@ -1264,7 +1264,13 @@ function workflowTimelineStatus(
     if (status === 'error') return 'error';
     return 'success';
   }
-  if (eventName === 'inspiration_results') return 'success';
+  if (
+    eventName === 'ad_video_results' ||
+    eventName === 'inspiration_results' ||
+    eventName === 'material_results'
+  ) {
+    return 'success';
+  }
   if (eventName !== 'workflow_node_status') return 'info';
   const status = readString(data.status);
   if (status === 'queued') return 'queued';
@@ -1288,6 +1294,16 @@ function formatWorkflowEventTitle(
   }
   if (eventName === 'inspiration_results') {
     return locale === 'zh' ? '已找到灵感' : 'Inspiration found';
+  }
+  if (eventName === 'ad_video_results') {
+    const count = Array.isArray(data.results) ? data.results.length : 0;
+    if (count === 0) return locale === 'zh' ? '未找到广告参考' : 'No ad references found';
+    return locale === 'zh' ? '已找到广告参考' : 'Ad references found';
+  }
+  if (eventName === 'material_results') {
+    const count = Array.isArray(data.results) ? data.results.length : 0;
+    if (count === 0) return locale === 'zh' ? '未找到素材' : 'No materials found';
+    return locale === 'zh' ? '已找到素材' : 'Materials found';
   }
   if (eventName === 'workflow_node_status') {
     const status = readString(data.status);
@@ -1339,6 +1355,30 @@ function summarizeWorkflowEventDetail(
     const query = readString(data.query);
     const count = Array.isArray(data.results) ? data.results.length : null;
     const parts = [query, count !== null ? `${count} images` : null].filter(Boolean);
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+  }
+  if (eventName === 'ad_video_results') {
+    const query = readString(data.query);
+    const count = Array.isArray(data.results) ? data.results.length : null;
+    const totalCandidates = readNumber(data.total_candidates);
+    const countLabel =
+      count !== null ? (locale === 'zh' ? `${count} 条广告` : `${count} videos`) : null;
+    const candidateLabel =
+      totalCandidates !== null && totalCandidates !== count
+        ? locale === 'zh'
+          ? `${totalCandidates} 条候选`
+          : `${totalCandidates} candidates`
+        : null;
+    const parts = [query, countLabel, candidateLabel].filter(Boolean);
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+  }
+  if (eventName === 'material_results') {
+    const query = readString(data.query);
+    const count = Array.isArray(data.results) ? data.results.length : null;
+    const parts = [
+      query,
+      count !== null ? (locale === 'zh' ? `${count} 个素材` : `${count} materials`) : null,
+    ].filter(Boolean);
     return parts.length > 0 ? parts.join(' · ') : undefined;
   }
   return summarizeArguments(data);

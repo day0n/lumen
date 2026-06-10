@@ -25,6 +25,19 @@ interface Creative {
   format: string;
 }
 
+interface AdVideoEventResult {
+  id: string;
+  platform: string;
+  landing_url: string;
+  video_url: string;
+  thumbnail_url: string;
+  headline: string;
+  brand: string;
+  duration_sec: number | null;
+  active_days: number | null;
+  format: string;
+}
+
 const FOREPLAY_DEFAULT_HOST = 'https://public.api.foreplay.co';
 
 // 裁剪用的小模型及其计费（USD / 百万 token，OpenAI 公开价）。
@@ -177,6 +190,32 @@ function render(query: string, picks: Creative[]): string {
   return [`「${query}」找到 ${picks.length} 条参考广告：`, '', ...blocks].join('\n');
 }
 
+function toEventResult(c: Creative): AdVideoEventResult {
+  return {
+    id: c.id,
+    platform: c.platform,
+    landing_url: c.landingUrl,
+    video_url: c.videoUrl,
+    thumbnail_url: c.thumbnail,
+    headline: c.headline,
+    brand: c.brand,
+    duration_sec: c.durationSec,
+    active_days: c.activeDays,
+    format: c.format,
+  };
+}
+
+function adVideoEvent(query: string, results: Creative[], totalCandidates: number) {
+  return {
+    name: 'ad_video_results',
+    data: {
+      query,
+      results: results.map(toEventResult),
+      total_candidates: totalCandidates,
+    },
+  };
+}
+
 export class VideoSearchTool extends Tool {
   override readonly name = 'search_ad_videos';
   override readonly timeoutSeconds = 60;
@@ -239,17 +278,26 @@ export class VideoSearchTool extends Tool {
       ),
     );
 
-    if (pool.length === 0) return `没有匹配到广告视频：${query}`;
+    if (pool.length === 0) {
+      return makeToolResult(`没有匹配到广告视频：${query}`, {
+        events: [adVideoEvent(query, [], 0)],
+      });
+    }
 
     const ranker = this.ranker();
     const { chosen, costUsd } = ranker
       ? await pickBestFit(query, pool, ranker, count)
       : { chosen: pool.slice(0, count), costUsd: 0 };
 
-    if (chosen.length === 0) return `没有匹配到广告视频：${query}`;
+    if (chosen.length === 0) {
+      return makeToolResult(`没有匹配到广告视频：${query}`, {
+        events: [adVideoEvent(query, [], pool.length)],
+      });
+    }
 
     return makeToolResult(render(query, chosen), {
       cost_usd: costUsd > 0 ? costUsd : null,
+      events: [adVideoEvent(query, chosen, pool.length)],
     });
   }
 }

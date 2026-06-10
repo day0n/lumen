@@ -1149,6 +1149,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   }, []);
   const lastSavedCanvas = useRef('');
   const pendingCanvasUploads = useRef(0);
+  const agentLayoutTimersRef = useRef<number[]>([]);
   const [canvasMediaUploading, setCanvasMediaUploading] = useState(false);
   const [cancelGroupId, setCancelGroupId] = useState<string | null>(null);
   const [compositionEditorNodeId, setCompositionEditorNodeId] = useState<string | null>(null);
@@ -1592,6 +1593,34 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     [currentProjectId, locale, setEdges, setNodes, t],
   );
 
+  const arrangeRenderedCanvas = useCallback(
+    (duration = 320) => {
+      setNodes((currentNodes) => arrangeCanvasNodes(currentNodes, reactFlow.getEdges()));
+      window.requestAnimationFrame(() => {
+        reactFlow.fitView({ padding: 0.28, duration, maxZoom: 1 });
+      });
+    },
+    [reactFlow, setNodes],
+  );
+
+  const clearAgentLayoutTimers = useCallback(() => {
+    for (const timer of agentLayoutTimersRef.current) window.clearTimeout(timer);
+    agentLayoutTimersRef.current = [];
+  }, []);
+
+  const scheduleAgentPostLayout = useCallback(() => {
+    clearAgentLayoutTimers();
+    for (const delay of [180, 650]) {
+      const timer = window.setTimeout(() => {
+        agentLayoutTimersRef.current = agentLayoutTimersRef.current.filter((id) => id !== timer);
+        arrangeRenderedCanvas(260);
+      }, delay);
+      agentLayoutTimersRef.current.push(timer);
+    }
+  }, [arrangeRenderedCanvas, clearAgentLayoutTimers]);
+
+  useEffect(() => clearAgentLayoutTimers, [clearAgentLayoutTimers]);
+
   const handleAgentWorkflowUpdate = useCallback(
     async (data: Record<string, unknown>) => {
       const eventProjectId = readEventString(data.project_id);
@@ -1609,13 +1638,14 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
           window.requestAnimationFrame(() => {
             reactFlow.fitView({ padding: 0.28, duration: 320, maxZoom: 1 });
           });
+          scheduleAgentPostLayout();
         }
       } catch (error) {
         console.error(error);
         setSaveState('error');
       }
     },
-    [currentProjectId, reactFlow, refreshProject, setNodes],
+    [currentProjectId, reactFlow, refreshProject, scheduleAgentPostLayout, setNodes],
   );
 
   const handleAgentWorkflowNodeStatus = useCallback(
@@ -2066,11 +2096,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
   }, [reactFlow, setEdges, setNodes]);
 
   const arrangeCanvas = useCallback(() => {
-    setNodes((currentNodes) => arrangeCanvasNodes(currentNodes, reactFlow.getEdges()));
-    window.requestAnimationFrame(() => {
-      reactFlow.fitView({ padding: 0.28, duration: 320, maxZoom: 1 });
-    });
-  }, [reactFlow, setNodes]);
+    arrangeRenderedCanvas();
+  }, [arrangeRenderedCanvas]);
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {

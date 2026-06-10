@@ -29,6 +29,7 @@ import {
   IconPlus,
   IconThumbDown,
   IconThumbUp,
+  IconVideo,
   IconX,
 } from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -90,6 +91,15 @@ const PANEL_MIN_WIDTH = 360;
 const PANEL_MAX_WIDTH = 1100;
 const PANEL_DEFAULT_WIDTH = 640;
 const PANEL_WIDTH_STORAGE_KEY = 'lumen.agentChat.panelWidth';
+const TOOL_TIMELINE_RECENT_LIMIT = 10;
+const TOOL_TIMELINE_IMPORTANT_LIMIT = 8;
+const IMPORTANT_TOOL_NAMES = new Set([
+  'search_ad_videos',
+  'find_inspiration',
+  'search_my_materials',
+  'search_web',
+  'write_canvas',
+]);
 
 function clampPanelWidth(value: number): number {
   const viewportCap = typeof window !== 'undefined' ? window.innerWidth - 24 : PANEL_MAX_WIDTH;
@@ -246,13 +256,16 @@ export function ChatPanel({
     return promise;
   }, [getToken, projectId]);
 
-  useEffect(
-    () => () => {
-      sessionsRequestRef.current?.controller.abort();
-      sessionsRequestRef.current = null;
-    },
-    [projectId],
-  );
+  useEffect(() => {
+    const requestKeyPrefix = projectId ? `${projectId}:` : '';
+    return () => {
+      const request = sessionsRequestRef.current;
+      if (!requestKeyPrefix || request?.key.startsWith(requestKeyPrefix)) {
+        request?.controller.abort();
+        sessionsRequestRef.current = null;
+      }
+    };
+  }, [projectId]);
 
   const loadSessions = useCallback(
     async (opts: { autoSelectLatest?: boolean } = {}) => {
@@ -1117,6 +1130,18 @@ interface InspirationCardItem {
   score: number | null;
 }
 
+interface AdVideoCardItem {
+  id: string;
+  platform: string;
+  landingUrl: string;
+  videoUrl: string;
+  thumbnailUrl: string;
+  headline: string;
+  brand: string;
+  durationSec: number | null;
+  activeDays: number | null;
+}
+
 const MESSAGE_URL_PATTERN =
   /(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?\/)[^\s<>"'`[\]{}]*/gi;
 const URL_TRAILING_PUNCTUATION_PATTERN = /[),.;!?，。；：！？）】》]+$/u;
@@ -1261,6 +1286,87 @@ function MediaPreviewList({ media }: { media: MediaAttachment[] }) {
   );
 }
 
+function AdVideoResultList({
+  compact = false,
+  items,
+}: {
+  compact?: boolean;
+  items: AdVideoCardItem[];
+}) {
+  const { locale } = useI18n();
+  if (items.length === 0) return null;
+
+  const title = locale === 'zh' ? '找到的广告参考' : 'Ad references';
+  const openLabel = locale === 'zh' ? '打开视频' : 'Open video';
+
+  return (
+    <div className={compact ? 'mt-3' : 'mt-4 max-w-[94%]'}>
+      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium leading-6 text-white/58">
+        <IconVideo size={15} stroke={2.2} className="text-[#8ee7ff]/78" />
+        <span>{title}</span>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => {
+          const href = item.videoUrl || item.landingUrl;
+          const meta = [
+            item.platform,
+            item.durationSec !== null ? `${Math.round(item.durationSec)}s` : null,
+            item.activeDays !== null
+              ? locale === 'zh'
+                ? `投放 ${item.activeDays} 天`
+                : `${item.activeDays} active days`
+              : null,
+          ].filter(Boolean);
+
+          return (
+            <a
+              key={item.videoUrl || item.landingUrl || item.id}
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="group grid grid-cols-[72px_minmax(0,1fr)] overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.045] transition-colors hover:border-white/[0.2] hover:bg-white/[0.07]"
+            >
+              <div className="aspect-video h-full min-h-[72px] bg-black/34">
+                {item.thumbnailUrl ? (
+                  <img
+                    src={item.thumbnailUrl}
+                    alt={item.headline || item.brand || title}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-white/34">
+                    <IconVideo size={18} stroke={2.2} />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 px-2.5 py-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-6 text-white/78">
+                    {item.brand || item.headline || title}
+                  </span>
+                  <IconExternalLink size={12} stroke={2.2} className="shrink-0 text-white/34" />
+                </div>
+                {item.headline ? (
+                  <div className="line-clamp-2 text-[14px] font-medium leading-5 text-white/48">
+                    {item.headline}
+                  </div>
+                ) : null}
+                {meta.length > 0 ? (
+                  <div className="mt-0.5 truncate text-[14px] font-medium leading-6 text-white/34">
+                    {meta.join(' · ')}
+                  </div>
+                ) : null}
+                <div className="sr-only">{openLabel}</div>
+              </div>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function InspirationResultGrid({
   compact = false,
   items,
@@ -1331,7 +1437,7 @@ function hasToolActivity(items?: ChatTimelineItem[]): boolean {
 }
 
 function Timeline({ items }: { items?: ChatTimelineItem[] }) {
-  const runs = buildToolActivityRuns(items).slice(-10);
+  const runs = selectVisibleToolActivityRuns(buildToolActivityRuns(items));
   const errors = (items ?? [])
     .filter((item) => item.kind === 'error' && !item.toolCallId)
     .slice(-3);
@@ -1369,10 +1475,21 @@ function ToolActivityItem({ run }: { run: ToolActivityRun }) {
   const { t } = useI18n();
   const title = toolRunTitle(run, t);
   const detail = toolRunDetail(run);
-  const richItems = extractInspirationResults(run.events);
-  const visibleEvents = run.events.filter((event) => event.eventName !== 'inspiration_results');
-  const hasDetails = Boolean(detail) || visibleEvents.length > 0 || richItems.length > 0;
-  const defaultOpen = run.status === 'running' || richItems.length > 0 || run.status === 'error';
+  const inspirationItems = extractInspirationResults(run.events);
+  const adVideoItems = extractAdVideoResults(run.events);
+  const visibleEvents = run.events.filter(
+    (event) => !['ad_video_results', 'inspiration_results'].includes(event.eventName ?? ''),
+  );
+  const hasDetails =
+    Boolean(detail) ||
+    visibleEvents.length > 0 ||
+    inspirationItems.length > 0 ||
+    adVideoItems.length > 0;
+  const defaultOpen =
+    run.status === 'running' ||
+    inspirationItems.length > 0 ||
+    adVideoItems.length > 0 ||
+    run.status === 'error';
   const inlineStatus = toolRunInlineStatus(run.status, t);
 
   return (
@@ -1405,7 +1522,8 @@ function ToolActivityItem({ run }: { run: ToolActivityRun }) {
               ))}
             </div>
           ) : null}
-          <InspirationResultGrid items={richItems} compact />
+          <AdVideoResultList items={adVideoItems} compact />
+          <InspirationResultGrid items={inspirationItems} compact />
         </div>
       ) : null}
     </details>
@@ -1505,6 +1623,21 @@ function buildToolActivityRuns(items: ChatTimelineItem[] | undefined): ToolActiv
   }
 
   return [...runs.values()].sort((a, b) => a.createdAt - b.createdAt);
+}
+
+function selectVisibleToolActivityRuns(runs: ToolActivityRun[]): ToolActivityRun[] {
+  const recent = runs.slice(-TOOL_TIMELINE_RECENT_LIMIT);
+  const important = runs.filter(isImportantToolRun).slice(-TOOL_TIMELINE_IMPORTANT_LIMIT);
+  const visibleIds = new Set([...important, ...recent].map((run) => run.id));
+  return runs.filter((run) => visibleIds.has(run.id));
+}
+
+function isImportantToolRun(run: ToolActivityRun): boolean {
+  const toolName = toolRunToolName(run);
+  if (toolName && IMPORTANT_TOOL_NAMES.has(toolName)) return true;
+  return run.events.some((event) =>
+    ['ad_video_results', 'inspiration_results', 'material_results'].includes(event.eventName ?? ''),
+  );
 }
 
 function deriveToolRunStatus(run: ToolActivityRun): ChatTimelineItem['status'] {
@@ -1772,6 +1905,20 @@ function extractInspirationResults(events?: ChatTimelineItem[]): InspirationCard
   return [...byUrl.values()].slice(0, 12);
 }
 
+function extractAdVideoResults(events?: ChatTimelineItem[]): AdVideoCardItem[] {
+  const byKey = new Map<string, AdVideoCardItem>();
+  for (const event of events ?? []) {
+    if (event.eventName !== 'ad_video_results') continue;
+    const results = Array.isArray(event.payload?.results) ? event.payload.results : [];
+    for (const raw of results) {
+      const item = parseAdVideoItem(raw);
+      if (!item) continue;
+      byKey.set(item.videoUrl || item.landingUrl || item.id, item);
+    }
+  }
+  return [...byKey.values()].slice(0, 8);
+}
+
 function parseInspirationItem(raw: unknown): InspirationCardItem | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const data = raw as Record<string, unknown>;
@@ -1791,8 +1938,34 @@ function parseInspirationItem(raw: unknown): InspirationCardItem | null {
   };
 }
 
+function parseAdVideoItem(raw: unknown): AdVideoCardItem | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const data = raw as Record<string, unknown>;
+  const videoUrl = readText(data.video_url) ?? readText(data.videoUrl) ?? '';
+  const landingUrl = readText(data.landing_url) ?? readText(data.landingUrl) ?? '';
+  if (!videoUrl && !landingUrl) return null;
+  const id = readText(data.id) ?? (videoUrl || landingUrl);
+  return {
+    id,
+    platform: readText(data.platform) ?? '',
+    landingUrl,
+    videoUrl,
+    thumbnailUrl: readText(data.thumbnail_url) ?? readText(data.thumbnailUrl) ?? '',
+    headline: readText(data.headline) ?? '',
+    brand: readText(data.brand) ?? '',
+    durationSec: readFiniteNumber(data.duration_sec ?? data.durationSec),
+    activeDays: readFiniteNumber(data.active_days ?? data.activeDays),
+  };
+}
+
 function readText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readFiniteNumber(value: unknown): number | null {
+  const numberValue =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  return Number.isFinite(numberValue) ? numberValue : null;
 }
 
 function readProgress(value: unknown): number | null {
