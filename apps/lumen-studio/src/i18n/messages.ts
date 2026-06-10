@@ -95,14 +95,14 @@ const en = {
     imageTooLarge: '{name} exceeds 8MB',
     quickActions: [
       {
-        label: 'Summer sunscreen mask',
+        label: 'Red lipstick brand ad',
         prompt:
-          'Turn "Summer sunscreen mask" into a deliverable 9:16 30-second shoppable video, not just a written plan: first call search_web to verify public product/category claims, search_ad_videos and find_inspiration to gather 3 proven hook structures plus fresh summer visual references, and search_my_materials to use any matching product or creator assets from my library; then load canvas-core and composition-editing, create a canvas workflow covering strategy, script, storyboard keyframes, 3-5 video scenes, voiceover TTS, BGM, and a final composition node, write it to the canvas, run every required node in dependency order with run_canvas_node, render the final MP4, and report only the final video link, selling-point logic, scene order, and ready-to-post title/hashtag options.',
+          'Produce a final 9:16 30-second premium lipstick brand ad for "Red lipstick brand ad" in one pass: call search_web to understand lipstick category language and high-converting ad copy, search_ad_videos to learn proven beauty-brand and lipstick hook structures, find_inspiration for red-lip beauty editorial, 1990s vanity flash, and makeup-brush texture references, and search_my_materials for any uploaded model, lip, or beauty product assets; then load canvas-core and composition-editing, write a workflow with brand tone, core selling points, a tight script, storyboard keyframes, close-up shots, and 3-5 commercial-grade video scenes plus voiceover, BGM, and a final composition timeline, run the nodes in order with run_canvas_node, render the MP4, and summarize only the final link, chosen visual direction, scene list, and publish-ready captions.',
       },
       {
-        label: 'Magnetic earbuds Pro',
+        label: 'Glass-skin UGC skincare',
         prompt:
-          'Make "Magnetic earbuds Pro" into a polished 9:16 30-second tech-commerce video from this single brief: call search_web for category facts and competing claims, search_ad_videos for real high-performing hook patterns, find_inspiration for premium dark tech visuals, and search_my_materials for any uploaded earbuds/product-hand assets; then use canvas-core plus composition-editing to build and save a runnable workflow with market angle, script, product close-up keyframes, magnetic snap demo, ANC contrast scene, commute/workout usage scenes, voiceover, BGM, and a final composition timeline, run each node with run_canvas_node until all scene videos/audio are ready, render the final MP4, and return the video URL with the hook, CTA, and publishing copy.',
+          'Produce a final 9:16 30-second authentic UGC skincare shoppable video for "Glass-skin UGC skincare" in one pass: call search_web to understand skincare selling points and UGC seeding language, search_ad_videos to learn high-converting skincare UGC hooks and pacing, find_inspiration for bathroom-mirror skincare routine, glass-skin shelf, and botanical spa visual references, and search_my_materials for any uploaded skincare products or creator assets; then load canvas-core and composition-editing, write a workflow with persona positioning, believable selling points, a tight script, storyboard keyframes, hands-on demo shots, and 3-5 UGC-style video scenes plus voiceover TTS, BGM, and a final composition timeline, run the nodes in order with run_canvas_node, render the MP4, and summarize only the final link, opening hook, scene list, and publish-ready captions.',
       },
       {
         label: 'Vintage denim jacket',
@@ -840,14 +840,14 @@ const zh: typeof en = {
     imageTooLarge: '{name} 超过 8MB',
     quickActions: [
       {
-        label: '夏日防晒面膜',
+        label: '红唇口红广告',
         prompt:
-          '请把「夏日防晒面膜」直接做成一条可交付的 9:16 30 秒带货短视频，不要只给方案：先调用 search_web 核验公开品类卖点与竞品表达，再用 search_ad_videos 和 find_inspiration 找 3 条爆款开场结构与清爽夏日视觉参考，如果我的素材库里有相关商品图或真人模特素材请调用 search_my_materials 选用；随后加载 canvas-core 和 composition-editing，创建从策略拆解、脚本、分镜首帧、3-5 个视频镜头、口播 TTS、BGM 到最终 composition 的画布工作流，写入画布后按依赖顺序逐个 run_canvas_node 跑完上游节点并合成最终 MP4，最后只汇报成片链接、核心卖点、镜头顺序和可发布标题/标签。',
+          '请为「红唇口红广告」一口气产出最终 9:16 30 秒品牌宣传成片：先调用 search_web 理解口红品类表达与高转化广告话术，调用 search_ad_videos 学习美妆品牌片与口红的爆款开场结构，调用 find_inspiration 搜红唇美妆大片、90 年代化妆台与妆刷质感视觉参考，并用 search_my_materials 找我素材库里的模特、唇妆或美妆产品素材；然后加载 canvas-core 和 composition-editing，写入一个包含品牌调性、核心卖点、短脚本、分镜首帧、特写镜头与 3-5 个商业级视频场景、口播、BGM、最终 composition 时间线的画布工作流，按拓扑顺序逐个 run_canvas_node 跑完并合成 MP4，最后只给我成片链接、视觉方向、镜头清单和可直接发布的标题/标签。',
       },
       {
-        label: '磁吸耳机 Pro',
+        label: '玻璃肌 UGC 带货',
         prompt:
-          '请把「磁吸耳机 Pro」从这一句话直接制作成 9:16 30 秒科技感电商成片：调用 search_web 查品类事实与竞品卖点，调用 search_ad_videos 找真实高转化开场结构，调用 find_inspiration 找深色高级科技视觉参考，并用 search_my_materials 检索我素材库里可用的耳机、手部或通勤素材；然后加载 canvas-core 与 composition-editing，建立并保存包含市场角度、脚本、商品特写首帧、磁吸演示、ANC 前后对比、通勤/运动使用场景、口播、BGM 和最终 composition 时间线的可运行画布，按依赖顺序 run_canvas_node 跑完所有镜头和音频并渲染最终 MP4，最后返回成片 URL、开场钩子、CTA 和发布文案。',
+          '请为「玻璃肌 UGC 带货」一口气产出最终 9:16 30 秒真人口播带货成片：先调用 search_web 理解护肤品类卖点与 UGC 种草表达，调用 search_ad_videos 学习 skincare UGC 高转化开场与镜头节奏，调用 find_inspiration 搜浴室镜前护肤 routine、玻璃肌货架与 botanical spa 视觉参考，并用 search_my_materials 找我素材库里的护肤产品或真人素材；然后加载 canvas-core 和 composition-editing，写入一个包含人设定位、真实感卖点、短脚本、分镜首帧、上手演示与 3-5 个 UGC 风格视频场景、口播 TTS、BGM、最终 composition 时间线的画布工作流，按拓扑顺序逐个 run_canvas_node 跑完并合成 MP4，最后只给我成片链接、开场钩子、镜头清单和可直接发布的标题/标签。',
       },
       {
         label: '复古牛仔外套',
