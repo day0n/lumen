@@ -196,6 +196,10 @@ export function useAgentChat({
 
   const sid = useMemo(() => sessionId ?? `studio-${nanoid(12)}`, [sessionId]);
   const sessionHistoryKey = useMemo(() => `${locale}:${sid}`, [locale, sid]);
+  const workflowProjectId = useMemo(
+    () => readString(context?.project_id) ?? readString(context?.workflow_id),
+    [context],
+  );
   const abortRef = useRef<AbortController | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
   const activeAssistantIdRef = useRef<string | null>(null);
@@ -473,6 +477,7 @@ export function useAgentChat({
               onWorkflowUpdate,
               onWorkflowNodeStatus,
               locale,
+              workflowProjectId,
             });
 
             if (env.event === 'run:answer' || env.event === 'run:done') {
@@ -567,6 +572,7 @@ export function useAgentChat({
       locale,
       onWorkflowUpdate,
       onWorkflowNodeStatus,
+      workflowProjectId,
       updateMessage,
       getToken,
       tt,
@@ -938,6 +944,7 @@ function handleEvent(
     locale?: Locale;
     onWorkflowUpdate?: (data: Record<string, unknown>) => void | Promise<void>;
     onWorkflowNodeStatus?: (data: Record<string, unknown>) => void | Promise<void>;
+    workflowProjectId?: string | null;
   } = {},
 ) {
   const locale = handlers.locale ?? 'en';
@@ -1074,6 +1081,17 @@ function handleEvent(
       const durationMs = readNumber(env.data.duration_ms);
       const error = readString(env.data.error);
       const bytes = readNumber(env.data.output_size_bytes);
+      if (toolName === 'write_canvas' && status === 'success' && handlers.workflowProjectId) {
+        notifyWorkflowHandler(
+          'workflow_update',
+          {
+            project_id: handlers.workflowProjectId,
+            reason: 'write_canvas',
+            source: 'tool_finish',
+          },
+          handlers,
+        );
+      }
       updateMessage(assistantId, (prev) => ({
         events: upsertTimeline(prev.events, {
           id: `tool.${toolCallId}`,
