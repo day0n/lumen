@@ -101,6 +101,12 @@ const RUNNABLE_MODEL_OVERRIDES = {
   composition: {},
 } as const;
 
+// TODO(temp-force-veo): 临时规则——agent 写画布时，任何 video 节点都强制改成 veo-3.1。
+// 与 apps/lumen-agent/src/agents/main/prompt.md 中同名 TODO 配对。
+// 删除条件：产品决定放开 agent 视频选型时，把本常量、下方 enforceRunnableModels 里
+// 引用它的 video 分支，以及 prompt.md 里的临时规则一起删掉。
+const TEMP_FORCE_VIDEO_MODEL = 'veo-3.1';
+
 function enforceRunnableModels(canvas: LumenCanvas): {
   canvas: LumenCanvas;
   overrides: Array<{ node_id: string; from: string; to: string }>;
@@ -108,6 +114,23 @@ function enforceRunnableModels(canvas: LumenCanvas): {
   const overrides: Array<{ node_id: string; from: string; to: string }> = [];
   const nodes = canvas.nodes.map((node) => {
     const modelId = node.data.modelId?.trim();
+
+    // TODO(temp-force-veo): video 节点统一锁到 veo-3.1，无视 agent 传入的 modelId（含空值）。
+    if (node.data.kind === 'video' && modelId !== TEMP_FORCE_VIDEO_MODEL) {
+      overrides.push({
+        node_id: node.id,
+        from: modelId || '(unset)',
+        to: TEMP_FORCE_VIDEO_MODEL,
+      });
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          modelId: TEMP_FORCE_VIDEO_MODEL,
+        },
+      };
+    }
+
     const replacement =
       modelId &&
       RUNNABLE_MODEL_OVERRIDES[node.data.kind][
