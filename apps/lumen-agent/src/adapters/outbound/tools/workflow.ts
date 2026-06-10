@@ -240,7 +240,7 @@ export class RunWorkflowNodeTool extends Tool {
   override readonly name = 'run_canvas_node';
   override readonly timeoutSeconds = 10 * 60 + 30;
   override readonly description =
-    'Run exactly one workflow node per call through the Lumen engine and save its output back to the canvas. To run independent sibling nodes faster, emit multiple parallel calls to this tool in the same turn — each call still targets one node, and the runtime executes them concurrently. For composition nodes, upstream video/audio outputs must exist and settings.timeline must be valid.';
+    "Run exactly one workflow node per call through the Lumen engine and save its output back to the canvas. UPSTREAM PRECONDITION: a node can only be run after EVERY upstream node connected to it has status=success with a non-null output — running a node whose upstream is still idle/queued/running/error will fail with an `upstream outputs are missing` error. This applies to ALL kinds (text/image/video/audio/composition), not just composition. Plan execution in topological order: only the nodes whose upstream chain is fully resolved are runnable right now. Independent sibling nodes (no edge between them, and both have their own upstream resolved) CAN be launched in parallel by emitting multiple parallel calls to this tool in the same turn — but never schedule a downstream node concurrently with its upstream. For composition nodes, additionally settings.timeline must be valid.";
 
   override readonly parameters: JsonSchema = {
     type: 'object',
