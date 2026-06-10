@@ -97,17 +97,17 @@ const en = {
       {
         label: 'Summer sunscreen mask',
         prompt:
-          "Help me build a complete 30-second shoppable short-video plan for a summer sunscreen sheet mask. Start by sketching the target audience (city commuters, beachgoers, outdoor sport fans) and the pain points they face after a day in the sun. Then propose 3 scroll-stopping opening hooks under 1.5 seconds each. After that, write a full shot list that goes from pain-point hook → ingredient highlight (SPF + soothing actives) → on-skin demo and texture close-up → before/after cool-down moment → real-user testimonial → limited-time CTA. For every shot, include the visual description, voice-over line in conversational tone, lighting / color reference, suggested BGM vibe, and exact duration. Keep the overall mood fresh, bright, and youthful, and end with 3 ready-to-post caption + hashtag options.",
+          'Turn "Summer sunscreen mask" into a deliverable 9:16 30-second shoppable video, not just a written plan: first call search_web to verify public product/category claims, search_ad_videos and find_inspiration to gather 3 proven hook structures plus fresh summer visual references, and search_my_materials to use any matching product or creator assets from my library; then load canvas-core and composition-editing, create a canvas workflow covering strategy, script, storyboard keyframes, 3-5 video scenes, voiceover TTS, BGM, and a final composition node, write it to the canvas, run every required node in dependency order with run_canvas_node, render the final MP4, and report only the final video link, selling-point logic, scene order, and ready-to-post title/hashtag options.',
       },
       {
         label: 'Magnetic earbuds Pro',
         prompt:
-          "Help me create a complete 30-second e-commerce short-video script for the Magnetic Earbuds Pro. First cluster the selling points into 4 buckets: magnetic snap-and-go design, ANC call quality, all-day battery, and ergonomic fit. Then propose 3 hooks that grab attention in under 1.5 seconds, each tied to a different real-life moment (subway, gym, video call). Next deliver a full shot list from problem-led opening → magnetic-snap macro detail → ANC before/after demo with ambient noise meter overlay → commute and workout split-screen demo → battery / case animation → price + bundle CTA. For each shot, include composition, camera move, voice-over line, on-screen text, and timing. Keep the look techy, premium, and dark-mode, and finish with 3 ready-to-post caption + hashtag options.",
+          'Make "Magnetic earbuds Pro" into a polished 9:16 30-second tech-commerce video from this single brief: call search_web for category facts and competing claims, search_ad_videos for real high-performing hook patterns, find_inspiration for premium dark tech visuals, and search_my_materials for any uploaded earbuds/product-hand assets; then use canvas-core plus composition-editing to build and save a runnable workflow with market angle, script, product close-up keyframes, magnetic snap demo, ANC contrast scene, commute/workout usage scenes, voiceover, BGM, and a final composition timeline, run each node with run_canvas_node until all scene videos/audio are ready, render the final MP4, and return the video URL with the hook, CTA, and publishing copy.',
       },
       {
         label: 'Vintage denim jacket',
         prompt:
-          "Help me create a complete 30-second fashion seeding short-video plan for a vintage denim jacket. First lock in the persona — late-90s retro meets modern street style — and distill three selling points around wash treatment, cut & fit, and outfit versatility. Then propose 3 mood-driven opening hooks (one cinematic, one POV try-on, one street snap). After that, write a full shot list from filmic opening → fabric, stitch and hardware close-ups → one-jacket-three-looks styling reel (casual, smart, going-out) → on-body walking shots with natural light → buy-now CTA. For every shot, include framing, camera move, voice-over line, music vibe, color grade reference, and duration. End with 3 ready-to-post caption + hashtag options aimed at TikTok and Instagram Reels.",
+          'Produce a final 9:16 30-second fashion seeding video for "Vintage denim jacket" in one pass: call search_web to understand the category language, search_ad_videos to learn current outfit-video structures, find_inspiration for late-90s street-style references, and search_my_materials for any uploaded jacket/model/location assets; then load canvas-core and composition-editing, write a workflow that creates persona and selling-point strategy, a tight script, storyboard keyframes, 3-5 video scenes for texture details and one-jacket-three-looks, voiceover, BGM, and a final composition timeline, run the nodes in order with run_canvas_node, render the MP4, and summarize only the final link, chosen visual direction, scene list, and publish-ready captions.',
       },
     ],
     templatesTitle: 'Recommended canvases',
@@ -842,17 +842,17 @@ const zh: typeof en = {
       {
         label: '夏日防晒面膜',
         prompt:
-          '请帮我为「夏日防晒面膜」生成一条 30 秒带货短视频的完整方案。先帮我梳理核心人群（城市通勤族、户外党、海边度假人群）以及他们晒后泛红、闷痘、补涂麻烦等真实痛点；再给出 3 条 1.5 秒内就能抓住人的开场钩子，每条对应一个不同的使用场景。然后输出完整分镜脚本：痛点共鸣开场 → 成分卖点（高倍 SPF + 修护舒缓）讲解 → 上脸延展性和质地特写 → 晒后即刻降温前后对比 → 真人用户证言 → 限时优惠 CTA。每个镜头都标注画面构图、口播文案（口语化，不要太硬广）、光线/色调参考、推荐 BGM 风格和镜头时长。整体调性走清爽、少女、有夏日感，最后再给我 3 条可直接发布的封面标题 + 话题标签组合。',
+          '请把「夏日防晒面膜」直接做成一条可交付的 9:16 30 秒带货短视频，不要只给方案：先调用 search_web 核验公开品类卖点与竞品表达，再用 search_ad_videos 和 find_inspiration 找 3 条爆款开场结构与清爽夏日视觉参考，如果我的素材库里有相关商品图或真人模特素材请调用 search_my_materials 选用；随后加载 canvas-core 和 composition-editing，创建从策略拆解、脚本、分镜首帧、3-5 个视频镜头、口播 TTS、BGM 到最终 composition 的画布工作流，写入画布后按依赖顺序逐个 run_canvas_node 跑完上游节点并合成最终 MP4，最后只汇报成片链接、核心卖点、镜头顺序和可发布标题/标签。',
       },
       {
         label: '磁吸耳机 Pro',
         prompt:
-          '请帮我为「磁吸耳机 Pro」生成一条 30 秒电商短视频脚本。先把卖点拆成 4 个簇：磁吸即贴即用、ANC 通话降噪、长续航、佩戴舒适度，每个簇配 1-2 句口播金句。再给出 3 条能在 1.5 秒内抓人的开场钩子，分别对应地铁通勤、健身房和远程视频会议三种真实场景。然后输出完整分镜：痛点开场 → 磁吸吸附特写慢动作 → ANC 降噪前后对比（配环境噪音分贝条）→ 通勤 / 运动分屏演示 → 电池和充电盒动效讲解 → 价格 + 套装 CTA。每个镜头注明画面构图、运镜方式、口播文案、屏幕文字和时长。整体走科技酷感、深色高级风，结尾再给我 3 条可直接发布的视频标题 + 话题标签组合。',
+          '请把「磁吸耳机 Pro」从这一句话直接制作成 9:16 30 秒科技感电商成片：调用 search_web 查品类事实与竞品卖点，调用 search_ad_videos 找真实高转化开场结构，调用 find_inspiration 找深色高级科技视觉参考，并用 search_my_materials 检索我素材库里可用的耳机、手部或通勤素材；然后加载 canvas-core 与 composition-editing，建立并保存包含市场角度、脚本、商品特写首帧、磁吸演示、ANC 前后对比、通勤/运动使用场景、口播、BGM 和最终 composition 时间线的可运行画布，按依赖顺序 run_canvas_node 跑完所有镜头和音频并渲染最终 MP4，最后返回成片 URL、开场钩子、CTA 和发布文案。',
       },
       {
         label: '复古牛仔外套',
         prompt:
-          '请帮我为「复古牛仔外套」生成一条 30 秒种草短视频方案。先确定人设定位：90 年代复古遇上当代街头风，目标人群是 20-30 岁有穿搭表达欲的年轻女生 / 男生；提炼三大卖点 —— 洗水做旧工艺、版型剪裁（落肩 + 复古 H 型）、一衣多穿的搭配场景。然后给出 3 条氛围感开场钩子（一条电影感大片、一条 POV 试穿、一条街拍捕捉）。再输出完整分镜：胶片感开场 → 面料、车线、金属扣等细节特写 → 一件外套三套穿搭演示（日常通勤、约会、夜晚出街）→ 自然光下走位上身效果 → 下单引导 CTA。每个镜头标注景别、运镜、口播文案、配乐风格、调色参考（偏胶片暖橙）和时长。最后再给我 3 条可直接发布在 TikTok / 抖音的封面标题 + 话题标签组合。',
+          '请为「复古牛仔外套」一口气产出最终 9:16 30 秒种草成片：先调用 search_web 理解品类表达，调用 search_ad_videos 学习近期穿搭视频结构，调用 find_inspiration 搜 90 年代街头复古视觉参考，并用 search_my_materials 找我素材库里的外套、模特或街景素材；然后加载 canvas-core 和 composition-editing，写入一个包含人设定位、卖点策略、短脚本、分镜首帧、面料细节与一衣三穿的 3-5 个视频场景、口播、BGM、最终 composition 时间线的画布工作流，按拓扑顺序逐个 run_canvas_node 跑完并合成 MP4，最后只给我成片链接、视觉方向、镜头清单和可直接发布的标题/标签。',
       },
     ],
     templatesTitle: '推荐画布',
@@ -1520,8 +1520,7 @@ export function readMessageObjectArray<T extends Record<string, unknown>>(
   }, messages[locale]);
   return Array.isArray(value)
     ? value.filter(
-        (item): item is T =>
-          typeof item === 'object' && item !== null && !Array.isArray(item),
+        (item): item is T => typeof item === 'object' && item !== null && !Array.isArray(item),
       )
     : [];
 }
