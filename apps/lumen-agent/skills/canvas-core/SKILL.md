@@ -115,6 +115,26 @@ Rules:
 - Prefer 6-12 nodes for a complex product-video workflow; use more only when the user asks for variants, multiple scenes, or batch output.
 - Put related nodes on the same horizontal band and use readable titles, for example `卖点策略`, `15秒口播`, `镜头1主视觉`, `镜头1视频`.
 
+### Multi-scene shot template (required for 2+ clips / composition workflows)
+
+When the deliverable is a stitched multi-scene video (e.g. 15s with 3 beats), **repeat this per-scene chain for every clip** — do not use one global script for all videos:
+
+```
+text-script-scene-1 ──> image-keyframe-scene-1 ──> video-scene-1 ──┐
+text-script-scene-2 ──> image-keyframe-scene-2 ──> video-scene-2 ──┼──> composition-final
+text-script-scene-3 ──> image-keyframe-scene-3 ──> video-scene-3 ──┘
+```
+
+Rules for each scene:
+
+1. **One `text` script node per video clip** — title like `镜头1脚本` / `Scene 1 Script`. Edge: `text` → `image` and optionally `text` → `video`.
+2. **One `image` keyframe / reference node per video clip** — title like `镜头1参考图`. Edge: `image` → `video` (required for i2v product shots).
+3. **One `video` node per clip** — receives edges from its scene's `text` and `image` nodes, plus an edge to `composition`.
+4. Optional shared strategy/brief `text` node at the far left may fan out to **each** scene script node — never leave that strategy node as the only script with no edges into scene videos.
+5. Before `write_canvas`, verify: every `video` scene node has at least one incoming edge from a `text` or `image` node in the same scene band; zero orphan `text`/`image` nodes.
+
+Single-scene videos (no composition) still use `text → image → video` as one chain.
+
 ## Single-Node Running
 
 Use `run_canvas_node` to execute exactly one node.

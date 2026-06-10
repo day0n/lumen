@@ -73,19 +73,28 @@ URL resolution at run time: `sourceNodeId` output **>** `sourceUrlSnapshot`.
 
 ## DAG Pattern
 
+Each scene is a full shot chain; only the **video** nodes connect into composition:
+
 ```
-video-scene-1 ──┐
-video-scene-2 ──┼──> composition-final
-audio-bgm     ──┘   (audio optional, for BGM only)
+text-script-scene-1 -> image-keyframe-scene-1 -> video-scene-1 ──┐
+text-script-scene-2 -> image-keyframe-scene-2 -> video-scene-2 ──┼──> composition-final
+text-script-scene-3 -> image-keyframe-scene-3 -> video-scene-3 ──┘
+audio-bgm (optional) ─────────────────────────────────────────────> composition-final
 ```
 
 Edges:
 
+- Per scene: `text → image`, `image → video`, optionally `text → video`
 - Every scene `video` node → `composition` (target handle)
 - Optional one `audio` node → `composition` for BGM
 - Do **not** connect `text` / `image` directly to `composition`
+- Do **not** leave a global script node disconnected from scene videos
 
 ## Full Canvas Example (2 scenes + final cut)
+
+The JSON below shows the **composition + timeline + video→composition edges** only.
+Each `video-*` node must also have its own upstream `text-*` script and `image-*` keyframe
+nodes with edges into that video (see Multi-scene shot template in `canvas-core`).
 
 ```json
 {
@@ -200,15 +209,21 @@ Engine keeps both segments even when URL is identical.
 
 ## Building Timeline From a Scene Plan
 
-When creating N scenes:
+When creating N scenes, build **N complete shot chains first**, then stitch:
 
-1. Create `video-scene-1` … `video-scene-N` with distinct prompts
+1. For each scene `i` in `1..N`:
+   - `text-script-scene-i` (scene-specific script / hook / VO beats)
+   - `image-keyframe-scene-i` (reference frame / storyboard still)
+   - `video-scene-i` (motion clip)
+   - Edges: `text → image`, `image → video`, and optionally `text → video`
 2. Add one `composition-final` node to the right
-3. Connect every scene video → composition
-4. Write one clip per scene in timeline `order` matching desired playback order
-5. Set each clip `sourceNodeId` to the matching video node id
+3. Connect every `video-scene-i` → `composition-final`
+4. Write one clip per scene in timeline `order` matching playback order
+5. Set each clip `sourceNodeId` to the matching `video-scene-i` id
 6. Set `duration` to the intended used length (match or shorten scene video length)
 7. Set `aspectRatio` / `resolution` on timeline (`9:16` + `720p` for short-video default)
+
+Do **not** skip per-scene `text` and `image` nodes and wire bare `video` nodes straight into composition. Do **not** create one global script (e.g. "Retro Script") that is not connected to each scene's video chain.
 
 If user wants BGM:
 
@@ -252,3 +267,5 @@ Use `1080p` only when user explicitly asks for higher export quality.
 - Forgetting edges from scene videos to composition
 - Using `prompt` on composition node (not needed)
 - Claiming final video exists before `run_canvas_node` succeeds on composition
+- Creating only `video` scene nodes + composition, with a disconnected global script and no per-scene `text → image → video` chains
+- One script node for the whole project that does not connect to any video node — each clip needs its own script + reference image upstream
