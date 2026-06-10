@@ -1625,9 +1625,15 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     async (data: Record<string, unknown>) => {
       const eventProjectId = readEventString(data.project_id);
       if (!currentProjectId || eventProjectId !== currentProjectId) return;
+      if (readEventString(data.reason) !== 'write_canvas') {
+        // Node run updates arrive through workflow_node_status. Avoid a full
+        // project refresh here, otherwise stale persisted positions can replace
+        // the arranged in-memory layout.
+        return;
+      }
       try {
         const project = await refreshProject({ silent: true });
-        if (project && readEventString(data.reason) === 'write_canvas') {
+        if (project) {
           // agent 改写画布结构后基于刚拉到的 nodes/edges 算布局，
           // 不读 reactFlow.getEdges() 以避开 React/Flow 内部 store 的同步时机。
           const arranged = arrangeCanvasNodes(
