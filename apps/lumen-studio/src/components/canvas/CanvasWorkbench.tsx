@@ -1625,10 +1625,24 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     async (data: Record<string, unknown>) => {
       const eventProjectId = readEventString(data.project_id);
       if (!currentProjectId || eventProjectId !== currentProjectId) return;
-      if (readEventString(data.reason) !== 'write_canvas') {
-        // Node run updates arrive through workflow_node_status. Avoid a full
-        // project refresh here, otherwise stale persisted positions can replace
-        // the arranged in-memory layout.
+      const reason = readEventString(data.reason);
+      if (reason !== 'write_canvas') {
+        const nodeId = readEventString(data.node_id);
+        const isMissingLocalWorkflow =
+          nodes.length === 0 || (nodeId !== null && !nodes.some((node) => node.id === nodeId));
+        if (isMissingLocalWorkflow) {
+          try {
+            const project = await refreshProject({ silent: true });
+            if (project && project.canvas.nodes.length > 0) {
+              window.requestAnimationFrame(() => {
+                reactFlow.fitView({ padding: 0.28, duration: 260, maxZoom: 1 });
+              });
+            }
+          } catch (error) {
+            console.error(error);
+            setSaveState('error');
+          }
+        }
         return;
       }
       try {
@@ -1651,7 +1665,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         setSaveState('error');
       }
     },
-    [currentProjectId, reactFlow, refreshProject, scheduleAgentPostLayout, setNodes],
+    [currentProjectId, nodes, reactFlow, refreshProject, scheduleAgentPostLayout, setNodes],
   );
 
   const handleAgentWorkflowNodeStatus = useCallback(
