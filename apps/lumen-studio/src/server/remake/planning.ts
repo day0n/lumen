@@ -114,7 +114,8 @@ export async function buildPlanForJob(input: BuildPlanForJobInput): Promise<Buil
 export async function resolveReferenceVideo(
   videoId: string | undefined,
   locale: Locale,
+  ownerUserId?: string,
 ): Promise<HotVideoRecord | null> {
   if (!videoId) return null;
-  return getHotVideo(videoId, locale);
+  return getHotVideo(videoId, locale, { ownerUserId });
 }

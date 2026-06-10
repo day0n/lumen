@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { Db, Filter } from 'mongodb';
+import type { Db, Document, Filter } from 'mongodb';
 
 import {
   type CreateHotVideoInput,
@@ -42,6 +42,7 @@ export class HotVideoRepository {
       { source_platform: 1, external_id: 1 },
       { unique: true, sparse: true },
     );
+    await collection.createIndex({ owner_user_id: 1, source_platform: 1, source_url: 1 });
   }
 
   async list(
@@ -50,12 +51,21 @@ export class HotVideoRepository {
   ): Promise<ListHotVideosResult> {
     const parsed = ListHotVideosInputSchema.parse(input);
     const filter: Filter<HotVideoDocument> = { status: 'active' };
+    const andFilters: Filter<HotVideoDocument>[] = [];
 
     if (parsed.ownerScope === 'me') {
       if (!parsed.ownerUserId) {
         return { items: [], total: 0 };
       }
       filter.owner_user_id = parsed.ownerUserId;
+    } else if (parsed.ownerUserId) {
+      andFilters.push({
+        $or: [{ owner_user_id: parsed.ownerUserId }, { owner_user_id: { $exists: false } }],
+      });
+    } else {
+      andFilters.push({
+        $or: [{ owner_user_id: { $exists: false } }],
+      });
     }
 
     if (parsed.region) filter.region = parsed.region;
@@ -74,24 +84,51 @@ export class HotVideoRepository {
 
     if (parsed.query) {
       const escaped = escapeRegExp(parsed.query);
-      filter.$or = [
-        { title: { $regex: escaped, $options: 'i' } },
-        { product_name: { $regex: escaped, $options: 'i' } },
-        { 'analysis.tags': { $regex: escaped, $options: 'i' } },
-        { 'analysis.angle': { $regex: escaped, $options: 'i' } },
-        { 'translations.en.title': { $regex: escaped, $options: 'i' } },
-        { 'translations.en.productName': { $regex: escaped, $options: 'i' } },
-        { 'translations.en.analysis.tags': { $regex: escaped, $options: 'i' } },
-        { 'translations.en.analysis.angle': { $regex: escaped, $options: 'i' } },
-        { 'translations.zh.title': { $regex: escaped, $options: 'i' } },
-        { 'translations.zh.productName': { $regex: escaped, $options: 'i' } },
-        { 'translations.zh.analysis.tags': { $regex: escaped, $options: 'i' } },
-        { 'translations.zh.analysis.angle': { $regex: escaped, $options: 'i' } },
-      ];
+      andFilters.push({
+        $or: [
+          { title: { $regex: escaped, $options: 'i' } },
+          { product_name: { $regex: escaped, $options: 'i' } },
+          { 'analysis.tags': { $regex: escaped, $options: 'i' } },
+          { 'analysis.angle': { $regex: escaped, $options: 'i' } },
+          { 'translations.en.title': { $regex: escaped, $options: 'i' } },
+          { 'translations.en.productName': { $regex: escaped, $options: 'i' } },
+          { 'translations.en.analysis.tags': { $regex: escaped, $options: 'i' } },
+          { 'translations.en.analysis.angle': { $regex: escaped, $options: 'i' } },
+          { 'translations.zh.title': { $regex: escaped, $options: 'i' } },
+          { 'translations.zh.productName': { $regex: escaped, $options: 'i' } },
+          { 'translations.zh.analysis.tags': { $regex: escaped, $options: 'i' } },
+          { 'translations.zh.analysis.angle': { $regex: escaped, $options: 'i' } },
+        ],
+      });
     }
 
-    const sortField = sortKeyToField(parsed.sort);
+    if (andFilters.length > 0) filter.$and = andFilters;
+
+    const sortField =
+      parsed.ownerScope === 'me' && parsed.sort === 'publishedAt'
+        ? 'created_at'
+        : sortKeyToField(parsed.sort);
     const collection = this.collection();
+
+    if (parsed.ownerScope === 'all' && parsed.ownerUserId) {
+      const documents = await collection
+        .aggregate<HotVideoDocument>(
+          ownerRankedListPipeline({
+            filter,
+            ownerUserId: parsed.ownerUserId,
+            sortField,
+            skip: parsed.skip,
+            limit: parsed.limit,
+          }),
+        )
+        .toArray();
+      const total = await collection.countDocuments(filter);
+
+      return {
+        items: documents.map((document) => toRecord(document, locale)),
+        total,
+      };
+    }
 
     const [documents, total] = await Promise.all([
       collection
@@ -109,8 +146,18 @@ export class HotVideoRepository {
     };
   }
 
-  async getById(id: string, locale: ContentLocale = 'en'): Promise<HotVideoRecord | null> {
-    const document = await this.collection().findOne({ _id: id, status: 'active' });
+  async getById(
+    id: string,
+    locale: ContentLocale = 'en',
+    ownerUserId?: string | null,
+  ): Promise<HotVideoRecord | null> {
+    const document = await this.collection().findOne({
+      _id: id,
+      status: 'active',
+      $or: ownerUserId
+        ? [{ owner_user_id: ownerUserId }, { owner_user_id: { $exists: false } }]
+        : [{ owner_user_id: { $exists: false } }],
+    });
     return document ? toRecord(document, locale) : null;
   }
 
@@ -123,6 +170,24 @@ export class HotVideoRepository {
       external_id: externalId,
     });
     return document ? toRecord(document, 'en') : null;
+  }
+
+  async findOwnedBySourceUrl(
+    ownerUserId: string,
+    sourcePlatform: HotVideoDocument['source_platform'],
+    sourceUrl: string | undefined,
+    locale: ContentLocale = 'en',
+  ): Promise<HotVideoRecord | null> {
+    const normalizedUrl = sourceUrl?.trim();
+    if (!normalizedUrl) return null;
+
+    const document = await this.collection().findOne({
+      owner_user_id: ownerUserId,
+      source_platform: sourcePlatform,
+      source_url: normalizedUrl,
+      status: 'active',
+    });
+    return document ? toRecord(document, locale) : null;
   }
 
   async create(input: CreateHotVideoInput): Promise<HotVideoRecord> {
@@ -187,6 +252,35 @@ function sortKeyToField(sort: ListHotVideosInput['sort']): string {
     default:
       return 'published_at';
   }
+}
+
+function ownerRankedListPipeline(input: {
+  filter: Filter<HotVideoDocument>;
+  ownerUserId: string;
+  sortField: string;
+  skip: number;
+  limit: number;
+}): Document[] {
+  const isOwnerExpression = { $eq: ['$owner_user_id', input.ownerUserId] };
+  return [
+    { $match: input.filter },
+    {
+      $addFields: {
+        __owner_rank: { $cond: [isOwnerExpression, 0, 1] },
+        __sort_value: {
+          $cond: [
+            { $and: [isOwnerExpression, { $eq: [input.sortField, 'published_at'] }] },
+            '$created_at',
+            `$${input.sortField}`,
+          ],
+        },
+      },
+    },
+    { $sort: { __owner_rank: 1, __sort_value: -1, _id: 1 } },
+    { $skip: input.skip },
+    { $limit: input.limit },
+    { $project: { __owner_rank: 0, __sort_value: 0 } },
+  ];
 }
 
 function toRecord(document: HotVideoDocument, locale: ContentLocale): HotVideoRecord {

@@ -1,6 +1,7 @@
+import { translate } from '@/i18n/messages';
+import { getClerkUserId } from '@/server/auth';
 import { getHotVideo } from '@/server/hotVideos';
 import { failJson, okJson, routeError, withApiRouteSpan } from '@/server/http';
-import { translate } from '@/i18n/messages';
 import { resolveRequestLocale } from '@/server/locale';
 
 export const runtime = 'nodejs';
@@ -17,7 +18,8 @@ export const GET = withApiRouteSpan(
     const locale = resolveRequestLocale(request);
     try {
       const { id } = await context.params;
-      const video = await getHotVideo(id, locale);
+      const ownerUserId = await getClerkUserId();
+      const video = await getHotVideo(id, locale, { ownerUserId });
 
       if (!video) {
         return failJson(translate(locale, 'hotVideos.notFound'), 404);

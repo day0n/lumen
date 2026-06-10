@@ -1,7 +1,7 @@
+import { translate } from '@/i18n/messages';
 import { getClerkUserId } from '@/server/auth';
 import { listHotVideos } from '@/server/hotVideos';
 import { failJson, okJson, routeError, withApiRouteSpan } from '@/server/http';
-import { translate } from '@/i18n/messages';
 import { resolveRequestLocale } from '@/server/locale';
 import {
   HotVideoOwnerScopeSchema,
@@ -20,9 +20,9 @@ export const GET = withApiRouteSpan('GET /api/hot-videos', async (request: Reque
       url.searchParams.get('owner') ?? undefined,
     );
 
-    let ownerUserId: string | undefined;
+    const clerkUserId = await getClerkUserId();
+    let ownerUserId: string | undefined = clerkUserId ?? undefined;
     if (ownerScope === 'me') {
-      const clerkUserId = await getClerkUserId();
       if (!clerkUserId) {
         return failJson(translate(locale, 'hotVideos.loginToViewMine'), 401);
       }

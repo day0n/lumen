@@ -51,6 +51,7 @@ export const POST = withApiRouteSpan('POST /api/remake/jobs', async (request: Re
     const settings = body.settings;
     const view = await createRemakeJob({
       ownerId: user.id,
+      ownerClerkUserId: user.clerkUserId,
       videoId: body.videoId,
       reference: body.reference,
       productImageUrls: body.productImageUrls,

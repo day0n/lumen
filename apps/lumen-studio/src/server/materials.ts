@@ -2,6 +2,7 @@ import 'server-only';
 
 import type {
   CreateUserMaterialAssetInput,
+  HotVideoRecord,
   MaterialAssetCategory,
   MaterialAssetKind,
   MaterialAssetRecord,
@@ -221,6 +222,43 @@ export async function createStudioMaterialAssetForOwner(
   return asset;
 }
 
+export async function ensureHotVideoMaterialAssetForOwner(
+  ownerId: string,
+  video: HotVideoRecord,
+): Promise<MaterialAssetRecord | null> {
+  const previewUrl = video.previewUrl?.trim();
+  if (!previewUrl) return null;
+
+  const repository = await traceStudioStep('studio.material_assets.repository', 'db.connect', () =>
+    getMaterialAssetRepository(),
+  );
+  const existing = await traceStudioStep(
+    'studio.material_assets.find_user_upload_by_url.db',
+    'db.query',
+    () => repository.findUserUploadByUrl(ownerId, previewUrl),
+    { kind: 'video', category: 'my_assets' },
+  );
+  if (existing) return existing;
+
+  return createStudioMaterialAssetForOwner(ownerId, {
+    category: 'my_assets',
+    kind: 'video',
+    title: truncateMaterialText(video.productName || video.title, 160) ?? 'Downloaded video',
+    url: previewUrl,
+    ...(video.thumbnailUrl ? { thumbnailUrl: video.thumbnailUrl } : {}),
+    contentType: 'video/mp4',
+    inputPrompt: truncateMaterialText(video.title, 100),
+    metadata: {
+      subcategory: truncateMaterialText(video.category, 80),
+      originalName: truncateMaterialText(video.title, 180),
+      sellingPoints: [video.analysis.hook, video.analysis.angle]
+        .map((value) => truncateMaterialText(value, 120))
+        .filter((value): value is string => Boolean(value))
+        .slice(0, 3),
+    },
+  });
+}
+
 async function embedStudioMaterialAsset({
   assetId,
   ownerId,
@@ -327,4 +365,10 @@ function materialAssetListCacheKey(
 
 async function invalidateMaterialAssetListCache(ownerId: string) {
   await getStudioCache().deletePattern(`materials:${ownerId}:list:v1:*`, 'lumen:studio:');
+}
+
+function truncateMaterialText(value: string | undefined, max: number): string | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  return normalized.length > max ? normalized.slice(0, max) : normalized;
 }

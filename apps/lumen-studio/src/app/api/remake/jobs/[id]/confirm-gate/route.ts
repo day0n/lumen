@@ -38,6 +38,7 @@ export const POST = withApiRouteSpan(
         const view = await confirmGate1({
           jobId: id,
           ownerId: user.id,
+          ownerClerkUserId: user.clerkUserId,
           scriptText: body.scriptText,
           sellingPoints: body.sellingPoints,
           audienceTags: body.audienceTags,

@@ -23,7 +23,11 @@ export const POST = withApiRouteSpan(
       const user = await requireStudioUser();
       const body = await readJson(request);
       const { url } = ParseLinkSchema.parse(body);
-      const record = await ingestHotVideoFromUrl(url, { ownerUserId: user.clerkUserId, locale });
+      const record = await ingestHotVideoFromUrl(url, {
+        ownerId: user.id,
+        ownerUserId: user.clerkUserId,
+        locale,
+      });
       return okJson(record);
     } catch (error) {
       if (error instanceof UnauthorizedError) {

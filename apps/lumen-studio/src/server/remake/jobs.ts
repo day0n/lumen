@@ -46,6 +46,7 @@ import {
 
 export interface CreateRemakeJobOptions {
   ownerId: string;
+  ownerClerkUserId?: string;
   reference: RemakeReference;
   videoId?: string;
   settings: RemakeJobSettings;
@@ -63,7 +64,11 @@ export interface RemakeJobView {
 }
 
 export async function createRemakeJob(options: CreateRemakeJobOptions): Promise<RemakeJobView> {
-  const video = await resolveReferenceVideo(options.videoId, options.locale);
+  const video = await resolveReferenceVideo(
+    options.videoId,
+    options.locale,
+    options.ownerClerkUserId,
+  );
   const { plan, breakdown, targetProductName, targetProductCategory } = await buildPlanForJob({
     reference: options.reference,
     video,
@@ -125,6 +130,7 @@ export async function listRemakeJobsForUser(
 export async function confirmGate1(input: {
   jobId: string;
   ownerId: string;
+  ownerClerkUserId?: string;
   scriptText: string;
   sellingPoints: string[];
   audienceTags: string[];
@@ -146,7 +152,7 @@ export async function confirmGate1(input: {
     );
   }
 
-  const video = await resolveReferenceVideo(job.videoId, input.locale);
+  const video = await resolveReferenceVideo(job.videoId, input.locale, input.ownerClerkUserId);
   // 用户在 Gate 1 显式选过的口播语言优先 —— 这是决定 LLM 生成的 scriptText / scene.voiceLine /
   // dialogue / sellingPoints 用什么语言写的真源。
   // 没选时回退到 HTTP 请求头的浏览器界面语言（旧行为）。这里同时决定下游 veo-3.1 native_audio

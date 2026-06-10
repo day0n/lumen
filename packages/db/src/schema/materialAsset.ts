@@ -127,7 +127,7 @@ export type UpsertWorkflowMaterialAssetInput = z.infer<
 export const CreateUserMaterialAssetInputSchema = z
   .object({
     ownerId: z.string().min(1),
-    category: UserUploadMaterialAssetCategorySchema,
+    category: MaterialAssetCategorySchema,
     kind: MaterialAssetKindSchema.default('image'),
     title: z.string().trim().min(1).max(160),
     url: z.string().trim().min(1),

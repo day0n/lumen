@@ -81,6 +81,7 @@ export class MaterialAssetRepository {
     await collection.createIndex({ owner_id: 1, category: 1, kind: 1, updated_at: -1 });
     await collection.createIndex({ owner_id: 1, workflow_id: 1, kind: 1, updated_at: -1 });
     await collection.createIndex({ owner_id: 1, workflow_id: 1, updated_at: -1 });
+    await collection.createIndex({ owner_id: 1, source: 1, url: 1 });
     await collection.createIndex({ workflow_id: 1, run_id: 1, node_id: 1 });
 
     const workflowResults = this.workflowResultCollection();
@@ -302,6 +303,18 @@ export class MaterialAssetRepository {
 
     await this.collection().insertOne(document);
     return toMaterialAssetRecord(document);
+  }
+
+  async findUserUploadByUrl(ownerId: string, url: string): Promise<MaterialAssetRecord | null> {
+    const normalizedUrl = normalizedString(url);
+    if (!normalizedUrl) return null;
+
+    const document = await this.collection().findOne({
+      owner_id: ownerId,
+      source: 'user_upload',
+      url: normalizedUrl,
+    });
+    return document ? toMaterialAssetRecord(document) : null;
   }
 
   async patchUserUploadEmbedding(
