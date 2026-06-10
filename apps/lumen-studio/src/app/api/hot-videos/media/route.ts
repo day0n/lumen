@@ -1,10 +1,9 @@
 import { failJson, routeError, withApiRouteSpan } from '@/server/http';
-import { getR2Settings } from '@/server/objectStorage';
+import { isTrustedMediaHost } from '@/server/objectStorage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const R2_PUBLIC_HOST_PATTERN = /^pub-[a-z0-9]+\.r2\.dev$/i;
 const VIDEO_PATH_PATTERN = /\.(mp4|webm|mov|m4v)$/i;
 
 export const GET = withApiRouteSpan('GET /api/hot-videos/media', async (request: Request) =>
@@ -62,18 +61,7 @@ function parseAllowedMediaUrl(value: string | null): URL | null {
 
   if (url.protocol !== 'https:') return null;
   if (!VIDEO_PATH_PATTERN.test(url.pathname)) return null;
-
-  if (R2_PUBLIC_HOST_PATTERN.test(url.hostname)) return url;
-
-  const settings = getR2Settings();
-  if (!settings) return null;
-
-  try {
-    const publicBase = new URL(settings.publicBaseUrl);
-    if (url.hostname === publicBase.hostname) return url;
-  } catch {
-    return null;
-  }
+  if (isTrustedMediaHost(url.hostname)) return url;
 
   return null;
 }

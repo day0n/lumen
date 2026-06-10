@@ -3,7 +3,7 @@ import 'server-only';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { getR2Settings } from './objectStorage';
+import { isTrustedMediaHost } from './objectStorage';
 import { getStudioProject } from './projects';
 
 const execFileAsync = promisify(execFile);
@@ -30,8 +30,7 @@ export async function isProbeUrlAllowed(url: string, projectId?: string | null):
   if (PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(parsed.hostname))) return false;
 
   const normalized = parsed.toString();
-  const r2 = getR2Settings();
-  if (r2?.publicBaseUrl && normalized.startsWith(r2.publicBaseUrl)) {
+  if (isTrustedMediaHost(parsed.hostname)) {
     return true;
   }
 

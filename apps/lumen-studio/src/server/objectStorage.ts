@@ -48,6 +48,26 @@ export function isObjectStorageConfigured(): boolean {
   return getR2Settings() !== null;
 }
 
+// 工作流媒体结果的固定 CDN 域名。R2_PUBLIC_BASE_URL 切换域名时各服务的
+// 环境变量不一定同步更新，这里把新旧两代公网入口都列为受信来源，
+// 避免 probe / 媒体代理因为 env 不一致而拒绝合法的成片 URL。
+const TRUSTED_MEDIA_HOSTS = new Set(['media.lumenstudio.tech']);
+const R2_PUBLIC_DEV_HOST_PATTERN = /^pub-[a-z0-9]+\.r2\.dev$/i;
+
+export function isTrustedMediaHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  if (TRUSTED_MEDIA_HOSTS.has(normalized)) return true;
+  if (R2_PUBLIC_DEV_HOST_PATTERN.test(normalized)) return true;
+
+  const settings = getR2Settings();
+  if (!settings) return false;
+  try {
+    return normalized === new URL(settings.publicBaseUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 function getClient(settings: R2Settings): S3Client {
   if (cachedClient) return cachedClient;
   cachedClient = new S3Client({
