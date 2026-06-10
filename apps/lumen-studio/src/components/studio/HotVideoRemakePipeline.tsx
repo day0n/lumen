@@ -634,6 +634,34 @@ function ScriptStage({
             <span className="rounded-full bg-[#3ae08a]/12 px-3 py-1.5 text-[12px] font-bold text-[#3ae08a] ring-1 ring-[#3ae08a]/22">
               {copy.gate1Confirmed}
             </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                const points = sellingPointsText
+                  .split('\n')
+                  .map((item) => item.trim())
+                  .filter(Boolean);
+                const audiences = audienceTagsText
+                  .split('\n')
+                  .map((item) => item.trim())
+                  .filter(Boolean);
+                void onConfirm({
+                  scriptText,
+                  sellingPoints: points,
+                  audienceTags: audiences,
+                  voiceLanguage,
+                });
+              }}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-white/[0.06] px-4 text-[13px] font-bold text-white/64 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy ? (
+                <IconLoader2 size={15} className="animate-spin" />
+              ) : (
+                <IconRotate size={15} stroke={2.2} />
+              )}
+              {busy ? copy.gate1Loading : copy.rerunScript}
+            </button>
             <PrimaryButton onClick={onNext}>
               <IconCheck size={15} />
               {copy.nextLock}
@@ -704,101 +732,114 @@ function LockStage({
         onRetry={onRetry}
       />
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <SlicePreview
-          copy={copy}
-          title={copy.creatorLockTitle}
-          subtitle={copy.creatorLockSubtitle}
-          task={findTaskBySliceKey(tasks, RemakeSliceKeys.creatorLock)}
-          outputUrl={job.outputs.creatorLockUrl}
-          kind="image"
-          aspectClassName="aspect-[4/3]"
-          objectFit="contain"
-          zoomable
-          subtitleAction={
-            <PromptOverrideBar
-              effectivePrompt={
-                job.plan.creatorPrompt ??
-                findTaskBySliceKey(tasks, RemakeSliceKeys.creatorLock)?.inputPrompt ??
-                null
-              }
-              overrideValue={job.plan.creatorPrompt}
-              onSave={(value) => onUpdatePlanPrompts({ creatorPrompt: value })}
-              copy={{
-                ...copy.promptBar,
-                title: copy.promptCreatorTitle,
-                subtitle: copy.promptCreatorSub,
-              }}
-            />
-          }
-        />
-        <SlicePreview
-          copy={copy}
-          title={copy.productLockTitle}
-          subtitle={copy.productLockSubtitle}
-          task={findTaskBySliceKey(tasks, RemakeSliceKeys.productLock)}
-          outputUrl={job.outputs.productLockUrl}
-          kind="image"
-          aspectClassName="aspect-[4/3]"
-          objectFit="contain"
-          zoomable
-          subtitleAction={
-            <PromptOverrideBar
-              effectivePrompt={
-                job.plan.productPrompt ??
-                findTaskBySliceKey(tasks, RemakeSliceKeys.productLock)?.inputPrompt ??
-                null
-              }
-              overrideValue={job.plan.productPrompt}
-              onSave={(value) => onUpdatePlanPrompts({ productPrompt: value })}
-              copy={{
-                ...copy.promptBar,
-                title: copy.promptProductTitle,
-                subtitle: copy.promptProductSub,
-              }}
-            />
-          }
-        />
+        <div className="space-y-2">
+          <SlicePreview
+            copy={copy}
+            title={copy.creatorLockTitle}
+            subtitle={copy.creatorLockSubtitle}
+            task={findTaskBySliceKey(tasks, RemakeSliceKeys.creatorLock)}
+            outputUrl={job.outputs.creatorLockUrl}
+            kind="image"
+            aspectClassName="aspect-[4/3]"
+            objectFit="contain"
+            zoomable
+            subtitleAction={
+              <PromptOverrideBar
+                effectivePrompt={
+                  job.plan.creatorPrompt ??
+                  findTaskBySliceKey(tasks, RemakeSliceKeys.creatorLock)?.inputPrompt ??
+                  null
+                }
+                overrideValue={job.plan.creatorPrompt}
+                onSave={(value) => onUpdatePlanPrompts({ creatorPrompt: value })}
+                copy={{
+                  ...copy.promptBar,
+                  title: copy.promptCreatorTitle,
+                  subtitle: copy.promptCreatorSub,
+                }}
+              />
+            }
+          />
+          <RerunButton label={copy.rerunOne} onClick={() => onRetry([RemakeSliceKeys.creatorLock])} />
+        </div>
+        <div className="space-y-2">
+          <SlicePreview
+            copy={copy}
+            title={copy.productLockTitle}
+            subtitle={copy.productLockSubtitle}
+            task={findTaskBySliceKey(tasks, RemakeSliceKeys.productLock)}
+            outputUrl={job.outputs.productLockUrl}
+            kind="image"
+            aspectClassName="aspect-[4/3]"
+            objectFit="contain"
+            zoomable
+            subtitleAction={
+              <PromptOverrideBar
+                effectivePrompt={
+                  job.plan.productPrompt ??
+                  findTaskBySliceKey(tasks, RemakeSliceKeys.productLock)?.inputPrompt ??
+                  null
+                }
+                overrideValue={job.plan.productPrompt}
+                onSave={(value) => onUpdatePlanPrompts({ productPrompt: value })}
+                copy={{
+                  ...copy.promptBar,
+                  title: copy.promptProductTitle,
+                  subtitle: copy.promptProductSub,
+                }}
+              />
+            }
+          />
+          <RerunButton label={copy.rerunOne} onClick={() => onRetry([RemakeSliceKeys.productLock])} />
+        </div>
       </div>
       {job.plan.environments.length > 0 ? (
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {job.plan.environments.map((environment) => (
-            <SlicePreview
-              key={environment.index}
-              copy={copy}
-              title={`${copy.environmentLockTitle} ${environment.index}`}
-              subtitle={environment.name}
-              task={findTaskBySliceKey(tasks, RemakeSliceKeys.environmentLock(environment.index))}
-              outputUrl={
-                job.outputs.environmentLocks.find(
-                  (item) => item.environmentIndex === environment.index,
-                )?.imageUrl
-              }
-              kind="image"
-              aspectClassName="aspect-[4/3]"
-              objectFit="contain"
-              zoomable
-              subtitleAction={
-                <PromptOverrideBar
-                  effectivePrompt={
-                    environment.prompt ??
-                    findTaskBySliceKey(tasks, RemakeSliceKeys.environmentLock(environment.index))
-                      ?.inputPrompt ??
-                    null
-                  }
-                  overrideValue={environment.prompt}
-                  onSave={(value) =>
-                    onUpdatePlanPrompts({
-                      environmentPrompts: [{ environmentIndex: environment.index, prompt: value }],
-                    })
-                  }
-                  copy={{
-                    ...copy.promptBar,
-                    title: `${copy.promptEnvTitle} · ${environment.name}`,
-                    subtitle: copy.promptEnvSub,
-                  }}
-                />
-              }
-            />
+            <div key={environment.index} className="space-y-2">
+              <SlicePreview
+                copy={copy}
+                title={`${copy.environmentLockTitle} ${environment.index}`}
+                subtitle={environment.name}
+                task={findTaskBySliceKey(tasks, RemakeSliceKeys.environmentLock(environment.index))}
+                outputUrl={
+                  job.outputs.environmentLocks.find(
+                    (item) => item.environmentIndex === environment.index,
+                  )?.imageUrl
+                }
+                kind="image"
+                aspectClassName="aspect-[4/3]"
+                objectFit="contain"
+                zoomable
+                subtitleAction={
+                  <PromptOverrideBar
+                    effectivePrompt={
+                      environment.prompt ??
+                      findTaskBySliceKey(tasks, RemakeSliceKeys.environmentLock(environment.index))
+                        ?.inputPrompt ??
+                      null
+                    }
+                    overrideValue={environment.prompt}
+                    onSave={(value) =>
+                      onUpdatePlanPrompts({
+                        environmentPrompts: [
+                          { environmentIndex: environment.index, prompt: value },
+                        ],
+                      })
+                    }
+                    copy={{
+                      ...copy.promptBar,
+                      title: `${copy.promptEnvTitle} · ${environment.name}`,
+                      subtitle: copy.promptEnvSub,
+                    }}
+                  />
+                }
+              />
+              <RerunButton
+                label={copy.rerunOne}
+                onClick={() => onRetry([RemakeSliceKeys.environmentLock(environment.index)])}
+              />
+            </div>
           ))}
         </div>
       ) : null}
@@ -874,13 +915,7 @@ function StoryboardStage({
                   />
                 }
               />
-              <button
-                type="button"
-                onClick={() => onRunOne(sliceKey)}
-                className="h-9 w-full rounded-xl bg-white/[0.06] text-[12px] font-bold text-white/58 ring-1 ring-white/[0.08] hover:bg-white/[0.1] hover:text-white"
-              >
-                {copy.rerunOne}
-              </button>
+              <RerunButton label={copy.rerunOne} onClick={() => onRunOne(sliceKey)} />
             </div>
           );
         })}
@@ -964,44 +999,41 @@ function VideoStage({
                   />
                 }
               />
-              <button
-                type="button"
-                onClick={() => onRunOne(sliceKey)}
-                className="h-9 w-full rounded-xl bg-white/[0.06] text-[12px] font-bold text-white/58 ring-1 ring-white/[0.08] hover:bg-white/[0.1] hover:text-white"
-              >
-                {copy.rerunOne}
-              </button>
+              <RerunButton label={copy.rerunOne} onClick={() => onRunOne(sliceKey)} />
             </div>
           );
         })}
       </div>
 
       <Section title={copy.sectionBgm}>
-        <SlicePreview
-          copy={copy}
-          title={copy.sectionBgm}
-          subtitle={copy.bgmSubtitle}
-          task={findTaskBySliceKey(tasks, RemakeSliceKeys.bgm)}
-          outputUrl={job.outputs.bgmUrl}
-          kind="audio"
-          icon={<IconMusic size={18} />}
-          subtitleAction={
-            <PromptOverrideBar
-              effectivePrompt={
-                job.plan.bgmPrompt ??
-                findTaskBySliceKey(tasks, RemakeSliceKeys.bgm)?.inputPrompt ??
-                null
-              }
-              overrideValue={job.plan.bgmPrompt}
-              onSave={(value) => onUpdatePlanPrompts({ bgmPrompt: value })}
-              copy={{
-                ...copy.promptBar,
-                title: copy.promptBgmTitle,
-                subtitle: copy.promptBgmSub,
-              }}
-            />
-          }
-        />
+        <div className="space-y-2">
+          <SlicePreview
+            copy={copy}
+            title={copy.sectionBgm}
+            subtitle={copy.bgmSubtitle}
+            task={findTaskBySliceKey(tasks, RemakeSliceKeys.bgm)}
+            outputUrl={job.outputs.bgmUrl}
+            kind="audio"
+            icon={<IconMusic size={18} />}
+            subtitleAction={
+              <PromptOverrideBar
+                effectivePrompt={
+                  job.plan.bgmPrompt ??
+                  findTaskBySliceKey(tasks, RemakeSliceKeys.bgm)?.inputPrompt ??
+                  null
+                }
+                overrideValue={job.plan.bgmPrompt}
+                onSave={(value) => onUpdatePlanPrompts({ bgmPrompt: value })}
+                copy={{
+                  ...copy.promptBar,
+                  title: copy.promptBgmTitle,
+                  subtitle: copy.promptBgmSub,
+                }}
+              />
+            }
+          />
+          <RerunButton label={copy.rerunOne} onClick={() => onRunOne(RemakeSliceKeys.bgm)} />
+        </div>
       </Section>
 
       <StageActions status={status} nextLabel={copy.nextFinal} onNext={onNext} />
@@ -1196,6 +1228,20 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+// 每个节点都可独立重跑：不因同阶段其他节点正在生成而禁用。
+function RerunButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-white/[0.06] text-[12px] font-bold text-white/58 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1] hover:text-white"
+    >
+      <IconRotate size={13} stroke={2.2} />
+      {label}
+    </button>
+  );
+}
+
 function SlicePreview({
   copy,
   title,
@@ -1261,9 +1307,6 @@ function SlicePreview({
                   src={outputUrl}
                   alt={title}
                   caption={subtitle ?? title}
-                  openLabel={copy.zoomOpen}
-                  closeLabel={copy.zoomClose}
-                  dialogLabel={copy.zoomDialog}
                   className="absolute right-2 top-2 z-20"
                 />
               ) : null}
@@ -1546,6 +1589,7 @@ function getCopy(locale: 'en' | 'zh') {
       gate1Loading: '重写下游中...',
       gate1Confirmed: '脚本已确认',
       confirmGate1: '确认脚本，重算下游',
+      rerunScript: '重跑脚本',
       nextLock: '进入形象锁定',
       creatorLock: '形象锁定',
       creatorLockDesc: '锁定同一个创作者、产品和场景环境，后续每一帧都引用这些锁定图。',
@@ -1609,9 +1653,6 @@ function getCopy(locale: 'en' | 'zh') {
       stageErrorSummary: '本步骤有 {count} 个任务失败。点右侧按钮重试这些失败任务。',
       stageErrorRetry: '重试失败任务',
       stageErrorUnknown: '未知错误',
-      zoomOpen: '放大查看',
-      zoomClose: '关闭',
-      zoomDialog: '放大图片',
     };
   }
   return {
@@ -1663,6 +1704,7 @@ function getCopy(locale: 'en' | 'zh') {
     gate1Loading: 'Rewriting downstream...',
     gate1Confirmed: 'Script confirmed',
     confirmGate1: 'Confirm script, replan downstream',
+    rerunScript: 'Rerun script',
     nextLock: 'Go to identity lock',
     creatorLock: 'Identity lock',
     creatorLockDesc:
@@ -1732,8 +1774,5 @@ function getCopy(locale: 'en' | 'zh') {
       '{count} task(s) failed in this step. Click retry to re-run the failed ones.',
     stageErrorRetry: 'Retry failed tasks',
     stageErrorUnknown: 'Unknown error',
-    zoomOpen: 'Open image preview',
-    zoomClose: 'Close preview',
-    zoomDialog: 'Image preview',
   };
 }
