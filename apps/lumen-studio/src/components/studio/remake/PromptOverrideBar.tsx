@@ -2,6 +2,7 @@
 
 import { IconCheck, IconLoader2, IconPencil, IconRotate, IconX } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { cn } from '@/lib/cn';
 
@@ -65,24 +66,21 @@ export interface PromptOverrideBarProps {
 }
 
 export function PromptOverrideBar(props: PromptOverrideBarProps) {
-  const { overrideValue, disabled, copy, className, onSave } = props;
+  const { overrideValue, copy, className, onSave } = props;
   const [open, setOpen] = useState(false);
 
   const hasOverride = typeof overrideValue === 'string' && overrideValue.trim().length > 0;
 
+  // prompt 任意时刻可编辑——包括 stage 正在生成时。铅笔按钮不再因任何状态禁用。
   return (
     <>
       <button
         type="button"
-        disabled={disabled}
         onClick={() => setOpen(true)}
-        title={disabled ? copy.disabledTooltip : copy.editTooltip}
+        title={copy.editTooltip}
         aria-label={copy.editTooltip}
         className={cn(
-          'relative inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-white/[0.08] transition-colors',
-          disabled
-            ? 'cursor-not-allowed opacity-50'
-            : 'hover:bg-white/[0.12] hover:ring-white/[0.18]',
+          'relative inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.12] hover:ring-white/[0.18]',
           className,
         )}
       >
@@ -121,6 +119,14 @@ interface DrawerProps extends PromptOverrideBarProps {
 
 function PromptOverrideDrawer(props: DrawerProps) {
   const { copy, effectivePrompt, overrideValue, hasOverride, onClose, onSave } = props;
+
+  // Portal 到 body：抽屉用 position:fixed 全屏覆盖，若留在卡片内会被 StageFade 的
+  // motion transform 变成「相对祖先定位」并继承其 stacking context，导致生成中点开后
+  // 错位/被盖住、看起来「点不动」。挂到 body 后彻底脱离流水线 DOM 树。
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // textarea 默认值 = 真实生效 prompt（如果存在）。优先级：
   //   1. 用户已经写过的 override（hasOverride）
@@ -176,7 +182,9 @@ function PromptOverrideDrawer(props: DrawerProps) {
   // 用户改动 vs 当时打开 Drawer 的初始值
   const hasUnsaved = value.trim() !== initialValue.trim();
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <dialog
       open
       aria-modal="true"
@@ -266,6 +274,7 @@ function PromptOverrideDrawer(props: DrawerProps) {
           </button>
         </footer>
       </aside>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }
