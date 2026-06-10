@@ -1308,14 +1308,12 @@ function AdVideoResultList({
       <div className="space-y-2">
         {items.map((item) => {
           const href = item.videoUrl || item.landingUrl;
+          const titleText = item.brand || item.headline || title;
+          const description = item.headline && item.headline !== titleText ? item.headline : '';
           const meta = [
             item.platform,
-            item.durationSec !== null ? `${Math.round(item.durationSec)}s` : null,
-            item.activeDays !== null
-              ? locale === 'zh'
-                ? `投放 ${item.activeDays} 天`
-                : `${item.activeDays} active days`
-              : null,
+            formatAdDuration(item.durationSec),
+            formatAdActiveDays(item.activeDays, locale),
           ].filter(Boolean);
 
           return (
@@ -1324,13 +1322,18 @@ function AdVideoResultList({
               href={href}
               target="_blank"
               rel="noreferrer"
-              className="group grid grid-cols-[72px_minmax(0,1fr)] overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.045] transition-colors hover:border-white/[0.2] hover:bg-white/[0.07]"
+              className="group flex min-w-0 overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.045] transition-colors hover:border-white/[0.2] hover:bg-white/[0.07]"
             >
-              <div className="aspect-video h-full min-h-[72px] bg-black/34">
+              <div
+                className={cn(
+                  'h-[84px] w-[104px] shrink-0 overflow-hidden bg-black/34 sm:w-[118px]',
+                  !compact ? 'h-[92px] w-[124px] sm:w-[146px]' : '',
+                )}
+              >
                 {item.thumbnailUrl ? (
                   <img
                     src={item.thumbnailUrl}
-                    alt={item.headline || item.brand || title}
+                    alt={titleText}
                     loading="lazy"
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
                   />
@@ -1340,20 +1343,22 @@ function AdVideoResultList({
                   </div>
                 )}
               </div>
-              <div className="min-w-0 px-2.5 py-2">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-6 text-white/78">
-                    {item.brand || item.headline || title}
-                  </span>
-                  <IconExternalLink size={12} stroke={2.2} className="shrink-0 text-white/34" />
-                </div>
-                {item.headline ? (
-                  <div className="line-clamp-2 text-[14px] font-medium leading-5 text-white/48">
-                    {item.headline}
+              <div className="flex min-w-0 flex-1 flex-col justify-between gap-1 px-3 py-2.5">
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-start gap-1.5">
+                    <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-6 text-white/78">
+                      {titleText}
+                    </span>
+                    <IconExternalLink size={12} stroke={2.2} className="shrink-0 text-white/34" />
                   </div>
-                ) : null}
+                  {description ? (
+                    <div className="mt-0.5 line-clamp-2 break-words text-[14px] font-medium leading-5 text-white/48">
+                      {description}
+                    </div>
+                  ) : null}
+                </div>
                 {meta.length > 0 ? (
-                  <div className="mt-0.5 truncate text-[14px] font-medium leading-6 text-white/34">
+                  <div className="truncate text-[14px] font-medium leading-6 text-white/34">
                     {meta.join(' · ')}
                   </div>
                 ) : null}
@@ -1365,6 +1370,19 @@ function AdVideoResultList({
       </div>
     </div>
   );
+}
+
+function formatAdDuration(durationSec: number | null): string | null {
+  if (durationSec === null) return null;
+  return `${Math.max(1, Math.round(durationSec))}s`;
+}
+
+function formatAdActiveDays(activeDays: number | null, locale: string): string | null {
+  if (activeDays === null) return null;
+  if (activeDays <= 0) return locale === 'zh' ? '投放 <1 天' : '<1 active day';
+  const days = Math.round(activeDays);
+  if (locale === 'zh') return `投放 ${days} 天`;
+  return `${days} active ${days === 1 ? 'day' : 'days'}`;
 }
 
 function InspirationResultGrid({
