@@ -168,7 +168,7 @@ export class InspirationSearchTool extends Tool {
       category: {
         type: 'string',
         description:
-          '可选分类过滤，例如 automotive、people、accessories、fashion、beauty、food、electronics、lifestyle。',
+          '可选分类过滤，例如 automotive、people、accessories、fashion、beauty、food、electronics、lifestyle、travel、architecture、interiors、workspace、sports、wellness、outdoors、hospitality、packaging、industrial、music、gaming、art、education、finance、medical、nature、events、furniture、fragrance、beverage、gardening、homecare、diy、real_estate。',
       },
       era: {
         type: 'string',

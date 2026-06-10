@@ -328,7 +328,7 @@ Agent 与画布共享同一条 `lumen:flow:tasks` Stream；执行结果通过独
 
 #### 找灵感：官方灵感图库 + 标签向量搜索
 
-不是实时联网搜图。离线 `seed-inspiration-assets.ts` 按分类生成参考图、上传 R2，把 CDN URL + 标签 + 分类 + 年代 + 场景 + 风格 + 画幅写入 Mongo，并对标签做 embedding 入索引。运行时 `find_inspiration` 把用户需求提炼成视觉搜索 query → embed → `$vectorSearch` → 阈值过滤 → 通过 `inspiration_results` tool event 推到前端，渲染成 Agent 面板的灵感图片网格。图片本体在 R2，DB 只存 CDN URL；只向量化标签和 facet，不向量化图片本体。
+不是实时联网搜图。离线 `seed-inspiration-assets.ts` 按分类生成参考图、上传 R2，把 CDN URL + 标签 + 分类 + 年代 + 场景 + 风格 + 画幅写入 Mongo，并对标签做 embedding 入索引。运行时 `find_inspiration` 把用户需求提炼成视觉搜索 query → embed → `$vectorSearch` → 阈值过滤 → 通过 `inspiration_results` tool event 推到前端，渲染成 Agent 面板的灵感图片网格。图片本体在 R2，DB 只存 CDN URL；只向量化标签和 facet，不向量化图片本体。当前分类覆盖人物、汽车、服饰、美妆、食品、电器、家居，以及旅行、建筑、室内、工作区、运动、健康、户外、酒店餐饮、包装、工业、音乐、游戏、艺术、教育、金融、医疗、自然、活动、家具、香氛、饮品、园艺、家清、DIY、房产等素材方向。
 
 | 落点 | 位置 |
 |---|---|
