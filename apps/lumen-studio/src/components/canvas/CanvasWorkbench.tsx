@@ -104,6 +104,10 @@ import {
 } from '@/components/canvas/canvas-lod-context';
 import { ChatPanel } from '@/features/agent-chat/ChatPanel';
 import { VideoCompositionModal } from '@/features/video-composition/VideoCompositionModal';
+import {
+  type WorkflowNodeResultPayload,
+  mapWorkflowResultToNodeState,
+} from '@/features/workflow/reconcile-workflow-nodes';
 import { useWorkflowReconcile } from '@/features/workflow/use-workflow-reconcile';
 import { useWorkflowWs } from '@/features/workflow/use-workflow-ws';
 import type { NodeState } from '@/features/workflow/use-workflow-ws';
@@ -1643,11 +1647,28 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
   useEffect(() => clearAgentLayoutTimers, [clearAgentLayoutTimers]);
 
+  const applyAgentWorkflowLayout = useCallback(
+    (project: CanvasProjectPayload, duration = 260) => {
+      const nextEdges = withCanvasEdgeLayering(project.canvas.edges);
+      const arranged = arrangeCanvasNodes(
+        withCanvasNodeLayering(project.canvas.nodes),
+        project.canvas.edges,
+      );
+      setEdges(nextEdges);
+      setNodes(arranged);
+      window.requestAnimationFrame(() => {
+        reactFlow.fitView({ padding: 0.28, duration, maxZoom: 1 });
+      });
+      scheduleAgentPostLayout();
+    },
+    [reactFlow, scheduleAgentPostLayout, setEdges, setNodes],
+  );
+
   const refreshAgentWorkflowIfMissing = useCallback(
-    async (nodeId: string | null) => {
+    async (nodeId: string | null, options: { force?: boolean } = {}) => {
       const isMissingLocalWorkflow =
         nodes.length === 0 || (nodeId !== null && !nodes.some((node) => node.id === nodeId));
-      if (!isMissingLocalWorkflow) return false;
+      if (!options.force && !isMissingLocalWorkflow) return false;
 
       if (agentWorkflowRefreshRef.current) {
         await agentWorkflowRefreshRef.current;
@@ -1664,9 +1685,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
             project.canvas.nodes.length > 0 &&
             (nodeId === null || project.canvas.nodes.some((node) => node.id === nodeId));
           if (hasExpectedNode) {
-            window.requestAnimationFrame(() => {
-              reactFlow.fitView({ padding: 0.28, duration: 260, maxZoom: 1 });
-            });
+            applyAgentWorkflowLayout(project);
             return;
           }
           await waitForAgentWorkflowRefreshRetry(attempt);
@@ -1686,7 +1705,43 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       await refreshPromise;
       return true;
     },
-    [cancelPendingAutosave, nodes, reactFlow, refreshProject],
+    [applyAgentWorkflowLayout, cancelPendingAutosave, nodes, refreshProject],
+  );
+
+  const refreshAgentWorkflowNodeStatus = useCallback(
+    async (nodeId: string | null) => {
+      if (!currentProjectId || !nodeId) return false;
+
+      let response: Response;
+      try {
+        response = await fetch(
+          `/api/projects/${encodeURIComponent(currentProjectId)}/workflow-status?nodeIds=${encodeURIComponent(
+            nodeId,
+          )}`,
+          {
+            cache: 'no-store',
+            headers: { 'x-lumen-locale': locale },
+          },
+        );
+      } catch {
+        return false;
+      }
+      if (!response.ok) return false;
+
+      const payload = (await response.json().catch(() => null)) as {
+        results?: WorkflowNodeResultPayload[];
+      } | null;
+      if (!payload) return false;
+      const result = payload.results?.find((item) => item.nodeId === nodeId);
+      if (!result) return false;
+
+      const state = mapWorkflowResultToNodeState(result);
+      if (!state) return false;
+
+      handleNodeStateChange(nodeId, state);
+      return true;
+    },
+    [currentProjectId, handleNodeStateChange, locale],
   );
 
   const handleAgentWorkflowUpdate = useCallback(
@@ -1697,7 +1752,13 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       }
       const reason = readEventString(data.reason);
       if (reason !== 'write_canvas') {
-        await refreshAgentWorkflowIfMissing(readEventString(data.node_id));
+        const nodeId = readEventString(data.node_id);
+        if (isRunCanvasNodeWorkflowUpdate(reason)) {
+          const applied = await refreshAgentWorkflowNodeStatus(nodeId);
+          if (!applied) await refreshAgentWorkflowIfMissing(nodeId, { force: true });
+          return;
+        }
+        await refreshAgentWorkflowIfMissing(nodeId);
         return;
       }
       if (agentWorkflowRefreshRef.current) {
@@ -1721,19 +1782,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         }
         if (!project || project.canvas.nodes.length === 0) return;
 
-        const nextEdges = withCanvasEdgeLayering(project.canvas.edges);
-        // agent 改写画布结构后基于刚拉到的 nodes/edges 算布局，
-        // 不读 reactFlow.getEdges() 以避开 React/Flow 内部 store 的同步时机。
-        const arranged = arrangeCanvasNodes(
-          withCanvasNodeLayering(project.canvas.nodes),
-          project.canvas.edges,
-        );
-        setEdges(nextEdges);
-        setNodes(arranged);
-        window.requestAnimationFrame(() => {
-          reactFlow.fitView({ padding: 0.28, duration: 320, maxZoom: 1 });
-        });
-        scheduleAgentPostLayout();
+        applyAgentWorkflowLayout(project, 320);
       })()
         .catch((error) => {
           console.error(error);
@@ -1754,14 +1803,12 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       }
     },
     [
+      applyAgentWorkflowLayout,
       currentProjectId,
-      reactFlow,
       refreshAgentWorkflowIfMissing,
+      refreshAgentWorkflowNodeStatus,
       refreshProject,
-      scheduleAgentPostLayout,
       cancelPendingAutosave,
-      setEdges,
-      setNodes,
     ],
   );
 
@@ -2685,6 +2732,14 @@ function readEventNumber(value: unknown): number | null {
 
 function readEventBoolean(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null;
+}
+
+function isRunCanvasNodeWorkflowUpdate(reason: string | null): boolean {
+  return (
+    reason === 'run_canvas_node' ||
+    reason === 'run_canvas_node_error' ||
+    reason === 'run_canvas_node_cancelled'
+  );
 }
 
 function readPublicErrorName(value: unknown): PublicErrorFields['errorName'] | undefined {

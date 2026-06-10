@@ -99,6 +99,7 @@ const IMPORTANT_TOOL_NAMES = new Set([
   'search_my_materials',
   'search_web',
   'write_canvas',
+  'run_canvas_node',
 ]);
 
 function clampPanelWidth(value: number): number {

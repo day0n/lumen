@@ -1081,17 +1081,6 @@ function handleEvent(
       const durationMs = readNumber(env.data.duration_ms);
       const error = readString(env.data.error);
       const bytes = readNumber(env.data.output_size_bytes);
-      if (toolName === 'write_canvas' && status === 'success' && handlers.workflowProjectId) {
-        notifyWorkflowHandler(
-          'workflow_update',
-          {
-            project_id: handlers.workflowProjectId,
-            reason: 'write_canvas',
-            source: 'tool_finish',
-          },
-          handlers,
-        );
-      }
       updateMessage(assistantId, (prev) => ({
         events: upsertTimeline(prev.events, {
           id: `tool.${toolCallId}`,
