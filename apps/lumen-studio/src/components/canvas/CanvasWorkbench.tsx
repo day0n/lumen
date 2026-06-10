@@ -1239,8 +1239,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
   const handleNodeStateChange = useCallback(
     (nodeId: string, state: NodeState) => {
-      setNodes((currentNodes) =>
-        currentNodes.map((node) => {
+      setNodes((currentNodes) => {
+        const nextNodes = currentNodes.map((node) => {
           if (node.id !== nodeId) return node;
           return {
             ...node,
@@ -1259,8 +1259,10 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
               progress: state.progress,
             },
           };
-        }),
-      );
+        });
+        nodesRef.current = nextNodes;
+        return nextNodes;
+      });
     },
     [setNodes],
   );
@@ -1623,7 +1625,11 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
 
   const arrangeRenderedCanvas = useCallback(
     (duration = 320) => {
-      setNodes((currentNodes) => arrangeCanvasNodes(currentNodes, reactFlow.getEdges()));
+      setNodes((currentNodes) => {
+        const arranged = arrangeCanvasNodes(currentNodes, reactFlow.getEdges());
+        nodesRef.current = arranged;
+        return arranged;
+      });
       window.requestAnimationFrame(() => {
         reactFlow.fitView({ padding: 0.28, duration, maxZoom: 1 });
       });
@@ -1656,6 +1662,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
         withCanvasNodeLayering(project.canvas.nodes),
         project.canvas.edges,
       );
+      nodesRef.current = arranged;
       setEdges(nextEdges);
       setNodes(arranged);
       window.requestAnimationFrame(() => {
@@ -1742,10 +1749,14 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       const state = mapWorkflowResultToNodeState(result);
       if (!state) return false;
 
+      const currentNodes = nodesRef.current;
+      if (currentNodes.length === 0 || !currentNodes.some((node) => node.id === nodeId)) {
+        await refreshAgentWorkflowIfMissing(nodeId, { force: true });
+      }
       handleNodeStateChange(nodeId, state);
       return true;
     },
-    [currentProjectId, handleNodeStateChange, locale],
+    [currentProjectId, handleNodeStateChange, locale, refreshAgentWorkflowIfMissing],
   );
 
   const handleAgentWorkflowUpdate = useCallback(
