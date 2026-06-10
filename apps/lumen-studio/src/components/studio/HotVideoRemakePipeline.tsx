@@ -896,19 +896,20 @@ function StoryboardStage({
           const sceneOutput = findSceneOutput(job.outputs.scenes, scene.index);
           const overrideValue = job.plan.sceneImagePrompts?.[sceneIdx];
           const task = findTaskBySliceKey(tasks, sliceKey);
+          const effectivePrompt = overrideValue ?? task?.inputPrompt ?? scene.action ?? null;
           return (
             <div key={sliceKey} className="space-y-2">
               <SlicePreview
                 copy={copy}
                 title={`${copy.scene} ${scene.index}`}
-                subtitle={scene.action}
+                subtitle={effectivePrompt ?? undefined}
                 task={task}
                 outputUrl={sceneOutput?.imageUrl}
                 kind="image"
                 zoomable
                 subtitleAction={
                   <PromptOverrideBar
-                    effectivePrompt={overrideValue ?? task?.inputPrompt ?? null}
+                    effectivePrompt={effectivePrompt}
                     overrideValue={overrideValue || undefined}
                     onSave={(value) =>
                       onUpdateScene({ sceneIndex: scene.index, imagePrompt: value })
@@ -981,18 +982,19 @@ function VideoStage({
           const sceneOutput = findSceneOutput(job.outputs.scenes, scene.index);
           const overrideValue = job.plan.sceneVideoPrompts?.[sceneIdx];
           const task = findTaskBySliceKey(tasks, sliceKey);
+          const effectivePrompt = overrideValue ?? task?.inputPrompt ?? scene.dialogue ?? null;
           return (
             <div key={sliceKey} className="space-y-2">
               <SlicePreview
                 copy={copy}
                 title={`${copy.scene} ${scene.index}`}
-                subtitle={scene.dialogue}
+                subtitle={effectivePrompt ?? undefined}
                 task={task}
                 outputUrl={sceneOutput?.videoUrl}
                 kind="video"
                 subtitleAction={
                   <PromptOverrideBar
-                    effectivePrompt={overrideValue ?? task?.inputPrompt ?? null}
+                    effectivePrompt={effectivePrompt}
                     overrideValue={overrideValue || undefined}
                     onSave={(value) =>
                       onUpdateScene({ sceneIndex: scene.index, videoPrompt: value })
@@ -1370,7 +1372,9 @@ function SlicePreview({
       {subtitle || subtitleAction ? (
         <div className="relative border-t border-white/[0.06] px-3 py-2 text-[11px] leading-4 text-white/52">
           {subtitle ? (
-            <div className={subtitleAction ? 'pr-9' : undefined}>{subtitle}</div>
+            <div className={cn('line-clamp-4 break-words', subtitleAction && 'pr-9')}>
+              {subtitle}
+            </div>
           ) : (
             // 没 subtitle 文本时也撑一行高度，让铅笔按钮有挂靠区域
             <div aria-hidden className="h-5" />
