@@ -764,6 +764,25 @@ function isWorkflowNodeBusy(status?: LumenNodeData['status']) {
   return status === 'queued' || status === 'running';
 }
 
+function isWorkflowNodeTerminal(status?: LumenNodeData['status']) {
+  return status === 'success' || status === 'error' || status === 'cancelled';
+}
+
+function shouldIgnoreStaleBusyState(current: LumenNodeData, incoming: NodeState) {
+  if (incoming.status !== 'running' || !isWorkflowNodeTerminal(current.status)) return false;
+
+  const currentRunId =
+    typeof current.activeRunId === 'string' && current.activeRunId.trim()
+      ? current.activeRunId
+      : null;
+  const incomingRunId =
+    typeof incoming.activeRunId === 'string' && incoming.activeRunId.trim()
+      ? incoming.activeRunId
+      : null;
+
+  return currentRunId === null || incomingRunId !== currentRunId;
+}
+
 function getNodeOutputCount(node: LumenNode | undefined) {
   const output = node?.data.output?.trim();
   return output && !isBlobUrl(output) ? 1 : 0;
@@ -1242,6 +1261,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       setNodes((currentNodes) => {
         const nextNodes = currentNodes.map((node) => {
           if (node.id !== nodeId) return node;
+          if (shouldIgnoreStaleBusyState(node.data, state)) return node;
           return {
             ...node,
             data: {

@@ -234,6 +234,7 @@ export class WorkflowEngineClient {
     const cfg = getConfig();
     const agentRunId = getAgentRequestContext()?.runId ?? null;
     let settled = false;
+    let eventDeliveryChain = Promise.resolve();
 
     try {
       await registerWorkflowRunForAgentRun(this.redis, agentRunId, input.runId);
@@ -248,33 +249,47 @@ export class WorkflowEngineClient {
           10 * 60 * 1000,
         );
 
+        const deliverEngineEvent = (event: ServerEvent): Promise<void> => {
+          eventDeliveryChain = eventDeliveryChain.then(async () => {
+            try {
+              await this.handleEngineEvent(input.projectId, input.runId, event, {
+                nodeTitle: input.nodeTitle,
+                nodeKind: input.nodeKind,
+              });
+            } catch (err) {
+              logger.warn(
+                { err, runId: input.runId, nodeId: input.nodeId },
+                'workflow UI event failed',
+              );
+            }
+          });
+          return eventDeliveryChain;
+        };
+
         subscriber.on('message', (_channel, raw) => {
           if (settled) return;
           try {
             const event = JSON.parse(raw) as ServerEvent;
-            void this.handleEngineEvent(input.projectId, input.runId, event, {
-              nodeTitle: input.nodeTitle,
-              nodeKind: input.nodeKind,
-            });
+            const delivered = deliverEngineEvent(event);
             if (event.event === 'node:done' && event.nodeId === input.nodeId) {
               settled = true;
               clearTimeout(timer);
-              resolve(event.output);
+              void delivered.then(() => resolve(event.output));
             }
             if (event.event === 'node:error' && event.nodeId === input.nodeId) {
               settled = true;
               clearTimeout(timer);
-              reject(new WorkflowNodeExecutionError(event));
+              void delivered.then(() => reject(new WorkflowNodeExecutionError(event)));
             }
             if (event.event === 'node:cancel' && event.nodeId === input.nodeId) {
               settled = true;
               clearTimeout(timer);
-              reject(new WorkflowNodeCancelledError(event.reason));
+              void delivered.then(() => reject(new WorkflowNodeCancelledError(event.reason)));
             }
             if (event.event === 'flow:cancel') {
               settled = true;
               clearTimeout(timer);
-              reject(new WorkflowNodeCancelledError(event.reason));
+              void delivered.then(() => reject(new WorkflowNodeCancelledError(event.reason)));
             }
           } catch (err) {
             settled = true;
