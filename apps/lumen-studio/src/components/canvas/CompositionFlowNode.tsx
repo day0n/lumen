@@ -48,6 +48,13 @@ function isWorkflowNodeBusy(status?: NodeStatus) {
   return status === 'queued' || status === 'running';
 }
 
+function toCompositionAspectRatio(aspectRatio: string | undefined) {
+  if (aspectRatio === '16:9') return '16 / 9';
+  if (aspectRatio === '1:1') return '1 / 1';
+  if (aspectRatio === '4:5') return '4 / 5';
+  return '9 / 16';
+}
+
 export function CompositionFlowNode(props: {
   data: CompositionNodeData;
   id: string;
@@ -102,6 +109,7 @@ function CompositionFlowNodeImpl({
     () => (timeline?.clips ? getTimelineDuration(timeline.clips) : 0),
     [timeline?.clips],
   );
+  const previewAspectRatio = toCompositionAspectRatio(timeline?.aspectRatio);
 
   const nodeTitle =
     data.title && data.title !== t('canvas.nodeKinds.composition')
@@ -183,20 +191,6 @@ function CompositionFlowNodeImpl({
         {upstreamOutputCount}
       </div>
 
-      <button
-        type="button"
-        data-skip-node-select="true"
-        className="nodrag nopan absolute -top-4 right-14 z-[90] flex h-8 items-center gap-1.5 rounded-full bg-white px-3 text-[11px] font-black text-[#111315] shadow-[0_12px_30px_rgba(0,0,0,0.32)] transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-60"
-        disabled={uploading}
-        onClick={(event) => {
-          event.stopPropagation();
-          uploadInputRef.current?.click();
-        }}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        {uploading ? <IconLoader2 size={14} className="animate-spin" /> : <IconUpload size={14} />}
-        {uploading ? t('materials.uploading') : t('canvas.node.upload')}
-      </button>
       <input
         ref={uploadInputRef}
         className="sr-only"
@@ -222,41 +216,85 @@ function CompositionFlowNodeImpl({
         }`}
       >
         {lowDetail ? <NodeLodOverlay kind="composition" title={nodeTitle} /> : null}
-        <div className="border-b border-white/[0.06] p-2.5">
-          <input
-            aria-label={t('canvas.node.title')}
-            className="nodrag nopan mb-2 h-6 w-full bg-transparent px-1 text-[12px] font-bold text-white/78 outline-none"
-            onChange={(event) => updateNodeData(id, { title: event.target.value })}
-            value={nodeTitle}
-          />
-          <button
-            type="button"
-            data-skip-node-select="true"
-            className="relative flex w-full cursor-grab flex-col items-center justify-center gap-2 overflow-hidden rounded-[10px] bg-[linear-gradient(160deg,rgba(155,234,255,0.12),rgba(28,29,34,0.98)_54%,rgba(8,9,10,0.9))] px-4 py-6 ring-1 ring-white/[0.06] transition-colors hover:ring-[#9beaff]/28 active:cursor-grabbing"
-            onClick={handleOpenEditor}
-          >
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#9beaff]/14 text-[#9beaff] ring-1 ring-[#9beaff]/24">
-              <IconScissors size={22} stroke={2.2} />
-            </span>
-            <span className="text-[13px] font-bold text-white/86">
-              {t('canvas.composition.open')}
-            </span>
-            <span className="text-[11px] text-white/42">
-              {clipCount} {t('canvas.composition.clips')} · {totalDuration.toFixed(1)}s
-            </span>
-            {output && !output.startsWith('blob:') ? (
-              <video
-                className="pointer-events-none mt-1 max-h-24 w-full rounded-[8px] object-cover"
-                src={output}
-                muted
-                playsInline
-                preload="metadata"
-              >
-                <track kind="captions" />
-              </video>
-            ) : null}
-            {isNodeBusy ? <div className="lumen-node-running-overlay absolute inset-0" /> : null}
-          </button>
+        <div className="border-b border-white/[0.06] px-2.5 py-2">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <input
+                aria-label={t('canvas.node.title')}
+                className="nodrag nopan h-6 w-full bg-transparent px-1 text-[12px] font-bold text-white/82 outline-none"
+                onChange={(event) => updateNodeData(id, { title: event.target.value })}
+                value={nodeTitle}
+              />
+              <div className="truncate px-1 text-[10px] font-bold text-white/38">
+                {clipCount} {t('canvas.composition.clips')} · {totalDuration.toFixed(1)}s
+              </div>
+            </div>
+            <button
+              type="button"
+              aria-label={t('canvas.composition.open')}
+              title={t('canvas.composition.open')}
+              data-skip-node-select="true"
+              className="nodrag nopan flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-[#9beaff]/12 px-2.5 text-[10px] font-black text-[#9beaff] ring-1 ring-[#9beaff]/24 transition-colors hover:bg-[#9beaff]/18 hover:ring-[#9beaff]/38"
+              onClick={handleOpenEditor}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <IconScissors size={14} stroke={2.4} />
+              <span>{t('canvas.composition.open')}</span>
+            </button>
+            <button
+              type="button"
+              aria-label={uploading ? t('materials.uploading') : t('canvas.node.upload')}
+              title={uploading ? t('materials.uploading') : t('canvas.node.upload')}
+              data-skip-node-select="true"
+              className="nodrag nopan flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/66 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.14] hover:text-white disabled:cursor-not-allowed disabled:opacity-55"
+              disabled={uploading}
+              onClick={(event) => {
+                event.stopPropagation();
+                uploadInputRef.current?.click();
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              {uploading ? (
+                <IconLoader2 size={14} className="animate-spin" />
+              ) : (
+                <IconUpload size={14} />
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div
+          className="relative overflow-hidden bg-[#090a0c]"
+          style={{ aspectRatio: previewAspectRatio }}
+        >
+          {output ? (
+            <video
+              className="absolute inset-0 h-full w-full bg-black object-cover"
+              src={output}
+              controls
+              playsInline
+              preload="metadata"
+            >
+              <track kind="captions" />
+            </video>
+          ) : (
+            <button
+              type="button"
+              data-skip-node-select="true"
+              className="nodrag nopan absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[linear-gradient(160deg,rgba(155,234,255,0.12),rgba(28,29,34,0.98)_58%,rgba(8,9,10,0.96))] text-white/54 transition-colors hover:text-white/78"
+              onClick={handleOpenEditor}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#9beaff]/12 text-[#9beaff] ring-1 ring-[#9beaff]/24">
+                <IconScissors size={20} stroke={2.2} />
+              </span>
+              <span className="text-[11px] font-black">{t('canvas.composition.open')}</span>
+            </button>
+          )}
+          <div className="pointer-events-none absolute left-2 top-2 rounded-full bg-black/58 px-2 py-1 text-[10px] font-black text-white/76 ring-1 ring-white/[0.08]">
+            {timeline?.aspectRatio ?? '9:16'}
+          </div>
+          {isNodeBusy ? <div className="lumen-node-running-overlay absolute inset-0" /> : null}
         </div>
 
         <div className="flex items-center gap-2 p-2.5">
