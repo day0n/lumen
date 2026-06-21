@@ -16,6 +16,7 @@ import { DEFAULT_LOCALE, type Locale } from '@/i18n/routing';
 import { requireStudioUser } from './auth';
 import { getProjectHistoryRepository, getProjectRepository, getStudioCache } from './db';
 import { traceStudioStep } from './telemetry';
+import { reconcileCanvasWithWorkflowResults } from './workflow-canvas-reconcile';
 
 const PROJECT_CACHE_TTL_SECONDS = 30;
 const PROJECT_LIST_CACHE_TTL_SECONDS = 30;
@@ -120,12 +121,13 @@ export async function getStudioProject(
   const cacheKey = projectCacheKey(user.id, projectId);
   const cached = options.bypassCache ? null : await cache.get(cacheKey, ProjectRecordSchema);
 
-  if (cached) return cached;
+  if (cached) return reconcileProjectRecordCanvas(cached);
 
   const repository = await getProjectRepository();
   const project = await repository.get(user.id, projectId);
-  if (project) await cache.set(cacheKey, project, PROJECT_CACHE_TTL_SECONDS);
-  return project;
+  const reconciled = project ? await reconcileProjectRecordCanvas(project) : null;
+  if (reconciled) await cache.set(cacheKey, reconciled, PROJECT_CACHE_TTL_SECONDS);
+  return reconciled;
 }
 
 export async function updateStudioProject(
@@ -136,7 +138,20 @@ export async function updateStudioProject(
   const repository = await getProjectRepository();
   const cache = getStudioCache();
 
-  const project = await repository.update(user.id, projectId, input);
+  let nextInput = input;
+  if (input.canvas !== undefined) {
+    const exists = await repository.exists(user.id, projectId);
+    if (!exists) {
+      await cache.delete(projectCacheKey(user.id, projectId));
+      return null;
+    }
+    nextInput = {
+      ...input,
+      canvas: await reconcileCanvasWithWorkflowResults(projectId, input.canvas),
+    };
+  }
+
+  const project = await repository.update(user.id, projectId, nextInput);
   const cacheKey = projectCacheKey(user.id, projectId);
 
   if (project) await cache.set(cacheKey, project, PROJECT_CACHE_TTL_SECONDS);
@@ -144,7 +159,7 @@ export async function updateStudioProject(
 
   if (project) await clearProjectListCache(user.id);
 
-  if (project && input.canvas !== undefined) {
+  if (project && nextInput.canvas !== undefined) {
     await recordProjectHistory({
       action: 'updated',
       ownerId: user.id,
@@ -283,6 +298,12 @@ async function clearProjectListCache(ownerId: string) {
       getStudioCache().delete(projectListCacheKey(ownerId, { limit })),
     ),
   );
+}
+
+async function reconcileProjectRecordCanvas(project: ProjectRecord): Promise<ProjectRecord> {
+  const canvas = await reconcileCanvasWithWorkflowResults(project.id, project.canvas);
+  if (canvas === project.canvas) return project;
+  return ProjectRecordSchema.parse({ ...project, canvas });
 }
 
 function normalizeProjectListQuery(query?: string) {

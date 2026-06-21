@@ -1314,6 +1314,10 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       })),
     [nodes],
   );
+  const hasBusyWorkflowNodes = useMemo(
+    () => nodes.some((node) => isWorkflowNodeBusy(node.data.status)),
+    [nodes],
+  );
 
   useWorkflowReconcile({
     projectId: currentProjectId,
@@ -2014,7 +2018,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       !isCanvasHydrated ||
       !authReady ||
       !isSignedIn ||
-      canvasMediaUploading
+      canvasMediaUploading ||
+      hasBusyWorkflowNodes
     ) {
       return;
     }
@@ -2073,6 +2078,7 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
     canvasMediaUploading,
     currentProjectId,
     edges,
+    hasBusyWorkflowNodes,
     isCanvasHydrated,
     isSignedIn,
     locale,
