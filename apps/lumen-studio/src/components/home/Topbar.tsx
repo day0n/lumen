@@ -9,7 +9,7 @@ import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
 import { isLoginRequiredPath } from '@/lib/protected-paths';
 import { UserButton } from '@clerk/nextjs';
-import { IconChartBar, IconDeviceTv, IconFolder, IconHome, IconPhoto } from '@tabler/icons-react';
+import { IconDeviceTv, IconFolder, IconHome, IconPhoto } from '@tabler/icons-react';
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -44,13 +44,6 @@ const navItems = [
     appHref: '/app/hot-videos',
     activePaths: ['/hot-videos', '/app/hot-videos'],
     icon: IconDeviceTv,
-  },
-  {
-    labelKey: 'nav.dashboard',
-    href: '/dashboard',
-    appHref: '/app/dashboard',
-    activePaths: ['/dashboard', '/app/dashboard'],
-    icon: IconChartBar,
   },
 ];
 

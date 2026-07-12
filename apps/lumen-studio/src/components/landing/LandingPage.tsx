@@ -4,7 +4,6 @@ import { LandingNav } from '@/components/landing/LandingNav';
 import { ParticleStory } from '@/components/landing/ParticleStory';
 import {
   APP_CANVAS_NEW_ROUTE,
-  APP_DASHBOARD_ROUTE,
   APP_HOME_ROUTE,
   APP_HOT_VIDEOS_ROUTE,
   APP_MATERIALS_ROUTE,
@@ -29,7 +28,6 @@ const footerGroups = [
     links: [
       { href: APP_HOT_VIDEOS_ROUTE, labelKey: 'landing.footerGroups.hotAssets' },
       { href: APP_MATERIALS_ROUTE, labelKey: 'landing.footerGroups.materials' },
-      { href: APP_DASHBOARD_ROUTE, labelKey: 'landing.footerGroups.dashboard' },
     ],
   },
 ] as const;
