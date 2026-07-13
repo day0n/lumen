@@ -5,8 +5,8 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { NodeStatus, PublicErrorFields } from '@lumen/shared/domain';
 
 import {
-  type WorkflowNodeResultPayload,
   mapWorkflowResultToNodeState,
+  readWorkflowStatusResults,
   shouldApplyWorkflowReconcile,
   shouldReconcileWorkflowNode,
 } from './reconcile-workflow-nodes';
@@ -54,11 +54,10 @@ export function useWorkflowReconcile({
     const response = await fetch(
       `/api/projects/${projectId}/workflow-status?nodeIds=${encodeURIComponent(nodeIds)}`,
       { cache: 'no-store' },
-    );
-    if (!response.ok) return;
+    ).catch(() => null);
+    if (!response?.ok) return;
 
-    const payload = (await response.json()) as { results?: WorkflowNodeResultPayload[] };
-    const results = payload.results ?? [];
+    const results = readWorkflowStatusResults(await response.json().catch(() => null));
     const nodeMap = new Map(nodesRef.current.map((node) => [node.id, node]));
 
     for (const result of results) {

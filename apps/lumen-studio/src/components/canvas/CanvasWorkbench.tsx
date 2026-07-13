@@ -105,8 +105,8 @@ import {
 import { ChatPanel } from '@/features/agent-chat/ChatPanel';
 import { VideoCompositionModal } from '@/features/video-composition/VideoCompositionModal';
 import {
-  type WorkflowNodeResultPayload,
   mapWorkflowResultToNodeState,
+  readWorkflowStatusResults,
 } from '@/features/workflow/reconcile-workflow-nodes';
 import { useWorkflowReconcile } from '@/features/workflow/use-workflow-reconcile';
 import { useWorkflowWs } from '@/features/workflow/use-workflow-ws';
@@ -1763,11 +1763,8 @@ function CanvasWorkbenchInner({ projectId, createOnMount }: CanvasWorkbenchProps
       }
       if (!response.ok) return false;
 
-      const payload = (await response.json().catch(() => null)) as {
-        results?: WorkflowNodeResultPayload[];
-      } | null;
-      if (!payload) return false;
-      const result = payload.results?.find((item) => item.nodeId === nodeId);
+      const results = readWorkflowStatusResults(await response.json().catch(() => null));
+      const result = results.find((item) => item.nodeId === nodeId);
       if (!result) return false;
 
       const state = mapWorkflowResultToNodeState(result);

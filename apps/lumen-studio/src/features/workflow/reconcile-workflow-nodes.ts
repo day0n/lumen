@@ -18,6 +18,15 @@ export interface ReconcileNodeState extends PublicErrorFields {
   progress: number;
 }
 
+export function readWorkflowStatusResults(payload: unknown): WorkflowNodeResultPayload[] {
+  if (!isRecord(payload) || payload.ok !== true || !isRecord(payload.data)) return [];
+  const { results } = payload.data;
+  if (!Array.isArray(results)) return [];
+  return results
+    .map(parseWorkflowNodeResultPayload)
+    .filter((result): result is WorkflowNodeResultPayload => result !== null);
+}
+
 const TERMINAL_CANVAS_STATUSES = new Set<NodeStatus>(['success', 'error', 'cancelled']);
 const BUSY_CANVAS_STATUSES = new Set<NodeStatus>(['queued', 'running']);
 
@@ -97,4 +106,51 @@ function normalizeWorkflowResultStatus(status: string): NodeStatus | null {
     default:
       return null;
   }
+}
+
+function parseWorkflowNodeResultPayload(value: unknown): WorkflowNodeResultPayload | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.nodeId !== 'string' ||
+    typeof value.runId !== 'string' ||
+    typeof value.status !== 'string' ||
+    (typeof value.output !== 'string' && value.output !== null) ||
+    (typeof value.error !== 'string' && value.error !== null) ||
+    typeof value.progress !== 'number' ||
+    !Number.isFinite(value.progress) ||
+    typeof value.updatedAt !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    nodeId: value.nodeId,
+    runId: value.runId,
+    status: value.status,
+    output: value.output,
+    error: value.error,
+    progress: value.progress,
+    updatedAt: value.updatedAt,
+    ...(typeof value.errorCode === 'number' && Number.isInteger(value.errorCode)
+      ? { errorCode: value.errorCode }
+      : {}),
+    ...(isPublicErrorName(value.errorName) ? { errorName: value.errorName } : {}),
+    ...(typeof value.errorI18nKey === 'string' ? { errorI18nKey: value.errorI18nKey } : {}),
+    ...(typeof value.retryable === 'boolean' ? { retryable: value.retryable } : {}),
+    ...(typeof value.attempts === 'number' && Number.isInteger(value.attempts) && value.attempts > 0
+      ? { attempts: value.attempts }
+      : {}),
+  };
+}
+
+function isPublicErrorName(value: unknown): value is NonNullable<PublicErrorFields['errorName']> {
+  return (
+    value === 'content_blocked' ||
+    value === 'real_person_detected' ||
+    value === 'model_execution_failed'
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
