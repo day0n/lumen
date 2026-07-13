@@ -13,6 +13,7 @@ import {
   ProjectRepository,
   RemakeJobRepository,
   UserRepository,
+  WorkflowNodeResultRepository,
   getMongoDatabase,
   getRedisClient,
 } from '@lumen/db';
@@ -91,6 +92,11 @@ export const getMaterialAssetRepository = createRepositoryLoader(async () => {
   const repository = new MaterialAssetRepository(db);
   await repository.ensureIndexes();
   return repository;
+});
+
+export const getWorkflowNodeResultRepository = createRepositoryLoader(async () => {
+  const db = await getWorkflowDb();
+  return new WorkflowNodeResultRepository(db);
 });
 
 export const getProjectHistoryRepository = createRepositoryLoader(async () => {

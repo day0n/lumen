@@ -1,13 +1,12 @@
 import 'server-only';
 
-import {
-  type ProjectCanvas,
-  type ProjectHistoryRecord,
-  type ProjectHistorySummaryRecord,
-  type ProjectListRecord,
-  type ProjectRecord,
-  ProjectRecordSchema,
-  type UpdateProjectInput,
+import type {
+  ProjectCanvas,
+  ProjectHistoryRecord,
+  ProjectHistorySummaryRecord,
+  ProjectListRecord,
+  ProjectRecord,
+  UpdateProjectInput,
 } from '@lumen/db';
 import { projectDetailCacheKey } from '@lumen/shared/project-cache';
 
@@ -16,7 +15,7 @@ import { DEFAULT_LOCALE, type Locale } from '@/i18n/routing';
 import { requireStudioUser } from './auth';
 import { getProjectHistoryRepository, getProjectRepository, getStudioCache } from './db';
 import { ensureProjectShareWithCacheInvalidation } from './project-cache-mutations';
-import { getStudioProjectQueries } from './project-query-runtime';
+import { getStudioProjectDetailQueries, getStudioProjectQueries } from './project-query-runtime';
 import { traceStudioStep } from './telemetry';
 import { reconcileCanvasWithWorkflowResults } from './workflow-canvas-reconcile';
 
@@ -77,17 +76,7 @@ export async function getStudioProject(
   options: { bypassCache?: boolean } = {},
 ): Promise<ProjectRecord | null> {
   const user = await requireStudioUser();
-  const cache = getStudioCache();
-  const cacheKey = projectDetailCacheKey(user.id, projectId);
-  const cached = options.bypassCache ? null : await cache.get(cacheKey, ProjectRecordSchema);
-
-  if (cached) return reconcileProjectRecordCanvas(cached);
-
-  const repository = await getProjectRepository();
-  const project = await repository.get(user.id, projectId);
-  const reconciled = project ? await reconcileProjectRecordCanvas(project) : null;
-  if (reconciled) await cache.set(cacheKey, reconciled, PROJECT_CACHE_TTL_SECONDS);
-  return reconciled;
+  return getStudioProjectDetailQueries().getProject(user.id, projectId, options);
 }
 
 export async function updateStudioProject(
@@ -228,12 +217,6 @@ export async function deleteStudioProject(projectId: string): Promise<boolean> {
 
 async function clearProjectListCache(ownerId: string) {
   await getStudioProjectQueries().invalidateProjectLists(ownerId);
-}
-
-async function reconcileProjectRecordCanvas(project: ProjectRecord): Promise<ProjectRecord> {
-  const canvas = await reconcileCanvasWithWorkflowResults(project.id, project.canvas);
-  if (canvas === project.canvas) return project;
-  return ProjectRecordSchema.parse({ ...project, canvas });
 }
 
 async function recordProjectHistory({

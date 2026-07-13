@@ -10,6 +10,7 @@ export * from './repositories/projectHistory.js';
 export * from './repositories/projects.js';
 export * from './repositories/remakeJobs.js';
 export * from './repositories/users.js';
+export { WorkflowNodeResultRepository } from './repositories/workflowNodeResults.js';
 export * from './schema/homeFeatured.js';
 export * from './schema/homeWorkflowTemplate.js';
 export * from './schema/hotVideos.js';

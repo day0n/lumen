@@ -14,9 +14,17 @@ import {
   type UpsertWorkflowMaterialAssetInput,
   UpsertWorkflowMaterialAssetInputSchema,
 } from '../schema/materialAsset.js';
+import {
+  WORKFLOW_NODE_RESULTS_COLLECTION,
+  type WorkflowNodeResultDocument,
+  WorkflowNodeResultRepository,
+  type WorkflowNodeResultSnapshot,
+} from './workflowNodeResults.js';
+
+export { WORKFLOW_NODE_RESULTS_COLLECTION } from './workflowNodeResults.js';
+export type { WorkflowNodeResultSnapshot } from './workflowNodeResults.js';
 
 export const MATERIAL_ASSETS_COLLECTION = 'studio_material_assets';
-export const WORKFLOW_NODE_RESULTS_COLLECTION = 'workflow_node_results';
 
 /** Atlas Vector Search 索引名（建在 studio_material_assets.embedding 上）。 */
 export const MATERIAL_ASSETS_VECTOR_INDEX = 'material_assets_vector_index';
@@ -28,53 +36,12 @@ export const MATERIAL_EMBEDDING_MODEL = 'text-embedding-3-small';
 const WORKFLOW_RESULT_MATERIAL_KINDS = ['image', 'video', 'audio'] as const;
 type WorkflowResultMaterialKind = (typeof WORKFLOW_RESULT_MATERIAL_KINDS)[number];
 
-export interface WorkflowNodeResultSnapshot {
-  nodeId: string;
-  runId: string;
-  status: string;
-  output: string | null;
-  error: string | null;
-  errorCode?: number;
-  errorName?: string;
-  errorI18nKey?: string;
-  retryable?: boolean;
-  attempts?: number;
-  progress: number;
-  updatedAt: string;
-}
-
-interface WorkflowNodeResultDocument {
-  _id: string;
-  run_id: string;
-  project_id?: string | null;
-  workflow_id?: string | null;
-  user_id?: string | null;
-  node_id: string;
-  node_type?: string;
-  status: string;
-  input?: Record<string, unknown>;
-  output_type?: string;
-  output_value?: string;
-  error?: string;
-  error_code?: number;
-  error_name?: string;
-  error_i18n_key?: string;
-  retryable?: boolean;
-  attempts?: number;
-  asset?: {
-    key?: string;
-    url?: string;
-    content_type?: string;
-    size?: number;
-    uploaded_at?: Date;
-  };
-  created_at?: Date;
-  updated_at?: Date;
-  completed_at?: Date;
-}
-
 export class MaterialAssetRepository {
-  constructor(private readonly db: Db) {}
+  private readonly workflowNodeResults: WorkflowNodeResultRepository;
+
+  constructor(private readonly db: Db) {
+    this.workflowNodeResults = new WorkflowNodeResultRepository(db);
+  }
 
   async ensureIndexes(): Promise<void> {
     const collection = this.collection();
@@ -84,33 +51,7 @@ export class MaterialAssetRepository {
     await collection.createIndex({ owner_id: 1, source: 1, url: 1 });
     await collection.createIndex({ workflow_id: 1, run_id: 1, node_id: 1 });
 
-    const workflowResults = this.workflowResultCollection();
-    await workflowResults.createIndex({
-      project_id: 1,
-      status: 1,
-      output_type: 1,
-      completed_at: -1,
-    });
-    await workflowResults.createIndex({
-      workflow_id: 1,
-      status: 1,
-      output_type: 1,
-      completed_at: -1,
-    });
-    await workflowResults.createIndex({
-      user_id: 1,
-      project_id: 1,
-      status: 1,
-      output_type: 1,
-      completed_at: -1,
-    });
-    await workflowResults.createIndex({
-      user_id: 1,
-      workflow_id: 1,
-      status: 1,
-      output_type: 1,
-      completed_at: -1,
-    });
+    await this.workflowNodeResults.ensureIndexes();
 
     await this.ensureVectorSearchIndex();
   }
@@ -349,52 +290,7 @@ export class MaterialAssetRepository {
     projectId: string,
     nodeIds: string[],
   ): Promise<WorkflowNodeResultSnapshot[]> {
-    const ids = [...new Set(nodeIds.map((id) => id.trim()).filter(Boolean))];
-    if (ids.length === 0) return [];
-
-    const documents = await this.workflowResultCollection()
-      .aggregate<{ doc: WorkflowNodeResultDocument }>([
-        {
-          $match: {
-            node_id: { $in: ids },
-            $or: [{ project_id: projectId }, { workflow_id: projectId }],
-          },
-        },
-        // Project early so the $sort/$group stages move much smaller docs.
-        // toWorkflowNodeResultSnapshot only reads these fields; everything
-        // else (notably `input`, which can hold full prompts/base64 payload)
-        // would otherwise be carried through the pipeline for nothing.
-        {
-          $project: {
-            node_id: 1,
-            run_id: 1,
-            status: 1,
-            output_value: 1,
-            asset: 1,
-            error: 1,
-            error_code: 1,
-            error_name: 1,
-            error_i18n_key: 1,
-            retryable: 1,
-            attempts: 1,
-            created_at: 1,
-            updated_at: 1,
-            completed_at: 1,
-          },
-        },
-        { $sort: { updated_at: -1, completed_at: -1, created_at: -1 } },
-        {
-          $group: {
-            _id: '$node_id',
-            doc: { $first: '$$ROOT' },
-          },
-        },
-      ])
-      .toArray();
-
-    return documents
-      .map((entry) => toWorkflowNodeResultSnapshot(entry.doc))
-      .filter((entry): entry is WorkflowNodeResultSnapshot => Boolean(entry));
+    return this.workflowNodeResults.getLatestNodeResultsForProject(projectId, nodeIds);
   }
 
   async deleteUserUpload(ownerId: string, assetId: string): Promise<boolean> {
@@ -413,40 +309,6 @@ export class MaterialAssetRepository {
   private workflowResultCollection() {
     return this.db.collection<WorkflowNodeResultDocument>(WORKFLOW_NODE_RESULTS_COLLECTION);
   }
-}
-
-function toWorkflowNodeResultSnapshot(
-  document: WorkflowNodeResultDocument,
-): WorkflowNodeResultSnapshot | null {
-  const nodeId = normalizedString(document.node_id);
-  const runId = normalizedString(document.run_id);
-  if (!nodeId || !runId) return null;
-
-  const status = normalizedString(document.status) ?? 'idle';
-  const output =
-    normalizedString(document.asset?.url) ?? normalizedString(document.output_value) ?? null;
-  const error = normalizedString(document.error) ?? null;
-  const updatedAt = (
-    document.updated_at ??
-    document.completed_at ??
-    document.created_at ??
-    new Date()
-  ).toISOString();
-
-  return {
-    nodeId,
-    runId,
-    status,
-    output,
-    error,
-    ...(typeof document.error_code === 'number' ? { errorCode: document.error_code } : {}),
-    ...(normalizedString(document.error_name) ? { errorName: document.error_name } : {}),
-    ...(normalizedString(document.error_i18n_key) ? { errorI18nKey: document.error_i18n_key } : {}),
-    ...(typeof document.retryable === 'boolean' ? { retryable: document.retryable } : {}),
-    ...(typeof document.attempts === 'number' ? { attempts: document.attempts } : {}),
-    progress: status === 'success' ? 1 : status === 'running' ? 0.45 : 0,
-    updatedAt,
-  };
 }
 
 function toMaterialAssetRecord(document: MaterialAssetDocument): MaterialAssetRecord {
