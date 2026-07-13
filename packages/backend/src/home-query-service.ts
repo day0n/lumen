@@ -22,6 +22,7 @@ export type TraceStep = <T>(
   name: string,
   operation: string,
   callback: () => T | Promise<T>,
+  attributes?: Record<string, string | number | boolean>,
 ) => Promise<T>;
 
 export interface HomeQueryService<TFeaturedItem, TTemplateList> {

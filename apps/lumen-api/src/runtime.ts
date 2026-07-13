@@ -2,6 +2,7 @@ import {
   createAuthenticatedUserService,
   createHomeQueryService,
   createNotificationService,
+  createProjectQueryService,
   seedDefaultOfficialNotifications,
 } from '@lumen/backend';
 import {
@@ -11,6 +12,8 @@ import {
   HomeWorkflowTemplateRepository,
   JsonCache,
   NotificationRepository,
+  ProjectListRecordSchema,
+  ProjectRepository,
   UserRepository,
   closeMongoDatabases,
   closeRedisClients,
@@ -48,6 +51,11 @@ export function createApiRuntime(config: ApiConfig) {
     await repository.ensureIndexes();
     return repository;
   });
+  const getProjectRepository = memoizeAsync(async () => {
+    const repository = new ProjectRepository(await getDatabase());
+    await repository.ensureIndexes();
+    return repository;
+  });
   const notificationRuntime = createNotificationRepositoryRuntime(
     async () => new NotificationRepository(await getDatabase()),
     seedDefaultOfficialNotifications,
@@ -58,6 +66,7 @@ export function createApiRuntime(config: ApiConfig) {
       getFeaturedRepository(),
       getTemplateRepository(),
       getUserRepository(),
+      getProjectRepository(),
       notificationRuntime.initialize(),
     ]);
   });
@@ -88,12 +97,19 @@ export function createApiRuntime(config: ApiConfig) {
     getRepository: getNotificationRepository,
     tracePrefix: 'api',
   });
+  const projectQueries = createProjectQueryService({
+    cache,
+    getRepository: getProjectRepository,
+    projectListSchema: ProjectListRecordSchema.array(),
+    tracePrefix: 'api',
+  });
 
   return {
     authenticatedUsers,
     homeQueries,
     initialize: initialization.initialize,
     notifications,
+    projectQueries,
     async readiness(): Promise<ReadinessChecks> {
       const checks: ReadinessChecks = { mongo: false, startup: false };
       try {

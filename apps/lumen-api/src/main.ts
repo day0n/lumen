@@ -99,6 +99,7 @@ export async function startApiServer() {
         authenticatedUsers: runtime.authenticatedUsers,
         homeQueries: runtime.homeQueries,
         notifications: runtime.notifications,
+        projectQueries: runtime.projectQueries,
         readiness: runtime.readiness,
         readinessTimeoutMs: config.readinessTimeoutMs,
         release: config.release,

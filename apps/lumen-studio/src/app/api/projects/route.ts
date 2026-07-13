@@ -2,6 +2,7 @@ import { translate } from '@/i18n/messages';
 import { failJson, okJson, readJson, routeError, withApiRouteSpan } from '@/server/http';
 import { resolveRequestLocale } from '@/server/locale';
 import { createStudioProject, listStudioProjects } from '@/server/projects';
+import { parseProjectListSearchParams } from '@lumen/backend';
 import { CreateProjectInputSchema } from '@lumen/db';
 
 export const runtime = 'nodejs';
@@ -10,18 +11,7 @@ export const GET = withApiRouteSpan('GET /api/projects', async (request: Request
   const locale = resolveRequestLocale(request);
   try {
     const url = new URL(request.url);
-    const query = url.searchParams.get('q') ?? undefined;
-    const limitParam = url.searchParams.get('limit');
-    const limit = limitParam ? Number.parseInt(limitParam, 10) : undefined;
-    const folderIdParam = url.searchParams.get('folderId');
-    const folderId =
-      folderIdParam === 'uncategorized'
-        ? 'uncategorized'
-        : folderIdParam && folderIdParam.trim().length > 0
-          ? folderIdParam
-          : undefined;
-
-    const projects = await listStudioProjects({ query, limit, folderId });
+    const projects = await listStudioProjects(parseProjectListSearchParams(url.searchParams));
     return okJson({ projects });
   } catch (error) {
     return routeError(error, locale);

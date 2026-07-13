@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { type ProjectQueryService, createProjectQueryService } from '@lumen/backend';
 import {
   type ProjectCanvas,
   type ProjectHistoryRecord,
@@ -19,8 +20,7 @@ import { traceStudioStep } from './telemetry';
 import { reconcileCanvasWithWorkflowResults } from './workflow-canvas-reconcile';
 
 const PROJECT_CACHE_TTL_SECONDS = 30;
-const PROJECT_LIST_CACHE_TTL_SECONDS = 30;
-const CACHED_PROJECT_LIST_LIMITS = new Set([3, 50]);
+let projectQueries: ProjectQueryService<ProjectListRecord> | null = null;
 
 export interface ListStudioProjectsOptions {
   query?: string;
@@ -43,47 +43,7 @@ export async function listStudioProjects(
   options: ListStudioProjectsOptions = {},
 ): Promise<ProjectListRecord[]> {
   const user = await traceStudioStep('studio.auth.require_user', 'auth', () => requireStudioUser());
-  const limit = options.limit ?? 50;
-  const query = normalizeProjectListQuery(options.query);
-  const folderId = options.folderId;
-  const cache = getStudioCache();
-  const cacheKey = projectListCacheKey(user.id, { query, limit, folderId });
-  const canUseCache = shouldUseProjectListCache({ query, limit, folderId });
-  const cached = canUseCache
-    ? await traceStudioStep(
-        'studio.projects.list.cache_get',
-        'cache.get',
-        () => cache.get(cacheKey, ProjectListRecordSchema.array()),
-        { limit },
-      )
-    : null;
-
-  if (cached) return cached;
-
-  const repository = await getProjectRepository();
-  const projects = await traceStudioStep(
-    'studio.projects.list.db',
-    'db.query',
-    () =>
-      repository.list({
-        ownerId: user.id,
-        query,
-        limit,
-        ...(folderId !== undefined ? { folderId } : {}),
-      }),
-    { limit, has_query: Boolean(query) },
-  );
-
-  if (canUseCache) {
-    await traceStudioStep(
-      'studio.projects.list.cache_set',
-      'cache.set',
-      () => cache.set(cacheKey, projects, PROJECT_LIST_CACHE_TTL_SECONDS),
-      { limit, result_count: projects.length },
-    );
-  }
-
-  return projects;
+  return getStudioProjectQueries().listProjects(user.id, options);
 }
 
 export async function createStudioProject(
@@ -273,31 +233,8 @@ function projectCacheKey(ownerId: string, projectId: string) {
   return `project:${ownerId}:${projectId}`;
 }
 
-function projectListCacheKey(
-  ownerId: string,
-  options: {
-    query?: string;
-    limit: number;
-    folderId?: string;
-  },
-) {
-  return `${projectListCachePrefix(ownerId)}limit:${options.limit}:f:${encodeURIComponent(
-    options.folderId ?? '',
-  )}:q:${encodeURIComponent(options.query ?? '')}`;
-}
-
-function projectListCachePrefix(ownerId: string) {
-  return `projects:${ownerId}:list:`;
-}
-
 async function clearProjectListCache(ownerId: string) {
-  // 只清不带 query 的缓存键（哪些 limit/folderId 组合会进缓存由 shouldUseProjectListCache 决定）。
-  // folderId === undefined 对应"全部"列表，其他视图改动时把它一并失效。
-  await Promise.all(
-    [...CACHED_PROJECT_LIST_LIMITS].map((limit) =>
-      getStudioCache().delete(projectListCacheKey(ownerId, { limit })),
-    ),
-  );
+  await getStudioProjectQueries().invalidateProjectLists(ownerId);
 }
 
 async function reconcileProjectRecordCanvas(project: ProjectRecord): Promise<ProjectRecord> {
@@ -306,22 +243,15 @@ async function reconcileProjectRecordCanvas(project: ProjectRecord): Promise<Pro
   return ProjectRecordSchema.parse({ ...project, canvas });
 }
 
-function normalizeProjectListQuery(query?: string) {
-  const normalized = query?.trim();
-  return normalized ? normalized : undefined;
-}
-
-function shouldUseProjectListCache({
-  query,
-  limit,
-  folderId,
-}: {
-  query?: string;
-  limit: number;
-  folderId?: string;
-}) {
-  // 只对"无搜索 + 全部范围"的请求走缓存，避免按文件夹过滤的键膨胀。
-  return !query && !folderId && CACHED_PROJECT_LIST_LIMITS.has(limit);
+function getStudioProjectQueries(): ProjectQueryService<ProjectListRecord> {
+  projectQueries ??= createProjectQueryService({
+    cache: getStudioCache(),
+    getRepository: getProjectRepository,
+    projectListSchema: ProjectListRecordSchema.array(),
+    trace: traceStudioStep,
+    tracePrefix: 'studio',
+  });
+  return projectQueries;
 }
 
 async function recordProjectHistory({

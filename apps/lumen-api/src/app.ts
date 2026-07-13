@@ -1,13 +1,19 @@
 import {
   type AuthenticatedUser,
   type NotificationService,
+  type ProjectQueryService,
   UnauthorizedError,
   UserProvisioningRequiredError,
   type UserRecordPort,
   apiFailure,
   apiSuccess,
+  parseProjectListSearchParams,
 } from '@lumen/backend';
-import type { OfficialNotificationRecord } from '@lumen/db';
+import {
+  ListProjectsInputSchema,
+  type OfficialNotificationRecord,
+  type ProjectListRecord,
+} from '@lumen/db';
 import { type Context, Hono } from 'hono';
 
 import { DEFAULT_API_READINESS_TIMEOUT_MS, MAX_TIMER_TIMEOUT_MS } from './config.js';
@@ -30,6 +36,7 @@ export interface CreateApiAppOptions {
   authenticatedUsers?: AuthenticatedUsers;
   homeQueries?: HomeQueries;
   notifications?: NotificationService<OfficialNotificationRecord>;
+  projectQueries?: ProjectQueryService<ProjectListRecord>;
   release?: string;
   readiness?: () => Promise<ReadinessChecks> | ReadinessChecks;
   readinessTimeoutMs?: number;
@@ -112,6 +119,38 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
           requestContext.locale,
         );
         return context.json(apiSuccess(result));
+      },
+    );
+  });
+
+  app.get('/api/projects', async (context) => {
+    return withAuthenticatedRoute(
+      context,
+      options.authenticatedUsers,
+      'GET /api/projects',
+      async (authenticated) => {
+        const requestContext = context.get('requestContext');
+        if (!options.projectQueries) {
+          return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
+        }
+
+        const parsed = ListProjectsInputSchema.safeParse({
+          ownerId: authenticated.actor.userId,
+          ...parseProjectListSearchParams(new URL(context.req.url).searchParams),
+        });
+        if (!parsed.success) {
+          return context.json(
+            apiFailure(invalidRequestMessage(requestContext.locale), parsed.error.flatten()),
+            400,
+          );
+        }
+
+        const projects = await options.projectQueries.listProjects(authenticated.actor.userId, {
+          folderId: parsed.data.folderId,
+          limit: parsed.data.limit,
+          query: parsed.data.query,
+        });
+        return context.json(apiSuccess({ projects }));
       },
     );
   });
@@ -282,6 +321,10 @@ function unauthorizedMessage(locale: 'en' | 'zh') {
 
 function invalidRequestOriginMessage(locale: 'en' | 'zh') {
   return locale === 'zh' ? '请求来源无效' : 'Invalid request origin';
+}
+
+function invalidRequestMessage(locale: 'en' | 'zh') {
+  return locale === 'zh' ? '请求数据不符合约束' : 'Request data does not match the expected shape';
 }
 
 function invalidNotificationIdMessage(locale: 'en' | 'zh') {
