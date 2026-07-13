@@ -28,6 +28,12 @@ const apiCacheTtlByPath: Array<[prefix: string, ttlMs: number]> = [
   ['/api/me', 60_000],
 ];
 
+const anonymousCacheableApiPaths = [
+  '/api/home/featured',
+  '/api/home/templates',
+  '/api/tiktok-dashboard',
+];
+
 export function setApiTokenGetter(getter: TokenGetter | null) {
   tokenGetter = getter;
 }
@@ -70,7 +76,12 @@ export function installApiFetchInterceptor() {
       request.headers.set('x-lumen-locale', readLocale());
     }
 
-    if (method === 'GET' && !authCheckRequest) {
+    const useMemoryCache =
+      method === 'GET' &&
+      !authCheckRequest &&
+      canUseApiMemoryCache(apiUrl.pathname, request.headers);
+
+    if (useMemoryCache) {
       const cached = readCachedApiResponse(apiUrl, request.headers);
       if (cached) return cached;
     }
@@ -84,13 +95,20 @@ export function installApiFetchInterceptor() {
     ) {
       await redirectToSignInIfSignedOut();
     }
-    if (method === 'GET' && !authCheckRequest) {
+    if (useMemoryCache) {
       void writeCachedApiResponse(apiUrl, request.headers, response);
-    } else if (response.ok) {
+    } else if (method !== 'GET' && response.ok) {
       clearApiCacheForMutation(apiUrl.pathname);
     }
     return response;
   };
+}
+
+export function canUseApiMemoryCache(pathname: string, headers: Pick<Headers, 'get'>) {
+  const authorization = headers.get('authorization')?.trim() ?? '';
+  if (/^Bearer\s+\S+$/i.test(authorization)) return true;
+
+  return anonymousCacheableApiPaths.includes(pathname);
 }
 
 async function redirectToSignInIfSignedOut() {
