@@ -3,7 +3,7 @@ import { type ServerType, serve } from '@hono/node-server';
 
 import { createApiApp } from './app.js';
 import { readApiConfig } from './config.js';
-import { createApiRuntime } from './runtime.js';
+import { createApiRuntime, initializeApiRuntimeWithRetry } from './runtime.js';
 
 type ShutdownSignal = 'SIGINT' | 'SIGTERM';
 type ShutdownHandler = (signal: ShutdownSignal) => Promise<void>;
@@ -15,6 +15,12 @@ interface ShutdownOptions {
   server: ServerType;
   setExitCode?: (code: number) => void;
   timeoutMs: number;
+}
+
+interface InitializeThenStartOptions<T> {
+  closeRuntime: () => Promise<void>;
+  initialize: () => Promise<void>;
+  start: () => T;
 }
 
 class ShutdownDeadlineError extends Error {}
@@ -60,39 +66,69 @@ export function installShutdownHandlers(
   };
 }
 
-export function startApiServer() {
+export async function initializeThenStart<T>({
+  closeRuntime,
+  initialize,
+  start,
+}: InitializeThenStartOptions<T>): Promise<T> {
+  try {
+    await initialize();
+  } catch (initializationError) {
+    try {
+      await closeRuntime();
+    } catch (closeError) {
+      throw new AggregateError(
+        [initializationError, closeError],
+        'API startup initialization and cleanup failed',
+      );
+    }
+    throw initializationError;
+  }
+
+  return start();
+}
+
+export async function startApiServer() {
   const config = readApiConfig();
   const runtime = createApiRuntime(config);
-  const app = createApiApp({
-    authenticatedUsers: runtime.authenticatedUsers,
-    homeQueries: runtime.homeQueries,
-    readiness: runtime.readiness,
-    readinessTimeoutMs: config.readinessTimeoutMs,
-    release: config.release,
-    requiredReadinessChecks: ['mongo'],
-  });
-
-  const server = serve({
-    fetch: app.fetch,
-    hostname: config.host,
-    port: config.port,
-  });
-  const shutdown = createShutdownHandler({
+  return initializeThenStart({
     closeRuntime: runtime.close,
-    server,
-    timeoutMs: config.shutdownTimeoutMs,
-  });
-  installShutdownHandlers(shutdown);
+    initialize: () => initializeApiRuntimeWithRetry(runtime.initialize),
+    start: () => {
+      const app = createApiApp({
+        authenticatedUsers: runtime.authenticatedUsers,
+        homeQueries: runtime.homeQueries,
+        notifications: runtime.notifications,
+        readiness: runtime.readiness,
+        readinessTimeoutMs: config.readinessTimeoutMs,
+        release: config.release,
+        requiredReadinessChecks: ['mongo', 'startup'],
+        trustedCookieOrigins: config.identityAuthorizedParties,
+      });
 
-  console.info('[lumen-api] listening', {
-    host: config.host,
-    port: config.port,
-    readinessTimeoutMs: config.readinessTimeoutMs,
-    release: config.release,
-    shutdownTimeoutMs: config.shutdownTimeoutMs,
-  });
+      const server = serve({
+        fetch: app.fetch,
+        hostname: config.host,
+        port: config.port,
+      });
+      const shutdown = createShutdownHandler({
+        closeRuntime: runtime.close,
+        server,
+        timeoutMs: config.shutdownTimeoutMs,
+      });
+      installShutdownHandlers(shutdown);
 
-  return { app, server, shutdown };
+      console.info('[lumen-api] listening', {
+        host: config.host,
+        port: config.port,
+        readinessTimeoutMs: config.readinessTimeoutMs,
+        release: config.release,
+        shutdownTimeoutMs: config.shutdownTimeoutMs,
+      });
+
+      return { app, server, shutdown };
+    },
+  });
 }
 
 async function shutdownOnce({
@@ -174,5 +210,8 @@ function forceCloseServer(server: ServerType) {
 
 const entryPath = process.argv[1];
 if (entryPath && import.meta.url === pathToFileURL(entryPath).href) {
-  startApiServer();
+  void startApiServer().catch((error) => {
+    console.error('[lumen-api] startup failed', { error });
+    process.exitCode = 1;
+  });
 }

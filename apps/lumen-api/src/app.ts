@@ -1,17 +1,19 @@
 import {
   type AuthenticatedUser,
+  type NotificationService,
   UnauthorizedError,
   UserProvisioningRequiredError,
   type UserRecordPort,
   apiFailure,
   apiSuccess,
 } from '@lumen/backend';
-import { Hono } from 'hono';
+import type { OfficialNotificationRecord } from '@lumen/db';
+import { type Context, Hono } from 'hono';
 
 import { DEFAULT_API_READINESS_TIMEOUT_MS, MAX_TIMER_TIMEOUT_MS } from './config.js';
 import type { ApiEnv } from './http/context-middleware.js';
 import { requestContextMiddleware } from './http/context-middleware.js';
-import { readSessionToken } from './http/session-token.js';
+import { type SessionCredential, readSessionCredential } from './http/session-token.js';
 
 export type ReadinessChecks = Record<string, boolean>;
 
@@ -27,10 +29,12 @@ export interface AuthenticatedUsers<TUser extends UserRecordPort = UserRecordPor
 export interface CreateApiAppOptions {
   authenticatedUsers?: AuthenticatedUsers;
   homeQueries?: HomeQueries;
+  notifications?: NotificationService<OfficialNotificationRecord>;
   release?: string;
   readiness?: () => Promise<ReadinessChecks> | ReadinessChecks;
   readinessTimeoutMs?: number;
   requiredReadinessChecks?: readonly string[];
+  trustedCookieOrigins?: readonly string[];
 }
 
 export function createApiApp(options: CreateApiAppOptions = {}) {
@@ -40,6 +44,7 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
     options.readinessTimeoutMs ?? DEFAULT_API_READINESS_TIMEOUT_MS,
   );
   const requiredReadinessChecks = options.requiredReadinessChecks;
+  const trustedCookieOrigins = new Set(options.trustedCookieOrigins ?? []);
   const app = new Hono<ApiEnv>();
 
   app.use('*', requestContextMiddleware());
@@ -83,35 +88,88 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
   });
 
   app.get('/api/me', async (context) => {
-    context.header('cache-control', 'private, no-store');
-    const requestContext = context.get('requestContext');
-    if (!options.authenticatedUsers) {
-      return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
-    }
+    return withAuthenticatedRoute(
+      context,
+      options.authenticatedUsers,
+      'GET /api/me',
+      (authenticated) => context.json(apiSuccess({ user: authenticated.user })),
+    );
+  });
 
-    try {
-      const authenticated = await options.authenticatedUsers.requireUser(
-        readSessionToken(context.req.raw),
-      );
-      requestContext.actor = authenticated.actor;
-      return context.json(apiSuccess({ user: authenticated.user }));
-    } catch (error) {
-      if (error instanceof UnauthorizedError) {
-        return context.json(apiFailure(unauthorizedMessage(requestContext.locale)), 401);
-      }
-      if (error instanceof UserProvisioningRequiredError) {
-        return context.json(
-          apiFailure(
-            internalErrorMessage(requestContext.locale),
-            undefined,
-            'USER_PROVISIONING_REQUIRED',
-          ),
-          503,
+  app.get('/api/notifications/official', async (context) => {
+    return withAuthenticatedRoute(
+      context,
+      options.authenticatedUsers,
+      'GET /api/notifications/official',
+      async (authenticated) => {
+        const requestContext = context.get('requestContext');
+        if (!options.notifications) {
+          return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
+        }
+
+        const result = await options.notifications.listOfficial(
+          authenticated.actor.userId,
+          requestContext.locale,
         );
-      }
-      logRouteError('GET /api/me', requestContext.requestId, error);
-      return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 500);
-    }
+        return context.json(apiSuccess(result));
+      },
+    );
+  });
+
+  app.post('/api/notifications/official/:notificationId/read', async (context) => {
+    return withAuthenticatedRoute(
+      context,
+      options.authenticatedUsers,
+      'POST /api/notifications/official/:notificationId/read',
+      async (authenticated, credentialSource) => {
+        const requestContext = context.get('requestContext');
+        if (
+          credentialSource !== 'bearer' &&
+          !trustedCookieOrigins.has(context.req.header('origin') ?? '')
+        ) {
+          return context.json(
+            apiFailure(
+              invalidRequestOriginMessage(requestContext.locale),
+              undefined,
+              'INVALID_REQUEST_ORIGIN',
+            ),
+            403,
+          );
+        }
+
+        const notificationId = context.req.param('notificationId');
+        if (!isValidNotificationId(notificationId)) {
+          return context.json(
+            apiFailure(
+              invalidNotificationIdMessage(requestContext.locale),
+              undefined,
+              'INVALID_NOTIFICATION_ID',
+            ),
+            400,
+          );
+        }
+        if (!options.notifications) {
+          return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
+        }
+
+        const updated = await options.notifications.markOfficialRead(
+          authenticated.actor.userId,
+          notificationId,
+        );
+        if (!updated) {
+          return context.json(
+            apiFailure(
+              notificationNotFoundMessage(requestContext.locale),
+              undefined,
+              'NOTIFICATION_NOT_FOUND',
+            ),
+            404,
+          );
+        }
+
+        return context.json(apiSuccess({ read: true as const }));
+      },
+    );
   });
 
   app.get('/api/home/featured', async (context) => {
@@ -153,12 +211,85 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
   return app;
 }
 
+type CredentialSource = SessionCredential['source'];
+
+async function withAuthenticatedRoute(
+  context: Context<ApiEnv>,
+  authenticatedUsers: AuthenticatedUsers | undefined,
+  route: string,
+  handler: (
+    authenticated: AuthenticatedUser<UserRecordPort>,
+    credentialSource: CredentialSource | null,
+  ) => Response | Promise<Response>,
+): Promise<Response> {
+  context.header('cache-control', 'private, no-store');
+  const requestContext = context.get('requestContext');
+  if (!authenticatedUsers) {
+    return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
+  }
+
+  const credential = readSessionCredential(context.req.raw);
+  try {
+    const authenticated = await authenticatedUsers.requireUser(credential?.token);
+    requestContext.actor = authenticated.actor;
+    return await handler(authenticated, credential?.source ?? null);
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return context.json(apiFailure(unauthorizedMessage(requestContext.locale)), 401);
+    }
+    if (error instanceof UserProvisioningRequiredError) {
+      return context.json(
+        apiFailure(
+          internalErrorMessage(requestContext.locale),
+          undefined,
+          'USER_PROVISIONING_REQUIRED',
+        ),
+        503,
+      );
+    }
+    logRouteError(route, requestContext.requestId, error);
+    return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 500);
+  }
+}
+
+function isValidNotificationId(notificationId: string | undefined): notificationId is string {
+  if (!notificationId || notificationId.length > 120 || notificationId !== notificationId.trim()) {
+    return false;
+  }
+
+  for (const character of notificationId) {
+    const codePoint = character.codePointAt(0);
+    if (
+      character === '/' ||
+      character === '\\' ||
+      codePoint === undefined ||
+      codePoint <= 0x1f ||
+      codePoint === 0x7f
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function internalErrorMessage(locale: 'en' | 'zh') {
   return locale === 'zh' ? '服务暂时不可用' : 'Internal server error';
 }
 
 function unauthorizedMessage(locale: 'en' | 'zh') {
   return locale === 'zh' ? '请先登录' : 'Please sign in first';
+}
+
+function invalidRequestOriginMessage(locale: 'en' | 'zh') {
+  return locale === 'zh' ? '请求来源无效' : 'Invalid request origin';
+}
+
+function invalidNotificationIdMessage(locale: 'en' | 'zh') {
+  return locale === 'zh' ? '通知 ID 无效' : 'Invalid notification ID';
+}
+
+function notificationNotFoundMessage(locale: 'en' | 'zh') {
+  return locale === 'zh' ? '通知不存在' : 'Notification not found';
 }
 
 function logRouteError(route: string, requestId: string, error: unknown) {

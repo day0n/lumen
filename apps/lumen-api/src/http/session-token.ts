@@ -1,8 +1,21 @@
-export function readSessionToken(request: Request): string | null {
+export type SessionCredential =
+  | { source: 'bearer'; token: string }
+  | { source: 'cookie'; token: string }
+  | { source: 'invalid-authorization'; token: null };
+
+export function readSessionCredential(request: Request): SessionCredential | null {
   const authorization = request.headers.get('authorization');
-  return authorization === null
-    ? readSessionCookie(request.headers)
-    : readBearerToken(authorization);
+  if (authorization !== null) {
+    const token = readBearerToken(authorization);
+    return token ? { source: 'bearer', token } : { source: 'invalid-authorization', token: null };
+  }
+
+  const token = readSessionCookie(request.headers);
+  return token ? { source: 'cookie', token } : null;
+}
+
+export function readSessionToken(request: Request): string | null {
+  return readSessionCredential(request)?.token ?? null;
 }
 
 function readBearerToken(authorization: string | null): string | null {

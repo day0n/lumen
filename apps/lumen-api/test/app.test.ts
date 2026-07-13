@@ -269,6 +269,20 @@ test('readyz can treat an unavailable cache as optional', async () => {
   assertProbeHeaders(response, 'dev');
 });
 
+test('readyz requires startup initialization when it is a required check', async () => {
+  const initializingApp = createApiApp({
+    readiness: () => ({ mongo: true, startup: false }),
+    requiredReadinessChecks: ['mongo', 'startup'],
+  });
+  assert.equal((await initializingApp.request('/readyz')).status, 503);
+
+  const readyApp = createApiApp({
+    readiness: () => ({ mongo: true, startup: true }),
+    requiredReadinessChecks: ['mongo', 'startup'],
+  });
+  assert.equal((await readyApp.request('/readyz')).status, 200);
+});
+
 test('home routes preserve response envelopes and request locale', async () => {
   const locales: string[] = [];
   const app = createApiApp({

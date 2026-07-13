@@ -3,35 +3,43 @@ import test from 'node:test';
 import { TokenVerificationError, TokenVerificationErrorReason } from '@clerk/backend/errors';
 
 import { createIdentityProvider } from '../src/auth/identity-provider.ts';
-import { readSessionToken } from '../src/http/session-token.ts';
+import { readSessionCredential, readSessionToken } from '../src/http/session-token.ts';
 
 const VALID_JWT = `${Buffer.from(JSON.stringify({ alg: 'RS256' })).toString('base64url')}.${Buffer.from(
   JSON.stringify({ sub: 'user-1' }),
 ).toString('base64url')}.${Buffer.from('signature').toString('base64url')}`;
 
 test('session token prefers bearer authorization and accepts session cookies', () => {
-  assert.equal(
-    readSessionToken(
-      new Request('https://lumen.local/api/me', {
-        headers: {
-          authorization: 'Bearer bearer-token',
-          cookie: '__session=cookie-token',
-        },
-      }),
-    ),
-    'bearer-token',
-  );
-  assert.equal(
-    readSessionToken(
-      new Request('https://lumen.local/api/me', {
-        headers: { cookie: 'other=value; __session_example=cookie%3Dtoken' },
-      }),
-    ),
-    'cookie=token',
-  );
+  const bearerRequest = new Request('https://lumen.local/api/me', {
+    headers: {
+      authorization: 'Bearer bearer-token',
+      cookie: '__session=cookie-token',
+    },
+  });
+  assert.deepEqual(readSessionCredential(bearerRequest), {
+    source: 'bearer',
+    token: 'bearer-token',
+  });
+  assert.equal(readSessionToken(bearerRequest), 'bearer-token');
+
+  const cookieRequest = new Request('https://lumen.local/api/me', {
+    headers: { cookie: 'other=value; __session_example=cookie%3Dtoken' },
+  });
+  assert.deepEqual(readSessionCredential(cookieRequest), {
+    source: 'cookie',
+    token: 'cookie=token',
+  });
+  assert.equal(readSessionToken(cookieRequest), 'cookie=token');
 });
 
 test('session token rejects unrelated and empty credentials', () => {
+  const invalidAuthorizationRequest = new Request('https://lumen.local/api/me', {
+    headers: { authorization: 'Basic explicit-credential', cookie: '__session=cookie-token' },
+  });
+  assert.deepEqual(readSessionCredential(invalidAuthorizationRequest), {
+    source: 'invalid-authorization',
+    token: null,
+  });
   assert.equal(
     readSessionToken(
       new Request('https://lumen.local/api/me', {
@@ -40,14 +48,7 @@ test('session token rejects unrelated and empty credentials', () => {
     ),
     null,
   );
-  assert.equal(
-    readSessionToken(
-      new Request('https://lumen.local/api/me', {
-        headers: { authorization: 'Basic explicit-credential', cookie: '__session=cookie-token' },
-      }),
-    ),
-    null,
-  );
+  assert.equal(readSessionToken(invalidAuthorizationRequest), null);
   assert.equal(
     readSessionToken(
       new Request('https://lumen.local/api/me', {
@@ -56,6 +57,7 @@ test('session token rejects unrelated and empty credentials', () => {
     ),
     null,
   );
+  assert.equal(readSessionCredential(new Request('https://lumen.local/api/me')), null);
 });
 
 test('identity provider returns only the verified user and session identifiers', async () => {

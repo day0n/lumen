@@ -1,10 +1,16 @@
-import { createAuthenticatedUserService, createHomeQueryService } from '@lumen/backend';
+import {
+  createAuthenticatedUserService,
+  createHomeQueryService,
+  createNotificationService,
+  seedDefaultOfficialNotifications,
+} from '@lumen/backend';
 import {
   HomeFeaturedItemRecordSchema,
   HomeFeaturedRepository,
   HomeWorkflowTemplateListRecordSchema,
   HomeWorkflowTemplateRepository,
   JsonCache,
+  NotificationRepository,
   UserRepository,
   closeMongoDatabases,
   closeRedisClients,
@@ -15,6 +21,9 @@ import {
 import type { ReadinessChecks } from './app.js';
 import { createIdentityProvider } from './auth/identity-provider.js';
 import type { ApiConfig } from './config.js';
+
+const DEFAULT_API_RUNTIME_INITIALIZATION_ATTEMPTS = 3;
+const DEFAULT_API_RUNTIME_INITIALIZATION_RETRY_DELAY_MS = 250;
 
 export function createApiRuntime(config: ApiConfig) {
   const getDatabase = memoizeAsync(() =>
@@ -39,6 +48,19 @@ export function createApiRuntime(config: ApiConfig) {
     await repository.ensureIndexes();
     return repository;
   });
+  const notificationRuntime = createNotificationRepositoryRuntime(
+    async () => new NotificationRepository(await getDatabase()),
+    seedDefaultOfficialNotifications,
+  );
+  const getNotificationRepository = notificationRuntime.getRepository;
+  const initialization = createRuntimeInitialization(async () => {
+    await settleInitialization([
+      getFeaturedRepository(),
+      getTemplateRepository(),
+      getUserRepository(),
+      notificationRuntime.initialize(),
+    ]);
+  });
   const redis = getRedisClient({
     url: config.redisUrl,
     keyPrefix: 'lumen:studio:',
@@ -62,20 +84,26 @@ export function createApiRuntime(config: ApiConfig) {
     getUserRepository,
     verifySessionToken: identityProvider.verifySessionToken,
   });
+  const notifications = createNotificationService({
+    getRepository: getNotificationRepository,
+    tracePrefix: 'api',
+  });
 
   return {
     authenticatedUsers,
     homeQueries,
+    initialize: initialization.initialize,
+    notifications,
     async readiness(): Promise<ReadinessChecks> {
-      const checks: ReadinessChecks = { mongo: false };
+      const checks: ReadinessChecks = { mongo: false, startup: false };
       try {
         const database = await getDatabase();
         await database.command({ ping: 1 });
-        await Promise.all([getFeaturedRepository(), getTemplateRepository(), getUserRepository()]);
         checks.mongo = true;
       } catch {
         checks.mongo = false;
       }
+      checks.startup = initialization.isReady();
       if (redis) {
         checks.redis = false;
         try {
@@ -98,6 +126,74 @@ export function createApiRuntime(config: ApiConfig) {
   };
 }
 
+export interface IndexedNotificationRepository {
+  ensureIndexes(): Promise<void>;
+}
+
+export interface ApiRuntimeInitializationRetryOptions {
+  maxAttempts?: number;
+  retryDelayMs?: number;
+  wait?: (delayMs: number) => Promise<void>;
+}
+
+export async function initializeApiRuntimeWithRetry(
+  initialize: () => void | Promise<void>,
+  options: ApiRuntimeInitializationRetryOptions = {},
+): Promise<void> {
+  const maxAttempts = options.maxAttempts ?? DEFAULT_API_RUNTIME_INITIALIZATION_ATTEMPTS;
+  const retryDelayMs = options.retryDelayMs ?? DEFAULT_API_RUNTIME_INITIALIZATION_RETRY_DELAY_MS;
+  const wait = options.wait ?? waitForDelay;
+
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    throw new RangeError('maxAttempts must be a positive integer');
+  }
+  if (!Number.isFinite(retryDelayMs) || retryDelayMs < 0) {
+    throw new RangeError('retryDelayMs must be a non-negative finite number');
+  }
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await initialize();
+      return;
+    } catch (error) {
+      if (attempt === maxAttempts) throw error;
+      await wait(retryDelayMs);
+    }
+  }
+}
+
+export function createRuntimeInitialization(initializeDependencies: () => void | Promise<void>) {
+  let ready = false;
+  const initialize = memoizeAsync(async () => {
+    ready = false;
+    await initializeDependencies();
+    ready = true;
+  });
+
+  return { initialize, isReady: () => ready };
+}
+
+export function createNotificationRepositoryRuntime<
+  TRepository extends IndexedNotificationRepository,
+>(
+  createRepository: () => TRepository | Promise<TRepository>,
+  seedRepository: (repository: TRepository) => void | Promise<void>,
+) {
+  let ready = false;
+  const getRepository = memoizeAsync(async () => {
+    const repository = await createRepository();
+    await repository.ensureIndexes();
+    return repository;
+  });
+  const initialize = memoizeAsync(async () => {
+    ready = false;
+    await seedRepository(await getRepository());
+    ready = true;
+  });
+
+  return { getRepository, initialize, isReady: () => ready };
+}
+
 function memoizeAsync<T>(factory: () => Promise<T>): () => Promise<T> {
   let promise: Promise<T> | null = null;
   return () => {
@@ -107,4 +203,17 @@ function memoizeAsync<T>(factory: () => Promise<T>): () => Promise<T> {
     });
     return promise;
   };
+}
+
+function waitForDelay(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function settleInitialization(operations: readonly Promise<unknown>[]): Promise<void> {
+  const results = await Promise.allSettled(operations);
+  const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(errors, 'API runtime initialization failed');
+  }
 }
