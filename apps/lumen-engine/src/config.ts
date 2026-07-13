@@ -13,6 +13,7 @@ const EnvSchema = z.object({
   REDIS_URL: z.string().default('redis://localhost:6379'),
   MONGODB_URI: z.string().min(1),
   MONGODB_DB: z.string().default('lumen_engine'),
+  STUDIO_MONGODB_DB: z.string().trim().min(1).default('lumen_app'),
   R2_ACCOUNT_ID: z.string().optional().default(''),
   R2_BUCKET: z.string().optional().default(''),
   R2_ACCESS_KEY_ID: z.string().optional().default(''),

@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { NodeOutputType } from '@lumen/shared/domain';
+import type { Db } from 'mongodb';
 
 import { config } from '../config.js';
-import { getMongo } from '../database/mongo.js';
+import { getStudioMongo } from '../database/mongo.js';
 import { logger } from '../utils/logger.js';
 import { uploadProjectSnapshotBuffer } from './r2.js';
 
@@ -41,19 +42,15 @@ export async function updateProjectSnapshotFromRun(args: {
   const snapshotUrl = await resolveProjectSnapshotUrl(args.candidate, args.projectId, args.signal);
   if (!snapshotUrl) return;
 
-  const db = await getMongo();
-  const result = await db.collection<StudioProjectDocument>(STUDIO_PROJECTS_COLLECTION).updateOne(
-    {
-      _id: args.projectId,
-      owner_id: args.userId,
-      deleted_at: { $exists: false },
-    },
-    {
-      $set: { thumbnail: snapshotUrl },
-    },
-  );
+  const db = await getStudioMongo();
+  const updated = await writeProjectThumbnail({
+    db,
+    projectId: args.projectId,
+    snapshotUrl,
+    userId: args.userId,
+  });
 
-  if (result.matchedCount === 0) {
+  if (!updated) {
     logger.warn(
       { projectId: args.projectId, userId: args.userId },
       'project snapshot update skipped: project not found for owner',
@@ -70,6 +67,27 @@ export async function updateProjectSnapshotFromRun(args: {
     },
     'project snapshot updated',
   );
+}
+
+export async function writeProjectThumbnail(args: {
+  db: Pick<Db, 'collection'>;
+  projectId: string;
+  snapshotUrl: string;
+  userId: string;
+}): Promise<boolean> {
+  const result = await args.db
+    .collection<StudioProjectDocument>(STUDIO_PROJECTS_COLLECTION)
+    .updateOne(
+      {
+        _id: args.projectId,
+        owner_id: args.userId,
+        deleted_at: { $exists: false },
+      },
+      {
+        $set: { thumbnail: args.snapshotUrl },
+      },
+    );
+  return result.matchedCount > 0;
 }
 
 async function resolveProjectSnapshotUrl(
