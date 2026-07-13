@@ -8,6 +8,8 @@ const SAFE_REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const DEFAULT_BASE_URL = 'http://127.0.0.1:3003';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_INTERVAL_MS = 500;
+const NOTIFICATIONS_PATH = '/api/notifications/official';
+const NOTIFICATION_READ_PROBE_PATH = '/api/notifications/official/release-verification-probe/read';
 
 const USAGE = `Usage:
   pnpm --filter @lumen/api verify:release -- --release <full-git-sha> [options]
@@ -79,11 +81,12 @@ export async function verifyRelease(options, dependencies = {}) {
 
   const publicBaseUrl = options.publicBaseUrl ?? options.baseUrl;
   const deadline = now() + options.timeoutMs;
-  const request = (baseUrl, pathname) =>
+  const request = (baseUrl, pathname, method = 'GET') =>
     requestJson({
       baseUrl,
       deadline,
       fetchImpl,
+      method,
       now,
       pathname,
     });
@@ -108,6 +111,16 @@ export async function verifyRelease(options, dependencies = {}) {
   });
 
   validateUnauthorizedMeResponse(await request(publicBaseUrl, '/api/me'), options.release);
+  validateUnauthorizedApiResponse(
+    await request(publicBaseUrl, NOTIFICATIONS_PATH),
+    NOTIFICATIONS_PATH,
+    options.release,
+  );
+  validateUnauthorizedApiResponse(
+    await request(publicBaseUrl, NOTIFICATION_READ_PROBE_PATH, 'POST'),
+    NOTIFICATION_READ_PROBE_PATH,
+    options.release,
+  );
   validateFeaturedResponse(await request(publicBaseUrl, '/api/home/featured'), options.release);
   validateTemplatesResponse(await request(publicBaseUrl, '/api/home/templates'), options.release);
 
@@ -141,6 +154,9 @@ export function validateHealthProbe(result, expectedRelease, readiness) {
     if (checks.mongo !== true) {
       throw new ReleaseVerificationError('/readyz body.checks.mongo must be true');
     }
+    if (checks.startup !== true) {
+      throw new ReleaseVerificationError('/readyz body.checks.startup must be true');
+    }
   }
 }
 
@@ -168,7 +184,10 @@ export function validateTemplatesResponse(result, expectedRelease) {
 }
 
 export function validateUnauthorizedMeResponse(result, expectedRelease) {
-  const pathname = '/api/me';
+  validateUnauthorizedApiResponse(result, '/api/me', expectedRelease);
+}
+
+export function validateUnauthorizedApiResponse(result, pathname, expectedRelease) {
   validateCommonResponse(result, pathname, expectedRelease, {
     expectedStatus: 401,
     requireNoStore: true,
@@ -206,7 +225,7 @@ async function pollUntilHealthy(options) {
   );
 }
 
-async function requestJson({ baseUrl, deadline, fetchImpl, now, pathname }) {
+async function requestJson({ baseUrl, deadline, fetchImpl, method, now, pathname }) {
   const remainingMs = deadline - now();
   if (remainingMs <= 0) {
     throw new ReleaseVerificationError(`Overall timeout expired before requesting ${pathname}`);
@@ -217,6 +236,7 @@ async function requestJson({ baseUrl, deadline, fetchImpl, now, pathname }) {
   try {
     response = await fetchImpl(url, {
       headers: { accept: 'application/json' },
+      method,
       redirect: 'error',
       signal: AbortSignal.timeout(Math.max(1, remainingMs)),
     });

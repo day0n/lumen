@@ -93,7 +93,7 @@ test('deployment verifies the API before activating its public routes and Studio
     'pnpm build:api',
     'pm2 startOrReload ecosystem.config.cjs --only lumen-api --update-env',
     'pnpm --filter @lumen/api verify:release',
-    'echo "==> Activating the public home API proxy..."',
+    'echo "==> Activating the public API proxy..."',
     'bash "$NGINX_ACTIVATION_SCRIPT"',
     '--public-base-url http://127.0.0.1',
     'echo "==> Activating studio build..."',

@@ -23,7 +23,11 @@ const forwardedRequestHeaders = [
 ];
 
 const homeReadLocations = ['= /api/home/featured', '= /api/home/templates'];
-const apiReadLocations = [...homeReadLocations, '= /api/me'];
+const notificationReadLocation = '= /api/notifications/official';
+const notificationWriteLocation = '^~ /api/notifications/official/';
+const legacyApiReadLocations = [...homeReadLocations, '= /api/me'];
+const apiReadLocations = [...legacyApiReadLocations, notificationReadLocation];
+const apiProxyLocations = [...apiReadLocations, notificationWriteLocation];
 
 test('preserves the production listeners, TLS files, and existing upstream routes', async () => {
   const source = await readFile(nginxPath, 'utf8');
@@ -68,21 +72,19 @@ test('preserves the production listeners, TLS files, and existing upstream route
   ]);
 });
 
-test('sends only the three exact GET and HEAD API reads to the API', async () => {
+test('sends only the intended API reads and notification writes to the API', async () => {
   const source = await readFile(nginxPath, 'utf8');
   const server = extractBlock(source, 'server');
   const apiLocations = locationDeclarations(server).filter((location) => location.includes('/api'));
 
-  assert.deepEqual(apiLocations.sort(), apiReadLocations.toSorted());
-  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 3);
+  assert.deepEqual(apiLocations.sort(), apiProxyLocations.toSorted());
+  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 5);
 
   for (const location of apiReadLocations) {
     const block = extractBlock(server, `location ${location}`);
     assertContainsAll(block, [
-      `error_page 418 = ${fallbackLocation};`,
       `error_page 500 502 503 504 = ${fallbackLocation};`,
       'if ($request_method !~ ^(GET|HEAD)$)',
-      'return 418;',
       'proxy_pass http://127.0.0.1:3003;',
       'proxy_http_version 1.1;',
       'proxy_intercept_errors on;',
@@ -93,6 +95,11 @@ test('sends only the three exact GET and HEAD API reads to the API', async () =>
       ...forwardedRequestHeaders,
     ]);
     assert.equal(countOccurrences(block, 'proxy_pass http://127.0.0.1:3003;'), 1);
+  }
+
+  for (const location of legacyApiReadLocations) {
+    const block = extractBlock(server, `location ${location}`);
+    assertContainsAll(block, [`error_page 418 = ${fallbackLocation};`, 'return 418;']);
   }
 
   for (const location of homeReadLocations) {
@@ -107,6 +114,41 @@ test('sends only the three exact GET and HEAD API reads to the API', async () =>
   assert.ok(currentUser.includes(`error_page 404 = ${fallbackLocation};`));
   assert.doesNotMatch(currentUser, /error_page[^\n]*(?:401|403)/);
   assert.ok(currentUser.includes('add_header Cache-Control "private, no-store" always;'));
+
+  const notificationRead = extractBlock(server, 'location = /api/notifications/official');
+  assertContainsAll(notificationRead, [
+    `error_page 404 = ${fallbackLocation};`,
+    `error_page 500 502 503 504 = ${fallbackLocation};`,
+    'return 405;',
+    'add_header Cache-Control "private, no-store" always;',
+  ]);
+  assert.equal(countOccurrences(notificationRead, 'error_page'), 2);
+  assert.doesNotMatch(notificationRead, /error_page[^\n]*(?:401|403|418)/);
+});
+
+test('keeps notification writes fail-closed without any Studio fallback', async () => {
+  const source = await readFile(nginxPath, 'utf8');
+  const server = extractBlock(source, 'server');
+  const notificationWrite = extractBlock(server, 'location ^~ /api/notifications/official/');
+
+  assertContainsAll(notificationWrite, [
+    'if ($request_method != POST)',
+    'return 405;',
+    'proxy_pass http://127.0.0.1:3003;',
+    'proxy_http_version 1.1;',
+    'proxy_intercept_errors off;',
+    'proxy_connect_timeout 1s;',
+    'proxy_send_timeout 5s;',
+    'proxy_read_timeout 5s;',
+    'proxy_hide_header Cache-Control;',
+    'add_header Cache-Control "private, no-store" always;',
+    ...forwardedRequestHeaders,
+  ]);
+  assert.equal(countOccurrences(notificationWrite, 'proxy_pass http://127.0.0.1:3003;'), 1);
+  assert.doesNotMatch(
+    notificationWrite,
+    /\berror_page\b|@lumen_studio_api_read_fallback|proxy_intercept_errors\s+on|\brewrite\b/,
+  );
 });
 
 test('falls back to Studio with the original URI and query on API read failures', async () => {

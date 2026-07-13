@@ -131,7 +131,7 @@ pnpm --filter @lumen/api verify:release -- \
   --timeout-ms "${LUMEN_API_VERIFY_TIMEOUT_MS:-60000}" \
   --interval-ms "${LUMEN_API_VERIFY_INTERVAL_MS:-500}"
 
-echo "==> Activating the public home API proxy..."
+echo "==> Activating the public API proxy..."
 if [ "$(id -u)" -ne 0 ]; then
   echo "Root privileges are required to activate the nginx site configuration."
   exit 1

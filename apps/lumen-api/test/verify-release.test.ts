@@ -9,6 +9,7 @@ import {
   ReleaseVerificationError,
   parseOptions,
   validateHealthProbe,
+  validateUnauthorizedApiResponse,
   validateUnauthorizedMeResponse,
   verifyRelease,
 } from '../scripts/verify-release.mjs';
@@ -34,10 +35,10 @@ test('release verifier checks live direct and public origins', async (context) =
         return { categories: [], items: [] };
       },
     },
-    readiness: () => ({ mongo: true }),
+    readiness: () => ({ mongo: true, startup: true }),
     readinessTimeoutMs: 50,
     release: RELEASE,
-    requiredReadinessChecks: ['mongo'],
+    requiredReadinessChecks: ['mongo', 'startup'],
   });
   const apiServer = serve({ fetch: apiApp.fetch, hostname: '127.0.0.1', port: 0 });
   context.after(
@@ -55,8 +56,10 @@ test('release verifier checks live direct and public origins', async (context) =
   const publicApp = new Hono();
   publicApp.all('*', async (requestContext) => {
     const requestUrl = new URL(requestContext.req.url);
-    publicRequests.push(requestUrl.pathname);
-    return fetch(new URL(`${requestUrl.pathname}${requestUrl.search}`, `${baseUrl}/`));
+    publicRequests.push(`${requestContext.req.method} ${requestUrl.pathname}`);
+    return fetch(new URL(`${requestUrl.pathname}${requestUrl.search}`, `${baseUrl}/`), {
+      method: requestContext.req.method,
+    });
   });
   const publicServer = serve({ fetch: publicApp.fetch, hostname: '127.0.0.1', port: 0 });
   context.after(
@@ -79,7 +82,13 @@ test('release verifier checks live direct and public origins', async (context) =
   });
 
   assert.deepEqual(result, { baseUrl, publicBaseUrl, release: RELEASE });
-  assert.deepEqual(publicRequests, ['/api/me', '/api/home/featured', '/api/home/templates']);
+  assert.deepEqual(publicRequests, [
+    'GET /api/me',
+    'GET /api/notifications/official',
+    'POST /api/notifications/official/release-verification-probe/read',
+    'GET /api/home/featured',
+    'GET /api/home/templates',
+  ]);
 });
 
 test('release verifier polls readiness and validates public routes', async () => {
@@ -97,10 +106,10 @@ test('release verifier polls readiness and validates public routes', async () =>
       timeoutMs: 1_000,
     },
     {
-      fetch: async (input: URL | RequestInfo) => {
+      fetch: async (input: URL | RequestInfo, init?: RequestInit) => {
         const url = new URL(String(input));
         const { pathname } = url;
-        requestedUrls.push(url.href);
+        requestedUrls.push(`${init?.method ?? 'GET'} ${url.href}`);
 
         if (pathname === '/healthz') {
           return jsonResponse(
@@ -113,7 +122,7 @@ test('release verifier polls readiness and validates public routes', async () =>
           if (readinessAttempts === 1) {
             return jsonResponse(
               {
-                checks: { mongo: false },
+                checks: { mongo: false, startup: false },
                 ok: false,
                 release: RELEASE,
                 service: 'lumen-api',
@@ -124,7 +133,7 @@ test('release verifier polls readiness and validates public routes', async () =>
           }
           return jsonResponse(
             {
-              checks: { mongo: true, redis: false },
+              checks: { mongo: true, redis: false, startup: true },
               ok: true,
               release: RELEASE,
               service: 'lumen-api',
@@ -133,7 +142,11 @@ test('release verifier polls readiness and validates public routes', async () =>
             { noStore: true },
           );
         }
-        if (pathname === '/api/me') {
+        if (
+          pathname === '/api/me' ||
+          pathname === '/api/notifications/official' ||
+          pathname === '/api/notifications/official/release-verification-probe/read'
+        ) {
           return jsonResponse(
             { error: { message: 'Please sign in first' }, ok: false },
             { privateNoStore: true, status: 401 },
@@ -158,12 +171,14 @@ test('release verifier polls readiness and validates public routes', async () =>
   });
   assert.equal(readinessAttempts, 2);
   assert.deepEqual(requestedUrls, [
-    `${baseUrl}/healthz`,
-    `${baseUrl}/readyz`,
-    `${baseUrl}/readyz`,
-    `${publicBaseUrl}/api/me`,
-    `${publicBaseUrl}/api/home/featured`,
-    `${publicBaseUrl}/api/home/templates`,
+    `GET ${baseUrl}/healthz`,
+    `GET ${baseUrl}/readyz`,
+    `GET ${baseUrl}/readyz`,
+    `GET ${publicBaseUrl}/api/me`,
+    `GET ${publicBaseUrl}/api/notifications/official`,
+    `POST ${publicBaseUrl}/api/notifications/official/release-verification-probe/read`,
+    `GET ${publicBaseUrl}/api/home/featured`,
+    `GET ${publicBaseUrl}/api/home/templates`,
   ]);
 });
 
@@ -227,7 +242,7 @@ test('public home responses retain release, request id and schema validation', a
             if (pathname === '/readyz') {
               return jsonResponse(
                 {
-                  checks: { mongo: true },
+                  checks: { mongo: true, startup: true },
                   ok: true,
                   release: RELEASE,
                   service: 'lumen-api',
@@ -236,7 +251,11 @@ test('public home responses retain release, request id and schema validation', a
                 { noStore: true },
               );
             }
-            if (pathname === '/api/me') {
+            if (
+              pathname === '/api/me' ||
+              pathname === '/api/notifications/official' ||
+              pathname === '/api/notifications/official/release-verification-probe/read'
+            ) {
               return jsonResponse(
                 { error: { message: 'Please sign in first' }, ok: false },
                 { privateNoStore: true, status: 401 },
@@ -257,8 +276,13 @@ test('public home responses retain release, request id and schema validation', a
   }
 });
 
-test('public current user probes require unauthorized API response metadata', () => {
+test('public authenticated route probes require unauthorized API response metadata', () => {
   const validPayload = { error: { message: 'Please sign in first' }, ok: false };
+  const pathnames = [
+    '/api/me',
+    '/api/notifications/official',
+    '/api/notifications/official/release-verification-probe/read',
+  ];
   const cases = [
     {
       expectedMessage: 'expected 401',
@@ -289,14 +313,48 @@ test('public current user probes require unauthorized API response metadata', ()
     },
   ];
 
-  for (const verificationCase of cases) {
-    assert.throws(
-      () => validateUnauthorizedMeResponse(verificationCase.result, RELEASE),
-      (error: unknown) =>
-        error instanceof ReleaseVerificationError &&
-        error.message.includes(verificationCase.expectedMessage),
-    );
+  for (const pathname of pathnames) {
+    for (const verificationCase of cases) {
+      assert.throws(
+        () => {
+          if (pathname === '/api/me') {
+            validateUnauthorizedMeResponse(verificationCase.result, RELEASE);
+          } else {
+            validateUnauthorizedApiResponse(verificationCase.result, pathname, RELEASE);
+          }
+        },
+        (error: unknown) =>
+          error instanceof ReleaseVerificationError &&
+          error.message.includes(verificationCase.expectedMessage),
+      );
+    }
   }
+});
+
+test('readiness probes require completed startup initialization', () => {
+  const payload = {
+    checks: { mongo: true, startup: false },
+    ok: true,
+    release: RELEASE,
+    service: 'lumen-api',
+    ts: Date.now(),
+  };
+
+  assert.throws(
+    () =>
+      validateHealthProbe(
+        {
+          body: JSON.stringify(payload),
+          payload,
+          response: jsonResponse(payload, { noStore: true }),
+        },
+        RELEASE,
+        true,
+      ),
+    (error: unknown) =>
+      error instanceof ReleaseVerificationError &&
+      error.message.includes('/readyz body.checks.startup must be true'),
+  );
 });
 
 test('release verifier rejects incomplete release identifiers', () => {
