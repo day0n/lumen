@@ -28,6 +28,7 @@ const notificationReadLocation = '= /api/notifications/official';
 const notificationWriteLocation = '^~ /api/notifications/official/';
 const projectDetailLocation = '~ ^/api/projects/[^/]+$';
 const projectsEntryLocation = '= /api/projects';
+const workflowStatusLocation = '~ ^/api/projects/[^/]+/workflow-status$';
 const legacyApiReadLocations = [...homeReadLocations, '= /api/me'];
 const apiReadLocations = [...legacyApiReadLocations, notificationReadLocation];
 const apiProxyLocations = [
@@ -35,6 +36,7 @@ const apiProxyLocations = [
   notificationWriteLocation,
   projectsEntryLocation,
   projectDetailLocation,
+  workflowStatusLocation,
 ];
 
 test('preserves the production listeners, TLS files, and existing upstream routes', async () => {
@@ -86,7 +88,7 @@ test('sends only the intended API reads and notification writes to the API', asy
   const apiLocations = locationDeclarations(server).filter((location) => location.includes('/api'));
 
   assert.deepEqual(apiLocations.sort(), apiProxyLocations.toSorted());
-  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 7);
+  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 8);
 
   for (const location of apiReadLocations) {
     const block = extractBlock(server, `location ${location}`);
@@ -139,8 +141,9 @@ test('sends only project GET and HEAD requests to the API read route', async () 
   const server = extractBlock(source, 'server');
   const projectsEntry = extractBlock(server, `location ${projectsEntryLocation}`);
   const projectDetail = extractBlock(server, `location ${projectDetailLocation}`);
+  const workflowStatus = extractBlock(server, `location ${workflowStatusLocation}`);
 
-  for (const block of [projectsEntry, projectDetail]) {
+  for (const block of [projectsEntry, projectDetail, workflowStatus]) {
     assertContainsAll(block, [
       `error_page 418 = ${projectsStudioPassthroughLocation};`,
       `error_page 500 502 503 504 = ${fallbackLocation};`,
@@ -165,7 +168,9 @@ test('sends only project GET and HEAD requests to the API read route', async () 
   assertContainsAll(projectsEntry, [`error_page 404 = ${fallbackLocation};`]);
   assert.equal(countOccurrences(projectsEntry, 'error_page'), 3);
   assert.equal(countOccurrences(projectDetail, 'error_page'), 2);
+  assert.equal(countOccurrences(workflowStatus, 'error_page'), 2);
   assert.doesNotMatch(projectDetail, /error_page[^\n]*404/);
+  assert.doesNotMatch(workflowStatus, /error_page[^\n]*404/);
 
   const projectsStudio = extractBlock(server, `location ${projectsStudioPassthroughLocation}`);
   assertContainsAll(projectsStudio, [
@@ -218,6 +223,39 @@ test('project detail proxy matches exactly one path segment', async () => {
     declarations.some((location) => location === '^~ /api/projects/'),
     false,
   );
+});
+
+test('workflow status proxy matches only the exact project child path', async () => {
+  const source = await readFile(nginxPath, 'utf8');
+  const server = extractBlock(source, 'server');
+  const declarations = locationDeclarations(server);
+  const matcher = new RegExp(workflowStatusLocation.replace(/^~\s+/, ''));
+
+  for (const pathname of [
+    '/api/projects/project-1/workflow-status',
+    '/api/projects/release-verification-probe/workflow-status',
+  ]) {
+    assert.equal(matcher.test(pathname), true, pathname);
+  }
+  for (const pathname of [
+    '/api/projects',
+    '/api/projects/',
+    '/api/projects/project-1',
+    '/api/projects/project-1/history',
+    '/api/projects/project-1/share/workflow-status',
+    '/api/projects/project-1/workflow-runs/run-1/cancel',
+    '/api/projects/project-1/workflow-status/',
+    '/api/projects/project-1/workflow-status/extra',
+    '/api/projects/project-1/workflow-status-extra',
+    '/api/projects/project-1/WORKFLOW-STATUS',
+  ]) {
+    assert.equal(matcher.test(pathname), false, pathname);
+  }
+
+  assert.ok(declarations.includes(workflowStatusLocation));
+  const detailMatcher = new RegExp(projectDetailLocation.replace(/^~\s+/, ''));
+  assert.equal(detailMatcher.test('/api/projects/project-1/workflow-status'), false);
+  assert.equal(matcher.test('/api/projects/project-1'), false);
 });
 
 test('keeps notification writes fail-closed without any Studio fallback', async () => {
