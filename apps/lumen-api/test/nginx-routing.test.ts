@@ -6,6 +6,7 @@ import test from 'node:test';
 const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
 const nginxPath = path.join(repositoryRoot, 'infra/nginx/lumenstudio.tech.conf');
 const fallbackLocation = '@lumen_studio_api_read_fallback';
+const projectsStudioPassthroughLocation = '@lumen_projects_studio_passthrough';
 
 const forwardedRequestHeaders = [
   'proxy_set_header Connection "";',
@@ -25,9 +26,10 @@ const forwardedRequestHeaders = [
 const homeReadLocations = ['= /api/home/featured', '= /api/home/templates'];
 const notificationReadLocation = '= /api/notifications/official';
 const notificationWriteLocation = '^~ /api/notifications/official/';
+const projectsEntryLocation = '= /api/projects';
 const legacyApiReadLocations = [...homeReadLocations, '= /api/me'];
 const apiReadLocations = [...legacyApiReadLocations, notificationReadLocation];
-const apiProxyLocations = [...apiReadLocations, notificationWriteLocation];
+const apiProxyLocations = [...apiReadLocations, notificationWriteLocation, projectsEntryLocation];
 
 test('preserves the production listeners, TLS files, and existing upstream routes', async () => {
   const source = await readFile(nginxPath, 'utf8');
@@ -78,7 +80,7 @@ test('sends only the intended API reads and notification writes to the API', asy
   const apiLocations = locationDeclarations(server).filter((location) => location.includes('/api'));
 
   assert.deepEqual(apiLocations.sort(), apiProxyLocations.toSorted());
-  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 5);
+  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 6);
 
   for (const location of apiReadLocations) {
     const block = extractBlock(server, `location ${location}`);
@@ -124,6 +126,57 @@ test('sends only the intended API reads and notification writes to the API', asy
   ]);
   assert.equal(countOccurrences(notificationRead, 'error_page'), 2);
   assert.doesNotMatch(notificationRead, /error_page[^\n]*(?:401|403|418)/);
+});
+
+test('sends only project GET and HEAD requests to the API read route', async () => {
+  const source = await readFile(nginxPath, 'utf8');
+  const server = extractBlock(source, 'server');
+  const projectsEntry = extractBlock(server, `location ${projectsEntryLocation}`);
+
+  assertContainsAll(projectsEntry, [
+    `error_page 418 = ${projectsStudioPassthroughLocation};`,
+    `error_page 404 = ${fallbackLocation};`,
+    `error_page 500 502 503 504 = ${fallbackLocation};`,
+    'if ($request_method !~ ^(GET|HEAD)$)',
+    'return 418;',
+    'proxy_pass http://127.0.0.1:3003;',
+    'proxy_http_version 1.1;',
+    'proxy_intercept_errors on;',
+    'proxy_connect_timeout 1s;',
+    'proxy_send_timeout 5s;',
+    'proxy_read_timeout 5s;',
+    'proxy_hide_header Cache-Control;',
+    'add_header Cache-Control "private, no-store" always;',
+    ...forwardedRequestHeaders,
+  ]);
+  assert.equal(countOccurrences(projectsEntry, 'error_page'), 3);
+  assert.equal(countOccurrences(projectsEntry, 'proxy_pass'), 1);
+  assert.doesNotMatch(projectsEntry, /error_page[^\n]*(?:400|401|403)/);
+  assert.doesNotMatch(projectsEntry, /proxy_pass\s+http:\/\/127\.0\.0\.1:3003\//);
+  assert.doesNotMatch(
+    projectsEntry,
+    /\brewrite\b|\$request_uri|proxy_pass_request_body|proxy_set_body/,
+  );
+
+  const projectsStudio = extractBlock(server, `location ${projectsStudioPassthroughLocation}`);
+  assertContainsAll(projectsStudio, [
+    'proxy_pass http://127.0.0.1:3000;',
+    'proxy_http_version 1.1;',
+    'proxy_intercept_errors off;',
+    'proxy_hide_header Cache-Control;',
+    'add_header Cache-Control "private, no-store" always;',
+    ...forwardedRequestHeaders,
+  ]);
+  assert.equal(countOccurrences(projectsStudio, 'proxy_pass'), 1);
+  assert.doesNotMatch(projectsStudio, /\berror_page\b|127\.0\.0\.1:3003/);
+  assert.doesNotMatch(projectsStudio, /proxy_pass\s+http:\/\/127\.0\.0\.1:3000\//);
+  assert.doesNotMatch(
+    projectsStudio,
+    /\brewrite\b|\$request_uri|proxy_pass_request_body|proxy_set_body|proxy_(?:connect|send|read)_timeout/,
+  );
+
+  const readFallback = extractBlock(server, `location ${fallbackLocation}`);
+  assert.doesNotMatch(readFallback, /\berror_page\b/);
 });
 
 test('keeps notification writes fail-closed without any Studio fallback', async () => {

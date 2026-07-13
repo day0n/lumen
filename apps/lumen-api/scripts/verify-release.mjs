@@ -10,6 +10,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_INTERVAL_MS = 500;
 const NOTIFICATIONS_PATH = '/api/notifications/official';
 const NOTIFICATION_READ_PROBE_PATH = '/api/notifications/official/release-verification-probe/read';
+const PROJECTS_PATH = '/api/projects?limit=1';
 
 const USAGE = `Usage:
   pnpm --filter @lumen/api verify:release -- --release <full-git-sha> [options]
@@ -119,6 +120,11 @@ export async function verifyRelease(options, dependencies = {}) {
   validateUnauthorizedApiResponse(
     await request(publicBaseUrl, NOTIFICATION_READ_PROBE_PATH, 'POST'),
     NOTIFICATION_READ_PROBE_PATH,
+    options.release,
+  );
+  validateUnauthorizedApiResponse(
+    await request(publicBaseUrl, PROJECTS_PATH),
+    PROJECTS_PATH,
     options.release,
   );
   validateFeaturedResponse(await request(publicBaseUrl, '/api/home/featured'), options.release);

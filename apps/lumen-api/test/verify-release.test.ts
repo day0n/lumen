@@ -56,7 +56,7 @@ test('release verifier checks live direct and public origins', async (context) =
   const publicApp = new Hono();
   publicApp.all('*', async (requestContext) => {
     const requestUrl = new URL(requestContext.req.url);
-    publicRequests.push(`${requestContext.req.method} ${requestUrl.pathname}`);
+    publicRequests.push(`${requestContext.req.method} ${requestUrl.pathname}${requestUrl.search}`);
     return fetch(new URL(`${requestUrl.pathname}${requestUrl.search}`, `${baseUrl}/`), {
       method: requestContext.req.method,
     });
@@ -86,6 +86,7 @@ test('release verifier checks live direct and public origins', async (context) =
     'GET /api/me',
     'GET /api/notifications/official',
     'POST /api/notifications/official/release-verification-probe/read',
+    'GET /api/projects?limit=1',
     'GET /api/home/featured',
     'GET /api/home/templates',
   ]);
@@ -145,7 +146,8 @@ test('release verifier polls readiness and validates public routes', async () =>
         if (
           pathname === '/api/me' ||
           pathname === '/api/notifications/official' ||
-          pathname === '/api/notifications/official/release-verification-probe/read'
+          pathname === '/api/notifications/official/release-verification-probe/read' ||
+          pathname === '/api/projects'
         ) {
           return jsonResponse(
             { error: { message: 'Please sign in first' }, ok: false },
@@ -177,6 +179,7 @@ test('release verifier polls readiness and validates public routes', async () =>
     `GET ${publicBaseUrl}/api/me`,
     `GET ${publicBaseUrl}/api/notifications/official`,
     `POST ${publicBaseUrl}/api/notifications/official/release-verification-probe/read`,
+    `GET ${publicBaseUrl}/api/projects?limit=1`,
     `GET ${publicBaseUrl}/api/home/featured`,
     `GET ${publicBaseUrl}/api/home/templates`,
   ]);
@@ -254,7 +257,8 @@ test('public home responses retain release, request id and schema validation', a
             if (
               pathname === '/api/me' ||
               pathname === '/api/notifications/official' ||
-              pathname === '/api/notifications/official/release-verification-probe/read'
+              pathname === '/api/notifications/official/release-verification-probe/read' ||
+              pathname === '/api/projects'
             ) {
               return jsonResponse(
                 { error: { message: 'Please sign in first' }, ok: false },
@@ -282,6 +286,7 @@ test('public authenticated route probes require unauthorized API response metada
     '/api/me',
     '/api/notifications/official',
     '/api/notifications/official/release-verification-probe/read',
+    '/api/projects?limit=1',
   ];
   const cases = [
     {
