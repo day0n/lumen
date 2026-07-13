@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['@mantine/core', '@mantine/hooks', '@tabler/icons-react'],
   },
-  transpilePackages: ['@lumen/shared', '@lumen/db'],
+  transpilePackages: ['@lumen/shared', '@lumen/db', '@lumen/backend'],
   async redirects() {
     return [{ source: '/favicon.ico', destination: '/icon.svg', permanent: true }];
   },

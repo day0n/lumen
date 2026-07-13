@@ -2,9 +2,16 @@ import { serve } from '@hono/node-server';
 
 import { createApiApp } from './app.js';
 import { readApiConfig } from './config.js';
+import { createApiRuntime } from './runtime.js';
 
 const config = readApiConfig();
-const app = createApiApp({ release: config.release });
+const runtime = createApiRuntime(config);
+const app = createApiApp({
+  homeQueries: runtime.homeQueries,
+  readiness: runtime.readiness,
+  release: config.release,
+  requiredReadinessChecks: ['mongo'],
+});
 
 const server = serve({
   fetch: app.fetch,
@@ -19,17 +26,21 @@ console.info('[lumen-api] listening', {
 });
 
 let closing = false;
-const shutdown = (signal: string) => {
+const shutdown = async (signal: string) => {
   if (closing) return;
   closing = true;
   console.info('[lumen-api] shutting down', { signal });
-  server.close((error) => {
-    if (error) {
-      console.error('[lumen-api] shutdown failed', { error });
-      process.exitCode = 1;
-    }
+  await new Promise<void>((resolve) => {
+    server.close((error) => {
+      if (error) {
+        console.error('[lumen-api] shutdown failed', { error });
+        process.exitCode = 1;
+      }
+      resolve();
+    });
   });
+  await runtime.close();
 };
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));

@@ -1,7 +1,10 @@
 import Redis from 'ioredis';
-import type { z } from 'zod';
 
 export type RedisClient = Redis;
+
+export interface ValueSchema<T> {
+  parse(value: unknown): T;
+}
 
 export interface RedisConnectionOptions {
   url?: string;
@@ -55,10 +58,7 @@ export async function closeRedisClients(): Promise<void> {
 export class JsonCache {
   constructor(private readonly redis: Redis | null) {}
 
-  async get<TSchema extends z.ZodTypeAny>(
-    key: string,
-    schema: TSchema,
-  ): Promise<z.infer<TSchema> | null> {
+  async get<T>(key: string, schema: ValueSchema<T>): Promise<T | null> {
     if (!this.redis) return null;
 
     let raw: string | null;

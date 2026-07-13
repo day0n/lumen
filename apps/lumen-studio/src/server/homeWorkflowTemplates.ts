@@ -1,50 +1,19 @@
 import 'server-only';
 
-import {
-  type HomeWorkflowTemplateListRecord,
-  HomeWorkflowTemplateListRecordSchema,
-  type ProjectCanvas,
-  type ProjectRecord,
-} from '@lumen/db';
+import type { HomeWorkflowTemplateListRecord, ProjectCanvas, ProjectRecord } from '@lumen/db';
 import { z } from 'zod';
 
 import type { Locale } from '@/i18n/routing';
-import { getHomeWorkflowTemplateRepository, getStudioCache } from './db';
+import { getHomeWorkflowTemplateRepository } from './db';
+import { getStudioHomeQueryService } from './homeQueries';
 import { createStudioProject } from './projects';
-import { traceStudioStep } from './telemetry';
-
-const HOME_WORKFLOW_TEMPLATES_CACHE_KEY_PREFIX = 'home:workflow-templates:v1';
-const HOME_WORKFLOW_TEMPLATES_CACHE_TTL_SECONDS = 300;
-const HOME_WORKFLOW_TEMPLATES_PER_CATEGORY = 9;
 
 const CloneTemplateIdSchema = z.string().trim().min(1).max(120);
 
 export async function listHomeWorkflowTemplates(
   locale: Locale = 'en',
 ): Promise<HomeWorkflowTemplateListRecord> {
-  const cache = getStudioCache();
-  const cacheKey = `${HOME_WORKFLOW_TEMPLATES_CACHE_KEY_PREFIX}:${locale}`;
-  const cached = await traceStudioStep('studio.home.templates.cache_get', 'cache.get', () =>
-    cache.get(cacheKey, HomeWorkflowTemplateListRecordSchema),
-  );
-  if (cached) return cached;
-
-  const repository = await traceStudioStep(
-    'studio.home.templates.repository',
-    'db.connect',
-    getHomeWorkflowTemplateRepository,
-  );
-  const templates = await traceStudioStep('studio.home.templates.db', 'db.query', () =>
-    repository.listActive({
-      locale,
-      perCategory: HOME_WORKFLOW_TEMPLATES_PER_CATEGORY,
-    }),
-  );
-
-  await traceStudioStep('studio.home.templates.cache_set', 'cache.set', () =>
-    cache.set(cacheKey, templates, HOME_WORKFLOW_TEMPLATES_CACHE_TTL_SECONDS),
-  );
-  return templates;
+  return getStudioHomeQueryService().listTemplates(locale);
 }
 
 export async function cloneHomeWorkflowTemplate(
@@ -69,10 +38,7 @@ export async function cloneHomeWorkflowTemplate(
 }
 
 export async function invalidateHomeWorkflowTemplatesCache(): Promise<void> {
-  await Promise.all([
-    getStudioCache().delete(`${HOME_WORKFLOW_TEMPLATES_CACHE_KEY_PREFIX}:en`),
-    getStudioCache().delete(`${HOME_WORKFLOW_TEMPLATES_CACHE_KEY_PREFIX}:zh`),
-  ]);
+  await getStudioHomeQueryService().invalidateTemplates();
 }
 
 function normalizeTemplateCanvas(canvas: ProjectCanvas): ProjectCanvas {

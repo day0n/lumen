@@ -96,6 +96,9 @@ importers:
       '@lumen/backend':
         specifier: workspace:*
         version: link:../../packages/backend
+      '@lumen/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       hono:
         specifier: ^4.6.10
         version: 4.12.23
@@ -294,6 +297,9 @@ importers:
       '@google/genai':
         specifier: ^2.6.0
         version: 2.6.0
+      '@lumen/backend':
+        specifier: workspace:*
+        version: link:../../packages/backend
       '@lumen/db':
         specifier: workspace:*
         version: link:../../packages/db
