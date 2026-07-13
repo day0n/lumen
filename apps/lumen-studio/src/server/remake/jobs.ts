@@ -17,6 +17,7 @@ import type { RemakePlan, RemakeReference } from '@/server/remakePlan';
 
 import { dispatchTasks, setJobCancelled } from './dispatch';
 import { buildPlanForJob, resolveReferenceVideo } from './planning';
+import { getStudioRemakeJobQueries } from './query-runtime';
 import {
   type PlannedTask,
   SliceKeys,
@@ -105,11 +106,7 @@ export async function getRemakeJobView(
   jobId: string,
   ownerId: string,
 ): Promise<RemakeJobView | null> {
-  const repository = await getRemakeJobRepository();
-  const job = await repository.getJob(jobId, ownerId);
-  if (!job) return null;
-  const tasks = await repository.listTasksByJob(jobId);
-  return composeView(job, tasks);
+  return getStudioRemakeJobQueries().getJobView(ownerId, jobId);
 }
 
 export async function listRemakeJobsForUser(
