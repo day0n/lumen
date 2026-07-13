@@ -23,7 +23,6 @@ export function warmCurrentAppRoute(pathname = window.location.pathname) {
   if (routePath.startsWith('/canvas')) {
     return Promise.allSettled([
       import('../features/canvas/CanvasRoute'),
-      import('@/components/canvas/CanvasEntryLoader'),
       import('@/components/canvas/CanvasWorkbench'),
     ]);
   }

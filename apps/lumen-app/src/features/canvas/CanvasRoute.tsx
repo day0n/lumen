@@ -1,9 +1,10 @@
 'use client';
 
+import '@xyflow/react/dist/style.css';
 import { stripCanvasEntryLoaderSearch } from '@/components/canvas/canvas-entry-loader';
-import { CanvasEntryLoader } from '@/components/canvas/CanvasEntryLoader';
 import { Suspense, lazy, useEffect } from 'react';
 import { StudioProviders } from '../../providers/studio-providers';
+import { CanvasRouteFallback } from './CanvasRouteFallback';
 
 const CanvasWorkbench = lazy(() =>
   import('@/components/canvas/CanvasWorkbench').then((mod) => ({
@@ -24,7 +25,7 @@ export function CanvasRoute({
 
   return (
     <StudioProviders>
-      <Suspense fallback={<CanvasEntryLoader />}>
+      <Suspense fallback={<CanvasRouteFallback />}>
         <CanvasWorkbench projectId={projectId} createOnMount={createOnMount} />
       </Suspense>
     </StudioProviders>

@@ -2,6 +2,8 @@ import { useLocation } from '@tanstack/react-router';
 import { AuroraBackdrop } from '../../components/shell/AuroraBackdrop';
 import { Topbar } from '../../components/shell/Topbar';
 import { useAppShellChrome } from '../../lib/app-shell-chrome';
+import { isCanvasShellRoute } from '../../lib/app-shell-routes';
+import { CanvasRouteFallback } from '../canvas/CanvasRouteFallback';
 
 const gridCounts = {
   home: 4,
@@ -15,6 +17,8 @@ export function AppRouteFallback() {
   const location = useLocation();
   const appShellChrome = useAppShellChrome();
   const pathname = location.pathname;
+  if (isCanvasShellRoute(pathname)) return <CanvasRouteFallback />;
+
   const kind = pathname.includes('materials')
     ? 'materials'
     : pathname.includes('dashboard')
