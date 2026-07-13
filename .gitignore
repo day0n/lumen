@@ -23,6 +23,10 @@ out/
 .env.local
 .env.*.local
 !.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.wrangler/
 
 # 其他常见的密钥/凭据文件
 *.pem

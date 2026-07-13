@@ -55,6 +55,9 @@ jobs:
           pnpm --filter @lumen/backend test
           pnpm --filter @lumen/api test
 
+      - name: Run edge router tests
+        run: node --test infra/cloudflare/edge/test/*.test.mjs
+
       - name: Run engine tests
         env:
           MONGODB_URI: mongodb://127.0.0.1:27017/lumen_ci
