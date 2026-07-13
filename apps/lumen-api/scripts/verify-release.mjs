@@ -14,7 +14,7 @@ const USAGE = `Usage:
 
 Options:
   --base-url <url>         Direct API origin for health probes (default: ${DEFAULT_BASE_URL})
-  --public-base-url <url>  Public same-origin proxy for home requests (default: --base-url)
+  --public-base-url <url>  Public same-origin proxy for API requests (default: --base-url)
   --release <sha>          Expected full 40-character Git release SHA
   --timeout-ms <ms>        Overall verification timeout (default: ${DEFAULT_TIMEOUT_MS})
   --interval-ms <ms>       Poll interval (default: ${DEFAULT_INTERVAL_MS})
@@ -107,6 +107,7 @@ export async function verifyRelease(options, dependencies = {}) {
     validate: (result) => validateHealthProbe(result, options.release, true),
   });
 
+  validateUnauthorizedMeResponse(await request(publicBaseUrl, '/api/me'), options.release);
   validateFeaturedResponse(await request(publicBaseUrl, '/api/home/featured'), options.release);
   validateTemplatesResponse(await request(publicBaseUrl, '/api/home/templates'), options.release);
 
@@ -163,6 +164,21 @@ export function validateTemplatesResponse(result, expectedRelease) {
   }
   if (!Array.isArray(data.categories)) {
     throw new ReleaseVerificationError(`${pathname} body.data.categories must be an array`);
+  }
+}
+
+export function validateUnauthorizedMeResponse(result, expectedRelease) {
+  const pathname = '/api/me';
+  validateCommonResponse(result, pathname, expectedRelease, {
+    expectedStatus: 401,
+    requireNoStore: true,
+    requirePrivate: true,
+  });
+  const payload = requireObject(result.payload, `${pathname} JSON body`);
+  assertEqual(payload.ok, false, `${pathname} body.ok`);
+  const error = requireObject(payload.error, `${pathname} body.error`);
+  if (typeof error.message !== 'string' || !error.message.trim()) {
+    throw new ReleaseVerificationError(`${pathname} body.error.message must be a non-empty string`);
   }
 }
 
@@ -225,9 +241,10 @@ async function requestJson({ baseUrl, deadline, fetchImpl, now, pathname }) {
 }
 
 function validateCommonResponse(result, pathname, expectedRelease, options = {}) {
-  if (result.response.status !== 200) {
+  const expectedStatus = options.expectedStatus ?? 200;
+  if (result.response.status !== expectedStatus) {
     throw new ReleaseVerificationError(
-      `${pathname} returned status ${result.response.status}, expected 200: ${summarizeBody(result.body)}`,
+      `${pathname} returned status ${result.response.status}, expected ${expectedStatus}: ${summarizeBody(result.body)}`,
     );
   }
 
@@ -251,11 +268,17 @@ function validateCommonResponse(result, pathname, expectedRelease, options = {})
     );
   }
 
-  if (options.requireNoStore) {
+  if (options.requireNoStore || options.requirePrivate) {
     const cacheControl = result.response.headers.get('cache-control')?.toLowerCase() ?? '';
-    if (!cacheControl.split(',').some((value) => value.trim() === 'no-store')) {
+    const directives = cacheControl.split(',').map((value) => value.trim());
+    if (options.requireNoStore && !directives.includes('no-store')) {
       throw new ReleaseVerificationError(
         `${pathname} cache-control must contain no-store, received ${cacheControl || '<missing>'}`,
+      );
+    }
+    if (options.requirePrivate && !directives.includes('private')) {
+      throw new ReleaseVerificationError(
+        `${pathname} cache-control must contain private, received ${cacheControl || '<missing>'}`,
       );
     }
   }

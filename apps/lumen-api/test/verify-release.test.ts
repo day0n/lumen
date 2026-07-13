@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import test from 'node:test';
 import { serve } from '@hono/node-server';
+import { createAuthenticatedUserService } from '@lumen/backend';
 import { Hono } from 'hono';
 
 import {
   ReleaseVerificationError,
   parseOptions,
   validateHealthProbe,
+  validateUnauthorizedMeResponse,
   verifyRelease,
 } from '../scripts/verify-release.mjs';
 import { createApiApp } from '../src/app.ts';
@@ -16,6 +18,14 @@ const RELEASE = '0123456789abcdef0123456789abcdef01234567';
 
 test('release verifier checks live direct and public origins', async (context) => {
   const apiApp = createApiApp({
+    authenticatedUsers: createAuthenticatedUserService({
+      getUserRepository: async () => ({
+        async getByClerkId() {
+          return null;
+        },
+      }),
+      verifySessionToken: async () => null,
+    }),
     homeQueries: {
       async listFeatured() {
         return [];
@@ -69,7 +79,7 @@ test('release verifier checks live direct and public origins', async (context) =
   });
 
   assert.deepEqual(result, { baseUrl, publicBaseUrl, release: RELEASE });
-  assert.deepEqual(publicRequests, ['/api/home/featured', '/api/home/templates']);
+  assert.deepEqual(publicRequests, ['/api/me', '/api/home/featured', '/api/home/templates']);
 });
 
 test('release verifier polls readiness and validates public routes', async () => {
@@ -123,6 +133,12 @@ test('release verifier polls readiness and validates public routes', async () =>
             { noStore: true },
           );
         }
+        if (pathname === '/api/me') {
+          return jsonResponse(
+            { error: { message: 'Please sign in first' }, ok: false },
+            { privateNoStore: true, status: 401 },
+          );
+        }
         if (pathname === '/api/home/featured') {
           return jsonResponse({ data: { items: [] }, ok: true });
         }
@@ -145,6 +161,7 @@ test('release verifier polls readiness and validates public routes', async () =>
     `${baseUrl}/healthz`,
     `${baseUrl}/readyz`,
     `${baseUrl}/readyz`,
+    `${publicBaseUrl}/api/me`,
     `${publicBaseUrl}/api/home/featured`,
     `${publicBaseUrl}/api/home/templates`,
   ]);
@@ -219,6 +236,12 @@ test('public home responses retain release, request id and schema validation', a
                 { noStore: true },
               );
             }
+            if (pathname === '/api/me') {
+              return jsonResponse(
+                { error: { message: 'Please sign in first' }, ok: false },
+                { privateNoStore: true, status: 401 },
+              );
+            }
             if (pathname === '/api/home/featured') {
               return verificationCase.createFeaturedResponse();
             }
@@ -227,6 +250,48 @@ test('public home responses retain release, request id and schema validation', a
           sleep: async () => {},
         },
       ),
+      (error: unknown) =>
+        error instanceof ReleaseVerificationError &&
+        error.message.includes(verificationCase.expectedMessage),
+    );
+  }
+});
+
+test('public current user probes require unauthorized API response metadata', () => {
+  const validPayload = { error: { message: 'Please sign in first' }, ok: false };
+  const cases = [
+    {
+      expectedMessage: 'expected 401',
+      result: jsonResult(validPayload, { noStore: true }),
+    },
+    {
+      expectedMessage: 'x-lumen-release header',
+      result: jsonResult(validPayload, { noStore: true, release: null, status: 401 }),
+    },
+    {
+      expectedMessage: 'cache-control must contain no-store',
+      result: jsonResult(validPayload, { status: 401 }),
+    },
+    {
+      expectedMessage: 'cache-control must contain private',
+      result: jsonResult(validPayload, { noStore: true, status: 401 }),
+    },
+    {
+      expectedMessage: 'body.ok',
+      result: jsonResult({ data: {}, ok: true }, { privateNoStore: true, status: 401 }),
+    },
+    {
+      expectedMessage: 'body.error.message must be a non-empty string',
+      result: jsonResult(
+        { error: { message: '' }, ok: false },
+        { privateNoStore: true, status: 401 },
+      ),
+    },
+  ];
+
+  for (const verificationCase of cases) {
+    assert.throws(
+      () => validateUnauthorizedMeResponse(verificationCase.result, RELEASE),
       (error: unknown) =>
         error instanceof ReleaseVerificationError &&
         error.message.includes(verificationCase.expectedMessage),
@@ -270,6 +335,7 @@ function jsonResponse(
   payload: unknown,
   options: {
     noStore?: boolean;
+    privateNoStore?: boolean;
     release?: null | string;
     requestId?: null | string;
     status?: number;
@@ -280,9 +346,18 @@ function jsonResponse(
   if (options.requestId !== null) {
     headers.set('x-request-id', options.requestId ?? 'verify-request-1');
   }
-  if (options.noStore) headers.set('cache-control', 'no-store');
+  if (options.privateNoStore) headers.set('cache-control', 'private, no-store');
+  else if (options.noStore) headers.set('cache-control', 'no-store');
   return new Response(JSON.stringify(payload), {
     headers,
     status: options.status ?? 200,
   });
+}
+
+function jsonResult(payload: unknown, options: Parameters<typeof jsonResponse>[1] = {}) {
+  return {
+    body: JSON.stringify(payload),
+    payload,
+    response: jsonResponse(payload, options),
+  };
 }

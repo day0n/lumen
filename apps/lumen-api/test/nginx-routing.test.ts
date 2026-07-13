@@ -5,7 +5,7 @@ import test from 'node:test';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
 const nginxPath = path.join(repositoryRoot, 'infra/nginx/lumenstudio.tech.conf');
-const fallbackLocation = '@lumen_studio_home_read_fallback';
+const fallbackLocation = '@lumen_studio_api_read_fallback';
 
 const forwardedRequestHeaders = [
   'proxy_set_header Connection "";',
@@ -15,6 +15,7 @@ const forwardedRequestHeaders = [
   'proxy_set_header X-Forwarded-Proto $scheme;',
   'proxy_set_header Cookie $http_cookie;',
   'proxy_set_header Authorization $http_authorization;',
+  'proxy_set_header Origin $http_origin;',
   'proxy_set_header sentry-trace $http_sentry_trace;',
   'proxy_set_header baggage $http_baggage;',
   'proxy_set_header CF-Ray $http_cf_ray;',
@@ -22,6 +23,7 @@ const forwardedRequestHeaders = [
 ];
 
 const homeReadLocations = ['= /api/home/featured', '= /api/home/templates'];
+const apiReadLocations = [...homeReadLocations, '= /api/me'];
 
 test('preserves the production listeners, TLS files, and existing upstream routes', async () => {
   const source = await readFile(nginxPath, 'utf8');
@@ -66,15 +68,15 @@ test('preserves the production listeners, TLS files, and existing upstream route
   ]);
 });
 
-test('sends only the two exact GET and HEAD home reads to the API', async () => {
+test('sends only the three exact GET and HEAD API reads to the API', async () => {
   const source = await readFile(nginxPath, 'utf8');
   const server = extractBlock(source, 'server');
   const apiLocations = locationDeclarations(server).filter((location) => location.includes('/api'));
 
-  assert.deepEqual(apiLocations.sort(), homeReadLocations.toSorted());
-  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 2);
+  assert.deepEqual(apiLocations.sort(), apiReadLocations.toSorted());
+  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 3);
 
-  for (const location of homeReadLocations) {
+  for (const location of apiReadLocations) {
     const block = extractBlock(server, `location ${location}`);
     assertContainsAll(block, [
       `error_page 418 = ${fallbackLocation};`,
@@ -88,11 +90,23 @@ test('sends only the two exact GET and HEAD home reads to the API', async () => 
       'proxy_send_timeout 5s;',
       'proxy_read_timeout 5s;',
       'proxy_hide_header Cache-Control;',
-      'add_header Cache-Control "no-store" always;',
       ...forwardedRequestHeaders,
     ]);
     assert.equal(countOccurrences(block, 'proxy_pass http://127.0.0.1:3003;'), 1);
   }
+
+  for (const location of homeReadLocations) {
+    assert.ok(
+      extractBlock(server, `location ${location}`).includes(
+        'add_header Cache-Control "no-store" always;',
+      ),
+    );
+  }
+
+  const currentUser = extractBlock(server, 'location = /api/me');
+  assert.ok(currentUser.includes(`error_page 404 = ${fallbackLocation};`));
+  assert.doesNotMatch(currentUser, /error_page[^\n]*(?:401|403)/);
+  assert.ok(currentUser.includes('add_header Cache-Control "private, no-store" always;'));
 });
 
 test('falls back to Studio with the original URI and query on API read failures', async () => {
@@ -107,7 +121,7 @@ test('falls back to Studio with the original URI and query on API read failures'
     'proxy_send_timeout 5s;',
     'proxy_read_timeout 5s;',
     'proxy_hide_header Cache-Control;',
-    'add_header Cache-Control "no-store" always;',
+    'add_header Cache-Control "private, no-store" always;',
     ...forwardedRequestHeaders,
   ]);
   assert.equal(countOccurrences(fallback, 'proxy_pass'), 1);
