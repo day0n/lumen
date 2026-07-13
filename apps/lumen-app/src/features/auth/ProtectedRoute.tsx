@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { currentAppRedirectUrl } from '../../lib/path-map';
 import { AppRouteFallback } from '../routing/AppRouteFallback';
+import { isPublicEntryPath } from './public-entry-path';
 
 const SIGN_IN_REDIRECT_GRACE_MS = 1500;
 
@@ -32,8 +33,4 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   }
 
   return children;
-}
-
-function isPublicEntryPath(pathname: string) {
-  return pathname === '/app/home' || pathname === '/home';
 }

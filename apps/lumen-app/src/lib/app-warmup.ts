@@ -1,7 +1,5 @@
 import { toAppPath } from './path-map';
 
-let routeWarmup: Promise<unknown> | null = null;
-let dataWarmup: Promise<unknown> | null = null;
 const intentWarmups = new Map<string, Promise<unknown>>();
 
 export function warmCurrentAppRoute(pathname = window.location.pathname) {
@@ -48,45 +46,6 @@ export function warmAppRouteResources(
   const warmup = Promise.allSettled(tasks);
   intentWarmups.set(key, warmup);
   return warmup;
-}
-
-export function scheduleAppWarmup({ includeData = true }: { includeData?: boolean } = {}) {
-  void warmAppRoutes();
-
-  if (!includeData) return;
-
-  const runDataWarmup = () => {
-    void warmAppData();
-  };
-
-  if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(runDataWarmup, { timeout: 1200 });
-  } else {
-    globalThis.setTimeout(runDataWarmup, 350);
-  }
-}
-
-function warmAppRoutes() {
-  routeWarmup ??= Promise.allSettled([
-    import('@/app/home/page'),
-    import('@/components/studio/DashboardPage'),
-    import('@/components/studio/HotVideosPage'),
-    import('@/components/studio/MaterialsPage'),
-    import('@/components/studio/WorkspacePage'),
-    import('@/components/canvas/CanvasEntryLoader'),
-    import('@/components/canvas/CanvasWorkbench'),
-  ]);
-  return routeWarmup;
-}
-
-function warmAppData() {
-  dataWarmup ??= Promise.allSettled([
-    prefetchApi('/api/projects'),
-    prefetchApi('/api/folders'),
-    prefetchApi('/api/material-assets?category=item&limit=80'),
-    prefetchApi('/api/hot-videos?limit=24'),
-  ]);
-  return dataWarmup;
 }
 
 function warmAppRouteData(routePath: string) {

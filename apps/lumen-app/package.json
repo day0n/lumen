@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
+    "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 0.0.0.0"
   },
@@ -44,6 +45,7 @@
     "postcss-preset-mantine": "^1.17.0",
     "postcss-simple-vars": "^7.0.1",
     "tailwindcss": "^3.4.14",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vite": "^7.2.7"
   }

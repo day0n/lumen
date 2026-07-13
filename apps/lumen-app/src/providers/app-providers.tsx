@@ -8,7 +8,6 @@ import {
   setApiAuthStatusVerifier,
   setApiTokenGetter,
 } from '../lib/api-client';
-import { scheduleAppWarmup } from '../lib/app-warmup';
 import { createQueryClient } from '../lib/query-client';
 import { MinimalProviders } from './minimal-providers';
 
@@ -139,23 +138,6 @@ function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function AppWarmup() {
-  const { isLoaded, isSignedIn } = useAuth();
-
-  useEffect(() => {
-    const timeoutId = globalThis.setTimeout(() => scheduleAppWarmup({ includeData: false }), 0);
-    return () => globalThis.clearTimeout(timeoutId);
-  }, []);
-
-  useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
-    const timeoutId = globalThis.setTimeout(scheduleAppWarmup, 150);
-    return () => globalThis.clearTimeout(timeoutId);
-  }, [isLoaded, isSignedIn]);
-
-  return null;
-}
-
 export function AppProviders({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => createQueryClient());
   const publishableKey = useMemo(() => __LUMEN_CLERK_PUBLISHABLE_KEY__, []);
@@ -184,7 +166,6 @@ export function AppProviders({ children }: { children: ReactNode }) {
           <QueryClientProvider client={queryClient}>
             <I18nProvider>
               <ApiAuthBridge />
-              <AppWarmup />
               {children}
             </I18nProvider>
           </QueryClientProvider>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 
 export const APP_HOME_ROUTE = '/app/home';
 export const APP_PROJECTS_ROUTE = '/app/projects';
@@ -8,24 +8,6 @@ export const APP_HOT_VIDEOS_ROUTE = '/app/hot-videos';
 export const APP_MATERIALS_ROUTE = '/app/materials';
 export const APP_DASHBOARD_ROUTE = '/app/dashboard';
 export const APP_CANVAS_NEW_ROUTE = '/app/canvas/new';
-
-const HOME_FEATURED_ENDPOINT = '/api/home/featured';
-const HOME_TEMPLATES_ENDPOINT = '/api/home/templates';
-
-const HOME_POSTERS = [
-  '/home-posters/selected/agent-pop.png',
-  '/home-posters/selected/material-mythic.png',
-  '/home-posters/selected/hot-remix-collage.png',
-  '/home-posters/selected/agent-chat-minimal.png',
-  '/home-posters/selected/material-archive.png',
-  '/home-posters/selected/agent-glass.png',
-] as const;
-
-type WindowWithIdleCallback = Window &
-  typeof globalThis & {
-    requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
-    cancelIdleCallback?: (handle: number) => void;
-  };
 
 export function useHomeRoutePreload() {
   const assetsWarmedRef = useRef(false);
@@ -46,33 +28,7 @@ export function useHomeRoutePreload() {
         }
       })
       .catch(() => undefined);
-
-    void fetch(HOME_FEATURED_ENDPOINT, {
-      credentials: 'include',
-    }).catch(() => undefined);
-
-    void fetch(HOME_TEMPLATES_ENDPOINT, {
-      credentials: 'include',
-    }).catch(() => undefined);
-
-    for (const url of HOME_POSTERS) {
-      const image = new Image();
-      image.decoding = 'async';
-      image.src = url;
-    }
   }, []);
-
-  useEffect(() => {
-    const idleWindow = window as WindowWithIdleCallback;
-
-    if (idleWindow.requestIdleCallback) {
-      const handle = idleWindow.requestIdleCallback(() => warmHomeRoute(), { timeout: 1800 });
-      return () => idleWindow.cancelIdleCallback?.(handle);
-    }
-
-    const handle = window.setTimeout(warmHomeRoute, 450);
-    return () => window.clearTimeout(handle);
-  }, [warmHomeRoute]);
 
   return warmHomeRoute;
 }

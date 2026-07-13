@@ -305,12 +305,17 @@ function PosterSlide({
       }}
       transition={{ duration: 0.72, ease: [0.32, 0.72, 0, 1] }}
     >
-      <img
-        alt={slide.title}
-        className="h-full w-full object-cover"
-        draggable={false}
-        src={slide.coverUrl}
-      />
+      {Math.abs(diff) <= 1 ? (
+        <img
+          alt={slide.title}
+          className="h-full w-full object-cover"
+          decoding="async"
+          draggable={false}
+          fetchPriority={isCenter ? 'high' : 'low'}
+          loading={isCenter ? 'eager' : 'lazy'}
+          src={slide.coverUrl}
+        />
+      ) : null}
       <span className="pointer-events-none absolute inset-0 rounded-[22px] ring-1 ring-inset ring-white/[0.08]" />
       <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05)_0%,transparent_28%,rgba(0,0,0,0.1)_100%)] opacity-70" />
       <span className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-[linear-gradient(180deg,transparent_0%,rgba(9,10,11,0.58)_64%,rgba(9,10,11,0.92)_100%)]" />
