@@ -96,7 +96,9 @@ export const getMaterialAssetRepository = createRepositoryLoader(async () => {
 
 export const getWorkflowNodeResultRepository = createRepositoryLoader(async () => {
   const db = await getWorkflowDb();
-  return new WorkflowNodeResultRepository(db);
+  const repository = new WorkflowNodeResultRepository(db);
+  await repository.ensureIndexes();
+  return repository;
 });
 
 export const getProjectHistoryRepository = createRepositoryLoader(async () => {

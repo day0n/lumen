@@ -3,8 +3,10 @@ import 'server-only';
 import {
   type ProjectDetailQueryService,
   type ProjectQueryService,
+  type WorkflowStatusQueryService,
   createProjectDetailQueryService,
   createProjectQueryService,
+  createWorkflowStatusQueryService,
 } from '@lumen/backend';
 import {
   type ProjectCanvas,
@@ -19,6 +21,7 @@ import { traceStudioStep } from './telemetry';
 
 let projectQueries: ProjectQueryService<ProjectListRecord> | null = null;
 let projectDetailQueries: ProjectDetailQueryService<ProjectRecord> | null = null;
+let workflowStatusQueries: WorkflowStatusQueryService | null = null;
 
 export function getStudioProjectQueries(): ProjectQueryService<ProjectListRecord> {
   projectQueries ??= createProjectQueryService({
@@ -41,4 +44,14 @@ export function getStudioProjectDetailQueries(): ProjectDetailQueryService<Proje
     tracePrefix: 'studio',
   });
   return projectDetailQueries;
+}
+
+export function getStudioWorkflowStatusQueries(): WorkflowStatusQueryService {
+  workflowStatusQueries ??= createWorkflowStatusQueryService({
+    getProjectRepository,
+    getWorkflowNodeResultRepository,
+    trace: traceStudioStep,
+    tracePrefix: 'studio',
+  });
+  return workflowStatusQueries;
 }
