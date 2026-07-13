@@ -1,0 +1,23 @@
+{
+  "name": "@lumen/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @lumen/backend build && tsx watch src/main.ts",
+    "build": "pnpm --filter @lumen/backend build && tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "test": "pnpm --filter @lumen/backend build && tsx --test test/*.test.ts",
+    "typecheck": "pnpm --filter @lumen/backend build && tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@lumen/backend": "workspace:*",
+    "hono": "^4.6.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
