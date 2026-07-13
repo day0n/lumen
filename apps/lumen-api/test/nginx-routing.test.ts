@@ -26,10 +26,16 @@ const forwardedRequestHeaders = [
 const homeReadLocations = ['= /api/home/featured', '= /api/home/templates'];
 const notificationReadLocation = '= /api/notifications/official';
 const notificationWriteLocation = '^~ /api/notifications/official/';
+const projectDetailLocation = '~ ^/api/projects/[^/]+$';
 const projectsEntryLocation = '= /api/projects';
 const legacyApiReadLocations = [...homeReadLocations, '= /api/me'];
 const apiReadLocations = [...legacyApiReadLocations, notificationReadLocation];
-const apiProxyLocations = [...apiReadLocations, notificationWriteLocation, projectsEntryLocation];
+const apiProxyLocations = [
+  ...apiReadLocations,
+  notificationWriteLocation,
+  projectsEntryLocation,
+  projectDetailLocation,
+];
 
 test('preserves the production listeners, TLS files, and existing upstream routes', async () => {
   const source = await readFile(nginxPath, 'utf8');
@@ -80,7 +86,7 @@ test('sends only the intended API reads and notification writes to the API', asy
   const apiLocations = locationDeclarations(server).filter((location) => location.includes('/api'));
 
   assert.deepEqual(apiLocations.sort(), apiProxyLocations.toSorted());
-  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 6);
+  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 7);
 
   for (const location of apiReadLocations) {
     const block = extractBlock(server, `location ${location}`);
@@ -132,31 +138,34 @@ test('sends only project GET and HEAD requests to the API read route', async () 
   const source = await readFile(nginxPath, 'utf8');
   const server = extractBlock(source, 'server');
   const projectsEntry = extractBlock(server, `location ${projectsEntryLocation}`);
+  const projectDetail = extractBlock(server, `location ${projectDetailLocation}`);
 
-  assertContainsAll(projectsEntry, [
-    `error_page 418 = ${projectsStudioPassthroughLocation};`,
-    `error_page 404 = ${fallbackLocation};`,
-    `error_page 500 502 503 504 = ${fallbackLocation};`,
-    'if ($request_method !~ ^(GET|HEAD)$)',
-    'return 418;',
-    'proxy_pass http://127.0.0.1:3003;',
-    'proxy_http_version 1.1;',
-    'proxy_intercept_errors on;',
-    'proxy_connect_timeout 1s;',
-    'proxy_send_timeout 5s;',
-    'proxy_read_timeout 5s;',
-    'proxy_hide_header Cache-Control;',
-    'add_header Cache-Control "private, no-store" always;',
-    ...forwardedRequestHeaders,
-  ]);
+  for (const block of [projectsEntry, projectDetail]) {
+    assertContainsAll(block, [
+      `error_page 418 = ${projectsStudioPassthroughLocation};`,
+      `error_page 500 502 503 504 = ${fallbackLocation};`,
+      'if ($request_method !~ ^(GET|HEAD)$)',
+      'return 418;',
+      'proxy_pass http://127.0.0.1:3003;',
+      'proxy_http_version 1.1;',
+      'proxy_intercept_errors on;',
+      'proxy_connect_timeout 1s;',
+      'proxy_send_timeout 5s;',
+      'proxy_read_timeout 5s;',
+      'proxy_hide_header Cache-Control;',
+      'add_header Cache-Control "private, no-store" always;',
+      ...forwardedRequestHeaders,
+    ]);
+    assert.equal(countOccurrences(block, 'proxy_pass'), 1);
+    assert.doesNotMatch(block, /error_page[^\n]*(?:400|401|403)/);
+    assert.doesNotMatch(block, /proxy_pass\s+http:\/\/127\.0\.0\.1:3003\//);
+    assert.doesNotMatch(block, /\brewrite\b|\$request_uri|proxy_pass_request_body|proxy_set_body/);
+  }
+
+  assertContainsAll(projectsEntry, [`error_page 404 = ${fallbackLocation};`]);
   assert.equal(countOccurrences(projectsEntry, 'error_page'), 3);
-  assert.equal(countOccurrences(projectsEntry, 'proxy_pass'), 1);
-  assert.doesNotMatch(projectsEntry, /error_page[^\n]*(?:400|401|403)/);
-  assert.doesNotMatch(projectsEntry, /proxy_pass\s+http:\/\/127\.0\.0\.1:3003\//);
-  assert.doesNotMatch(
-    projectsEntry,
-    /\brewrite\b|\$request_uri|proxy_pass_request_body|proxy_set_body/,
-  );
+  assert.equal(countOccurrences(projectDetail, 'error_page'), 2);
+  assert.doesNotMatch(projectDetail, /error_page[^\n]*404/);
 
   const projectsStudio = extractBlock(server, `location ${projectsStudioPassthroughLocation}`);
   assertContainsAll(projectsStudio, [
@@ -177,6 +186,38 @@ test('sends only project GET and HEAD requests to the API read route', async () 
 
   const readFallback = extractBlock(server, `location ${fallbackLocation}`);
   assert.doesNotMatch(readFallback, /\berror_page\b/);
+});
+
+test('project detail proxy matches exactly one path segment', async () => {
+  const source = await readFile(nginxPath, 'utf8');
+  const server = extractBlock(source, 'server');
+  const declarations = locationDeclarations(server);
+  const matcher = new RegExp(projectDetailLocation.replace(/^~\s+/, ''));
+
+  for (const pathname of ['/api/projects/project-1', '/api/projects/release-verification-probe']) {
+    assert.equal(matcher.test(pathname), true, pathname);
+  }
+  for (const pathname of [
+    '/api/projects',
+    '/api/projects/',
+    '/api/projects/project-1/',
+    '/api/projects/project-1/share',
+    '/api/projects/project-1/history',
+    '/api/projects/project-1/workflow-status',
+    '/api/projects/project-1/workflow-runs/run-1/cancel',
+  ]) {
+    assert.equal(matcher.test(pathname), false, pathname);
+  }
+
+  assert.ok(declarations.includes(projectDetailLocation));
+  assert.equal(
+    declarations.some((location) => location === '/api/projects/'),
+    false,
+  );
+  assert.equal(
+    declarations.some((location) => location === '^~ /api/projects/'),
+    false,
+  );
 });
 
 test('keeps notification writes fail-closed without any Studio fallback', async () => {
