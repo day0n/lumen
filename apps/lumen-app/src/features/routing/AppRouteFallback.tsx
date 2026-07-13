@@ -1,7 +1,7 @@
-import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
-import { Topbar } from '@/components/home/Topbar';
-import { useAppShellChrome } from '@/lib/app-shell-chrome';
 import { useLocation } from '@tanstack/react-router';
+import { AuroraBackdrop } from '../../components/shell/AuroraBackdrop';
+import { Topbar } from '../../components/shell/Topbar';
+import { useAppShellChrome } from '../../lib/app-shell-chrome';
 
 const gridCounts = {
   home: 4,

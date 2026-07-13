@@ -93,6 +93,56 @@ export default defineConfig(({ mode }) => {
           find: '@/i18n/routing',
           replacement: path.resolve(__dirname, 'src/i18n/routing.ts'),
         },
+        {
+          find: '@/components/home/AuroraBackdrop',
+          replacement: path.resolve(__dirname, 'src/components/shell/AuroraBackdrop.tsx'),
+        },
+        {
+          find: '@/components/home/NotificationsPopover',
+          replacement: path.resolve(__dirname, 'src/components/shell/NotificationsPopover.tsx'),
+        },
+        {
+          find: '@/components/home/Topbar',
+          replacement: path.resolve(__dirname, 'src/components/shell/Topbar.tsx'),
+        },
+        {
+          find: '@/components/i18n/LanguageToggle',
+          replacement: path.resolve(__dirname, 'src/components/shell/LanguageToggle.tsx'),
+        },
+        {
+          find: '@/components/mobile/MobileSheet',
+          replacement: path.resolve(__dirname, 'src/components/shell/MobileSheet.tsx'),
+        },
+        {
+          find: '@/components/mobile/SafeAreaContainer',
+          replacement: path.resolve(__dirname, 'src/components/shell/SafeAreaContainer.tsx'),
+        },
+        {
+          find: '@/components/ui/LumenMark',
+          replacement: path.resolve(__dirname, 'src/components/shell/LumenMark.tsx'),
+        },
+        {
+          find: '@/hooks/use-is-mobile',
+          replacement: path.resolve(__dirname, 'src/hooks/use-is-mobile.ts'),
+        },
+        {
+          find: '@/hooks/use-media-query',
+          replacement: path.resolve(__dirname, 'src/hooks/use-media-query.ts'),
+        },
+        {
+          find: '@/lib/app-shell-chrome',
+          replacement: path.resolve(__dirname, 'src/lib/app-shell-chrome.tsx'),
+        },
+        {
+          find: '@/lib/auth-redirect',
+          replacement: path.resolve(__dirname, 'src/lib/auth-redirect.ts'),
+        },
+        { find: '@/lib/cn', replacement: path.resolve(__dirname, 'src/lib/cn.ts') },
+        {
+          find: '@/lib/protected-paths',
+          replacement: path.resolve(__dirname, 'src/lib/protected-paths.ts'),
+        },
+        { find: '@/lib/theme', replacement: path.resolve(__dirname, 'src/lib/theme.ts') },
         { find: '@', replacement: studioSrc },
         { find: 'next/link', replacement: path.resolve(__dirname, 'src/compat/next-link.tsx') },
         {

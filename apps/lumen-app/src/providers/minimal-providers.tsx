@@ -1,6 +1,6 @@
-import { lumenTheme } from '@/lib/theme';
 import { MantineProvider } from '@mantine/core';
 import type { ReactNode } from 'react';
+import { lumenTheme } from '../lib/theme';
 
 export function MinimalProviders({ children }: { children: ReactNode }) {
   return (
