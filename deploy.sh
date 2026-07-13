@@ -131,6 +131,27 @@ pnpm --filter @lumen/api verify:release -- \
   --timeout-ms "${LUMEN_API_VERIFY_TIMEOUT_MS:-60000}" \
   --interval-ms "${LUMEN_API_VERIFY_INTERVAL_MS:-500}"
 
+echo "==> Activating the public home API proxy..."
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Root privileges are required to activate the nginx site configuration."
+  exit 1
+fi
+NGINX_SITE_SOURCE="$APP_DIR/infra/nginx/lumenstudio.tech.conf"
+NGINX_SITE_TARGET=/etc/nginx/sites-available/lumenstudio.tech
+NGINX_SITE_ENABLED=/etc/nginx/sites-enabled/lumenstudio.tech
+NGINX_ACTIVATION_SCRIPT="$APP_DIR/infra/nginx/activate-site.sh"
+bash "$NGINX_ACTIVATION_SCRIPT" \
+  "$NGINX_SITE_SOURCE" \
+  "$NGINX_SITE_TARGET" \
+  "$NGINX_SITE_ENABLED" \
+  -- \
+  pnpm --filter @lumen/api verify:release -- \
+    --base-url http://127.0.0.1:3003 \
+    --public-base-url http://127.0.0.1 \
+    --release "$RELEASE_SHA" \
+    --timeout-ms "${LUMEN_API_VERIFY_TIMEOUT_MS:-60000}" \
+    --interval-ms "${LUMEN_API_VERIFY_INTERVAL_MS:-500}"
+
 echo "==> Activating studio build..."
 ln -sfn "$STUDIO_BUILD_DIR" apps/lumen-studio/.next-current.tmp
 mv -Tf apps/lumen-studio/.next-current.tmp apps/lumen-studio/.next-current

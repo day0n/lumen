@@ -84,7 +84,7 @@ test('process configuration rejects missing env files and short releases', async
   );
 });
 
-test('deployment builds, starts, and verifies the API without switching traffic', async () => {
+test('deployment verifies the API before activating its public routes and Studio', async () => {
   await execFileAsync('bash', ['-n', deployPath]);
   const source = await readFile(deployPath, 'utf8');
   const orderedMarkers = [
@@ -93,6 +93,9 @@ test('deployment builds, starts, and verifies the API without switching traffic'
     'pnpm build:api',
     'pm2 startOrReload ecosystem.config.cjs --only lumen-api --update-env',
     'pnpm --filter @lumen/api verify:release',
+    'echo "==> Activating the public home API proxy..."',
+    'bash "$NGINX_ACTIVATION_SCRIPT"',
+    '--public-base-url http://127.0.0.1',
     'echo "==> Activating studio build..."',
     'echo "==> Ensuring nginx upload limit..."',
     'pm2 startOrReload ecosystem.config.cjs \\\n  --only lumen-studio,lumen-agent,lumen-engine',
@@ -108,6 +111,10 @@ test('deployment builds, starts, and verifies the API without switching traffic'
   assert.match(source, /apps\/lumen-studio\/\.env\.local/);
   assert.match(source, /chmod 600 "\$LUMEN_API_ENV_FILE"/);
   assert.match(source, /--base-url http:\/\/127\.0\.0\.1:3003/);
+  assert.match(source, /infra\/nginx\/lumenstudio\.tech\.conf/);
+  assert.match(source, /infra\/nginx\/activate-site\.sh/);
+  assert.match(source, /\/etc\/nginx\/sites-available\/lumenstudio\.tech/);
+  assert.match(source, /\/etc\/nginx\/sites-enabled\/lumenstudio\.tech/);
   assert.match(source, /^set -euo pipefail$/m);
   assert.doesNotMatch(source, /proxy_pass\s+http:\/\/127\.0\.0\.1:3003/);
 });
