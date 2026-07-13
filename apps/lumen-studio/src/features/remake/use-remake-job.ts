@@ -395,6 +395,7 @@ export function useRemakeJob(
     if (!jobId) return;
     try {
       const response = await fetch(`/api/remake/jobs/${jobId}`, {
+        cache: 'no-store',
         headers: { 'x-lumen-locale': locale },
       });
       const payload = await readClientApiJson<ApiResp<RemakeJobView>>(

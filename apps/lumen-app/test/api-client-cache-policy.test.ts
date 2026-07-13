@@ -16,6 +16,7 @@ test('anonymous memory caching is limited to explicitly public API responses', (
     '/api/folders',
     '/api/material-assets',
     '/api/hot-videos',
+    '/api/remake/jobs/job-1',
   ]) {
     assert.equal(canUseApiMemoryCache({ pathname, headers: anonymousHeaders }), false, pathname);
   }
@@ -109,6 +110,16 @@ test('project child resources stay outside the app memory cache', () => {
     assert.equal(canUseApiMemoryCache({ headers, pathname }), false, pathname);
   }
   assert.equal(canUseApiMemoryCache({ headers, pathname: '/api/projects-private' }), false);
+});
+
+test('remake job polling stays outside the app memory cache', () => {
+  const headers = new Headers({ authorization: 'Bearer user-token' });
+
+  assert.equal(canUseApiMemoryCache({ headers, pathname: '/api/remake/jobs/job-1' }), false);
+  assert.equal(
+    canUseApiMemoryCache({ cache: 'no-store', headers, pathname: '/api/remake/jobs/job-1' }),
+    false,
+  );
 });
 
 test('fresh reads invalidate canonical data only after success or an authoritative miss', () => {
