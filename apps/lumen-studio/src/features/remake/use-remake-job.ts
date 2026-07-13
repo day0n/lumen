@@ -436,7 +436,7 @@ export function useRemakeJob(
   //   都会清掉旧 interval 重建新的，节奏不稳定。
   // - document.visibilityState !== 'visible' 时暂停轮询：用户切到别的标签页或
   //   把窗口最小化时，原来还会以 1Hz 拉 /api/remake/jobs/:id（每个 tab 都
-  //   会触发一次 mongo getJob + listTasksByJob + deriveJobStageStatuses）。
+  //   会触发一次 mongo getJob + listTasksByJob + 阶段状态推导）。
   //   一个用户开三个 tab + 后台 tab 也照跑，就是 180 req/min/用户。
   //   切回来时立刻 fetch 一次拿最新状态，不要等下一拍。
   useEffect(() => {

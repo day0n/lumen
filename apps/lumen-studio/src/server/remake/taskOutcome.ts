@@ -1,10 +1,10 @@
 // 勿加 server-only：server.ts 经 eventMirror 在进程启动时加载本模块。
+import { deriveRemakeJobStageStatuses } from '@lumen/backend';
 import type { RemakeTaskStatus } from '@lumen/db';
 
 import { getRemakeJobRepository } from '@/server/db';
 
 import {
-  deriveJobStageStatuses,
   parseEnvironmentIndexFromSliceKey,
   parseSceneIndexFromSliceKey,
   sliceOutputField,
@@ -50,7 +50,7 @@ export async function recordTaskOutcome(input: RecordTaskOutcomeInput): Promise<
   const job = await repository.getJob(input.jobId, input.ownerId);
   if (!job) return;
   const allTasks = await repository.listTasksByJob(input.jobId);
-  const stageStatuses = deriveJobStageStatuses(job, allTasks);
+  const stageStatuses = deriveRemakeJobStageStatuses(job, allTasks);
   // Use the guarded stage update so concurrent task:done events cannot
   // overwrite a `success` (final) state with `running`. Without this, when
   // two tasks settle within milliseconds of each other, the lagging derive

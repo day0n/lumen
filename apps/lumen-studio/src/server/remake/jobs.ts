@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { deriveRemakeJobStageStatuses } from '@lumen/backend';
 import type {
   RemakeJobPlan,
   RemakeJobRecord,
@@ -19,7 +20,6 @@ import { buildPlanForJob, resolveReferenceVideo } from './planning';
 import {
   type PlannedTask,
   SliceKeys,
-  deriveJobStageStatuses,
   expandFinalStage,
   expandLockStage,
   expandStoryboardStage,
@@ -254,7 +254,7 @@ export async function updateSceneParams(input: {
   if (!job) return null;
 
   const tasks = await repository.listTasksByJob(input.jobId);
-  const statuses = deriveJobStageStatuses(job, tasks);
+  const statuses = deriveRemakeJobStageStatuses(job, tasks);
 
   // 编辑 imagePrompt 只需要 storyboard 未锁；编辑视频字段时仍要求 video 阶段可访问。
   const touchesVideoOnly =
@@ -349,7 +349,7 @@ export async function runStage(input: {
 
   // 推导当前 stage 状态，校验门控
   const tasks = await repository.listTasksByJob(input.jobId);
-  const statuses = deriveJobStageStatuses(job, tasks);
+  const statuses = deriveRemakeJobStageStatuses(job, tasks);
   if (statuses[input.stage] === 'locked') {
     throw new Error(`Stage "${input.stage}" is locked by upstream gate or stage.`);
   }
@@ -467,7 +467,7 @@ function composeView(job: RemakeJobRecord, tasks: RemakeTaskRecord[]): RemakeJob
   return {
     job,
     tasks,
-    stageStatuses: deriveJobStageStatuses(job, tasks),
+    stageStatuses: deriveRemakeJobStageStatuses(job, tasks),
   };
 }
 

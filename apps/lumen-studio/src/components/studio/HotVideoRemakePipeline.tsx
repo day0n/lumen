@@ -42,7 +42,7 @@ import type { ReactNode } from 'react';
  * 数据源：useRemakeJob(jobId) → SSE 实时事件 + REST 拉取的 RemakeJobView。
  * 不再依赖隐藏画布、不再走 WebSocket runNodes、不再保存 LumenCanvas 状态。
  *
- * 6 步骤的状态由 server 端 deriveJobStageStatuses 推出来，UI 直接读：
+ * 6 步骤的状态由后端统一推导，UI 直接读：
  * - locked   → 灰/不可点
  * - ready    → 可点（白），用户进入触发该 stage
  * - running  → 进度条

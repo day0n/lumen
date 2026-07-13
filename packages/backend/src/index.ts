@@ -4,5 +4,6 @@ export * from './home-query-service.js';
 export * from './notification-service.js';
 export * from './project-detail-query-service.js';
 export * from './project-query-service.js';
+export * from './remake-stage-status.js';
 export * from './request-context.js';
 export * from './workflow-status-query-service.js';

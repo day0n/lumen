@@ -4,10 +4,8 @@ import type {
   RemakeJobRecord,
   RemakeJobSceneOutput,
   RemakeStageName,
-  RemakeStageStatus,
   RemakeTaskHandler,
   RemakeTaskInput,
-  RemakeTaskRecord,
 } from '@lumen/db';
 
 /**
@@ -492,85 +490,4 @@ function shouldPlanSlice(sliceKey: string, sliceKeys?: readonly string[]): boole
 function filterPlannedTasks(tasks: PlannedTask[], sliceKeys?: readonly string[]): PlannedTask[] {
   if (!sliceKeys || sliceKeys.length === 0) return tasks;
   return tasks.filter((task) => sliceKeys.includes(task.sliceKey));
-}
-
-// ============================================================
-// Stage 状态推导（纯函数）
-// ============================================================
-
-/**
- * 给定某 stage 当前所有 task 状态，推导 stage 应该是什么状态。
- * 调用方传入的 tasks 应已被 stage 过滤。
- */
-export function deriveStageStatus(tasks: RemakeTaskRecord[]): RemakeStageStatus {
-  if (tasks.length === 0) return 'ready';
-  let anyRunning = false;
-  let anyError = false;
-  let anyCancelled = false;
-  let allSuccess = true;
-  for (const task of tasks) {
-    if (task.status === 'queued' || task.status === 'running') {
-      anyRunning = true;
-      allSuccess = false;
-    } else if (task.status === 'error') {
-      anyError = true;
-      allSuccess = false;
-    } else if (task.status === 'cancelled') {
-      anyCancelled = true;
-      allSuccess = false;
-    }
-  }
-  if (anyRunning) return 'running';
-  if (allSuccess) return 'success';
-  if (anyError) return 'error';
-  if (anyCancelled) return 'cancelled';
-  return 'ready';
-}
-
-/**
- * 给定整个 job + 所有 task，返回每个 stage 的"应有"状态（按门控规则）。
- * 这是 UI stepper 的真源，UI 不需要自己推。
- */
-export function deriveJobStageStatuses(
-  job: RemakeJobRecord,
-  tasks: RemakeTaskRecord[],
-): Record<RemakeStageName, RemakeStageStatus> {
-  const byStage = new Map<RemakeStageName, RemakeTaskRecord[]>();
-  for (const task of tasks) {
-    const list = byStage.get(task.stage) ?? [];
-    list.push(task);
-    byStage.set(task.stage, list);
-  }
-  const tasksOf = (stage: RemakeStageName) => byStage.get(stage) ?? [];
-
-  const breakdown: RemakeStageStatus = 'success';
-  const script: RemakeStageStatus = job.gate1ConfirmedAt ? 'success' : 'ready';
-
-  const lockTasks = tasksOf('lock');
-  const lockStatus = lockTasks.length > 0 ? deriveStageStatus(lockTasks) : 'ready';
-  const lock: RemakeStageStatus = job.gate1ConfirmedAt ? lockStatus : 'locked';
-
-  const storyboardTasks = tasksOf('storyboard');
-  const storyboardComputed =
-    storyboardTasks.length > 0 ? deriveStageStatus(storyboardTasks) : 'ready';
-  const storyboardGated: RemakeStageStatus =
-    lock !== 'success' ? 'locked' : job.gate2ConfirmedAt ? 'success' : storyboardComputed;
-
-  const videoTasks = tasksOf('video');
-  const videoComputed = videoTasks.length > 0 ? deriveStageStatus(videoTasks) : 'ready';
-  // video stage 还需要 mix 全部 success 才能算 success
-  const videoGated: RemakeStageStatus = storyboardGated !== 'success' ? 'locked' : videoComputed;
-
-  const finalTasks = tasksOf('final');
-  const finalComputed = finalTasks.length > 0 ? deriveStageStatus(finalTasks) : 'ready';
-  const final: RemakeStageStatus = videoGated !== 'success' ? 'locked' : finalComputed;
-
-  return {
-    breakdown,
-    script,
-    lock,
-    storyboard: storyboardGated,
-    video: videoGated,
-    final,
-  };
 }
