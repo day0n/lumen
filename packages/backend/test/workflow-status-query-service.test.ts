@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { type WorkflowNodeResultSnapshot, createWorkflowStatusQueryService } from '../src/index.ts';
+import {
+  type WorkflowNodeResultSnapshot,
+  createWorkflowStatusQueryService,
+  parseWorkflowStatusNodeIds,
+} from '../src/index.ts';
 
 const result: WorkflowNodeResultSnapshot = {
   error: null,
@@ -12,6 +16,18 @@ const result: WorkflowNodeResultSnapshot = {
   status: 'running',
   updatedAt: '2026-07-14T00:00:00.000Z',
 };
+
+test('workflow status input parsing preserves the bounded route contract', () => {
+  assert.deepEqual(parseWorkflowStatusNodeIds(null), []);
+  assert.deepEqual(parseWorkflowStatusNodeIds(' node-1 ,,node-2 '), ['node-1', 'node-2']);
+  assert.deepEqual(parseWorkflowStatusNodeIds(`${'x'.repeat(65)},valid`), ['valid']);
+
+  const many = Array.from({ length: 205 }, (_, index) => `node-${index}`).join(',');
+  const parsed = parseWorkflowStatusNodeIds(many);
+  assert.equal(parsed.length, 200);
+  assert.equal(parsed[0], 'node-0');
+  assert.equal(parsed.at(-1), 'node-199');
+});
 
 test('workflow status verifies owner access before reading deduplicated node results', async () => {
   const projectCalls: unknown[] = [];

@@ -27,6 +27,16 @@ export interface CreateWorkflowStatusQueryServiceOptions {
   tracePrefix: string;
 }
 
+export const MAX_WORKFLOW_STATUS_NODE_IDS = 200;
+export const MAX_WORKFLOW_STATUS_NODE_ID_LENGTH = 64;
+
+export function parseWorkflowStatusNodeIds(value: string | null | undefined): string[] {
+  return (value?.split(',') ?? [])
+    .map((nodeId) => nodeId.trim())
+    .filter((nodeId) => nodeId.length > 0 && nodeId.length <= MAX_WORKFLOW_STATUS_NODE_ID_LENGTH)
+    .slice(0, MAX_WORKFLOW_STATUS_NODE_IDS);
+}
+
 export function createWorkflowStatusQueryService(
   options: CreateWorkflowStatusQueryServiceOptions,
 ): WorkflowStatusQueryService {
