@@ -148,6 +148,29 @@ test('project list invalidation deletes the same cached all-project views', asyn
   ]);
 });
 
+test('project write invalidation clears details and cached all-project views', async () => {
+  const cache = createMemoryCache();
+  const service = createProjectQueryService<ProjectListItem>({
+    cache,
+    getRepository: async () => ({
+      async list() {
+        return [];
+      },
+    }),
+    projectListSchema: passthroughSchema<ProjectListItem[]>(),
+    tracePrefix: 'test',
+  });
+
+  await service.invalidateProjects('user/one', ['project/one', 'project/two', 'project/one']);
+
+  assert.deepEqual(cache.deleted.toSorted(), [
+    'project:user/one:project/one',
+    'project:user/one:project/two',
+    'projects:user/one:list:limit:3:f::q:',
+    'projects:user/one:list:limit:50:f::q:',
+  ]);
+});
+
 test('project list query parsing preserves permissive parseInt and empty parameter behavior', () => {
   assert.deepEqual(
     parseProjectListSearchParams(

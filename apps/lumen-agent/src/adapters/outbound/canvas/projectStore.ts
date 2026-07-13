@@ -8,9 +8,13 @@ import {
   normalizeWorkflowCanvas,
   summarizeWorkflowEdit,
 } from '@lumen/shared/domain';
+import {
+  type ProjectCacheInvalidator,
+  STUDIO_REDIS_KEY_PREFIX,
+  createProjectCacheInvalidator,
+} from '@lumen/shared/project-cache';
 
 import { logger } from '../../../platform/logger.js';
-import { getRedis } from '../persistence/redis.js';
 
 interface ProjectDocument {
   _id: string;
@@ -47,11 +51,30 @@ export interface UpdateWorkflowCanvasResult {
   summary: WorkflowEditSummary;
 }
 
+export function createAgentProjectCacheInvalidator(redis: {
+  del(...keys: string[]): Promise<unknown>;
+}): ProjectCacheInvalidator {
+  return createProjectCacheInvalidator({
+    cache: {
+      async delete(key) {
+        await redis.del(key);
+      },
+      async deleteMany(keys) {
+        if (keys.length > 0) await redis.del(...keys);
+      },
+    },
+    keyPrefix: STUDIO_REDIS_KEY_PREFIX,
+  });
+}
+
 export class ProjectWorkflowStore {
   private readonly projects: Collection<ProjectDocument>;
   private readonly history: Collection<ProjectHistoryDocument>;
 
-  constructor(db: Db) {
+  constructor(
+    db: Db,
+    private readonly projectCache?: ProjectCacheInvalidator,
+  ) {
     this.projects = db.collection<ProjectDocument>('studio_projects');
     this.history = db.collection<ProjectHistoryDocument>('studio_project_history');
   }
@@ -94,7 +117,7 @@ export class ProjectWorkflowStore {
       { returnDocument: 'after' },
     );
     if (!doc) return null;
-    await invalidateStudioProjectCache(input.userId, input.projectId);
+    await this.invalidateProjectCache(input.userId, input.projectId);
 
     if (input.recordHistory !== false) {
       await this.history.insertOne({
@@ -175,21 +198,20 @@ export class ProjectWorkflowStore {
       { returnDocument: 'after' },
     );
     if (!doc) return null;
-    await invalidateStudioProjectCache(input.userId, input.projectId);
+    await this.invalidateProjectCache(input.userId, input.projectId);
     return toProject(doc);
   }
-}
 
-async function invalidateStudioProjectCache(userId: string, projectId: string): Promise<void> {
-  const redis = getRedis();
-  if (!redis) return;
-  try {
-    await redis.del(`lumen:studio:project:${userId}:${projectId}`);
-  } catch (err) {
-    logger.warn(
-      { err, user_id: userId, project_id: projectId },
-      'failed to invalidate project cache',
-    );
+  private async invalidateProjectCache(userId: string, projectId: string): Promise<void> {
+    if (!this.projectCache) return;
+    try {
+      await this.projectCache.invalidateProject(userId, projectId);
+    } catch (err) {
+      logger.warn(
+        { err, user_id: userId, project_id: projectId },
+        'failed to invalidate project caches',
+      );
+    }
   }
 }
 

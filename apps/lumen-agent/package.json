@@ -9,6 +9,8 @@
     "start": "node dist/main.js",
     "lint": "biome check src",
     "seed:inspiration": "tsx scripts/seed-inspiration-assets.ts",
+    "pretest": "pnpm --filter @lumen/shared build",
+    "test": "tsx --test src/adapters/outbound/canvas/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

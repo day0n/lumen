@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "biome check src",
-    "test": "pnpm run build && node --input-type=module -e \"const db = await import('./dist/index.js'); if (!db.getMongoDatabase || !db.HomeFeaturedRepository) process.exit(1)\"",
+    "test": "pnpm run build && node --test test/*.test.mjs && node --input-type=module -e \"const db = await import('./dist/index.js'); if (!db.getMongoDatabase || !db.HomeFeaturedRepository) process.exit(1)\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

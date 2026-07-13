@@ -432,6 +432,10 @@ importers:
         version: 5.9.3
 
   packages/backend:
+    dependencies:
+      '@lumen/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@types/node':
         specifier: ^22.8.1

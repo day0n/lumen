@@ -16,6 +16,7 @@ import {
   getMongoDatabase,
   getRedisClient,
 } from '@lumen/db';
+import { STUDIO_REDIS_KEY_PREFIX } from '@lumen/shared/project-cache';
 
 import { getStudioServerConfig } from './config';
 import {
@@ -143,7 +144,7 @@ export function getStudioCache(): JsonCache {
   const config = getStudioServerConfig();
   const redis = getRedisClient({
     url: config.REDIS_URL,
-    keyPrefix: 'lumen:studio:',
+    keyPrefix: STUDIO_REDIS_KEY_PREFIX,
   });
   cache = new JsonCache(redis);
   return cache;

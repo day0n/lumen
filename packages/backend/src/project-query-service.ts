@@ -1,3 +1,8 @@
+import {
+  CACHED_PROJECT_LIST_LIMITS,
+  createProjectCacheInvalidator,
+  projectListCacheKey,
+} from '@lumen/shared/project-cache';
 import type { JsonCachePort, ParseSchema, TraceStep } from './home-query-service.js';
 
 export interface ProjectListOptions {
@@ -18,6 +23,8 @@ export interface ProjectListRepositoryPort<TProject> {
 
 export interface ProjectQueryService<TProject> {
   listProjects(actorUserId: string, options?: ProjectListOptions): Promise<TProject[]>;
+  invalidateProject(actorUserId: string, projectId: string): Promise<void>;
+  invalidateProjects(actorUserId: string, projectIds: readonly string[]): Promise<void>;
   invalidateProjectLists(actorUserId: string): Promise<void>;
 }
 
@@ -32,12 +39,13 @@ export interface CreateProjectQueryServiceOptions<TProject> {
 }
 
 const PROJECT_LIST_CACHE_TTL_SECONDS = 30;
-const CACHED_PROJECT_LIST_LIMITS = new Set([3, 50]);
+const CACHED_PROJECT_LIST_LIMIT_SET = new Set<number>(CACHED_PROJECT_LIST_LIMITS);
 
 export function createProjectQueryService<TProject>(
   options: CreateProjectQueryServiceOptions<TProject>,
 ): ProjectQueryService<TProject> {
   const trace: TraceStep = options.trace ?? (async (_name, _operation, callback) => callback());
+  const cacheInvalidator = createProjectCacheInvalidator({ cache: options.cache });
 
   return {
     async listProjects(actorUserId, listOptions = {}) {
@@ -88,14 +96,9 @@ export function createProjectQueryService<TProject>(
       return projects;
     },
 
-    async invalidateProjectLists(actorUserId) {
-      assertActorUserId(actorUserId);
-      await Promise.all(
-        [...CACHED_PROJECT_LIST_LIMITS].map((limit) =>
-          options.cache.delete(projectListCacheKey(actorUserId, { limit })),
-        ),
-      );
-    },
+    invalidateProject: cacheInvalidator.invalidateProject,
+    invalidateProjects: cacheInvalidator.invalidateProjects,
+    invalidateProjectLists: cacheInvalidator.invalidateProjectLists,
   };
 }
 
@@ -116,19 +119,6 @@ export function parseProjectListSearchParams(
   return { query, limit, folderId };
 }
 
-function projectListCacheKey(
-  actorUserId: string,
-  options: {
-    query?: string;
-    limit: number;
-    folderId?: string;
-  },
-) {
-  return `projects:${actorUserId}:list:limit:${options.limit}:f:${encodeURIComponent(
-    options.folderId ?? '',
-  )}:q:${encodeURIComponent(options.query ?? '')}`;
-}
-
 function normalizeProjectListQuery(query?: string) {
   const normalized = query?.trim();
   return normalized ? normalized : undefined;
@@ -143,7 +133,7 @@ function shouldUseProjectListCache({
   limit: number;
   folderId?: string;
 }) {
-  return !query && !folderId && CACHED_PROJECT_LIST_LIMITS.has(limit);
+  return !query && !folderId && CACHED_PROJECT_LIST_LIMIT_SET.has(limit);
 }
 
 function assertActorUserId(actorUserId: string): void {

@@ -11,14 +11,20 @@ import {
   resolveActiveProjectId,
 } from '../../../application/requestContext.js';
 import { WorkflowEngineClient } from '../canvas/engineClient.js';
-import { ProjectWorkflowStore, type WorkflowProject } from '../canvas/projectStore.js';
+import {
+  ProjectWorkflowStore,
+  type WorkflowProject,
+  createAgentProjectCacheInvalidator,
+} from '../canvas/projectStore.js';
 import { getStudioMongo } from '../persistence/mongo.js';
 import { getRedis } from '../persistence/redis.js';
 import { type JsonSchema, Tool } from './base.js';
 import { emitToolEvent } from './runtime.js';
 
 async function getWorkflowStore(): Promise<ProjectWorkflowStore> {
-  return new ProjectWorkflowStore(await getStudioMongo());
+  const redis = getRedis();
+  const projectCache = redis ? createAgentProjectCacheInvalidator(redis) : undefined;
+  return new ProjectWorkflowStore(await getStudioMongo(), projectCache);
 }
 
 async function loadProject(args: Record<string, unknown>): Promise<{
@@ -263,7 +269,7 @@ export class RunWorkflowNodeTool extends Tool {
   override readonly name = 'run_canvas_node';
   override readonly timeoutSeconds = 10 * 60 + 30;
   override readonly description =
-    "Run exactly one workflow node per call through the Lumen engine and save its output back to the canvas. UPSTREAM PRECONDITION: a node can only be run after EVERY upstream node connected to it has status=success with a non-null output — running a node whose upstream is still idle/queued/running/error will fail with an `upstream outputs are missing` error. This applies to ALL kinds (text/image/video/audio/composition), not just composition. Plan execution in topological order: only the nodes whose upstream chain is fully resolved are runnable right now. Independent sibling nodes (no edge between them, and both have their own upstream resolved) CAN be launched in parallel by emitting multiple parallel calls to this tool in the same turn — but never schedule a downstream node concurrently with its upstream. For composition nodes, additionally settings.timeline must be valid.";
+    'Run exactly one workflow node per call through the Lumen engine and save its output back to the canvas. UPSTREAM PRECONDITION: a node can only be run after EVERY upstream node connected to it has status=success with a non-null output — running a node whose upstream is still idle/queued/running/error will fail with an `upstream outputs are missing` error. This applies to ALL kinds (text/image/video/audio/composition), not just composition. Plan execution in topological order: only the nodes whose upstream chain is fully resolved are runnable right now. Independent sibling nodes (no edge between them, and both have their own upstream resolved) CAN be launched in parallel by emitting multiple parallel calls to this tool in the same turn — but never schedule a downstream node concurrently with its upstream. For composition nodes, additionally settings.timeline must be valid.';
 
   override readonly parameters: JsonSchema = {
     type: 'object',

@@ -222,6 +222,8 @@ function createProjectQueries(
   overrides: Partial<ProjectQueryService<ProjectListRecord>> = {},
 ): ProjectQueryService<ProjectListRecord> {
   return {
+    async invalidateProject() {},
+    async invalidateProjects() {},
     async invalidateProjectLists() {},
     async listProjects() {
       return [];

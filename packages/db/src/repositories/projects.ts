@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { Db, Filter } from 'mongodb';
+import type { Db, Filter, UpdateFilter } from 'mongodb';
 
 import {
   type CreateProjectInput,
@@ -20,6 +20,16 @@ import {
 } from '../schema/project.js';
 
 const COLLECTION = 'studio_projects';
+
+export interface EnsureProjectShareIdResult {
+  shareId: string;
+  created: boolean;
+}
+
+export interface ProjectFolderMutationResult {
+  projectIds: string[];
+  matchedCount: number;
+}
 
 // Hard limit on serialized canvas size. Mongo's per-document limit is 16MB.
 // `LumenCanvasNodeDataSchema` uses `.passthrough()` and `settings` is
@@ -131,19 +141,14 @@ export class ProjectRepository {
    * 文件夹被删除时，把它下面的项目批量挪到"未分类"（unset folder_id）。
    * 仅校验 owner，避免越权改别人的项目。
    */
-  async clearFolderForOwner(ownerId: string, folderId: string): Promise<number> {
-    const result = await this.collection().updateMany(
-      {
-        owner_id: ownerId,
-        folder_id: folderId,
-        deleted_at: { $exists: false },
-      },
-      {
-        $unset: { folder_id: '' },
-        $set: { updated_at: new Date() },
-      },
-    );
-    return result.modifiedCount;
+  async clearFolderForOwner(
+    ownerId: string,
+    folderId: string,
+  ): Promise<ProjectFolderMutationResult> {
+    return this.mutateActiveProjectsInFolder(ownerId, folderId, {
+      $unset: { folder_id: '' },
+      $set: { updated_at: new Date() },
+    });
   }
 
   /**
@@ -151,22 +156,14 @@ export class ProjectRepository {
    * 与 `delete(ownerId, projectId)` 同语义：只设 deleted_at，不真删 document，
    * 保留可恢复能力。
    */
-  async deleteAllInFolder(ownerId: string, folderId: string): Promise<number> {
+  async deleteAllInFolder(ownerId: string, folderId: string): Promise<ProjectFolderMutationResult> {
     const now = new Date();
-    const result = await this.collection().updateMany(
-      {
-        owner_id: ownerId,
-        folder_id: folderId,
-        deleted_at: { $exists: false },
+    return this.mutateActiveProjectsInFolder(ownerId, folderId, {
+      $set: {
+        deleted_at: now,
+        updated_at: now,
       },
-      {
-        $set: {
-          deleted_at: now,
-          updated_at: now,
-        },
-      },
-    );
-    return result.modifiedCount;
+    });
   }
 
   async get(ownerId: string, projectId: string): Promise<ProjectRecord | null> {
@@ -201,7 +198,10 @@ export class ProjectRepository {
     return document ? toProjectRecord(document) : null;
   }
 
-  async ensureShareId(ownerId: string, projectId: string): Promise<string | null> {
+  async ensureShareId(
+    ownerId: string,
+    projectId: string,
+  ): Promise<EnsureProjectShareIdResult | null> {
     const current = await this.collection().findOne({
       _id: projectId,
       owner_id: ownerId,
@@ -209,7 +209,7 @@ export class ProjectRepository {
     });
 
     if (!current) return null;
-    if (current.share_id) return current.share_id;
+    if (current.share_id) return { shareId: current.share_id, created: false };
 
     const shareId = randomUUID().replaceAll('-', '');
     const document = await this.collection().findOneAndUpdate(
@@ -217,6 +217,7 @@ export class ProjectRepository {
         _id: projectId,
         owner_id: ownerId,
         deleted_at: { $exists: false },
+        share_id: { $exists: false },
       },
       {
         $set: {
@@ -227,7 +228,14 @@ export class ProjectRepository {
       { returnDocument: 'after' },
     );
 
-    return document?.share_id ?? null;
+    if (document?.share_id) return { shareId: document.share_id, created: true };
+
+    const raced = await this.collection().findOne({
+      _id: projectId,
+      owner_id: ownerId,
+      deleted_at: { $exists: false },
+    });
+    return raced?.share_id ? { shareId: raced.share_id, created: false } : null;
   }
 
   async update(
@@ -304,6 +312,28 @@ export class ProjectRepository {
     );
 
     return result.modifiedCount > 0;
+  }
+
+  private async mutateActiveProjectsInFolder(
+    ownerId: string,
+    folderId: string,
+    update: UpdateFilter<ProjectDocument>,
+  ): Promise<ProjectFolderMutationResult> {
+    const collection = this.collection();
+    const activeFilter: Filter<ProjectDocument> = {
+      owner_id: ownerId,
+      folder_id: folderId,
+      deleted_at: { $exists: false },
+    };
+    const documents = await collection.find(activeFilter, { projection: { _id: 1 } }).toArray();
+    const projectIds = documents.map((document) => document._id);
+    if (projectIds.length === 0) return { matchedCount: 0, projectIds: [] };
+
+    const result = await collection.updateMany(
+      { ...activeFilter, _id: { $in: projectIds } },
+      update,
+    );
+    return { matchedCount: result.matchedCount, projectIds };
   }
 
   private collection() {

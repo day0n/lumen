@@ -8,6 +8,7 @@ export interface JsonCachePort {
   get<T>(key: string, schema: ParseSchema<T>): Promise<T | null>;
   set(key: string, value: unknown, ttlSeconds: number): Promise<void>;
   delete(key: string): Promise<void>;
+  deleteMany?(keys: readonly string[]): Promise<void>;
 }
 
 export interface HomeFeaturedRepositoryPort<TItem> {

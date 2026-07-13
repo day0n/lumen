@@ -1,26 +1,26 @@
 import 'server-only';
 
-import { type ProjectQueryService, createProjectQueryService } from '@lumen/backend';
 import {
   type ProjectCanvas,
   type ProjectHistoryRecord,
   type ProjectHistorySummaryRecord,
   type ProjectListRecord,
-  ProjectListRecordSchema,
   type ProjectRecord,
   ProjectRecordSchema,
   type UpdateProjectInput,
 } from '@lumen/db';
+import { projectDetailCacheKey } from '@lumen/shared/project-cache';
 
 import { translate } from '@/i18n/messages';
 import { DEFAULT_LOCALE, type Locale } from '@/i18n/routing';
 import { requireStudioUser } from './auth';
 import { getProjectHistoryRepository, getProjectRepository, getStudioCache } from './db';
+import { ensureProjectShareWithCacheInvalidation } from './project-cache-mutations';
+import { getStudioProjectQueries } from './project-query-runtime';
 import { traceStudioStep } from './telemetry';
 import { reconcileCanvasWithWorkflowResults } from './workflow-canvas-reconcile';
 
 const PROJECT_CACHE_TTL_SECONDS = 30;
-let projectQueries: ProjectQueryService<ProjectListRecord> | null = null;
 
 export interface ListStudioProjectsOptions {
   query?: string;
@@ -62,7 +62,7 @@ export async function createStudioProject(
     canvas: options.canvas,
   });
 
-  await cache.set(projectCacheKey(user.id, project.id), project, PROJECT_CACHE_TTL_SECONDS);
+  await cache.set(projectDetailCacheKey(user.id, project.id), project, PROJECT_CACHE_TTL_SECONDS);
   await clearProjectListCache(user.id);
   await recordProjectHistory({
     action: 'created',
@@ -78,7 +78,7 @@ export async function getStudioProject(
 ): Promise<ProjectRecord | null> {
   const user = await requireStudioUser();
   const cache = getStudioCache();
-  const cacheKey = projectCacheKey(user.id, projectId);
+  const cacheKey = projectDetailCacheKey(user.id, projectId);
   const cached = options.bypassCache ? null : await cache.get(cacheKey, ProjectRecordSchema);
 
   if (cached) return reconcileProjectRecordCanvas(cached);
@@ -102,7 +102,7 @@ export async function updateStudioProject(
   if (input.canvas !== undefined) {
     const exists = await repository.exists(user.id, projectId);
     if (!exists) {
-      await cache.delete(projectCacheKey(user.id, projectId));
+      await cache.delete(projectDetailCacheKey(user.id, projectId));
       return null;
     }
     nextInput = {
@@ -112,7 +112,7 @@ export async function updateStudioProject(
   }
 
   const project = await repository.update(user.id, projectId, nextInput);
-  const cacheKey = projectCacheKey(user.id, projectId);
+  const cacheKey = projectDetailCacheKey(user.id, projectId);
 
   if (project) await cache.set(cacheKey, project, PROJECT_CACHE_TTL_SECONDS);
   else await cache.delete(cacheKey);
@@ -163,19 +163,16 @@ export async function createProjectShare(projectId: string): Promise<{
 }> {
   const user = await requireStudioUser();
   const repository = await getProjectRepository();
-  const shareId = await repository.ensureShareId(user.id, projectId);
-
-  if (!shareId) {
+  const result = await ensureProjectShareWithCacheInvalidation({
+    actorUserId: user.id,
+    cache: getStudioProjectQueries(),
+    projectId,
+    repository,
+  });
+  if (!result) {
     throw new Error('项目不存在');
   }
-
-  const project = await repository.get(user.id, projectId);
-  if (!project) {
-    throw new Error('项目不存在');
-  }
-
-  await getStudioCache().delete(projectCacheKey(user.id, projectId));
-  return { shareId, project };
+  return result;
 }
 
 export async function getSharedProjectPreview(shareId: string): Promise<ProjectRecord | null> {
@@ -202,7 +199,7 @@ export async function cloneSharedProject(shareId: string): Promise<ProjectRecord
   });
 
   await getStudioCache().set(
-    projectCacheKey(user.id, project.id),
+    projectDetailCacheKey(user.id, project.id),
     project,
     PROJECT_CACHE_TTL_SECONDS,
   );
@@ -222,15 +219,11 @@ export async function deleteStudioProject(projectId: string): Promise<boolean> {
 
   if (deleted) {
     const cache = getStudioCache();
-    await cache.delete(projectCacheKey(user.id, projectId));
+    await cache.delete(projectDetailCacheKey(user.id, projectId));
     await clearProjectListCache(user.id);
   }
 
   return deleted;
-}
-
-function projectCacheKey(ownerId: string, projectId: string) {
-  return `project:${ownerId}:${projectId}`;
 }
 
 async function clearProjectListCache(ownerId: string) {
@@ -241,17 +234,6 @@ async function reconcileProjectRecordCanvas(project: ProjectRecord): Promise<Pro
   const canvas = await reconcileCanvasWithWorkflowResults(project.id, project.canvas);
   if (canvas === project.canvas) return project;
   return ProjectRecordSchema.parse({ ...project, canvas });
-}
-
-function getStudioProjectQueries(): ProjectQueryService<ProjectListRecord> {
-  projectQueries ??= createProjectQueryService({
-    cache: getStudioCache(),
-    getRepository: getProjectRepository,
-    projectListSchema: ProjectListRecordSchema.array(),
-    trace: traceStudioStep,
-    tracePrefix: 'studio',
-  });
-  return projectQueries;
 }
 
 async function recordProjectHistory({

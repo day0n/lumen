@@ -91,6 +91,13 @@ export class JsonCache {
     } catch {}
   }
 
+  async deleteMany(keys: readonly string[]): Promise<void> {
+    if (!this.redis || keys.length === 0) return;
+    try {
+      await this.redis.del(...keys);
+    } catch {}
+  }
+
   async deletePattern(pattern: string, keyPrefix?: string): Promise<number> {
     if (!this.redis) return 0;
     const fullPattern = keyPrefix ? `${keyPrefix}${pattern}` : pattern;

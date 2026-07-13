@@ -29,6 +29,10 @@
     "./notification-read": {
       "types": "./dist/notification-read.d.ts",
       "default": "./dist/notification-read.js"
+    },
+    "./project-cache": {
+      "types": "./dist/project-cache.d.ts",
+      "default": "./dist/project-cache.js"
     }
   },
   "scripts": {

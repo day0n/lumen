@@ -6,6 +6,11 @@ import { z } from 'zod';
 
 import { requireStudioUser } from './auth';
 import { getProjectFolderRepository, getProjectRepository, getStudioCache } from './db';
+import {
+  clearRetiredProjectFoldersWithCacheInvalidation,
+  deleteFolderWithProjectCacheInvalidation,
+} from './project-cache-mutations';
+import { getStudioProjectQueries } from './project-query-runtime';
 
 const FOLDER_LIST_CACHE_TTL_SECONDS = 30;
 const FolderListWithCountsSchema = z
@@ -33,9 +38,12 @@ export async function listStudioFolders(): Promise<FolderListWithCounts> {
 
   const retiredFolderIds = await folderRepo.retireLegacySystemFolders(user.id);
   if (retiredFolderIds.length > 0) {
-    await Promise.all(
-      retiredFolderIds.map((folderId) => projectRepo.clearFolderForOwner(user.id, folderId)),
-    );
+    await clearRetiredProjectFoldersWithCacheInvalidation({
+      actorUserId: user.id,
+      cache: getStudioProjectQueries(),
+      folderIds: retiredFolderIds,
+      repository: projectRepo,
+    });
   }
 
   const [folders, counts] = await Promise.all([
@@ -73,10 +81,14 @@ export async function deleteStudioFolder(folderId: string): Promise<boolean> {
   const user = await requireStudioUser();
   const folderRepo = await getProjectFolderRepository();
   const projectRepo = await getProjectRepository();
-  await projectRepo.deleteAllInFolder(user.id, folderId);
-  const deleted = await folderRepo.delete(user.id, folderId);
-  if (deleted) await invalidateFolderListCache(user.id);
-  return deleted;
+  return deleteFolderWithProjectCacheInvalidation({
+    actorUserId: user.id,
+    cache: getStudioProjectQueries(),
+    deleteFolder: () => folderRepo.delete(user.id, folderId),
+    folderId,
+    invalidateFolderList: () => invalidateFolderListCache(user.id),
+    repository: projectRepo,
+  });
 }
 
 function folderListCacheKey(ownerId: string) {

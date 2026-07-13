@@ -13,9 +13,15 @@
     "./source/home-query-service": "./src/home-query-service.ts"
   },
   "scripts": {
+    "prebuild": "pnpm --filter @lumen/shared build",
     "build": "tsc -p tsconfig.json",
+    "pretest": "pnpm --filter @lumen/shared build",
     "test": "tsx --test test/*.test.ts",
+    "pretypecheck": "pnpm --filter @lumen/shared build",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lumen/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.8.1",
