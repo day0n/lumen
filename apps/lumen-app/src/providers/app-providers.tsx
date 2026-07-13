@@ -2,6 +2,7 @@ import { ClerkProvider, useAuth } from '@clerk/react';
 import { type ReactNode, useEffect, useRef } from 'react';
 import { I18nProvider } from '../i18n/provider';
 import {
+  clearPrivateApiMemoryCache,
   installApiFetchInterceptor,
   setApiAuthStatusVerifier,
   setApiTokenGetter,
@@ -34,6 +35,10 @@ function ApiAuthBridge() {
       isLoaded,
       isSignedIn: Boolean(isSignedIn),
     };
+  }, [isLoaded, isSignedIn]);
+
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) clearPrivateApiMemoryCache();
   }, [isLoaded, isSignedIn]);
 
   useEffect(() => {

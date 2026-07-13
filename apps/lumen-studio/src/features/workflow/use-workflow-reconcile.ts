@@ -53,6 +53,7 @@ export function useWorkflowReconcile({
     const nodeIds = targets.map((node) => node.id).join(',');
     const response = await fetch(
       `/api/projects/${projectId}/workflow-status?nodeIds=${encodeURIComponent(nodeIds)}`,
+      { cache: 'no-store' },
     );
     if (!response.ok) return;
 
