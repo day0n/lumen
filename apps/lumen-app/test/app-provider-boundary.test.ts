@@ -29,3 +29,8 @@ test('the static app keeps native controls in the dark color scheme', async () =
   const source = await readFile(new URL('../src/styles/app.css', import.meta.url), 'utf8');
   assert.match(source, /color-scheme: dark/);
 });
+
+test('the static app stylesheet excludes unused component library styles', async () => {
+  const source = await readFile(new URL('../src/styles/app.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /@mantine\/core\/styles\.css/);
+});

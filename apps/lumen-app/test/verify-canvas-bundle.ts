@@ -52,6 +52,7 @@ for (const suffix of forbiddenInitialSources) {
 }
 
 assert.doesNotMatch(initialCss, /--xy-edge-stroke-default/);
+assert.doesNotMatch(initialCss, /(?:--mantine-|\.mantine-|data-mantine)/);
 assert.ok(
   lazyCss.some((css) => css.includes('--xy-edge-stroke-default')),
   'ReactFlow styles were not emitted with a lazy chunk',
