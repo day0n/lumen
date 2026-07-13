@@ -70,7 +70,13 @@ export function createApiRuntime(config: ApiConfig) {
       return checks;
     },
     async close() {
-      await Promise.allSettled([closeRedisClients(), closeMongoDatabases()]);
+      const results = await Promise.allSettled([closeRedisClients(), closeMongoDatabases()]);
+      const errors = results.flatMap((result) =>
+        result.status === 'rejected' ? [result.reason] : [],
+      );
+      if (errors.length > 0) {
+        throw new AggregateError(errors, 'Failed to close API persistence clients');
+      }
     },
   };
 }

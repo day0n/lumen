@@ -1,46 +1,177 @@
-import { serve } from '@hono/node-server';
+import { pathToFileURL } from 'node:url';
+import { type ServerType, serve } from '@hono/node-server';
 
 import { createApiApp } from './app.js';
 import { readApiConfig } from './config.js';
 import { createApiRuntime } from './runtime.js';
 
-const config = readApiConfig();
-const runtime = createApiRuntime(config);
-const app = createApiApp({
-  homeQueries: runtime.homeQueries,
-  readiness: runtime.readiness,
-  release: config.release,
-  requiredReadinessChecks: ['mongo'],
-});
+type ShutdownSignal = 'SIGINT' | 'SIGTERM';
+type ShutdownHandler = (signal: ShutdownSignal) => Promise<void>;
 
-const server = serve({
-  fetch: app.fetch,
-  hostname: config.host,
-  port: config.port,
-});
+interface ShutdownOptions {
+  closeRuntime: () => Promise<void>;
+  forceExit?: (code: number) => void;
+  logger?: Pick<Console, 'error' | 'info'>;
+  server: ServerType;
+  setExitCode?: (code: number) => void;
+  timeoutMs: number;
+}
 
-console.info('[lumen-api] listening', {
-  host: config.host,
-  port: config.port,
-  release: config.release,
-});
+class ShutdownDeadlineError extends Error {}
 
-let closing = false;
-const shutdown = async (signal: string) => {
-  if (closing) return;
-  closing = true;
-  console.info('[lumen-api] shutting down', { signal });
-  await new Promise<void>((resolve) => {
+export function createShutdownHandler({
+  closeRuntime,
+  forceExit = (code) => process.exit(code),
+  logger = console,
+  server,
+  setExitCode = (code) => {
+    process.exitCode = code;
+  },
+  timeoutMs,
+}: ShutdownOptions): ShutdownHandler {
+  let closing: Promise<void> | null = null;
+
+  return (signal) => {
+    closing ??= shutdownOnce({
+      closeRuntime,
+      forceExit,
+      logger,
+      server,
+      setExitCode,
+      signal,
+      timeoutMs,
+    });
+    return closing;
+  };
+}
+
+export function installShutdownHandlers(
+  shutdown: ShutdownHandler,
+  signalTarget: Pick<NodeJS.Process, 'off' | 'once'> = process,
+) {
+  const handleSigint = () => void shutdown('SIGINT');
+  const handleSigterm = () => void shutdown('SIGTERM');
+  signalTarget.once('SIGINT', handleSigint);
+  signalTarget.once('SIGTERM', handleSigterm);
+
+  return () => {
+    signalTarget.off('SIGINT', handleSigint);
+    signalTarget.off('SIGTERM', handleSigterm);
+  };
+}
+
+export function startApiServer() {
+  const config = readApiConfig();
+  const runtime = createApiRuntime(config);
+  const app = createApiApp({
+    homeQueries: runtime.homeQueries,
+    readiness: runtime.readiness,
+    readinessTimeoutMs: config.readinessTimeoutMs,
+    release: config.release,
+    requiredReadinessChecks: ['mongo'],
+  });
+
+  const server = serve({
+    fetch: app.fetch,
+    hostname: config.host,
+    port: config.port,
+  });
+  const shutdown = createShutdownHandler({
+    closeRuntime: runtime.close,
+    server,
+    timeoutMs: config.shutdownTimeoutMs,
+  });
+  installShutdownHandlers(shutdown);
+
+  console.info('[lumen-api] listening', {
+    host: config.host,
+    port: config.port,
+    readinessTimeoutMs: config.readinessTimeoutMs,
+    release: config.release,
+    shutdownTimeoutMs: config.shutdownTimeoutMs,
+  });
+
+  return { app, server, shutdown };
+}
+
+async function shutdownOnce({
+  closeRuntime,
+  forceExit,
+  logger,
+  server,
+  setExitCode,
+  signal,
+  timeoutMs,
+}: Required<
+  Pick<
+    ShutdownOptions,
+    'closeRuntime' | 'forceExit' | 'logger' | 'server' | 'setExitCode' | 'timeoutMs'
+  >
+> & {
+  signal: ShutdownSignal;
+}) {
+  logger.info('[lumen-api] shutting down', { signal, timeoutMs });
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const gracefulShutdown = async () => {
+    const shutdownErrors: unknown[] = [];
+    try {
+      await closeServer(server);
+    } catch (error) {
+      shutdownErrors.push(error);
+    }
+    try {
+      await closeRuntime();
+    } catch (error) {
+      shutdownErrors.push(error);
+    }
+    if (shutdownErrors.length === 1) {
+      throw shutdownErrors[0];
+    }
+    if (shutdownErrors.length > 1) {
+      throw new AggregateError(shutdownErrors, 'API shutdown failed');
+    }
+  };
+
+  const deadline = new Promise<never>((_, reject) => {
+    deadlineTimer = setTimeout(() => {
+      const error = new ShutdownDeadlineError(`shutdown exceeded ${timeoutMs}ms`);
+      forceCloseServer(server);
+      logger.error('[lumen-api] shutdown deadline exceeded', { signal, timeoutMs });
+      forceExit(1);
+      reject(error);
+    }, timeoutMs);
+  });
+
+  try {
+    await Promise.race([gracefulShutdown(), deadline]);
+  } catch (error) {
+    if (!(error instanceof ShutdownDeadlineError)) {
+      forceCloseServer(server);
+      logger.error('[lumen-api] shutdown failed', { error, signal });
+      setExitCode(1);
+      forceExit(1);
+    }
+  } finally {
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+  }
+}
+
+function closeServer(server: ServerType) {
+  return new Promise<void>((resolve, reject) => {
     server.close((error) => {
-      if (error) {
-        console.error('[lumen-api] shutdown failed', { error });
-        process.exitCode = 1;
-      }
-      resolve();
+      if (error) reject(error);
+      else resolve();
     });
   });
-  await runtime.close();
-};
+}
 
-process.on('SIGINT', () => void shutdown('SIGINT'));
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
+function forceCloseServer(server: ServerType) {
+  if ('closeAllConnections' in server && typeof server.closeAllConnections === 'function') {
+    server.closeAllConnections();
+  }
+}
+
+const entryPath = process.argv[1];
+if (entryPath && import.meta.url === pathToFileURL(entryPath).href) {
+  startApiServer();
+}

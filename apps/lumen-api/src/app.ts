@@ -1,6 +1,7 @@
 import { apiFailure } from '@lumen/backend';
 import { Hono } from 'hono';
 
+import { DEFAULT_API_READINESS_TIMEOUT_MS, MAX_TIMER_TIMEOUT_MS } from './config.js';
 import type { ApiEnv } from './http/context-middleware.js';
 import { requestContextMiddleware } from './http/context-middleware.js';
 
@@ -15,12 +16,16 @@ export interface CreateApiAppOptions {
   homeQueries?: HomeQueries;
   release?: string;
   readiness?: () => Promise<ReadinessChecks> | ReadinessChecks;
+  readinessTimeoutMs?: number;
   requiredReadinessChecks?: readonly string[];
 }
 
 export function createApiApp(options: CreateApiAppOptions = {}) {
   const release = options.release ?? 'dev';
   const readiness = options.readiness ?? (() => ({ bootstrap: true }));
+  const readinessTimeoutMs = readPositiveTimeout(
+    options.readinessTimeoutMs ?? DEFAULT_API_READINESS_TIMEOUT_MS,
+  );
   const requiredReadinessChecks = options.requiredReadinessChecks;
   const app = new Hono<ApiEnv>();
 
@@ -30,21 +35,23 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
     context.header('x-lumen-release', release);
   });
 
-  app.get('/healthz', (context) =>
-    context.json({
+  app.get('/healthz', (context) => {
+    context.header('cache-control', 'no-store');
+    return context.json({
       ok: true as const,
       service: 'lumen-api',
       release,
       ts: Date.now(),
-    }),
-  );
+    });
+  });
 
   app.get('/readyz', async (context) => {
+    context.header('cache-control', 'no-store');
     let checks: ReadinessChecks;
     try {
-      checks = await readiness();
+      checks = await readinessBeforeDeadline(readiness, readinessTimeoutMs);
     } catch {
-      checks = { bootstrap: false };
+      checks = { readinessExecution: false };
     }
     const ready = requiredReadinessChecks
       ? requiredReadinessChecks.length > 0 &&
@@ -107,4 +114,30 @@ function internalErrorMessage(locale: 'en' | 'zh') {
 
 function logRouteError(route: string, requestId: string, error: unknown) {
   console.error('[lumen-api] route failed', { route, requestId, error });
+}
+
+function readPositiveTimeout(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_TIMER_TIMEOUT_MS) {
+    throw new Error(`readinessTimeoutMs must be an integer between 1 and ${MAX_TIMER_TIMEOUT_MS}`);
+  }
+  return value;
+}
+
+async function readinessBeforeDeadline(
+  readiness: () => Promise<ReadinessChecks> | ReadinessChecks,
+  timeoutMs: number,
+): Promise<ReadinessChecks> {
+  const deadline = Symbol('readiness-deadline');
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      Promise.resolve().then(readiness),
+      new Promise<typeof deadline>((resolve) => {
+        timer = setTimeout(() => resolve(deadline), timeoutMs);
+      }),
+    ]);
+    return result === deadline ? { readinessDeadline: false } : result;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
