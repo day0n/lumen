@@ -92,6 +92,8 @@ test('release verifier checks live direct and public origins', async (context) =
     'HEAD /api/projects/release-verification-probe',
     'GET /api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe',
     'HEAD /api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe',
+    'GET /api/remake/jobs/release-verification-probe',
+    'HEAD /api/remake/jobs/release-verification-probe',
     'GET /api/home/featured',
     'GET /api/home/templates',
   ]);
@@ -154,7 +156,8 @@ test('release verifier polls readiness and validates public routes', async () =>
           pathname === '/api/notifications/official/release-verification-probe/read' ||
           pathname === '/api/projects' ||
           pathname === '/api/projects/release-verification-probe' ||
-          pathname === '/api/projects/release-verification-probe/workflow-status'
+          pathname === '/api/projects/release-verification-probe/workflow-status' ||
+          pathname === '/api/remake/jobs/release-verification-probe'
         ) {
           return jsonResponse(
             { error: { message: 'Please sign in first' }, ok: false },
@@ -187,6 +190,8 @@ test('release verifier polls readiness and validates public routes', async () =>
     `HEAD ${baseUrl}/api/projects/release-verification-probe`,
     `GET ${baseUrl}/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe`,
     `HEAD ${baseUrl}/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe`,
+    `GET ${baseUrl}/api/remake/jobs/release-verification-probe`,
+    `HEAD ${baseUrl}/api/remake/jobs/release-verification-probe`,
     `GET ${publicBaseUrl}/api/me`,
     `GET ${publicBaseUrl}/api/notifications/official`,
     `POST ${publicBaseUrl}/api/notifications/official/release-verification-probe/read`,
@@ -195,6 +200,8 @@ test('release verifier polls readiness and validates public routes', async () =>
     `HEAD ${publicBaseUrl}/api/projects/release-verification-probe`,
     `GET ${publicBaseUrl}/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe`,
     `HEAD ${publicBaseUrl}/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe`,
+    `GET ${publicBaseUrl}/api/remake/jobs/release-verification-probe`,
+    `HEAD ${publicBaseUrl}/api/remake/jobs/release-verification-probe`,
     `GET ${publicBaseUrl}/api/home/featured`,
     `GET ${publicBaseUrl}/api/home/templates`,
   ]);
@@ -275,7 +282,8 @@ test('public home responses retain release, request id and schema validation', a
               pathname === '/api/notifications/official/release-verification-probe/read' ||
               pathname === '/api/projects' ||
               pathname === '/api/projects/release-verification-probe' ||
-              pathname === '/api/projects/release-verification-probe/workflow-status'
+              pathname === '/api/projects/release-verification-probe/workflow-status' ||
+              pathname === '/api/remake/jobs/release-verification-probe'
             ) {
               return jsonResponse(
                 { error: { message: 'Please sign in first' }, ok: false },
@@ -306,6 +314,7 @@ test('public authenticated route probes require unauthorized API response metada
     '/api/projects?limit=1',
     '/api/projects/release-verification-probe',
     '/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe',
+    '/api/remake/jobs/release-verification-probe',
   ];
   const cases = [
     {
@@ -367,6 +376,7 @@ test('authenticated HEAD probes require metadata and an empty response body', ()
   const pathnames = [
     '/api/projects/release-verification-probe',
     '/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe',
+    '/api/remake/jobs/release-verification-probe',
   ];
   const cases = [
     {

@@ -4,6 +4,7 @@ import {
   createNotificationService,
   createProjectDetailQueryService,
   createProjectQueryService,
+  createRemakeJobQueryService,
   createWorkflowStatusQueryService,
   seedDefaultOfficialNotifications,
 } from '@lumen/backend';
@@ -19,6 +20,7 @@ import {
   type ProjectRecord,
   ProjectRecordSchema,
   ProjectRepository,
+  RemakeJobRepository,
   UserRepository,
   WorkflowNodeResultRepository,
   closeMongoDatabases,
@@ -56,6 +58,11 @@ export function createApiRuntime(config: ApiConfig) {
     await repository.ensureIndexes();
     return repository;
   });
+  const getRemakeJobRepository = memoizeAsync(async () => {
+    const repository = new RemakeJobRepository(await getDatabase());
+    await repository.ensureIndexes();
+    return repository;
+  });
   const getWorkflowNodeResultRepository = memoizeAsync(async () => {
     const repository = new WorkflowNodeResultRepository(await getWorkflowDatabase());
     await repository.ensureIndexes();
@@ -72,6 +79,7 @@ export function createApiRuntime(config: ApiConfig) {
       getTemplateRepository(),
       getUserRepository(),
       getProjectRepository(),
+      getRemakeJobRepository(),
       getWorkflowNodeResultRepository(),
       notificationRuntime.initialize(),
     ]);
@@ -121,6 +129,10 @@ export function createApiRuntime(config: ApiConfig) {
     getWorkflowNodeResultRepository,
     tracePrefix: 'api',
   });
+  const remakeJobQueries = createRemakeJobQueryService({
+    getRepository: getRemakeJobRepository,
+    tracePrefix: 'api',
+  });
 
   return {
     authenticatedUsers,
@@ -129,6 +141,7 @@ export function createApiRuntime(config: ApiConfig) {
     notifications,
     projectDetails,
     projectQueries,
+    remakeJobQueries,
     workflowStatusQueries,
     async readiness(): Promise<ReadinessChecks> {
       const [mongo, workflowMongo] = await Promise.all([

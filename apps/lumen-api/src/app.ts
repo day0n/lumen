@@ -3,6 +3,9 @@ import {
   type NotificationService,
   type ProjectDetailQueryService,
   type ProjectQueryService,
+  type RemakeJobQueryJobLike,
+  type RemakeJobQueryService,
+  type RemakeJobQueryTaskLike,
   UnauthorizedError,
   UserProvisioningRequiredError,
   type UserRecordPort,
@@ -42,6 +45,7 @@ export interface CreateApiAppOptions {
   notifications?: NotificationService<OfficialNotificationRecord>;
   projectDetails?: ProjectDetailQueryService<ProjectRecord>;
   projectQueries?: ProjectQueryService<ProjectListRecord>;
+  remakeJobQueries?: RemakeJobQueryService<RemakeJobQueryJobLike, RemakeJobQueryTaskLike>;
   workflowStatusQueries?: WorkflowStatusQueryService;
   release?: string;
   readiness?: () => Promise<ReadinessChecks> | ReadinessChecks;
@@ -222,6 +226,32 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
         }
 
         return context.json(apiSuccess({ results }));
+      },
+    );
+  });
+
+  app.get('/api/remake/jobs/:jobId', async (context) => {
+    return withAuthenticatedRoute(
+      context,
+      options.authenticatedUsers,
+      'GET /api/remake/jobs/:jobId',
+      async (authenticated) => {
+        const requestContext = context.get('requestContext');
+        if (!options.remakeJobQueries) {
+          return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
+        }
+
+        const jobId = context.req.param('jobId');
+        if (!jobId.trim()) {
+          return context.json(apiFailure(remakeJobNotFoundMessage(requestContext.locale)), 404);
+        }
+
+        const view = await options.remakeJobQueries.getJobView(authenticated.actor.userId, jobId);
+        if (!view) {
+          return context.json(apiFailure(remakeJobNotFoundMessage(requestContext.locale)), 404);
+        }
+
+        return context.json(apiSuccess(view));
       },
     );
   });
@@ -408,6 +438,10 @@ function notificationNotFoundMessage(locale: 'en' | 'zh') {
 
 function projectNotFoundMessage(locale: 'en' | 'zh') {
   return locale === 'zh' ? '项目不存在' : 'Project not found';
+}
+
+function remakeJobNotFoundMessage(locale: 'en' | 'zh') {
+  return locale === 'zh' ? '复刻任务不存在' : 'Remake job not found';
 }
 
 function logRouteError(route: string, requestId: string, error: unknown) {

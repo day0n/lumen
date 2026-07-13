@@ -12,6 +12,7 @@ const NOTIFICATIONS_PATH = '/api/notifications/official';
 const NOTIFICATION_READ_PROBE_PATH = '/api/notifications/official/release-verification-probe/read';
 const PROJECT_DETAIL_PATH = '/api/projects/release-verification-probe';
 const PROJECTS_PATH = '/api/projects?limit=1';
+const REMAKE_JOB_DETAIL_PATH = '/api/remake/jobs/release-verification-probe';
 const WORKFLOW_STATUS_PATH =
   '/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe';
 
@@ -143,6 +144,16 @@ export async function verifyRelease(options, dependencies = {}) {
     WORKFLOW_STATUS_PATH,
     options.release,
   );
+  validateUnauthorizedApiResponse(
+    await request(options.baseUrl, REMAKE_JOB_DETAIL_PATH),
+    REMAKE_JOB_DETAIL_PATH,
+    options.release,
+  );
+  validateUnauthorizedHeadResponse(
+    await requestWithoutJson(options.baseUrl, REMAKE_JOB_DETAIL_PATH, 'HEAD'),
+    REMAKE_JOB_DETAIL_PATH,
+    options.release,
+  );
 
   validateUnauthorizedMeResponse(await request(publicBaseUrl, '/api/me'), options.release);
   validateUnauthorizedApiResponse(
@@ -178,6 +189,16 @@ export async function verifyRelease(options, dependencies = {}) {
   validateUnauthorizedHeadResponse(
     await requestWithoutJson(publicBaseUrl, WORKFLOW_STATUS_PATH, 'HEAD'),
     WORKFLOW_STATUS_PATH,
+    options.release,
+  );
+  validateUnauthorizedApiResponse(
+    await request(publicBaseUrl, REMAKE_JOB_DETAIL_PATH),
+    REMAKE_JOB_DETAIL_PATH,
+    options.release,
+  );
+  validateUnauthorizedHeadResponse(
+    await requestWithoutJson(publicBaseUrl, REMAKE_JOB_DETAIL_PATH, 'HEAD'),
+    REMAKE_JOB_DETAIL_PATH,
     options.release,
   );
   validateFeaturedResponse(await request(publicBaseUrl, '/api/home/featured'), options.release);
