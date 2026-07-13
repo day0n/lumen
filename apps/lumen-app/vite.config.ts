@@ -34,15 +34,8 @@ const manualChunks = (id: string): string | undefined => {
   if (!id.includes('node_modules')) return undefined;
 
   if (hasPackage(id, ['react', 'react-dom', 'scheduler'])) return 'react-vendor';
-  if (
-    startsWithPackage(id, [
-      '@tanstack/react-router',
-      '@tanstack/router-core',
-      '@tanstack/react-query',
-      '@tanstack/query-core',
-    ])
-  ) {
-    return 'router-query-vendor';
+  if (startsWithPackage(id, ['@tanstack/react-router', '@tanstack/router-core'])) {
+    return 'router-vendor';
   }
   if (startsWithPackage(id, ['@clerk/'])) return 'clerk-vendor';
   if (startsWithPackage(id, ['@sentry/'])) return 'sentry-vendor';
@@ -150,7 +143,6 @@ export default defineConfig(({ mode }) => {
           find: '@/lib/protected-paths',
           replacement: path.resolve(__dirname, 'src/lib/protected-paths.ts'),
         },
-        { find: '@/lib/theme', replacement: path.resolve(__dirname, 'src/lib/theme.ts') },
         { find: '@', replacement: studioSrc },
         { find: 'next/link', replacement: path.resolve(__dirname, 'src/compat/next-link.tsx') },
         {

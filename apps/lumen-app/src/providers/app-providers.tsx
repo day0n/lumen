@@ -1,15 +1,11 @@
 import { ClerkProvider, useAuth } from '@clerk/react';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { Provider as JotaiProvider } from 'jotai';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { I18nProvider } from '../i18n/provider';
 import {
   installApiFetchInterceptor,
   setApiAuthStatusVerifier,
   setApiTokenGetter,
 } from '../lib/api-client';
-import { createQueryClient } from '../lib/query-client';
-import { MinimalProviders } from './minimal-providers';
 
 type AuthStatus = 'active' | 'signed-out' | 'unknown';
 type AuthSnapshot = {
@@ -139,16 +135,13 @@ function delay(ms: number) {
 }
 
 export function AppProviders({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(() => createQueryClient());
-  const publishableKey = useMemo(() => __LUMEN_CLERK_PUBLISHABLE_KEY__, []);
+  const publishableKey = __LUMEN_CLERK_PUBLISHABLE_KEY__;
 
   if (!publishableKey) {
     return (
-      <MinimalProviders>
-        <div className="flex min-h-dvh items-center justify-center px-6 text-center text-sm text-white/70">
-          Missing Clerk publishable key.
-        </div>
-      </MinimalProviders>
+      <div className="flex min-h-dvh items-center justify-center px-6 text-center text-sm text-white/70">
+        Missing Clerk publishable key.
+      </div>
     );
   }
 
@@ -161,16 +154,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
       signInFallbackRedirectUrl="/app/dashboard"
       signUpFallbackRedirectUrl="/app/dashboard"
     >
-      <MinimalProviders>
-        <JotaiProvider>
-          <QueryClientProvider client={queryClient}>
-            <I18nProvider>
-              <ApiAuthBridge />
-              {children}
-            </I18nProvider>
-          </QueryClientProvider>
-        </JotaiProvider>
-      </MinimalProviders>
+      <I18nProvider>
+        <ApiAuthBridge />
+        {children}
+      </I18nProvider>
     </ClerkProvider>
   );
 }
