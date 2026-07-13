@@ -13,14 +13,16 @@ const USAGE = `Usage:
   pnpm --filter @lumen/api verify:release -- --release <full-git-sha> [options]
 
 Options:
-  --base-url <url>       API origin (default: ${DEFAULT_BASE_URL})
-  --release <sha>        Expected full 40-character Git release SHA
-  --timeout-ms <ms>      Overall verification timeout (default: ${DEFAULT_TIMEOUT_MS})
-  --interval-ms <ms>     Poll interval (default: ${DEFAULT_INTERVAL_MS})
-  --help                 Show this help
+  --base-url <url>         Direct API origin for health probes (default: ${DEFAULT_BASE_URL})
+  --public-base-url <url>  Public same-origin proxy for home requests (default: --base-url)
+  --release <sha>          Expected full 40-character Git release SHA
+  --timeout-ms <ms>        Overall verification timeout (default: ${DEFAULT_TIMEOUT_MS})
+  --interval-ms <ms>       Poll interval (default: ${DEFAULT_INTERVAL_MS})
+  --help                   Show this help
 
 Environment:
   LUMEN_API_VERIFY_BASE_URL
+  LUMEN_API_VERIFY_PUBLIC_BASE_URL
   LUMEN_API_VERIFY_RELEASE (fallback: RELEASE_SHA, GITHUB_SHA)
   LUMEN_API_VERIFY_TIMEOUT_MS
   LUMEN_API_VERIFY_INTERVAL_MS`;
@@ -38,6 +40,9 @@ export function parseOptions(argv = process.argv.slice(2), env = process.env) {
 
   const baseUrl = normalizeBaseUrl(
     parsed.baseUrl ?? env.LUMEN_API_VERIFY_BASE_URL ?? env.API_BASE_URL ?? DEFAULT_BASE_URL,
+  );
+  const publicBaseUrl = normalizeBaseUrl(
+    parsed.publicBaseUrl ?? env.LUMEN_API_VERIFY_PUBLIC_BASE_URL ?? baseUrl,
   );
   const release = normalizeRelease(
     parsed.release ??
@@ -61,7 +66,7 @@ export function parseOptions(argv = process.argv.slice(2), env = process.env) {
     throw new ReleaseVerificationError('Poll interval cannot exceed the overall timeout');
   }
 
-  return { baseUrl, intervalMs, release, timeoutMs };
+  return { baseUrl, intervalMs, publicBaseUrl, release, timeoutMs };
 }
 
 export async function verifyRelease(options, dependencies = {}) {
@@ -72,10 +77,11 @@ export async function verifyRelease(options, dependencies = {}) {
     throw new ReleaseVerificationError('This Node.js runtime does not provide fetch');
   }
 
+  const publicBaseUrl = options.publicBaseUrl ?? options.baseUrl;
   const deadline = now() + options.timeoutMs;
-  const request = (pathname) =>
+  const request = (baseUrl, pathname) =>
     requestJson({
-      baseUrl: options.baseUrl,
+      baseUrl,
       deadline,
       fetchImpl,
       now,
@@ -87,7 +93,7 @@ export async function verifyRelease(options, dependencies = {}) {
     intervalMs: options.intervalMs,
     label: 'liveness probe /healthz',
     now,
-    request: () => request('/healthz'),
+    request: () => request(options.baseUrl, '/healthz'),
     sleep,
     validate: (result) => validateHealthProbe(result, options.release, false),
   });
@@ -96,16 +102,17 @@ export async function verifyRelease(options, dependencies = {}) {
     intervalMs: options.intervalMs,
     label: 'readiness probe /readyz',
     now,
-    request: () => request('/readyz'),
+    request: () => request(options.baseUrl, '/readyz'),
     sleep,
     validate: (result) => validateHealthProbe(result, options.release, true),
   });
 
-  validateFeaturedResponse(await request('/api/home/featured'), options.release);
-  validateTemplatesResponse(await request('/api/home/templates'), options.release);
+  validateFeaturedResponse(await request(publicBaseUrl, '/api/home/featured'), options.release);
+  validateTemplatesResponse(await request(publicBaseUrl, '/api/home/templates'), options.release);
 
   return {
     baseUrl: options.baseUrl,
+    publicBaseUrl,
     release: options.release,
   };
 }
@@ -270,6 +277,7 @@ function parseArguments(argv) {
     ['--expected-release', 'release'],
     ['--interval', 'intervalMs'],
     ['--interval-ms', 'intervalMs'],
+    ['--public-base-url', 'publicBaseUrl'],
     ['--release', 'release'],
     ['--timeout', 'timeoutMs'],
     ['--timeout-ms', 'timeoutMs'],
@@ -383,7 +391,11 @@ export async function runCli(argv = process.argv.slice(2), env = process.env) {
   }
 
   const result = await verifyRelease(options);
-  console.log(`[lumen-api] verified release ${result.release} at ${result.baseUrl}`);
+  const target =
+    result.publicBaseUrl === result.baseUrl
+      ? result.baseUrl
+      : `${result.baseUrl} via ${result.publicBaseUrl}`;
+  console.log(`[lumen-api] verified release ${result.release} at ${target}`);
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
