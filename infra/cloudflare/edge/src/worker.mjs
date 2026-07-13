@@ -7,8 +7,8 @@ const LEGACY_REDIRECTS = new Map([
   ['/dashboard', '/app/dashboard'],
   ['/materials', '/app/materials'],
   ['/agent-chat', '/app/canvas/new?agent=chat'],
-  ['/canvas', '/app/canvas/projects'],
-  ['/canvas/projects', '/app/canvas/projects'],
+  ['/canvas', '/app/projects'],
+  ['/canvas/projects', '/app/projects'],
   ['/canvas/new', '/app/canvas/new'],
 ]);
 
@@ -119,27 +119,27 @@ export function resolveEdgeAction(pathname, activeRelease) {
     };
   }
 
-  const englishPrefixMatch = pathname.match(/^\/en(?:\/(.*))?$/);
-  if (englishPrefixMatch) {
-    return {
-      type: 'redirect',
-      pathname: `/${englishPrefixMatch[1] ?? ''}`.replace(/\/$/, '') || '/',
-      locale: 'en',
-    };
+  const localePrefixMatch = pathname.match(/^\/(en|zh)(?:\/(.*))?$/);
+  if (localePrefixMatch) {
+    const locale = localePrefixMatch[1];
+    const unprefixedPathname = `/${localePrefixMatch[2] ?? ''}`.replace(/\/$/, '') || '/';
+    const legacyRedirect = resolveLegacyRedirect(unprefixedPathname);
+    if (legacyRedirect) {
+      return { ...legacyRedirect, locale };
+    }
+    if (locale === 'en') {
+      return {
+        type: 'redirect',
+        pathname: unprefixedPathname,
+        locale,
+      };
+    }
+    // Chinese shells keep their prefix so localized auth, share and 404 routes
+    // can select the correct document below.
   }
 
-  const legacyTarget = LEGACY_REDIRECTS.get(pathname);
-  if (legacyTarget) {
-    const target = new URL(legacyTarget, 'https://lumen.local');
-    return {
-      type: 'redirect',
-      pathname: target.pathname,
-      ...(target.search ? { search: target.search } : {}),
-    };
-  }
-  if (pathname.startsWith('/canvas/')) {
-    return { type: 'redirect', pathname: `/app${pathname}` };
-  }
+  const legacyRedirect = resolveLegacyRedirect(pathname);
+  if (legacyRedirect) return legacyRedirect;
   if (pathname === '/app') {
     return { type: 'redirect', pathname: '/app/dashboard' };
   }
@@ -246,9 +246,31 @@ function shellAction(release, filename) {
   };
 }
 
+function resolveLegacyRedirect(pathname) {
+  const legacyTarget = LEGACY_REDIRECTS.get(pathname);
+  if (legacyTarget) {
+    const target = new URL(legacyTarget, 'https://lumen.local');
+    return {
+      type: 'redirect',
+      pathname: target.pathname,
+      ...(target.search ? { search: target.search } : {}),
+    };
+  }
+  if (pathname.startsWith('/canvas/')) {
+    return { type: 'redirect', pathname: `/app${pathname}` };
+  }
+  return null;
+}
+
 function readPublicAssetPath(pathname) {
   if (pathname === '/favicon.ico' || pathname === '/icon.svg') return pathname.slice(1);
-  for (const prefix of ['/fonts/', '/home-posters/']) {
+  for (const prefix of [
+    '/fonts/',
+    '/home-posters/',
+    '/home-templates/',
+    '/material-showcase/',
+    '/particle-masks/',
+  ]) {
     if (pathname.startsWith(prefix)) return pathname.slice(1);
   }
   return null;

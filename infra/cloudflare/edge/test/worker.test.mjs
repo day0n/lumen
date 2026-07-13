@@ -93,6 +93,56 @@ test('normalizes legacy and locale-prefixed routes', () => {
     type: 'redirect',
     pathname: '/app/canvas/new',
   });
+  assert.deepEqual(resolveEdgeAction('/canvas', RELEASE), {
+    type: 'redirect',
+    pathname: '/app/projects',
+  });
+  assert.deepEqual(resolveEdgeAction('/canvas/projects', RELEASE), {
+    type: 'redirect',
+    pathname: '/app/projects',
+  });
+  assert.deepEqual(resolveEdgeAction('/zh/home', RELEASE), {
+    type: 'redirect',
+    pathname: '/app/home',
+    locale: 'zh',
+  });
+  assert.deepEqual(resolveEdgeAction('/zh/canvas/projects', RELEASE), {
+    type: 'redirect',
+    pathname: '/app/projects',
+    locale: 'zh',
+  });
+  assert.deepEqual(resolveEdgeAction('/zh/agent-chat', RELEASE), {
+    type: 'redirect',
+    pathname: '/app/canvas/new',
+    search: '?agent=chat',
+    locale: 'zh',
+  });
+  assert.deepEqual(resolveEdgeAction('/en/materials', RELEASE), {
+    type: 'redirect',
+    pathname: '/app/materials',
+    locale: 'en',
+  });
+});
+
+test('serves all app-owned public asset families from the active release', () => {
+  for (const pathname of [
+    '/home-posters/selected/agent-pop.webp',
+    '/home-templates/featured/cover.webp',
+    '/material-showcase/character-01.webp',
+    '/particle-masks/sparkle.png',
+  ]) {
+    assert.deepEqual(resolveEdgeAction(pathname, RELEASE), {
+      type: 'object',
+      kind: 'public',
+      objectKey: `releases/${RELEASE}/${pathname.slice(1)}`,
+      release: RELEASE,
+      status: 200,
+    });
+  }
+  assert.equal(
+    resolveEdgeAction('/material-showcase/%2e%2e/private.webp', RELEASE).type,
+    'not-found',
+  );
 });
 
 test('uses the explicit locale cookie before browser preference', () => {
