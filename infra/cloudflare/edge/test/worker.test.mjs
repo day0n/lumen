@@ -77,6 +77,27 @@ test('keeps immutable assets pinned to their requested release', () => {
     resolveEdgeAction(`/_static/releases/${oldRelease}/assets/app.js.map`, RELEASE).type,
     'not-found',
   );
+  assert.equal(
+    resolveEdgeAction(`/_static/releases/${oldRelease}/app/index.html`, RELEASE).type,
+    'not-found',
+  );
+  assert.equal(
+    resolveEdgeAction(`/_static/releases/${oldRelease}/private.txt`, RELEASE).type,
+    'not-found',
+  );
+  assert.deepEqual(
+    resolveEdgeAction(
+      `/_static/releases/${oldRelease}/home-posters/selected/agent-pop.webp`,
+      RELEASE,
+    ),
+    {
+      type: 'object',
+      kind: 'immutable',
+      objectKey: `releases/${oldRelease}/home-posters/selected/agent-pop.webp`,
+      release: oldRelease,
+      status: 200,
+    },
+  );
 });
 
 test('normalizes legacy and locale-prefixed routes', () => {
@@ -142,6 +163,31 @@ test('serves all app-owned public asset families from the active release', () =>
   assert.equal(
     resolveEdgeAction('/material-showcase/%2e%2e/private.webp', RELEASE).type,
     'not-found',
+  );
+});
+
+test('does not overmatch reserved server-rendered route names', () => {
+  assert.equal(
+    resolveEdgeAction('/zh/sign-injected', RELEASE).objectKey,
+    `releases/${RELEASE}/404.html`,
+  );
+  assert.equal(resolveEdgeAction('/shareholder/report', RELEASE).type, 'not-found');
+});
+
+test('preserves redirect query parameters while adding the route action', async () => {
+  const response = await worker.fetch(
+    new Request('https://lumenstudio.tech/agent-chat?source=bookmark&agent=other'),
+    {
+      ACTIVE_FRONTEND_RELEASE: RELEASE,
+      FRONTEND_BUCKET: {},
+    },
+    { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 308);
+  assert.equal(
+    response.headers.get('location'),
+    'https://lumenstudio.tech/app/canvas/new?source=bookmark&agent=chat',
   );
 });
 

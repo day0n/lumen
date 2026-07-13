@@ -38,7 +38,10 @@ export default {
     const action = resolveEdgeAction(url.pathname, release);
     if (action.type === 'redirect') {
       url.pathname = action.pathname;
-      url.search = action.search ?? url.search;
+      if (action.search) {
+        const redirectParameters = new URLSearchParams(action.search);
+        for (const [name, value] of redirectParameters) url.searchParams.set(name, value);
+      }
       return redirectResponse(url, 308, action.locale ?? null, false);
     }
     if (action.type === 'not-found') {
@@ -148,7 +151,13 @@ export function resolveEdgeAction(pathname, activeRelease) {
   if (versionedAsset) {
     const release = versionedAsset[1];
     const assetPath = versionedAsset[2];
-    if (!release || !assetPath || !FULL_RELEASE_PATTERN.test(release) || hasUnsafePath(assetPath)) {
+    if (
+      !release ||
+      !assetPath ||
+      !FULL_RELEASE_PATTERN.test(release) ||
+      hasUnsafePath(assetPath) ||
+      !isPublishedAssetPath(assetPath)
+    ) {
       return { type: 'not-found' };
     }
     return {
@@ -162,16 +171,16 @@ export function resolveEdgeAction(pathname, activeRelease) {
 
   if (pathname === '/') return shellAction(activeRelease, 'index.html');
   if (pathname === '/zh') return shellAction(activeRelease, 'zh/index.html');
-  if (pathname === '/sign-in' || pathname.startsWith('/sign-in/')) {
+  if (matchesPathSegment(pathname, '/sign-in')) {
     return shellAction(activeRelease, 'auth/index.html');
   }
-  if (pathname === '/sign-up' || pathname.startsWith('/sign-up/')) {
+  if (matchesPathSegment(pathname, '/sign-up')) {
     return shellAction(activeRelease, 'auth/index.html');
   }
-  if (pathname.startsWith('/zh/sign-in') || pathname.startsWith('/zh/sign-up')) {
+  if (matchesPathSegment(pathname, '/zh/sign-in') || matchesPathSegment(pathname, '/zh/sign-up')) {
     return shellAction(activeRelease, 'auth/index.html');
   }
-  if (pathname.startsWith('/share/') || pathname.startsWith('/zh/share/')) {
+  if (matchesPathSegment(pathname, '/share') || matchesPathSegment(pathname, '/zh/share')) {
     return shellAction(activeRelease, 'share/index.html');
   }
 
@@ -274,6 +283,15 @@ function readPublicAssetPath(pathname) {
     if (pathname.startsWith(prefix)) return pathname.slice(1);
   }
   return null;
+}
+
+function isPublishedAssetPath(assetPath) {
+  if (assetPath.startsWith('assets/')) return true;
+  return readPublicAssetPath(`/${assetPath}`) === assetPath;
+}
+
+function matchesPathSegment(pathname, route) {
+  return pathname === route || pathname.startsWith(`${route}/`);
 }
 
 function hasUnsafePath(path) {
