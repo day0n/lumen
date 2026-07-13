@@ -29,6 +29,32 @@ echo "==> Pulling latest code..."
 git checkout -- apps/lumen-studio/tsconfig.json 2>/dev/null || true
 git pull origin main
 
+RELEASE_SHA="$(git rev-parse --verify HEAD)"
+if [[ ! "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Unable to resolve a full release SHA from the deployed checkout: $RELEASE_SHA"
+  exit 1
+fi
+export RELEASE_SHA
+
+API_ENV_FILE="$APP_DIR/apps/lumen-api/.env.local"
+STUDIO_ENV_FILE="$APP_DIR/apps/lumen-studio/.env.local"
+if [ -f "$API_ENV_FILE" ]; then
+  export LUMEN_API_ENV_FILE="$(readlink -f "$API_ENV_FILE")"
+  echo "==> Using apps/lumen-api/.env.local for lumen-api."
+elif [ -f "$STUDIO_ENV_FILE" ]; then
+  export LUMEN_API_ENV_FILE="$(readlink -f "$STUDIO_ENV_FILE")"
+  echo "==> apps/lumen-api/.env.local not found; using apps/lumen-studio/.env.local for lumen-api."
+else
+  echo "lumen-api requires apps/lumen-api/.env.local or apps/lumen-studio/.env.local"
+  exit 1
+fi
+
+if [[ "$LUMEN_API_ENV_FILE" != /* ]] || [ ! -r "$LUMEN_API_ENV_FILE" ]; then
+  echo "Resolved lumen-api environment file must be an absolute, readable path: $LUMEN_API_ENV_FILE"
+  exit 1
+fi
+chmod 600 "$LUMEN_API_ENV_FILE"
+
 echo "==> Ensuring FFmpeg runtime..."
 if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
   if [ "$(id -u)" -eq 0 ] && command -v apt-get >/dev/null 2>&1; then
@@ -63,6 +89,9 @@ pnpm install --frozen-lockfile
 echo "==> Building shared..."
 pnpm build:shared
 
+echo "==> Building API..."
+pnpm build:api
+
 echo "==> Building studio app..."
 pnpm build:app
 
@@ -92,6 +121,16 @@ find apps/lumen-agent/src -name '*.md' -exec bash -c 'dest="apps/lumen-agent/dis
 echo "==> Building engine..."
 pnpm --filter @lumen/engine build
 
+echo "==> Starting lumen API candidate..."
+pm2 startOrReload ecosystem.config.cjs --only lumen-api --update-env
+
+echo "==> Verifying lumen API release..."
+pnpm --filter @lumen/api verify:release -- \
+  --base-url http://127.0.0.1:3003 \
+  --release "$RELEASE_SHA" \
+  --timeout-ms "${LUMEN_API_VERIFY_TIMEOUT_MS:-60000}" \
+  --interval-ms "${LUMEN_API_VERIFY_INTERVAL_MS:-500}"
+
 echo "==> Activating studio build..."
 ln -sfn "$STUDIO_BUILD_DIR" apps/lumen-studio/.next-current.tmp
 mv -Tf apps/lumen-studio/.next-current.tmp apps/lumen-studio/.next-current
@@ -109,7 +148,12 @@ else
 fi
 
 echo "==> Restarting services..."
-pm2 reload ecosystem.config.cjs --update-env
+pm2 startOrReload ecosystem.config.cjs \
+  --only lumen-studio,lumen-agent,lumen-engine \
+  --update-env
+
+echo "==> Saving process list..."
+pm2 save
 
 echo "==> Cleaning old studio builds..."
 find apps/lumen-studio -maxdepth 1 -type d -name '.next-build-*' -printf '%T@ %p\n' \
