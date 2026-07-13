@@ -28,6 +28,7 @@ interface CancelPayload {
 export class StreamConsumer {
   private running = false;
   private executor: WorkflowExecutor;
+  private reader: Redis | null = null;
   private cancelSubscriber: Redis | null = null;
   private activeRuns = new Map<string, AbortController>();
   private cancelledRuns = new Map<string, string>();
@@ -47,6 +48,9 @@ export class StreamConsumer {
     await this.ensureGroup();
     await this.reclaimAbandonedMessages();
     await this.startCancelSubscriber();
+    const reader = this.redis.duplicate();
+    reader.on('error', (err) => logger.error({ err }, 'workflow reader redis error'));
+    this.reader = reader;
     this.running = true;
     logger.info(
       { maxConcurrentRuns: this.maxConcurrentRuns },
@@ -66,7 +70,7 @@ export class StreamConsumer {
       }
 
       try {
-        const results = (await this.redis.xreadgroup(
+        const results = (await reader.xreadgroup(
           'GROUP',
           GROUP_NAME,
           CONSUMER_NAME,
@@ -114,8 +118,12 @@ export class StreamConsumer {
     for (const controller of this.activeRuns.values()) {
       if (!controller.signal.aborted) controller.abort('engine shutting down');
     }
+    if (this.reader) {
+      this.reader.disconnect();
+      this.reader = null;
+    }
     if (this.cancelSubscriber) {
-      void this.cancelSubscriber.quit();
+      this.cancelSubscriber.disconnect();
       this.cancelSubscriber = null;
     }
   }

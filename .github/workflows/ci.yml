@@ -72,6 +72,7 @@ jobs:
           FISH_AUDIO_API_KEY: ci
         run: >-
           pnpm --filter @lumen/engine exec tsx --test
+          src/consumer.test.ts
           src/database/mongo.test.ts
           src/engine/model-errors.test.ts
           src/engine/resolver.test.ts

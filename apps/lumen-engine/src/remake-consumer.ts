@@ -65,6 +65,7 @@ export class RemakeStreamConsumer {
     await this.ensureGroup();
     this.running = true;
     this.reader = this.redis.duplicate();
+    this.reader.on('error', (err) => logger.error({ err }, 'remake reader redis error'));
     logger.info('remake stream consumer started, waiting for tasks...');
 
     while (this.running) {

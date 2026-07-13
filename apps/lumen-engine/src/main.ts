@@ -11,24 +11,23 @@ import { logger } from './utils/logger.js';
 async function main() {
   logger.info({ port: config.PORT }, 'lumen-engine starting...');
 
-  const redis = new Redis(config.REDIS_URL, { maxRetriesPerRequest: null });
-  // remake consumer 用独立 Redis 客户端跑 XREADGROUP，避免和 workflow consumer
-  // 阻塞读冲突（同一连接不能同时挂在两个 BLOCK 调用上）。
+  const commandRedis = new Redis(config.REDIS_URL, { maxRetriesPerRequest: null });
   const remakeRedis = new Redis(config.REDIS_URL, { maxRetriesPerRequest: null });
 
-  redis.on('connect', () => logger.info('redis connected'));
-  redis.on('error', (err) => logger.error({ err }, 'redis error'));
-  remakeRedis.on('error', (err) => logger.error({ err }, 'remake redis error'));
+  commandRedis.on('connect', () => logger.info('command redis connected'));
+  commandRedis.on('error', (err) => logger.error({ err }, 'command redis error'));
+  remakeRedis.on('connect', () => logger.info('remake command redis connected'));
+  remakeRedis.on('error', (err) => logger.error({ err }, 'remake command redis error'));
 
   const workflowStore = await getWorkflowStore();
-  const consumer = new StreamConsumer(redis, workflowStore);
+  const consumer = new StreamConsumer(commandRedis, workflowStore);
   const remakeConsumer = new RemakeStreamConsumer(remakeRedis);
 
   const shutdown = async () => {
     logger.info('shutting down...');
     consumer.stop();
     remakeConsumer.stop();
-    await redis.quit();
+    await commandRedis.quit();
     await remakeRedis.quit();
     await closeMongo();
     process.exit(0);
