@@ -24,7 +24,7 @@ import {
   type RemakeTaskStatus,
   type UpdateRemakeJobInput,
   UpdateRemakeJobInputSchema,
-} from '../schema/remakeJob';
+} from '../schema/remakeJob.js';
 
 const DEFAULT_LIST_LIMIT = 50;
 

@@ -11,7 +11,7 @@ import {
   type OfficialNotificationRecord,
   OfficialNotificationRecordSchema,
   type OfficialNotificationTranslations,
-} from '../schema/notifications';
+} from '../schema/notifications.js';
 
 const OFFICIAL_COLLECTION = 'studio_official_notifications';
 const READS_COLLECTION = 'studio_notification_reads';

@@ -17,7 +17,7 @@ import {
   ProjectRecordSchema,
   type UpdateProjectInput,
   UpdateProjectInputSchema,
-} from '../schema/project';
+} from '../schema/project.js';
 
 const COLLECTION = 'studio_projects';
 

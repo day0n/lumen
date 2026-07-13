@@ -13,7 +13,7 @@ import {
   ProjectHistorySummaryRecordSchema,
   type RecordProjectHistoryInput,
   RecordProjectHistoryInputSchema,
-} from '../schema/projectHistory';
+} from '../schema/projectHistory.js';
 
 const COLLECTION = 'studio_project_history';
 const MAX_HISTORY_PER_PROJECT = 3;

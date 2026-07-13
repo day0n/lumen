@@ -5,12 +5,12 @@ import type { Db } from 'mongodb';
 import {
   type CreateHomeFeaturedItemInput,
   CreateHomeFeaturedItemInputSchema,
-  type HomeFeaturedTranslations,
   type HomeFeaturedItemDocument,
   HomeFeaturedItemDocumentSchema,
   type HomeFeaturedItemRecord,
   HomeFeaturedItemRecordSchema,
-} from '../schema/homeFeatured';
+  type HomeFeaturedTranslations,
+} from '../schema/homeFeatured.js';
 
 const COLLECTION = 'studio_home_featured_items';
 type ContentLocale = 'en' | 'zh';

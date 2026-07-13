@@ -14,7 +14,7 @@ import {
   type HomeWorkflowTemplateTranslations,
   type UpsertHomeWorkflowTemplateInput,
   UpsertHomeWorkflowTemplateInputSchema,
-} from '../schema/homeWorkflowTemplate';
+} from '../schema/homeWorkflowTemplate.js';
 
 const COLLECTION = 'studio_home_workflow_templates';
 type ContentLocale = 'en' | 'zh';

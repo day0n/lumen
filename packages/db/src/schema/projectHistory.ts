@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProjectCanvasSchema } from './project';
+import { ProjectCanvasSchema } from './project.js';
 
 export const ProjectHistoryActionSchema = z.enum(['created', 'updated', 'restored']);
 export type ProjectHistoryAction = z.infer<typeof ProjectHistoryActionSchema>;

@@ -38,12 +38,14 @@ jobs:
       - name: Build shared packages
         run: |
           pnpm --filter @lumen/shared build
+          pnpm --filter @lumen/db build
           pnpm --filter @lumen/backend build
 
       - name: Typecheck workspaces
         run: |
           pnpm --filter @lumen/app typecheck
           pnpm --filter @lumen/studio typecheck
+          pnpm --filter @lumen/db typecheck
           pnpm --filter @lumen/backend typecheck
           pnpm --filter @lumen/api typecheck
           pnpm --filter @lumen/agent typecheck
@@ -52,6 +54,7 @@ jobs:
       - name: Run backend and API tests
         run: |
           pnpm --filter @lumen/app test
+          pnpm --filter @lumen/db test
           pnpm --filter @lumen/backend test
           pnpm --filter @lumen/api test
 

@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "pnpm --filter @lumen/db build",
     "dev": "vite --host 0.0.0.0",
+    "prebuild": "pnpm --filter @lumen/db build",
     "build": "tsc --noEmit && vite build",
     "test": "tsx --test test/*.test.ts",
+    "pretypecheck": "pnpm --filter @lumen/db build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 0.0.0.0"
   },

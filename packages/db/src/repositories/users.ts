@@ -9,7 +9,7 @@ import {
   UserDocumentSchema,
   type UserRecord,
   UserRecordSchema,
-} from '../schema/user';
+} from '../schema/user.js';
 
 const COLLECTION = 'studio_users';
 

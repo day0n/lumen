@@ -13,7 +13,7 @@ import {
   MaterialAssetRecordSchema,
   type UpsertWorkflowMaterialAssetInput,
   UpsertWorkflowMaterialAssetInputSchema,
-} from '../schema/materialAsset';
+} from '../schema/materialAsset.js';
 
 export const MATERIAL_ASSETS_COLLECTION = 'studio_material_assets';
 export const WORKFLOW_NODE_RESULTS_COLLECTION = 'workflow_node_results';

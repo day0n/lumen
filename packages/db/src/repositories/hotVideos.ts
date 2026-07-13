@@ -12,7 +12,7 @@ import {
   type HotVideoTranslations,
   type ListHotVideosInput,
   ListHotVideosInputSchema,
-} from '../schema/hotVideos';
+} from '../schema/hotVideos.js';
 
 const COLLECTION = 'studio_hot_videos';
 type ContentLocale = 'en' | 'zh';

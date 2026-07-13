@@ -13,7 +13,7 @@ import {
   ProjectFolderRecordSchema,
   type UpdateProjectFolderInput,
   UpdateProjectFolderInputSchema,
-} from '../schema/projectFolder';
+} from '../schema/projectFolder.js';
 
 const COLLECTION = 'studio_project_folders';
 

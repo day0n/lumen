@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProjectCanvasSchema } from './project';
+import { ProjectCanvasSchema } from './project.js';
 
 export const HomeWorkflowTemplateStatusSchema = z.enum(['active', 'hidden']);
 export type HomeWorkflowTemplateStatus = z.infer<typeof HomeWorkflowTemplateStatusSchema>;
