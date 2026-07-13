@@ -1,7 +1,6 @@
 'use client';
 
 import { cn } from '@app/lib/cn';
-import { motion } from 'motion/react';
 
 export function LumenMark({
   size = 32,
@@ -11,11 +10,12 @@ export function LumenMark({
   className?: string;
 }) {
   return (
-    <motion.div
-      className={cn('relative shrink-0', className)}
+    <div
+      className={cn(
+        'relative shrink-0 transition-transform duration-200 ease-out hover:rotate-6 hover:scale-[1.06] motion-reduce:transform-none motion-reduce:transition-none',
+        className,
+      )}
       style={{ width: size, height: size }}
-      whileHover={{ rotate: 6, scale: 1.06 }}
-      transition={{ type: 'spring', stiffness: 220, damping: 14 }}
     >
       <div
         className="absolute inset-0 rounded-[28%]"
@@ -43,6 +43,6 @@ export function LumenMark({
           background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent)',
         }}
       />
-    </motion.div>
+    </div>
   );
 }

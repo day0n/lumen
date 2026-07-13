@@ -3,8 +3,8 @@
 import { useI18n } from '@app/i18n/provider';
 import type { Locale } from '@app/i18n/routing';
 import { cn } from '@app/lib/cn';
-import { IconChevronDown, IconWorld } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
+import { ChevronDownIcon, WorldIcon } from './shell-icons';
 
 const languageOptions: { locale: Locale; label: string }[] = [
   { locale: 'en', label: 'English' },
@@ -68,7 +68,7 @@ export function LanguageToggle({
             : 'min-h-11 min-w-[152px] gap-2.5 px-4 text-[20px]',
         )}
       >
-        <IconWorld size={compact ? 15 : 24} stroke={2.4} className="shrink-0" />
+        <WorldIcon size={compact ? 15 : 24} stroke={2.4} className="shrink-0" />
         <span
           className={cn(
             'text-left leading-none',
@@ -78,7 +78,7 @@ export function LanguageToggle({
         >
           {locale === 'zh' ? '中文' : 'English'}
         </span>
-        <IconChevronDown
+        <ChevronDownIcon
           size={compact ? 13 : 20}
           stroke={2.6}
           className={cn(

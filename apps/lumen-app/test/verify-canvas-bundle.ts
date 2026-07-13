@@ -39,6 +39,12 @@ const forbiddenInitialSources = [
   '/src/components/canvas/CanvasDotLogo.tsx',
   '/src/components/canvas/CanvasRotatingLabel.tsx',
   '/src/components/canvas/canvas-entry-loader.ts',
+  '/src/components/shell/NotificationsPopover.tsx',
+];
+
+const forbiddenInitialDependencies = [
+  '/node_modules/motion/',
+  '/node_modules/@tabler/icons-react/',
 ];
 
 for (const suffix of forbiddenInitialSources) {
@@ -49,6 +55,20 @@ for (const suffix of forbiddenInitialSources) {
     false,
     `${suffix} leaked into an initial JavaScript chunk`,
   );
+}
+
+for (const dependency of forbiddenInitialDependencies) {
+  assert.equal(
+    initialSourceMaps.some((sourceMap) =>
+      sourceMap.sources.some((source) => source.includes(dependency)),
+    ),
+    false,
+    `${dependency} leaked into an initial JavaScript chunk`,
+  );
+}
+
+for (const asset of initialJavaScript) {
+  assert.doesNotMatch(asset, /^(?:motion|icons)-vendor-/);
 }
 
 assert.doesNotMatch(initialCss, /--xy-edge-stroke-default/);
@@ -66,7 +86,7 @@ const canvasRouteSourceMaps = allSourceMaps.filter((sourceMap) =>
 );
 assert.equal(canvasRouteSourceMaps.length, 1, 'CanvasRoute was not emitted in one lazy chunk');
 
-console.log('Canvas bundle boundary verified.');
+console.log('Static app bundle boundaries verified.');
 
 async function readAsset(name: string) {
   return readFile(new URL(name, assetsDirectory), 'utf8');

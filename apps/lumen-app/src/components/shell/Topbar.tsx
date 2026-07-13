@@ -4,42 +4,46 @@ import Link from '@app/compat/next-link';
 import { usePathname, useRouter } from '@app/compat/next-navigation';
 import { LanguageToggle } from '@app/components/shell/LanguageToggle';
 import { LumenMark } from '@app/components/shell/LumenMark';
-import { NotificationsPopover } from '@app/components/shell/NotificationsPopover';
 import { useI18n } from '@app/i18n/provider';
 import { stripLocalePrefix } from '@app/i18n/routing';
 import { useLoginRedirect } from '@app/lib/auth-redirect';
 import { cn } from '@app/lib/cn';
 import { isLoginRequiredPath } from '@app/lib/protected-paths';
 import { UserButton } from '@clerk/react';
-import { IconDeviceTv, IconFolder, IconHome, IconPhoto } from '@tabler/icons-react';
-import { motion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
+import { DeviceTvIcon, FolderIcon, HomeIcon, PhotoIcon } from './shell-icons';
+
+const NotificationsPopover = lazy(() =>
+  import('./NotificationsPopover').then((module) => ({
+    default: module.NotificationsPopover,
+  })),
+);
 
 const navItems = [
   {
     labelKey: 'nav.home',
     href: '/app/home',
     activePaths: ['/app/home'],
-    icon: IconHome,
+    icon: HomeIcon,
   },
   {
     labelKey: 'nav.studio',
     href: '/app/projects',
     activePaths: ['/app/projects', '/app/canvas'],
-    icon: IconFolder,
+    icon: FolderIcon,
   },
   {
     labelKey: 'nav.materials',
     href: '/app/materials',
     activePaths: ['/app/materials'],
-    icon: IconPhoto,
+    icon: PhotoIcon,
   },
   {
     labelKey: 'nav.hotVideos',
     href: '/app/hot-videos',
     activePaths: ['/app/hot-videos'],
-    icon: IconDeviceTv,
+    icon: DeviceTvIcon,
   },
 ];
 
@@ -117,13 +121,13 @@ export function Topbar() {
                     active ? 'text-white' : 'text-white/55 hover:text-white',
                   )}
                 >
-                  {active && (
-                    <motion.span
-                      layoutId="home-nav-active"
-                      className="absolute inset-0 rounded-full bg-white/[0.08]"
-                      transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-                    />
-                  )}
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'pointer-events-none absolute inset-0 rounded-full bg-white/[0.08] transition-opacity duration-200 motion-reduce:transition-none',
+                      active ? 'opacity-100' : 'opacity-0',
+                    )}
+                  />
                   <Icon size={15} className="relative z-10" stroke={2.2} />
                   <span className="relative z-10">{label}</span>
                 </Link>
@@ -132,7 +136,11 @@ export function Topbar() {
           </nav>
 
           <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1 sm:gap-2">
-            {authLoaded && isSignedIn ? <NotificationsPopover /> : null}
+            {authLoaded && isSignedIn ? (
+              <Suspense fallback={<NotificationSlotFallback />}>
+                <NotificationsPopover />
+              </Suspense>
+            ) : null}
             <LanguageToggle compact iconOnlyOnMobile />
 
             {!authLoaded && (
@@ -197,13 +205,13 @@ export function Topbar() {
                 active ? 'text-[#111315]' : 'text-white/58 hover:text-white',
               )}
             >
-              {active && (
-                <motion.span
-                  layoutId="mobile-home-nav-active"
-                  className="absolute inset-0 rounded-xl bg-white"
-                  transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-                />
-              )}
+              <span
+                aria-hidden
+                className={cn(
+                  'pointer-events-none absolute inset-0 rounded-xl bg-white transition-opacity duration-200 motion-reduce:transition-none',
+                  active ? 'opacity-100' : 'opacity-0',
+                )}
+              />
               <Icon size={18} className="relative z-10" stroke={2.2} />
             </Link>
           );
@@ -211,6 +219,10 @@ export function Topbar() {
       </nav>
     </header>
   );
+}
+
+function NotificationSlotFallback() {
+  return <span aria-hidden className="block h-11 w-11 shrink-0 rounded-xl bg-white/[0.04]" />;
 }
 
 function isNavItemActive(pathname: string, activePaths: string[]) {
