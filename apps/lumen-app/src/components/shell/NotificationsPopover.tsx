@@ -5,6 +5,7 @@ import { useIsMobile } from '@app/hooks/use-is-mobile';
 import { useI18n } from '@app/i18n/provider';
 import { useLoginRedirect } from '@app/lib/auth-redirect';
 import { cn } from '@app/lib/cn';
+import { markNotificationReadOptimistically } from '@lumen/shared/notification-read';
 import {
   IconBell,
   IconChevronDown,
@@ -111,17 +112,13 @@ export function NotificationsPopover({ triggerClassName }: { triggerClassName?: 
     setExpandedId((current) => (current === notification.id ? null : notification.id));
 
     if (notification.isRead) return;
-    setNotifications((current) =>
-      current.map((item) => (item.id === notification.id ? { ...item, isRead: true } : item)),
-    );
-
-    void fetch(`/api/notifications/official/${notification.id}/read`, {
-      method: 'POST',
-    }).catch(() => {
-      setNotifications((current) =>
-        current.map((item) => (item.id === notification.id ? { ...item, isRead: false } : item)),
-      );
-    });
+    void markNotificationReadOptimistically(notification.id, {
+      setRead(isRead) {
+        setNotifications((current) =>
+          current.map((item) => (item.id === notification.id ? { ...item, isRead } : item)),
+        );
+      },
+    }).catch(() => undefined);
   };
 
   const panel = (

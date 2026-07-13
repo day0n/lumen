@@ -25,6 +25,10 @@
     "./i18n/routing": {
       "types": "./dist/i18n/routing.d.ts",
       "default": "./dist/i18n/routing.js"
+    },
+    "./notification-read": {
+      "types": "./dist/notification-read.d.ts",
+      "default": "./dist/notification-read.js"
     }
   },
   "scripts": {
