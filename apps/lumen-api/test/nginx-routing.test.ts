@@ -6,7 +6,7 @@ import test from 'node:test';
 const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
 const nginxPath = path.join(repositoryRoot, 'infra/nginx/lumenstudio.tech.conf');
 const fallbackLocation = '@lumen_studio_api_read_fallback';
-const projectsStudioPassthroughLocation = '@lumen_projects_studio_passthrough';
+const studioApiPassthroughLocation = '@lumen_studio_api_passthrough';
 
 const forwardedRequestHeaders = [
   'proxy_set_header Connection "";',
@@ -145,7 +145,7 @@ test('sends only project GET and HEAD requests to the API read route', async () 
 
   for (const block of [projectsEntry, projectDetail, workflowStatus]) {
     assertContainsAll(block, [
-      `error_page 418 = ${projectsStudioPassthroughLocation};`,
+      `error_page 418 = ${studioApiPassthroughLocation};`,
       `error_page 500 502 503 504 = ${fallbackLocation};`,
       'if ($request_method !~ ^(GET|HEAD)$)',
       'return 418;',
@@ -172,8 +172,8 @@ test('sends only project GET and HEAD requests to the API read route', async () 
   assert.doesNotMatch(projectDetail, /error_page[^\n]*404/);
   assert.doesNotMatch(workflowStatus, /error_page[^\n]*404/);
 
-  const projectsStudio = extractBlock(server, `location ${projectsStudioPassthroughLocation}`);
-  assertContainsAll(projectsStudio, [
+  const studioPassthrough = extractBlock(server, `location ${studioApiPassthroughLocation}`);
+  assertContainsAll(studioPassthrough, [
     'proxy_pass http://127.0.0.1:3000;',
     'proxy_http_version 1.1;',
     'proxy_intercept_errors off;',
@@ -181,11 +181,11 @@ test('sends only project GET and HEAD requests to the API read route', async () 
     'add_header Cache-Control "private, no-store" always;',
     ...forwardedRequestHeaders,
   ]);
-  assert.equal(countOccurrences(projectsStudio, 'proxy_pass'), 1);
-  assert.doesNotMatch(projectsStudio, /\berror_page\b|127\.0\.0\.1:3003/);
-  assert.doesNotMatch(projectsStudio, /proxy_pass\s+http:\/\/127\.0\.0\.1:3000\//);
+  assert.equal(countOccurrences(studioPassthrough, 'proxy_pass'), 1);
+  assert.doesNotMatch(studioPassthrough, /\berror_page\b|127\.0\.0\.1:3003/);
+  assert.doesNotMatch(studioPassthrough, /proxy_pass\s+http:\/\/127\.0\.0\.1:3000\//);
   assert.doesNotMatch(
-    projectsStudio,
+    studioPassthrough,
     /\brewrite\b|\$request_uri|proxy_pass_request_body|proxy_set_body|proxy_(?:connect|send|read)_timeout/,
   );
 
