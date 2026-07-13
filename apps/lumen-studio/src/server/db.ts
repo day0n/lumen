@@ -18,24 +18,12 @@ import {
 } from '@lumen/db';
 
 import { getStudioServerConfig } from './config';
-
-/**
- * Memoize an async repository loader. The resolved promise is cached so the
- * client connect + ensureIndexes only runs once per process. If the loader
- * rejects, the cache is reset so the next call retries instead of returning a
- * permanently-rejected promise.
- */
-function createRepositoryLoader<T>(factory: () => Promise<T>): () => Promise<T> {
-  let promise: Promise<T> | null = null;
-  return () => {
-    if (promise) return promise;
-    promise = factory().catch((error) => {
-      promise = null;
-      throw error;
-    });
-    return promise;
-  };
-}
+import {
+  createNotificationRepositoryLoader,
+  initializeDefaultOfficialNotifications,
+  runStartupWarmups,
+} from './notification-startup';
+import { createRepositoryLoader } from './repository-loader';
 
 let cache: JsonCache | null = null;
 
@@ -92,11 +80,9 @@ export const getHotVideoRepository = createRepositoryLoader(async () => {
   return repository;
 });
 
-export const getNotificationRepository = createRepositoryLoader(async () => {
+export const getNotificationRepository = createNotificationRepositoryLoader(async () => {
   const db = await getDb();
-  const repository = new NotificationRepository(db);
-  await repository.ensureIndexes();
-  return repository;
+  return new NotificationRepository(db);
 });
 
 export const getMaterialAssetRepository = createRepositoryLoader(async () => {
@@ -128,27 +114,27 @@ export const getRemakeJobRepository = createRepositoryLoader(async () => {
 });
 
 /**
- * Eagerly initialize all repositories (Mongo connect + ensureIndexes) so the
- * cold-start cost is paid at boot instead of by the first user request after a
- * deploy/restart. Failures are logged but non-fatal — the lazy getters will
- * retry on demand.
+ * Eagerly initialize all repositories and startup-only data after the server
+ * begins listening. Request-time repository getters may retry their own
+ * connection/index initialization, but notification seeding only runs here.
  */
 export async function warmupRepositories(): Promise<void> {
-  await Promise.allSettled([
-    getUserRepository(),
-    getProjectRepository(),
-    getProjectFolderRepository(),
-    getProjectHistoryRepository(),
-    getHomeFeaturedRepository(),
-    getHomeWorkflowTemplateRepository(),
-    getHotVideoRepository(),
-    getNotificationRepository(),
-    getMaterialAssetRepository(),
-    getRemakeJobRepository(),
+  await runStartupWarmups([
+    getUserRepository,
+    getProjectRepository,
+    getProjectFolderRepository,
+    getProjectHistoryRepository,
+    getHomeFeaturedRepository,
+    getHomeWorkflowTemplateRepository,
+    getHotVideoRepository,
+    () =>
+      initializeDefaultOfficialNotifications({
+        getRepository: getNotificationRepository,
+      }),
+    getMaterialAssetRepository,
+    getRemakeJobRepository,
+    getStudioCache,
   ]);
-  try {
-    getStudioCache();
-  } catch {}
 }
 
 export function getStudioCache(): JsonCache {

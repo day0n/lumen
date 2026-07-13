@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "deps:build": "pnpm --filter @lumen/shared build && pnpm --filter @lumen/db build",
+    "deps:build": "pnpm --filter @lumen/shared build && pnpm --filter @lumen/db build && pnpm --filter @lumen/backend build",
     "db:build": "pnpm --filter @lumen/db build",
     "predev": "pnpm run deps:build",
     "dev": "tsx watch --clear-screen=false server.ts",
@@ -13,6 +13,8 @@
     "e2e:remake": "tsx scripts/e2e-remake-runner.ts",
     "prestart": "pnpm run deps:build",
     "start": "NODE_ENV=production tsx server.ts",
+    "pretest": "pnpm run deps:build",
+    "test": "tsx --test test/*.test.ts",
     "lint": "biome check .",
     "pretypecheck": "pnpm run deps:build",
     "typecheck": "tsc --noEmit",

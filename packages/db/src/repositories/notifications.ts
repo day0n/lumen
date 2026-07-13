@@ -29,7 +29,7 @@ export class NotificationRepository {
   }
 
   async ensureDefaultOfficialNotifications(
-    inputs: CreateOfficialNotificationInput[],
+    inputs: readonly CreateOfficialNotificationInput[],
   ): Promise<void> {
     if (inputs.length === 0) return;
 

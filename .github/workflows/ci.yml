@@ -51,10 +51,11 @@ jobs:
           pnpm --filter @lumen/agent typecheck
           pnpm --filter @lumen/engine typecheck
 
-      - name: Run backend and API tests
+      - name: Run workspace tests
         run: |
           pnpm --filter @lumen/shared test
           pnpm --filter @lumen/app test
+          pnpm --filter @lumen/studio test
           pnpm --filter @lumen/db test
           pnpm --filter @lumen/backend test
           pnpm --filter @lumen/api test

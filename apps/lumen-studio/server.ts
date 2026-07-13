@@ -127,8 +127,8 @@ async function main() {
     logger.info({ url: `http://${hostname}:${port}` }, 'lumen-studio ready');
     logger.info('ws/flow gateway listening on /ws/flow');
 
-    // 预热 Mongo 连接 + 索引，把冷启动开销从首个用户请求挪到启动期。
-    // fire-and-forget：失败不影响服务，懒加载 getter 会按需重试。
+    // 预热 Mongo 连接、索引和启动期数据，把冷启动开销从首个请求挪走。
+    // fire-and-forget：失败会被记录但不影响已经开始监听的服务。
     void warmupRepositories()
       .then(() => logger.info('repositories warmed up'))
       .catch((err) => logger.warn({ err }, 'repository warmup failed (non-fatal)'));
