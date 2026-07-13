@@ -28,6 +28,7 @@ const notificationReadLocation = '= /api/notifications/official';
 const notificationWriteLocation = '^~ /api/notifications/official/';
 const projectDetailLocation = '~ ^/api/projects/[^/]+$';
 const projectsEntryLocation = '= /api/projects';
+const remakeJobDetailLocation = '~ ^/api/remake/jobs/[^/]+$';
 const workflowStatusLocation = '~ ^/api/projects/[^/]+/workflow-status$';
 const legacyApiReadLocations = [...homeReadLocations, '= /api/me'];
 const apiReadLocations = [...legacyApiReadLocations, notificationReadLocation];
@@ -36,6 +37,7 @@ const apiProxyLocations = [
   notificationWriteLocation,
   projectsEntryLocation,
   projectDetailLocation,
+  remakeJobDetailLocation,
   workflowStatusLocation,
 ];
 
@@ -88,7 +90,7 @@ test('sends only the intended API reads and notification writes to the API', asy
   const apiLocations = locationDeclarations(server).filter((location) => location.includes('/api'));
 
   assert.deepEqual(apiLocations.sort(), apiProxyLocations.toSorted());
-  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 8);
+  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 9);
 
   for (const location of apiReadLocations) {
     const block = extractBlock(server, `location ${location}`);
@@ -136,14 +138,15 @@ test('sends only the intended API reads and notification writes to the API', asy
   assert.doesNotMatch(notificationRead, /error_page[^\n]*(?:401|403|418)/);
 });
 
-test('sends only project GET and HEAD requests to the API read route', async () => {
+test('sends only project and remake GET and HEAD requests to API read routes', async () => {
   const source = await readFile(nginxPath, 'utf8');
   const server = extractBlock(source, 'server');
   const projectsEntry = extractBlock(server, `location ${projectsEntryLocation}`);
   const projectDetail = extractBlock(server, `location ${projectDetailLocation}`);
+  const remakeJobDetail = extractBlock(server, `location ${remakeJobDetailLocation}`);
   const workflowStatus = extractBlock(server, `location ${workflowStatusLocation}`);
 
-  for (const block of [projectsEntry, projectDetail, workflowStatus]) {
+  for (const block of [projectsEntry, projectDetail, workflowStatus, remakeJobDetail]) {
     assertContainsAll(block, [
       `error_page 418 = ${studioApiPassthroughLocation};`,
       `error_page 500 502 503 504 = ${fallbackLocation};`,
@@ -169,8 +172,10 @@ test('sends only project GET and HEAD requests to the API read route', async () 
   assert.equal(countOccurrences(projectsEntry, 'error_page'), 3);
   assert.equal(countOccurrences(projectDetail, 'error_page'), 2);
   assert.equal(countOccurrences(workflowStatus, 'error_page'), 2);
+  assert.equal(countOccurrences(remakeJobDetail, 'error_page'), 2);
   assert.doesNotMatch(projectDetail, /error_page[^\n]*404/);
   assert.doesNotMatch(workflowStatus, /error_page[^\n]*404/);
+  assert.doesNotMatch(remakeJobDetail, /error_page[^\n]*404/);
 
   const studioPassthrough = extractBlock(server, `location ${studioApiPassthroughLocation}`);
   assertContainsAll(studioPassthrough, [
@@ -256,6 +261,39 @@ test('workflow status proxy matches only the exact project child path', async ()
   const detailMatcher = new RegExp(projectDetailLocation.replace(/^~\s+/, ''));
   assert.equal(detailMatcher.test('/api/projects/project-1/workflow-status'), false);
   assert.equal(matcher.test('/api/projects/project-1'), false);
+});
+
+test('remake job proxy matches only the exact detail path', async () => {
+  const source = await readFile(nginxPath, 'utf8');
+  const server = extractBlock(source, 'server');
+  const declarations = locationDeclarations(server);
+  const matcher = new RegExp(remakeJobDetailLocation.replace(/^~\s+/, ''));
+
+  for (const pathname of [
+    '/api/remake/jobs/job-1',
+    '/api/remake/jobs/release-verification-probe',
+  ]) {
+    assert.equal(matcher.test(pathname), true, pathname);
+  }
+  for (const pathname of [
+    '/api/remake/jobs',
+    '/api/remake/jobs/',
+    '/api/remake/jobs/job-1/',
+    '/api/remake/jobs/job-1/run-stage',
+    '/api/remake/jobs/job-1/confirm-gate',
+    '/api/remake/jobs/job-1/cancel',
+    '/api/remake/jobs/job-1/prompts',
+    '/api/remake/jobs/job-1/scenes/1',
+    '/api/remake/jobs/job-1/extra',
+  ]) {
+    assert.equal(matcher.test(pathname), false, pathname);
+  }
+
+  assert.ok(declarations.includes(remakeJobDetailLocation));
+  assert.equal(
+    declarations.some((location) => location === '^~ /api/remake/jobs/'),
+    false,
+  );
 });
 
 test('keeps notification writes fail-closed without any Studio fallback', async () => {
