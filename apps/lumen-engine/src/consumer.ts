@@ -4,6 +4,7 @@ import type Redis from 'ioredis';
 import type { WorkflowStore } from './database/workflow-store.js';
 import { CANCEL_CHANNEL, CANCEL_KEY_PREFIX } from './engine/cancellation.js';
 import { WorkflowExecutor } from './engine/executor.js';
+import { createEngineProjectCacheInvalidator } from './project-cache.js';
 import { EventPublisher } from './publisher.js';
 import { logger } from './utils/logger.js';
 
@@ -41,7 +42,8 @@ export class StreamConsumer {
     workflowStore: WorkflowStore,
   ) {
     const publisher = new EventPublisher(redis);
-    this.executor = new WorkflowExecutor(publisher, workflowStore);
+    const projectCache = createEngineProjectCacheInvalidator(redis);
+    this.executor = new WorkflowExecutor(publisher, workflowStore, projectCache);
   }
 
   async start(): Promise<void> {

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { NodeOutputType } from '@lumen/shared/domain';
+import type { ProjectCacheInvalidator } from '@lumen/shared/project-cache';
 import type { Db } from 'mongodb';
 
 import { config } from '../config.js';
@@ -25,12 +26,20 @@ export interface SnapshotCandidate {
   url: string;
 }
 
-export async function updateProjectSnapshotFromRun(args: {
-  projectId: string;
-  userId: string | null;
-  candidate: SnapshotCandidate;
-  signal?: AbortSignal;
-}): Promise<void> {
+export interface ProjectSnapshotDependencies {
+  getStudioDatabase?: () => Promise<Pick<Db, 'collection'>>;
+  projectCache: ProjectCacheInvalidator;
+}
+
+export async function updateProjectSnapshotFromRun(
+  args: {
+    projectId: string;
+    userId: string | null;
+    candidate: SnapshotCandidate;
+    signal?: AbortSignal;
+  },
+  dependencies: ProjectSnapshotDependencies,
+): Promise<void> {
   if (!args.userId) {
     logger.warn(
       { projectId: args.projectId },
@@ -42,7 +51,7 @@ export async function updateProjectSnapshotFromRun(args: {
   const snapshotUrl = await resolveProjectSnapshotUrl(args.candidate, args.projectId, args.signal);
   if (!snapshotUrl) return;
 
-  const db = await getStudioMongo();
+  const db = await (dependencies.getStudioDatabase ?? getStudioMongo)();
   const updated = await writeProjectThumbnail({
     db,
     projectId: args.projectId,
@@ -56,6 +65,15 @@ export async function updateProjectSnapshotFromRun(args: {
       'project snapshot update skipped: project not found for owner',
     );
     return;
+  }
+
+  try {
+    await dependencies.projectCache.invalidateProject(args.userId, args.projectId);
+  } catch (err) {
+    logger.warn(
+      { err, projectId: args.projectId, userId: args.userId },
+      'failed to invalidate project caches after snapshot update',
+    );
   }
 
   logger.info(

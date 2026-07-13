@@ -1,4 +1,5 @@
 import type { WorkflowNode } from '@lumen/shared/domain';
+import type { ProjectCacheInvalidator } from '@lumen/shared/project-cache';
 import type { ClientRunMessage } from '@lumen/shared/protocols';
 import * as Sentry from '@sentry/node';
 import { nanoid } from 'nanoid';
@@ -26,6 +27,7 @@ export class WorkflowExecutor {
   constructor(
     private publisher: EventPublisher,
     private workflowStore: WorkflowStore,
+    private projectCache: ProjectCacheInvalidator,
   ) {}
 
   async execute(message: ClientRunMessage, channelId: string, signal?: AbortSignal): Promise<void> {
@@ -332,12 +334,15 @@ export class WorkflowExecutor {
 
         if (!cancelled && projectId && latestSnapshot) {
           try {
-            await updateProjectSnapshotFromRun({
-              projectId,
-              userId,
-              candidate: latestSnapshot,
-              signal,
-            });
+            await updateProjectSnapshotFromRun(
+              {
+                projectId,
+                userId,
+                candidate: latestSnapshot,
+                signal,
+              },
+              { projectCache: this.projectCache },
+            );
           } catch (err) {
             logger.warn({ err, projectId, runId }, 'failed to update project snapshot');
           }
