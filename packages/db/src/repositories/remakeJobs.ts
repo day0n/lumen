@@ -46,6 +46,7 @@ export class RemakeJobRepository {
       this.jobs().createIndex({ owner_id: 1, status: 1, updated_at: -1 }),
       this.jobs().createIndex({ video_id: 1 }),
       this.tasks().createIndex({ job_id: 1, stage: 1 }),
+      this.tasks().createIndex({ job_id: 1, created_at: 1 }),
       this.tasks().createIndex({ job_id: 1, slice_key: 1 }, { unique: true }),
       this.tasks().createIndex({ status: 1, updated_at: -1 }),
     ]);
