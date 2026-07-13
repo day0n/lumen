@@ -1,13 +1,13 @@
 'use client';
 
-import { IconMicrophone, IconMicrophoneOff, IconTrash } from '@tabler/icons-react';
-import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { MicrophoneIcon, MicrophoneOffIcon, TrashIcon } from '../../features/home/home-icons';
 import { cn } from '../../lib/cn';
 
 const BAR_COUNT = 14;
 const DELETE_STAGGER = 0.022;
 const DELETE_DURATION = 0.26;
+const PANEL_TRANSITION_MS = 280;
 
 function useWaveformHeights(active: boolean) {
   const [heights, setHeights] = useState<number[]>(() =>
@@ -44,7 +44,7 @@ function VoiceWaveform({
   listening: boolean;
   reducedMotion: boolean;
 }) {
-  const heights = useWaveformHeights(listening && !deleting);
+  const heights = useWaveformHeights(listening && !deleting && !reducedMotion);
   const seeds = useMemo(
     () =>
       Array.from({ length: BAR_COUNT }, (_, index) => ({
@@ -57,29 +57,19 @@ function VoiceWaveform({
   return (
     <div className="flex h-7 min-w-[132px] flex-1 items-center justify-center gap-[3px] px-1">
       {seeds.map((seed, index) => (
-        <motion.span
+        <span
           key={seed.id}
-          className="w-[3px] origin-bottom rounded-full bg-gradient-to-t from-[#ff5fbf] to-[#ff8ecf]"
-          initial={false}
-          animate={{
-            scaleY: deleting ? 0 : listening ? (heights[index] ?? seed.height) : seed.height,
+          className="voice-input-waveform-bar w-[3px] origin-bottom rounded-full bg-gradient-to-t from-[#ff5fbf] to-[#ff8ecf]"
+          style={{
+            height: 22 * seed.height,
             opacity: deleting ? 0 : 1,
+            transform: `scaleY(${deleting ? 0 : listening && !reducedMotion ? (heights[index] ?? seed.height) : seed.height})`,
+            transitionDelay: !reducedMotion && deleting ? `${index * DELETE_STAGGER}s` : '0s',
+            transitionDuration: reducedMotion ? '0s' : deleting ? `${DELETE_DURATION}s` : '0.12s',
+            transitionTimingFunction: deleting
+              ? 'cubic-bezier(0.32, 0.72, 0, 1)'
+              : 'cubic-bezier(0.22, 1, 0.36, 1)',
           }}
-          transition={
-            reducedMotion
-              ? { duration: 0.01 }
-              : deleting
-                ? {
-                    duration: DELETE_DURATION,
-                    delay: index * DELETE_STAGGER,
-                    ease: [0.32, 0.72, 0, 1],
-                  }
-                : {
-                    duration: 0.12,
-                    ease: [0.22, 1, 0.36, 1],
-                  }
-          }
-          style={{ height: 22 * seed.height }}
         />
       ))}
     </div>
@@ -112,8 +102,14 @@ export function VoiceInputControl({
 }) {
   const [deleting, setDeleting] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [panelMounted, setPanelMounted] = useState(false);
+  const [panelEntered, setPanelEntered] = useState(false);
+  const [panelExiting, setPanelExiting] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
-  const timeoutRef = useRef<number | null>(null);
+  const deleteTimeoutRef = useRef<number | null>(null);
+  const panelExitTimeoutRef = useRef<number | null>(null);
+  const panelFrameRef = useRef<number | null>(null);
+  const panelMountedRef = useRef(false);
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -128,9 +124,60 @@ export function VoiceInputControl({
     else if (!deleting) setPanelOpen(false);
   }, [listening, deleting]);
 
+  useEffect(() => {
+    if (panelExitTimeoutRef.current !== null) {
+      window.clearTimeout(panelExitTimeoutRef.current);
+      panelExitTimeoutRef.current = null;
+    }
+    if (panelFrameRef.current !== null) {
+      window.cancelAnimationFrame(panelFrameRef.current);
+      panelFrameRef.current = null;
+    }
+
+    if (panelOpen) {
+      const wasMounted = panelMountedRef.current;
+      panelMountedRef.current = true;
+      setPanelMounted(true);
+      setPanelExiting(false);
+
+      if (wasMounted || reducedMotion) {
+        setPanelEntered(true);
+      } else {
+        setPanelEntered(false);
+        panelFrameRef.current = window.requestAnimationFrame(() => {
+          setPanelEntered(true);
+          panelFrameRef.current = null;
+        });
+      }
+      return;
+    }
+
+    if (!panelMountedRef.current) return;
+
+    setPanelEntered(false);
+    if (reducedMotion) {
+      panelMountedRef.current = false;
+      setPanelMounted(false);
+      setPanelExiting(false);
+      return;
+    }
+
+    setPanelExiting(true);
+    panelExitTimeoutRef.current = window.setTimeout(() => {
+      panelMountedRef.current = false;
+      setPanelMounted(false);
+      setPanelExiting(false);
+      panelExitTimeoutRef.current = null;
+    }, PANEL_TRANSITION_MS);
+  }, [panelOpen, reducedMotion]);
+
   useEffect(
     () => () => {
-      if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+      if (deleteTimeoutRef.current !== null) window.clearTimeout(deleteTimeoutRef.current);
+      if (panelExitTimeoutRef.current !== null) {
+        window.clearTimeout(panelExitTimeoutRef.current);
+      }
+      if (panelFrameRef.current !== null) window.cancelAnimationFrame(panelFrameRef.current);
     },
     [],
   );
@@ -145,17 +192,34 @@ export function VoiceInputControl({
 
   const runDeleteAnimation = (action: () => void) => {
     if (reducedMotion) {
+      if (deleteTimeoutRef.current !== null) {
+        window.clearTimeout(deleteTimeoutRef.current);
+        deleteTimeoutRef.current = null;
+      }
+      if (panelExitTimeoutRef.current !== null) {
+        window.clearTimeout(panelExitTimeoutRef.current);
+        panelExitTimeoutRef.current = null;
+      }
+      if (panelFrameRef.current !== null) {
+        window.cancelAnimationFrame(panelFrameRef.current);
+        panelFrameRef.current = null;
+      }
       action();
+      setDeleting(false);
       setPanelOpen(false);
+      panelMountedRef.current = false;
+      setPanelMounted(false);
+      setPanelEntered(false);
+      setPanelExiting(false);
       return;
     }
     setDeleting(true);
-    timeoutRef.current = window.setTimeout(
+    deleteTimeoutRef.current = window.setTimeout(
       () => {
         action();
         setDeleting(false);
         setPanelOpen(false);
-        timeoutRef.current = null;
+        deleteTimeoutRef.current = null;
       },
       BAR_COUNT * DELETE_STAGGER * 1000 + DELETE_DURATION * 1000,
     );
@@ -190,45 +254,35 @@ export function VoiceInputControl({
 
   return (
     <div className="relative">
-      <AnimatePresence>
-        {panelOpen ? (
-          <motion.div
-            key="voice-panel"
-            initial={reducedMotion ? false : { opacity: 0, y: 10, scale: 0.94 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={reducedMotion ? undefined : { opacity: 0, y: 8, scale: 0.96 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className={cn(
-              'absolute bottom-full z-20 mb-2 flex items-center gap-2 rounded-full bg-[#1c1c1c]/95 px-2 py-2 shadow-[0_16px_40px_-20px_rgba(255,95,191,0.45)] ring-1 ring-white/[0.1] backdrop-blur-md',
-              variant === 'hero' ? 'left-0 min-w-[min(100%,280px)]' : 'right-0 min-w-[240px]',
-            )}
+      {panelMounted ? (
+        <div
+          className={cn(
+            'voice-input-panel',
+            panelEntered && 'voice-input-panel--open',
+            panelExiting && 'voice-input-panel--exiting',
+            'absolute bottom-full z-20 mb-2 flex items-center gap-2 rounded-full bg-[#1c1c1c]/95 px-2 py-2 shadow-[0_16px_40px_-20px_rgba(255,95,191,0.45)] ring-1 ring-white/[0.1] backdrop-blur-md',
+            variant === 'hero' ? 'left-0 min-w-[min(100%,280px)]' : 'right-0 min-w-[240px]',
+          )}
+        >
+          <button
+            type="button"
+            onClick={handleCancel}
+            aria-label={labels.voiceCancel}
+            title={labels.voiceCancel}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ff4d4d]/12 text-[#ff7b7b] ring-1 ring-[#ff4d4d]/20 transition-colors hover:bg-[#ff4d4d]/20"
           >
-            <button
-              type="button"
-              onClick={handleCancel}
-              aria-label={labels.voiceCancel}
-              title={labels.voiceCancel}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ff4d4d]/12 text-[#ff7b7b] ring-1 ring-[#ff4d4d]/20 transition-colors hover:bg-[#ff4d4d]/20"
-            >
-              <IconTrash size={16} stroke={2.2} />
-            </button>
-            <VoiceWaveform
-              deleting={deleting}
-              listening={listening}
-              reducedMotion={reducedMotion}
-            />
-            <motion.span
-              aria-hidden
-              animate={listening && !deleting ? { opacity: [0.45, 1, 0.45] } : { opacity: 0.5 }}
-              transition={{
-                duration: 1.2,
-                repeat: listening && !deleting ? Number.POSITIVE_INFINITY : 0,
-              }}
-              className="h-2 w-2 shrink-0 rounded-full bg-[#ff5fbf]"
-            />
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+            <TrashIcon size={16} stroke={2.2} />
+          </button>
+          <VoiceWaveform deleting={deleting} listening={listening} reducedMotion={reducedMotion} />
+          <span
+            aria-hidden
+            className={cn(
+              'voice-input-status-dot h-2 w-2 shrink-0 rounded-full bg-[#ff5fbf]',
+              listening && !deleting && !reducedMotion && 'voice-input-status-dot--active',
+            )}
+          />
+        </div>
+      ) : null}
 
       <button
         type="button"
@@ -240,15 +294,15 @@ export function VoiceInputControl({
         className={buttonClass}
       >
         {listening ? (
-          <IconMicrophone
+          <MicrophoneIcon
             size={variant === 'hero' ? 17 : 16}
             stroke={2.1}
-            className="animate-pulse"
+            className={cn(!reducedMotion && 'voice-input-microphone--active')}
           />
         ) : supported ? (
-          <IconMicrophone size={variant === 'hero' ? 17 : 16} stroke={2.1} />
+          <MicrophoneIcon size={variant === 'hero' ? 17 : 16} stroke={2.1} />
         ) : (
-          <IconMicrophoneOff size={variant === 'hero' ? 17 : 16} stroke={2.1} />
+          <MicrophoneOffIcon size={variant === 'hero' ? 17 : 16} stroke={2.1} />
         )}
       </button>
     </div>

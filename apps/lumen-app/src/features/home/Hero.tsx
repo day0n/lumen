@@ -1,15 +1,5 @@
 'use client';
 
-import {
-  IconArrowUp,
-  IconArrowUpRight,
-  IconPhoto,
-  IconPhotoPlus,
-  IconPlus,
-  IconSparkles,
-  IconX,
-} from '@tabler/icons-react';
-import { motion } from 'motion/react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
 import Link from '../../compat/next-link';
@@ -19,6 +9,15 @@ import { appendSpeechTranscript, useSpeechToText } from '../../hooks/use-speech-
 import { readMessageObjectArray } from '../../i18n/messages';
 import { useI18n } from '../../i18n/provider';
 import { useLoginRedirect } from '../../lib/auth-redirect';
+import {
+  ArrowUpIcon,
+  ArrowUpRightIcon,
+  PhotoIcon,
+  PhotoPlusIcon,
+  PlusIcon,
+  SparklesIcon,
+  XIcon,
+} from './home-icons';
 
 interface RecentProject {
   id: string;
@@ -246,19 +245,14 @@ export function Hero() {
 
   return (
     <section className="relative mx-auto mt-8 max-w-[760px] px-6">
-      <motion.div
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.55, ease: [0.32, 0.72, 0, 1] }}
-        className="relative"
-      >
+      <div className="home-hero-enter relative">
         <div className="pointer-events-none absolute -right-14 -top-14 hidden rotate-[12deg] rounded-2xl border border-white/14 bg-[#181a1d] px-4 py-2 text-[12px] font-semibold text-white/64 shadow-[0_18px_60px_-42px_rgba(255,255,255,0.42)] md:block">
           {t('home.heroBadge')}
         </div>
 
         <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-white ring-1 ring-white/[0.08]">
-            <IconSparkles size={19} stroke={2.2} />
+            <SparklesIcon size={19} stroke={2.2} />
           </span>
           <h1 className="font-display text-[28px] font-extrabold tracking-tight text-white">
             {t('home.heroTitle')}
@@ -309,7 +303,7 @@ export function Hero() {
                       aria-label={`${t('common.remove')} ${image.name}`}
                       className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/72 text-white opacity-0 ring-1 ring-white/[0.18] transition-opacity group-hover/chip:opacity-100"
                     >
-                      <IconX size={11} stroke={2.6} />
+                      <XIcon size={11} stroke={2.6} />
                     </button>
                   </div>
                 ))}
@@ -343,7 +337,7 @@ export function Hero() {
                 disabled={attachedImages.length >= MAX_IMAGES}
                 className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-white/[0.055] text-white/52 transition-colors hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <IconPhotoPlus size={17} stroke={2.1} />
+                <PhotoPlusIcon size={17} stroke={2.1} />
               </button>
               <VoiceInputControl
                 listening={listening}
@@ -369,7 +363,7 @@ export function Hero() {
                   aria-label={t('home.sendGenerate')}
                   className="flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_10px_28px_-16px_rgba(255,255,255,0.7)] transition-transform active:scale-[0.96]"
                 >
-                  <IconArrowUp size={18} stroke={2.6} />
+                  <ArrowUpIcon size={18} stroke={2.6} />
                 </button>
               </div>
             </div>
@@ -395,7 +389,7 @@ export function Hero() {
           <div className="mt-5 overflow-hidden rounded-2xl bg-[linear-gradient(135deg,rgba(192,132,252,0.14),rgba(56,189,248,0.1)_58%,rgba(29,31,33,0.92))] p-5 ring-1 ring-white/[0.1]">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.1] text-white ring-1 ring-white/[0.12]">
-                <IconSparkles size={20} stroke={2.2} />
+                <SparklesIcon size={20} stroke={2.2} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="text-[15px] font-bold text-white">{t('home.firstTaskTitle')}</div>
@@ -413,7 +407,7 @@ export function Hero() {
                 className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white px-4 text-[13px] font-bold text-[#111315] transition-transform active:scale-[0.97]"
               >
                 {t('home.firstTaskCta')}
-                <IconArrowUpRight size={15} stroke={2.6} />
+                <ArrowUpRightIcon size={15} stroke={2.6} />
               </button>
               {quickActions[0] ? (
                 <span className="text-[12px] text-white/42">{quickActions[0].label}</span>
@@ -429,7 +423,7 @@ export function Hero() {
               }}
               className="group flex h-[116px] flex-col items-center justify-center gap-2 rounded-xl bg-[#222426] text-white/68 ring-1 ring-white/[0.08] transition-colors hover:bg-[#282b2e] hover:text-white"
             >
-              <IconPlus size={20} stroke={2.4} />
+              <PlusIcon size={20} stroke={2.4} />
               <span className="text-[12px] font-semibold">{t('home.newProject')}</span>
             </button>
 
@@ -459,7 +453,7 @@ export function Hero() {
                       <div className="absolute inset-0 opacity-40 mix-blend-soft-light [background-image:linear-gradient(120deg,transparent_20%,rgba(255,255,255,0.35)_48%,transparent_62%)]" />
                     </>
                   ) : project.id.charCodeAt(0) % 3 === 0 ? (
-                    <IconPhoto
+                    <PhotoIcon
                       size={24}
                       className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/18"
                       stroke={1.7}
@@ -477,7 +471,7 @@ export function Hero() {
                       })}
                     </div>
                   </div>
-                  <IconArrowUpRight
+                  <ArrowUpRightIcon
                     size={13}
                     className="mt-0.5 text-white/35 transition-colors group-hover:text-white/75"
                     stroke={2.1}
@@ -487,7 +481,7 @@ export function Hero() {
             ))}
           </div>
         )}
-      </motion.div>
+      </div>
     </section>
   );
 }

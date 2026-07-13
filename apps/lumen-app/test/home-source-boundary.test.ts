@@ -7,9 +7,12 @@ const appHomeSources = [
   '../src/features/home/FeaturedCarousel.tsx',
   '../src/features/home/Hero.tsx',
   '../src/features/home/TemplateRail.tsx',
+  '../src/features/home/home-icons.tsx',
   '../src/components/voice/VoiceInputControl.tsx',
   '../src/hooks/use-speech-to-text.ts',
 ];
+
+const forbiddenHomeRuntimeImports = new Set(['motion/react', '@tabler/icons-react']);
 
 test('static home sources stay inside the app package boundary', async () => {
   for (const relativePath of appHomeSources) {
@@ -28,6 +31,11 @@ test('static home sources stay inside the app package boundary', async () => {
       ),
       false,
       `${relativePath} crosses the static app source boundary`,
+    );
+    assert.equal(
+      imports.some((specifier) => forbiddenHomeRuntimeImports.has(specifier)),
+      false,
+      `${relativePath} pulls an animation or icon runtime into the home route`,
     );
   }
 });

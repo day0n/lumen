@@ -14,5 +14,5 @@ test('app links honor disabled intent preloading', async () => {
 
   assert.match(linkSource, /prefetch = true/);
   assert.match(linkSource, /if \(!prefetch\) return;/);
-  assert.match(carouselSource, /<MotionLink[\s\S]*?prefetch=\{false\}/);
+  assert.match(carouselSource, /<Link[\s\S]*?prefetch=\{false\}/);
 });

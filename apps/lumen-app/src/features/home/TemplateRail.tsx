@@ -1,17 +1,10 @@
 'use client';
 
-import {
-  IconArrowRight,
-  IconLoader2,
-  IconPlayerPlay,
-  IconSearch,
-  IconSparkles,
-} from '@tabler/icons-react';
-import { motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '../../compat/next-navigation';
 import { useI18n } from '../../i18n/provider';
 import { useLoginRedirect } from '../../lib/auth-redirect';
+import { ArrowRightIcon, LoaderIcon, PlayerPlayIcon, SearchIcon, SparklesIcon } from './home-icons';
 import {
   isTemplateVideoInViewport,
   releaseTemplateVideo,
@@ -227,7 +220,7 @@ export function TemplateRail() {
             placeholder={t('home.templateSearch')}
             className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/30"
           />
-          <IconSearch size={17} className="text-white/40" stroke={2.1} />
+          <SearchIcon size={17} className="text-white/40" stroke={2.1} />
         </div>
       </div>
 
@@ -272,13 +265,11 @@ function WorkflowTemplateCard({
   onOpen: () => void;
 }) {
   return (
-    <motion.button
+    <button
       type="button"
       onClick={onOpen}
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, delay: index * 0.018, ease: [0.32, 0.72, 0, 1] }}
-      className="group overflow-hidden rounded-xl bg-[#1d1f21] text-left ring-1 ring-black/45 transition-colors hover:bg-[#24272a]"
+      style={{ animationDelay: `${index * 18}ms` }}
+      className="home-template-card-enter group overflow-hidden rounded-xl bg-[#1d1f21] text-left ring-1 ring-black/45 transition-colors hover:bg-[#24272a]"
     >
       <div className="relative aspect-[4/3] overflow-hidden bg-black">
         <TemplateCover template={template} />
@@ -288,13 +279,13 @@ function WorkflowTemplateCard({
           {template.badge}
         </div>
         <div className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-black/46 px-2.5 py-1 text-[11px] font-semibold uppercase text-white/78 backdrop-blur">
-          {template.mediaType === 'video' ? <IconPlayerPlay size={11} stroke={2.4} /> : null}
+          {template.mediaType === 'video' ? <PlayerPlayIcon size={11} stroke={2.4} /> : null}
           {template.mediaType}
         </div>
         <div className="absolute inset-x-3 bottom-3">
           <div className="mb-2 flex items-center gap-2 text-[11px] text-white/78">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/16">
-              <IconSparkles size={13} stroke={2.2} />
+              <SparklesIcon size={13} stroke={2.2} />
             </span>
             <span className="min-w-0 flex-1 truncate">{template.categoryLabel}</span>
             <span className="rounded-full bg-white/14 px-2 py-0.5 text-white/78">
@@ -316,13 +307,13 @@ function WorkflowTemplateCard({
         </div>
         <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.055] text-white/45 transition-colors group-hover:text-white">
           {loading ? (
-            <IconLoader2 size={15} className="animate-spin" stroke={2.3} />
+            <LoaderIcon size={15} className="animate-spin" stroke={2.3} />
           ) : (
-            <IconArrowRight size={15} stroke={2.3} />
+            <ArrowRightIcon size={15} stroke={2.3} />
           )}
         </span>
       </div>
-    </motion.button>
+    </button>
   );
 }
 

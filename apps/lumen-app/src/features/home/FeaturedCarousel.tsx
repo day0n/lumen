@@ -1,13 +1,12 @@
 'use client';
 
-import { IconArrowUpRight, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
-import { motion } from 'motion/react';
-import { type MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 import Link from '../../compat/next-link';
 import { useI18n } from '../../i18n/provider';
 import { useLoginRedirect } from '../../lib/auth-redirect';
 import { cn } from '../../lib/cn';
 import { isLoginRequiredPath } from '../../lib/protected-paths';
+import { ArrowUpRightIcon, ChevronLeftIcon, ChevronRightIcon } from './home-icons';
 
 interface Slide {
   id: string;
@@ -16,8 +15,6 @@ interface Slide {
   coverUrl: string;
   accent: string;
 }
-
-const MotionLink = motion.create(Link);
 
 type HomeFeaturedApiResponse =
   | {
@@ -107,6 +104,21 @@ function localizeFallbackSlides(locale: 'en' | 'zh'): Slide[] {
   }));
 }
 
+function usePrefersReducedMotion() {
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => setReducedMotion(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
+
+  return reducedMotion;
+}
+
 export function FeaturedCarousel() {
   const { locale, localePath, t } = useI18n();
   const { isLoaded: authLoaded, requireLogin } = useLoginRedirect();
@@ -114,6 +126,7 @@ export function FeaturedCarousel() {
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(1280);
+  const reducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -166,10 +179,10 @@ export function FeaturedCarousel() {
   );
 
   useEffect(() => {
-    if (paused) return;
+    if (paused || reducedMotion) return;
     const timer = setInterval(next, 5600);
     return () => clearInterval(timer);
-  }, [next, paused]);
+  }, [next, paused, reducedMotion]);
 
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth);
@@ -212,6 +225,7 @@ export function FeaturedCarousel() {
               key={slide.id}
               diff={diff}
               href={localePath(slide.href)}
+              reducedMotion={reducedMotion}
               sideOffset={sideOffset}
               slide={slide}
               slideHeight={slideHeight}
@@ -227,7 +241,7 @@ export function FeaturedCarousel() {
           onClick={prev}
           className="absolute left-4 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-xl bg-[#202225]/86 text-white/70 ring-1 ring-white/[0.08] backdrop-blur transition-colors hover:bg-[#2a2d30] hover:text-white md:left-8"
         >
-          <IconChevronLeft size={20} stroke={2.2} />
+          <ChevronLeftIcon size={20} stroke={2.2} />
         </button>
         <button
           type="button"
@@ -235,7 +249,7 @@ export function FeaturedCarousel() {
           onClick={next}
           className="absolute right-4 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-xl bg-[#202225]/86 text-white/70 ring-1 ring-white/[0.08] backdrop-blur transition-colors hover:bg-[#2a2d30] hover:text-white md:right-8"
         >
-          <IconChevronRight size={20} stroke={2.2} />
+          <ChevronRightIcon size={20} stroke={2.2} />
         </button>
       </div>
 
@@ -268,6 +282,7 @@ function PosterSlide({
   diff,
   href,
   onClick,
+  reducedMotion,
   sideOffset,
   slideHeight,
   slideWidth,
@@ -276,6 +291,7 @@ function PosterSlide({
   diff: number;
   href: string;
   onClick: (event: MouseEvent<HTMLAnchorElement>, href: string) => void;
+  reducedMotion: boolean;
   sideOffset: number;
   slideHeight: number;
   slideWidth: number;
@@ -286,9 +302,10 @@ function PosterSlide({
   const scale = isCenter ? 1 : 0.88;
   const rotateY = isCenter ? 0 : diff < 0 ? 28 : -28;
   const opacity = Math.abs(diff) > 1 ? 0 : isCenter ? 1 : 0.58;
+  const z = isCenter ? 0 : -125;
 
   return (
-    <MotionLink
+    <Link
       href={href}
       aria-label={slide.title}
       onClick={(event) => onClick(event, href)}
@@ -297,21 +314,17 @@ function PosterSlide({
       style={{
         boxShadow: isCenter ? '0 28px 86px -56px rgba(255,255,255,0.34)' : undefined,
         height: slideHeight,
-        transformOrigin: diff < 0 ? 'right center' : 'left center',
-        transformStyle: 'preserve-3d',
-        width: slideWidth,
-      }}
-      animate={{
         filter: isCenter ? 'brightness(1)' : 'brightness(0.46) saturate(0.86)',
         opacity,
-        rotateY,
-        scale,
-        x,
-        y,
-        z: isCenter ? 0 : -125,
+        transformOrigin: diff < 0 ? 'right center' : 'left center',
+        transformStyle: 'preserve-3d',
+        transform: `translateX(${x}px) translateY(${y}px) translateZ(${z}px) scale(${scale}) rotateY(${rotateY}deg)`,
+        transitionDuration: reducedMotion ? '0ms' : '720ms',
+        transitionProperty: 'filter, opacity, transform',
+        transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)',
+        width: slideWidth,
         zIndex: isCenter ? 10 : 4,
       }}
-      transition={{ duration: 0.72, ease: [0.32, 0.72, 0, 1] }}
     >
       {Math.abs(diff) <= 1 ? (
         <img
@@ -333,10 +346,10 @@ function PosterSlide({
             {slide.title}
           </span>
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#111315] shadow-[0_8px_22px_-10px_rgba(0,0,0,0.7)]">
-            <IconArrowUpRight size={18} stroke={2.6} />
+            <ArrowUpRightIcon size={18} stroke={2.6} />
           </span>
         </div>
       ) : null}
-    </MotionLink>
+    </Link>
   );
 }

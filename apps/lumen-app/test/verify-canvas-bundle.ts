@@ -4,6 +4,10 @@ import { readFile, readdir } from 'node:fs/promises';
 const distDirectory = new URL('../dist/', import.meta.url);
 const assetsDirectory = new URL('../dist/assets/', import.meta.url);
 const assetNames = await readdir(assetsDirectory);
+const manifest = JSON.parse(
+  await readFile(new URL('.vite/manifest.json', distDirectory), 'utf8'),
+) as Record<string, ManifestChunk>;
+const homeParents = new Map<string, string>();
 const indexHtml = await readFile(new URL('index.html', distDirectory), 'utf8');
 const htmlAssets = readHtmlAssets(indexHtml);
 const initialJavaScript = htmlAssets
@@ -86,7 +90,46 @@ const canvasRouteSourceMaps = allSourceMaps.filter((sourceMap) =>
 );
 assert.equal(canvasRouteSourceMaps.length, 1, 'CanvasRoute was not emitted in one lazy chunk');
 
+const homeEntry = findManifestEntry('src/features/home/HomePage.tsx');
+assert.equal(homeEntry.chunk.isDynamicEntry, true, 'HomePage is not emitted as a dynamic entry');
+assert.ok(
+  findReachableManifestKeys(
+    Object.entries(manifest)
+      .filter(([, chunk]) => chunk.isEntry)
+      .map(([key]) => key),
+    true,
+  ).has(homeEntry.key),
+  'HomePage dynamic entry is not reachable from the application entry',
+);
+
+const homeClosure = findReachableManifestKeys([homeEntry.key], false);
+for (const key of homeClosure) {
+  const chunk = readManifestChunk(key);
+  assert.doesNotMatch(
+    chunk.file.split('/').at(-1) ?? chunk.file,
+    /^(?:motion|icons)-vendor-/,
+    `Home route reaches forbidden vendor chunk through ${formatManifestPath(homeEntry.key, key)}`,
+  );
+  const sourceMap = await readDistSourceMap(`${chunk.file}.map`);
+  for (const dependency of forbiddenInitialDependencies) {
+    assert.equal(
+      sourceMap.sources.some((source) => normalizePath(source).includes(dependency)),
+      false,
+      `Home route reaches ${dependency} through ${formatManifestPath(homeEntry.key, key)}`,
+    );
+  }
+}
+
 console.log('Static app bundle boundaries verified.');
+
+type ManifestChunk = {
+  file: string;
+  src?: string;
+  isEntry?: boolean;
+  isDynamicEntry?: boolean;
+  imports?: string[];
+  dynamicImports?: string[];
+};
 
 async function readAsset(name: string) {
   return readFile(new URL(name, assetsDirectory), 'utf8');
@@ -94,6 +137,69 @@ async function readAsset(name: string) {
 
 async function readSourceMap(name: string): Promise<{ sources: string[] }> {
   return JSON.parse(await readAsset(name)) as { sources: string[] };
+}
+
+async function readDistSourceMap(name: string): Promise<{ sources: string[] }> {
+  return JSON.parse(await readFile(new URL(name, distDirectory), 'utf8')) as {
+    sources: string[];
+  };
+}
+
+function findManifestEntry(sourceSuffix: string) {
+  const matches = Object.entries(manifest).filter(([key, chunk]) =>
+    normalizePath(chunk.src ?? key).endsWith(sourceSuffix),
+  );
+  assert.equal(matches.length, 1, `${sourceSuffix} was not emitted as exactly one manifest entry`);
+  const [key, chunk] = matches[0] as [string, ManifestChunk];
+  return { key, chunk };
+}
+
+function findReachableManifestKeys(roots: string[], includeDynamicImports: boolean) {
+  const visited = new Set<string>();
+  const queue = [...roots];
+
+  homeParents.clear();
+  while (queue.length > 0) {
+    const key = queue.shift();
+    if (!key || visited.has(key)) continue;
+    visited.add(key);
+    const chunk = readManifestChunk(key);
+    const dependencies = [
+      ...(chunk.imports ?? []),
+      ...(includeDynamicImports ? (chunk.dynamicImports ?? []) : []),
+    ];
+    for (const dependency of dependencies) {
+      if (!homeParents.has(dependency)) homeParents.set(dependency, key);
+      queue.push(dependency);
+    }
+  }
+
+  return visited;
+}
+
+function readManifestChunk(key: string) {
+  const chunk = manifest[key];
+  assert.ok(chunk, `Manifest dependency ${key} is missing`);
+  return chunk;
+}
+
+function formatManifestPath(root: string, leaf: string) {
+  const path = [leaf];
+  let current = leaf;
+  while (current !== root) {
+    const parent = homeParents.get(current);
+    if (!parent) break;
+    path.push(parent);
+    current = parent;
+  }
+  return path
+    .reverse()
+    .map((key) => readManifestChunk(key).file)
+    .join(' -> ');
+}
+
+function normalizePath(value: string) {
+  return value.replace(/\\/g, '/');
 }
 
 function readHtmlAssets(html: string) {
