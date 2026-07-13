@@ -17,17 +17,27 @@
     "./protocols": {
       "types": "./dist/protocols/index.d.ts",
       "default": "./dist/protocols/index.js"
+    },
+    "./i18n/messages": {
+      "types": "./dist/i18n/messages.d.ts",
+      "default": "./dist/i18n/messages.js"
+    },
+    "./i18n/routing": {
+      "types": "./dist/i18n/routing.d.ts",
+      "default": "./dist/i18n/routing.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "biome check src",
+    "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
 }

@@ -81,6 +81,18 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: [
         { find: '@app', replacement: path.resolve(__dirname, 'src') },
+        {
+          find: '@/i18n/messages',
+          replacement: path.resolve(__dirname, 'src/i18n/messages.ts'),
+        },
+        {
+          find: '@/i18n/provider',
+          replacement: path.resolve(__dirname, 'src/i18n/provider.tsx'),
+        },
+        {
+          find: '@/i18n/routing',
+          replacement: path.resolve(__dirname, 'src/i18n/routing.ts'),
+        },
         { find: '@', replacement: studioSrc },
         { find: 'next/link', replacement: path.resolve(__dirname, 'src/compat/next-link.tsx') },
         {

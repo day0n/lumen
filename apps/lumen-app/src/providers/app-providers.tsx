@@ -1,8 +1,8 @@
-import { I18nProvider } from '@/i18n/provider';
 import { ClerkProvider, useAuth } from '@clerk/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Provider as JotaiProvider } from 'jotai';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { I18nProvider } from '../i18n/provider';
 import {
   installApiFetchInterceptor,
   setApiAuthStatusVerifier,

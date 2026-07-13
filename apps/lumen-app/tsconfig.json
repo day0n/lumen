@@ -7,6 +7,9 @@
     "baseUrl": ".",
     "types": ["vite/client"],
     "paths": {
+      "@/i18n/messages": ["./src/i18n/messages.ts"],
+      "@/i18n/provider": ["./src/i18n/provider.tsx"],
+      "@/i18n/routing": ["./src/i18n/routing.ts"],
       "@/*": ["../lumen-studio/src/*"],
       "@app/*": ["./src/*"],
       "next/link": ["./src/compat/next-link.tsx"],

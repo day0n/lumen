@@ -53,6 +53,7 @@ jobs:
 
       - name: Run backend and API tests
         run: |
+          pnpm --filter @lumen/shared test
           pnpm --filter @lumen/app test
           pnpm --filter @lumen/db test
           pnpm --filter @lumen/backend test
