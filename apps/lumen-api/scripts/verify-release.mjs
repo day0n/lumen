@@ -12,6 +12,8 @@ const NOTIFICATIONS_PATH = '/api/notifications/official';
 const NOTIFICATION_READ_PROBE_PATH = '/api/notifications/official/release-verification-probe/read';
 const PROJECT_DETAIL_PATH = '/api/projects/release-verification-probe';
 const PROJECTS_PATH = '/api/projects?limit=1';
+const WORKFLOW_STATUS_PATH =
+  '/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe';
 
 const USAGE = `Usage:
   pnpm --filter @lumen/api verify:release -- --release <full-git-sha> [options]
@@ -131,6 +133,16 @@ export async function verifyRelease(options, dependencies = {}) {
     PROJECT_DETAIL_PATH,
     options.release,
   );
+  validateUnauthorizedApiResponse(
+    await request(options.baseUrl, WORKFLOW_STATUS_PATH),
+    WORKFLOW_STATUS_PATH,
+    options.release,
+  );
+  validateUnauthorizedHeadResponse(
+    await requestWithoutJson(options.baseUrl, WORKFLOW_STATUS_PATH, 'HEAD'),
+    WORKFLOW_STATUS_PATH,
+    options.release,
+  );
 
   validateUnauthorizedMeResponse(await request(publicBaseUrl, '/api/me'), options.release);
   validateUnauthorizedApiResponse(
@@ -156,6 +168,16 @@ export async function verifyRelease(options, dependencies = {}) {
   validateUnauthorizedHeadResponse(
     await requestWithoutJson(publicBaseUrl, PROJECT_DETAIL_PATH, 'HEAD'),
     PROJECT_DETAIL_PATH,
+    options.release,
+  );
+  validateUnauthorizedApiResponse(
+    await request(publicBaseUrl, WORKFLOW_STATUS_PATH),
+    WORKFLOW_STATUS_PATH,
+    options.release,
+  );
+  validateUnauthorizedHeadResponse(
+    await requestWithoutJson(publicBaseUrl, WORKFLOW_STATUS_PATH, 'HEAD'),
+    WORKFLOW_STATUS_PATH,
     options.release,
   );
   validateFeaturedResponse(await request(publicBaseUrl, '/api/home/featured'), options.release);

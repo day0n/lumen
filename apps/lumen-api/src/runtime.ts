@@ -4,6 +4,7 @@ import {
   createNotificationService,
   createProjectDetailQueryService,
   createProjectQueryService,
+  createWorkflowStatusQueryService,
   seedDefaultOfficialNotifications,
 } from '@lumen/backend';
 import {
@@ -115,6 +116,11 @@ export function createApiRuntime(config: ApiConfig) {
     projectDetailSchema: ProjectRecordSchema,
     tracePrefix: 'api',
   });
+  const workflowStatusQueries = createWorkflowStatusQueryService({
+    getProjectRepository,
+    getWorkflowNodeResultRepository,
+    tracePrefix: 'api',
+  });
 
   return {
     authenticatedUsers,
@@ -123,6 +129,7 @@ export function createApiRuntime(config: ApiConfig) {
     notifications,
     projectDetails,
     projectQueries,
+    workflowStatusQueries,
     async readiness(): Promise<ReadinessChecks> {
       const [mongo, workflowMongo] = await Promise.all([
         pingMongoDatabase(getDatabase),

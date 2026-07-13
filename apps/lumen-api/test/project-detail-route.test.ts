@@ -253,7 +253,6 @@ test('project detail writes and child routes remain outside the independent API'
     ['DELETE', '/api/projects/project-1'],
     ['GET', '/api/projects/project-1/share'],
     ['GET', '/api/projects/project-1/history'],
-    ['GET', '/api/projects/project-1/workflow-status'],
     ['POST', '/api/projects/project-1/workflow-runs/run-1/cancel'],
   ];
   for (const [method, pathname] of requests) {

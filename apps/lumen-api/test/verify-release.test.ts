@@ -90,6 +90,8 @@ test('release verifier checks live direct and public origins', async (context) =
     'GET /api/projects?limit=1',
     'GET /api/projects/release-verification-probe',
     'HEAD /api/projects/release-verification-probe',
+    'GET /api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe',
+    'HEAD /api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe',
     'GET /api/home/featured',
     'GET /api/home/templates',
   ]);
@@ -151,7 +153,8 @@ test('release verifier polls readiness and validates public routes', async () =>
           pathname === '/api/notifications/official' ||
           pathname === '/api/notifications/official/release-verification-probe/read' ||
           pathname === '/api/projects' ||
-          pathname === '/api/projects/release-verification-probe'
+          pathname === '/api/projects/release-verification-probe' ||
+          pathname === '/api/projects/release-verification-probe/workflow-status'
         ) {
           return jsonResponse(
             { error: { message: 'Please sign in first' }, ok: false },
@@ -182,12 +185,16 @@ test('release verifier polls readiness and validates public routes', async () =>
     `GET ${baseUrl}/readyz`,
     `GET ${baseUrl}/api/projects/release-verification-probe`,
     `HEAD ${baseUrl}/api/projects/release-verification-probe`,
+    `GET ${baseUrl}/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe`,
+    `HEAD ${baseUrl}/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe`,
     `GET ${publicBaseUrl}/api/me`,
     `GET ${publicBaseUrl}/api/notifications/official`,
     `POST ${publicBaseUrl}/api/notifications/official/release-verification-probe/read`,
     `GET ${publicBaseUrl}/api/projects?limit=1`,
     `GET ${publicBaseUrl}/api/projects/release-verification-probe`,
     `HEAD ${publicBaseUrl}/api/projects/release-verification-probe`,
+    `GET ${publicBaseUrl}/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe`,
+    `HEAD ${publicBaseUrl}/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe`,
     `GET ${publicBaseUrl}/api/home/featured`,
     `GET ${publicBaseUrl}/api/home/templates`,
   ]);
@@ -267,7 +274,8 @@ test('public home responses retain release, request id and schema validation', a
               pathname === '/api/notifications/official' ||
               pathname === '/api/notifications/official/release-verification-probe/read' ||
               pathname === '/api/projects' ||
-              pathname === '/api/projects/release-verification-probe'
+              pathname === '/api/projects/release-verification-probe' ||
+              pathname === '/api/projects/release-verification-probe/workflow-status'
             ) {
               return jsonResponse(
                 { error: { message: 'Please sign in first' }, ok: false },
@@ -297,6 +305,7 @@ test('public authenticated route probes require unauthorized API response metada
     '/api/notifications/official/release-verification-probe/read',
     '/api/projects?limit=1',
     '/api/projects/release-verification-probe',
+    '/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe',
   ];
   const cases = [
     {
@@ -306,6 +315,14 @@ test('public authenticated route probes require unauthorized API response metada
     {
       expectedMessage: 'x-lumen-release header',
       result: jsonResult(validPayload, { noStore: true, release: null, status: 401 }),
+    },
+    {
+      expectedMessage: 'x-request-id header',
+      result: jsonResult(validPayload, {
+        privateNoStore: true,
+        requestId: null,
+        status: 401,
+      }),
     },
     {
       expectedMessage: 'cache-control must contain no-store',
@@ -347,18 +364,74 @@ test('public authenticated route probes require unauthorized API response metada
 });
 
 test('authenticated HEAD probes require metadata and an empty response body', () => {
-  const pathname = '/api/projects/release-verification-probe';
-  const valid = {
-    body: '',
-    response: jsonResponse(undefined, { emptyBody: true, privateNoStore: true, status: 401 }),
-  };
-  assert.doesNotThrow(() => validateUnauthorizedHeadResponse(valid, pathname, RELEASE));
+  const pathnames = [
+    '/api/projects/release-verification-probe',
+    '/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe',
+  ];
+  const cases = [
+    {
+      expectedMessage: 'expected 401',
+      result: {
+        body: '',
+        response: jsonResponse(undefined, { emptyBody: true, privateNoStore: true }),
+      },
+    },
+    {
+      expectedMessage: 'x-lumen-release header',
+      result: {
+        body: '',
+        response: jsonResponse(undefined, {
+          emptyBody: true,
+          privateNoStore: true,
+          release: null,
+          status: 401,
+        }),
+      },
+    },
+    {
+      expectedMessage: 'x-request-id header',
+      result: {
+        body: '',
+        response: jsonResponse(undefined, {
+          emptyBody: true,
+          privateNoStore: true,
+          requestId: null,
+          status: 401,
+        }),
+      },
+    },
+    {
+      expectedMessage: 'cache-control must contain no-store',
+      result: {
+        body: '',
+        response: jsonResponse(undefined, { emptyBody: true, status: 401 }),
+      },
+    },
+    {
+      expectedMessage: 'cache-control must contain private',
+      result: {
+        body: '',
+        response: jsonResponse(undefined, { emptyBody: true, noStore: true, status: 401 }),
+      },
+    },
+    {
+      expectedMessage: 'body must be empty',
+      result: {
+        body: 'unexpected',
+        response: jsonResponse(undefined, {
+          emptyBody: true,
+          privateNoStore: true,
+          status: 401,
+        }),
+      },
+    },
+  ];
 
-  assert.throws(
-    () =>
+  for (const pathname of pathnames) {
+    assert.doesNotThrow(() =>
       validateUnauthorizedHeadResponse(
         {
-          body: 'unexpected',
+          body: '',
           response: jsonResponse(undefined, {
             emptyBody: true,
             privateNoStore: true,
@@ -368,9 +441,17 @@ test('authenticated HEAD probes require metadata and an empty response body', ()
         pathname,
         RELEASE,
       ),
-    (error: unknown) =>
-      error instanceof ReleaseVerificationError && error.message.includes('body must be empty'),
-  );
+    );
+
+    for (const verificationCase of cases) {
+      assert.throws(
+        () => validateUnauthorizedHeadResponse(verificationCase.result, pathname, RELEASE),
+        (error: unknown) =>
+          error instanceof ReleaseVerificationError &&
+          error.message.includes(verificationCase.expectedMessage),
+      );
+    }
+  }
 });
 
 test('readiness probes require completed startup initialization', () => {

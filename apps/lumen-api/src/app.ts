@@ -6,9 +6,11 @@ import {
   UnauthorizedError,
   UserProvisioningRequiredError,
   type UserRecordPort,
+  type WorkflowStatusQueryService,
   apiFailure,
   apiSuccess,
   parseProjectListSearchParams,
+  parseWorkflowStatusNodeIds,
 } from '@lumen/backend';
 import {
   ListProjectsInputSchema,
@@ -40,6 +42,7 @@ export interface CreateApiAppOptions {
   notifications?: NotificationService<OfficialNotificationRecord>;
   projectDetails?: ProjectDetailQueryService<ProjectRecord>;
   projectQueries?: ProjectQueryService<ProjectListRecord>;
+  workflowStatusQueries?: WorkflowStatusQueryService;
   release?: string;
   readiness?: () => Promise<ReadinessChecks> | ReadinessChecks;
   readinessTimeoutMs?: number;
@@ -186,6 +189,39 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
         }
 
         return context.json(apiSuccess({ project }));
+      },
+    );
+  });
+
+  app.get('/api/projects/:projectId/workflow-status', async (context) => {
+    return withAuthenticatedRoute(
+      context,
+      options.authenticatedUsers,
+      'GET /api/projects/:projectId/workflow-status',
+      async (authenticated) => {
+        const requestContext = context.get('requestContext');
+        if (!options.workflowStatusQueries) {
+          return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
+        }
+
+        const projectId = context.req.param('projectId');
+        if (!projectId.trim()) {
+          return context.json(apiFailure(projectNotFoundMessage(requestContext.locale)), 404);
+        }
+
+        const nodeIds = parseWorkflowStatusNodeIds(
+          new URL(context.req.url).searchParams.get('nodeIds'),
+        );
+        const results = await options.workflowStatusQueries.getNodeResults(
+          authenticated.actor.userId,
+          projectId,
+          nodeIds,
+        );
+        if (!results) {
+          return context.json(apiFailure(projectNotFoundMessage(requestContext.locale)), 404);
+        }
+
+        return context.json(apiSuccess({ results }));
       },
     );
   });
