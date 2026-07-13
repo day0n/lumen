@@ -160,7 +160,9 @@ function serveStudioApp(rawUrl: string, res: import('node:http').ServerResponse)
     return true;
   }
 
-  if (appPathname.startsWith('/app/assets/')) {
+  const isHashedAsset = appPathname.startsWith('/app/assets/');
+  const isPublicAsset = appPathname.startsWith('/app/home-posters/');
+  if (isHashedAsset || isPublicAsset) {
     const assetPath = resolve(appDistDir, appPathname.slice('/app/'.length));
     if (!isPathInside(assetPath, appDistDir)) {
       res.statusCode = 404;
@@ -171,7 +173,12 @@ function serveStudioApp(rawUrl: string, res: import('node:http').ServerResponse)
     // the OS tell us if the path is missing or is a directory. Headers are
     // set lazily on first byte so a 404 still gets a clean text/plain
     // response.
-    res.setHeader('cache-control', 'public,max-age=31536000,immutable');
+    res.setHeader(
+      'cache-control',
+      isHashedAsset
+        ? 'public,max-age=31536000,immutable'
+        : 'public,max-age=300,stale-while-revalidate=600',
+    );
     res.setHeader('content-type', contentTypeFor(assetPath));
     const stream = createReadStream(assetPath);
     stream.once('error', (err: NodeJS.ErrnoException) => {

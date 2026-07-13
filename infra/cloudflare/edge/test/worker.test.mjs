@@ -17,9 +17,47 @@ test('maps static shells without catching backend paths', () => {
     resolveEdgeAction('/app/projects', RELEASE).objectKey,
     `releases/${RELEASE}/app/index.html`,
   );
+  assert.deepEqual(resolveEdgeAction('/app/home-posters/selected/agent-pop.webp', RELEASE), {
+    type: 'object',
+    kind: 'public',
+    objectKey: `releases/${RELEASE}/home-posters/selected/agent-pop.webp`,
+    release: RELEASE,
+    status: 200,
+  });
   assert.equal(resolveEdgeAction('/app/assets/missing.js', RELEASE).type, 'not-found');
   assert.equal(resolveEdgeAction('/api/projects', RELEASE).type, 'not-found');
   assert.equal(resolveEdgeAction('/ws/flow', RELEASE).type, 'not-found');
+});
+
+test('serves app public media from the active release', async () => {
+  const requestedKeys = [];
+  const bucket = {
+    async get(key) {
+      requestedKeys.push(key);
+      return {
+        body: 'webp-bytes',
+        httpEtag: '"poster-etag"',
+        size: 10,
+        writeHttpMetadata() {},
+      };
+    },
+  };
+  const response = await worker.fetch(
+    new Request('https://lumenstudio.tech/app/home-posters/selected/agent-pop.webp'),
+    {
+      ACTIVE_FRONTEND_RELEASE: RELEASE,
+      FRONTEND_BUCKET: bucket,
+    },
+    { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/webp');
+  assert.equal(
+    response.headers.get('cache-control'),
+    'public, max-age=300, stale-while-revalidate=600',
+  );
+  assert.deepEqual(requestedKeys, [`releases/${RELEASE}/home-posters/selected/agent-pop.webp`]);
 });
 
 test('keeps immutable assets pinned to their requested release', () => {

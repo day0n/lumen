@@ -6,7 +6,7 @@ export function warmCurrentAppRoute(pathname = window.location.pathname) {
   const routePath = readAppRoutePath(pathname);
 
   if (routePath === '/' || routePath.startsWith('/home')) {
-    return import('@/app/home/page');
+    return import('../features/home/HomePage');
   }
   if (routePath.startsWith('/dashboard')) {
     return import('@/components/studio/DashboardPage');
@@ -54,7 +54,7 @@ function warmAppRouteData(routePath: string) {
 
 function dataUrlsForRoute(routePath: string) {
   if (routePath === '/' || routePath.startsWith('/home')) {
-    return ['/api/home/featured', '/api/home/templates', '/api/projects?limit=3'];
+    return ['/api/home/featured', '/api/home/templates'];
   }
   if (routePath.startsWith('/projects')) {
     return ['/api/folders', '/api/projects'];

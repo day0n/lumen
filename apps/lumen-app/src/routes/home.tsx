@@ -2,8 +2,8 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Suspense, lazy } from 'react';
 import { RouteLoader } from '../features/routing/RouteLoader';
 
-const StudioHomePage = lazy(() =>
-  import('@/app/home/page').then((module) => ({
+const HomePage = lazy(() =>
+  import('../features/home/HomePage').then((module) => ({
     default: module.default,
   })),
 );
@@ -15,7 +15,7 @@ export const Route = createFileRoute('/home')({
 function HomeRoute() {
   return (
     <Suspense fallback={<RouteLoader />}>
-      <StudioHomePage />
+      <HomePage />
     </Suspense>
   );
 }

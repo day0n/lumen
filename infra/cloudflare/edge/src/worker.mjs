@@ -174,6 +174,20 @@ export function resolveEdgeAction(pathname, activeRelease) {
   if (pathname.startsWith('/share/') || pathname.startsWith('/zh/share/')) {
     return shellAction(activeRelease, 'share/index.html');
   }
+
+  const appPublicAssetPath = pathname.startsWith('/app/')
+    ? readPublicAssetPath(pathname.slice('/app'.length))
+    : null;
+  if (appPublicAssetPath) {
+    return {
+      type: 'object',
+      kind: 'public',
+      objectKey: `releases/${activeRelease}/${appPublicAssetPath}`,
+      release: activeRelease,
+      status: 200,
+    };
+  }
+
   if (pathname.startsWith('/app/')) {
     const finalSegment = pathname.split('/').at(-1) ?? '';
     if (/\.[a-z0-9]{1,12}$/i.test(finalSegment)) return { type: 'not-found' };

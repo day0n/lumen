@@ -122,12 +122,20 @@ export default defineConfig(({ mode }) => {
           replacement: path.resolve(__dirname, 'src/components/shell/LumenMark.tsx'),
         },
         {
+          find: '@/components/voice/VoiceInputControl',
+          replacement: path.resolve(__dirname, 'src/components/voice/VoiceInputControl.tsx'),
+        },
+        {
           find: '@/hooks/use-is-mobile',
           replacement: path.resolve(__dirname, 'src/hooks/use-is-mobile.ts'),
         },
         {
           find: '@/hooks/use-media-query',
           replacement: path.resolve(__dirname, 'src/hooks/use-media-query.ts'),
+        },
+        {
+          find: '@/hooks/use-speech-to-text',
+          replacement: path.resolve(__dirname, 'src/hooks/use-speech-to-text.ts'),
         },
         {
           find: '@/lib/app-shell-chrome',
