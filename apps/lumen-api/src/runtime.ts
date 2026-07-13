@@ -2,6 +2,7 @@ import {
   createAuthenticatedUserService,
   createHomeQueryService,
   createNotificationService,
+  createProjectDetailQueryService,
   createProjectQueryService,
   seedDefaultOfficialNotifications,
 } from '@lumen/backend';
@@ -12,9 +13,13 @@ import {
   HomeWorkflowTemplateRepository,
   JsonCache,
   NotificationRepository,
+  type ProjectCanvas,
   ProjectListRecordSchema,
+  type ProjectRecord,
+  ProjectRecordSchema,
   ProjectRepository,
   UserRepository,
+  WorkflowNodeResultRepository,
   closeMongoDatabases,
   closeRedisClients,
   getMongoDatabase,
@@ -29,13 +34,7 @@ const DEFAULT_API_RUNTIME_INITIALIZATION_ATTEMPTS = 3;
 const DEFAULT_API_RUNTIME_INITIALIZATION_RETRY_DELAY_MS = 250;
 
 export function createApiRuntime(config: ApiConfig) {
-  const getDatabase = memoizeAsync(() =>
-    getMongoDatabase({
-      uri: config.mongoUri,
-      dbName: config.mongoDb,
-      appName: 'lumen-api',
-    }),
-  );
+  const { getDatabase, getWorkflowDatabase } = createApiDatabaseLoaders(config);
   const getFeaturedRepository = memoizeAsync(async () => {
     const repository = new HomeFeaturedRepository(await getDatabase());
     await repository.ensureIndexes();
@@ -56,6 +55,11 @@ export function createApiRuntime(config: ApiConfig) {
     await repository.ensureIndexes();
     return repository;
   });
+  const getWorkflowNodeResultRepository = memoizeAsync(async () => {
+    const repository = new WorkflowNodeResultRepository(await getWorkflowDatabase());
+    await repository.ensureIndexes();
+    return repository;
+  });
   const notificationRuntime = createNotificationRepositoryRuntime(
     async () => new NotificationRepository(await getDatabase()),
     seedDefaultOfficialNotifications,
@@ -67,6 +71,7 @@ export function createApiRuntime(config: ApiConfig) {
       getTemplateRepository(),
       getUserRepository(),
       getProjectRepository(),
+      getWorkflowNodeResultRepository(),
       notificationRuntime.initialize(),
     ]);
   });
@@ -103,23 +108,31 @@ export function createApiRuntime(config: ApiConfig) {
     projectListSchema: ProjectListRecordSchema.array(),
     tracePrefix: 'api',
   });
+  const projectDetails = createProjectDetailQueryService<ProjectCanvas, ProjectRecord>({
+    cache,
+    getProjectRepository,
+    getWorkflowNodeResultRepository,
+    projectDetailSchema: ProjectRecordSchema,
+    tracePrefix: 'api',
+  });
 
   return {
     authenticatedUsers,
     homeQueries,
     initialize: initialization.initialize,
     notifications,
+    projectDetails,
     projectQueries,
     async readiness(): Promise<ReadinessChecks> {
-      const checks: ReadinessChecks = { mongo: false, startup: false };
-      try {
-        const database = await getDatabase();
-        await database.command({ ping: 1 });
-        checks.mongo = true;
-      } catch {
-        checks.mongo = false;
-      }
-      checks.startup = initialization.isReady();
+      const [mongo, workflowMongo] = await Promise.all([
+        pingMongoDatabase(getDatabase),
+        pingMongoDatabase(getWorkflowDatabase),
+      ]);
+      const checks: ReadinessChecks = {
+        mongo,
+        startup: initialization.isReady(),
+        workflowMongo,
+      };
       if (redis) {
         checks.redis = false;
         try {
@@ -140,6 +153,40 @@ export function createApiRuntime(config: ApiConfig) {
       }
     },
   };
+}
+
+export function createApiDatabaseLoaders(
+  config: Pick<ApiConfig, 'mongoDb' | 'mongoUri' | 'workflowMongoDb'>,
+  connect: typeof getMongoDatabase = getMongoDatabase,
+) {
+  return {
+    getDatabase: memoizeAsync(() =>
+      connect({
+        uri: config.mongoUri,
+        dbName: config.mongoDb,
+        appName: 'lumen-api',
+      }),
+    ),
+    getWorkflowDatabase: memoizeAsync(() =>
+      connect({
+        uri: config.mongoUri,
+        dbName: config.workflowMongoDb,
+        appName: 'lumen-api-workflow',
+      }),
+    ),
+  };
+}
+
+async function pingMongoDatabase(
+  getDatabase: () => ReturnType<typeof getMongoDatabase>,
+): Promise<boolean> {
+  try {
+    const database = await getDatabase();
+    await database.command({ ping: 1 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export interface IndexedNotificationRepository {

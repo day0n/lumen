@@ -99,11 +99,12 @@ export async function startApiServer() {
         authenticatedUsers: runtime.authenticatedUsers,
         homeQueries: runtime.homeQueries,
         notifications: runtime.notifications,
+        projectDetails: runtime.projectDetails,
         projectQueries: runtime.projectQueries,
         readiness: runtime.readiness,
         readinessTimeoutMs: config.readinessTimeoutMs,
         release: config.release,
-        requiredReadinessChecks: ['mongo', 'startup'],
+        requiredReadinessChecks: ['mongo', 'workflowMongo', 'startup'],
         trustedCookieOrigins: config.identityAuthorizedParties,
       });
 

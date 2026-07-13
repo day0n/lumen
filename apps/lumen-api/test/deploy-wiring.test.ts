@@ -56,7 +56,7 @@ test('process configuration starts the API with an explicit release and env file
   assert.equal(api.env.API_READINESS_TIMEOUT_MS, 2000);
   assert.equal(api.env.API_SHUTDOWN_TIMEOUT_MS, 10000);
   assert.equal(api.env.RELEASE_SHA, RELEASE);
-  assert.deepEqual(api.filter_env, ['MONGODB_', 'REDIS_', 'CLERK_']);
+  assert.deepEqual(api.filter_env, ['MONGODB_', 'WORKFLOW_MONGODB_', 'REDIS_', 'CLERK_']);
   assert.ok((api.kill_timeout ?? 0) > Number(api.env.API_SHUTDOWN_TIMEOUT_MS));
   assert.equal(api.min_uptime, 10000);
   assert.equal(api.max_restarts, 5);

@@ -10,6 +10,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_INTERVAL_MS = 500;
 const NOTIFICATIONS_PATH = '/api/notifications/official';
 const NOTIFICATION_READ_PROBE_PATH = '/api/notifications/official/release-verification-probe/read';
+const PROJECT_DETAIL_PATH = '/api/projects/release-verification-probe';
 const PROJECTS_PATH = '/api/projects?limit=1';
 
 const USAGE = `Usage:
@@ -91,6 +92,15 @@ export async function verifyRelease(options, dependencies = {}) {
       now,
       pathname,
     });
+  const requestWithoutJson = (baseUrl, pathname, method) =>
+    requestRaw({
+      baseUrl,
+      deadline,
+      fetchImpl,
+      method,
+      now,
+      pathname,
+    });
 
   await pollUntilHealthy({
     deadline,
@@ -111,6 +121,17 @@ export async function verifyRelease(options, dependencies = {}) {
     validate: (result) => validateHealthProbe(result, options.release, true),
   });
 
+  validateUnauthorizedApiResponse(
+    await request(options.baseUrl, PROJECT_DETAIL_PATH),
+    PROJECT_DETAIL_PATH,
+    options.release,
+  );
+  validateUnauthorizedHeadResponse(
+    await requestWithoutJson(options.baseUrl, PROJECT_DETAIL_PATH, 'HEAD'),
+    PROJECT_DETAIL_PATH,
+    options.release,
+  );
+
   validateUnauthorizedMeResponse(await request(publicBaseUrl, '/api/me'), options.release);
   validateUnauthorizedApiResponse(
     await request(publicBaseUrl, NOTIFICATIONS_PATH),
@@ -125,6 +146,16 @@ export async function verifyRelease(options, dependencies = {}) {
   validateUnauthorizedApiResponse(
     await request(publicBaseUrl, PROJECTS_PATH),
     PROJECTS_PATH,
+    options.release,
+  );
+  validateUnauthorizedApiResponse(
+    await request(publicBaseUrl, PROJECT_DETAIL_PATH),
+    PROJECT_DETAIL_PATH,
+    options.release,
+  );
+  validateUnauthorizedHeadResponse(
+    await requestWithoutJson(publicBaseUrl, PROJECT_DETAIL_PATH, 'HEAD'),
+    PROJECT_DETAIL_PATH,
     options.release,
   );
   validateFeaturedResponse(await request(publicBaseUrl, '/api/home/featured'), options.release);
@@ -159,6 +190,9 @@ export function validateHealthProbe(result, expectedRelease, readiness) {
     }
     if (checks.mongo !== true) {
       throw new ReleaseVerificationError('/readyz body.checks.mongo must be true');
+    }
+    if (checks.workflowMongo !== true) {
+      throw new ReleaseVerificationError('/readyz body.checks.workflowMongo must be true');
     }
     if (checks.startup !== true) {
       throw new ReleaseVerificationError('/readyz body.checks.startup must be true');
@@ -207,6 +241,17 @@ export function validateUnauthorizedApiResponse(result, pathname, expectedReleas
   }
 }
 
+export function validateUnauthorizedHeadResponse(result, pathname, expectedRelease) {
+  validateCommonResponse(result, pathname, expectedRelease, {
+    expectedStatus: 401,
+    requireNoStore: true,
+    requirePrivate: true,
+  });
+  if (result.body.length !== 0) {
+    throw new ReleaseVerificationError(`${pathname} HEAD response body must be empty`);
+  }
+}
+
 async function pollUntilHealthy(options) {
   let attempts = 0;
   let lastFailure = 'probe was not attempted';
@@ -232,6 +277,21 @@ async function pollUntilHealthy(options) {
 }
 
 async function requestJson({ baseUrl, deadline, fetchImpl, method, now, pathname }) {
+  const result = await requestRaw({ baseUrl, deadline, fetchImpl, method, now, pathname });
+  let payload;
+  try {
+    payload = JSON.parse(result.body);
+  } catch (error) {
+    throw new ReleaseVerificationError(
+      `${pathname} returned invalid JSON (status ${result.response.status}): ${summarizeBody(result.body)}`,
+      { cause: error },
+    );
+  }
+
+  return { ...result, payload };
+}
+
+async function requestRaw({ baseUrl, deadline, fetchImpl, method, now, pathname }) {
   const remainingMs = deadline - now();
   if (remainingMs <= 0) {
     throw new ReleaseVerificationError(`Overall timeout expired before requesting ${pathname}`);
@@ -253,17 +313,7 @@ async function requestJson({ baseUrl, deadline, fetchImpl, method, now, pathname
   }
 
   const body = await response.text();
-  let payload;
-  try {
-    payload = JSON.parse(body);
-  } catch (error) {
-    throw new ReleaseVerificationError(
-      `${pathname} returned invalid JSON (status ${response.status}): ${summarizeBody(body)}`,
-      { cause: error },
-    );
-  }
-
-  return { body, payload, response };
+  return { body, response };
 }
 
 function validateCommonResponse(result, pathname, expectedRelease, options = {}) {

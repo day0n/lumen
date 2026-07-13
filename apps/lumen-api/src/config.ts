@@ -11,6 +11,7 @@ export interface ApiConfig {
   redisUrl?: string;
   release: string;
   shutdownTimeoutMs: number;
+  workflowMongoDb: string;
 }
 
 export const DEFAULT_API_READINESS_TIMEOUT_MS = 2_000;
@@ -60,6 +61,7 @@ export function readApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       env.API_SHUTDOWN_TIMEOUT_MS,
       DEFAULT_API_SHUTDOWN_TIMEOUT_MS,
     ),
+    workflowMongoDb: env.WORKFLOW_MONGODB_DB?.trim() || 'lumen_engine',
   };
 }
 

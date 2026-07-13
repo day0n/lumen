@@ -18,6 +18,7 @@ test('config keeps safe development defaults and accepts explicit deadlines', ()
   assert.equal(defaults.identitySecretKey, '');
   assert.equal(defaults.port, 3003);
   assert.equal(defaults.mongoUri, '');
+  assert.equal(defaults.workflowMongoDb, 'lumen_engine');
   assert.equal(defaults.release, 'dev');
   assert.equal(defaults.readinessTimeoutMs, DEFAULT_API_READINESS_TIMEOUT_MS);
   assert.equal(defaults.shutdownTimeoutMs, DEFAULT_API_SHUTDOWN_TIMEOUT_MS);
@@ -26,10 +27,12 @@ test('config keeps safe development defaults and accepts explicit deadlines', ()
     API_PORT: '3100',
     API_READINESS_TIMEOUT_MS: '1250',
     API_SHUTDOWN_TIMEOUT_MS: '7500',
+    WORKFLOW_MONGODB_DB: 'workflow_test',
   });
   assert.equal(configured.port, 3100);
   assert.equal(configured.readinessTimeoutMs, 1250);
   assert.equal(configured.shutdownTimeoutMs, 7500);
+  assert.equal(configured.workflowMongoDb, 'workflow_test');
   assert.equal(readApiConfig({ API_PORT: '', PORT: '3200' }).port, 3200);
   assert.equal(readApiConfig({ NODE_ENV: 'test' }).environment, 'test');
 });
@@ -269,16 +272,22 @@ test('readyz can treat an unavailable cache as optional', async () => {
   assertProbeHeaders(response, 'dev');
 });
 
-test('readyz requires startup initialization when it is a required check', async () => {
+test('readyz requires both databases and startup initialization when configured', async () => {
   const initializingApp = createApiApp({
-    readiness: () => ({ mongo: true, startup: false }),
-    requiredReadinessChecks: ['mongo', 'startup'],
+    readiness: () => ({ mongo: true, startup: false, workflowMongo: true }),
+    requiredReadinessChecks: ['mongo', 'workflowMongo', 'startup'],
   });
   assert.equal((await initializingApp.request('/readyz')).status, 503);
 
+  const workflowUnavailableApp = createApiApp({
+    readiness: () => ({ mongo: true, startup: true, workflowMongo: false }),
+    requiredReadinessChecks: ['mongo', 'workflowMongo', 'startup'],
+  });
+  assert.equal((await workflowUnavailableApp.request('/readyz')).status, 503);
+
   const readyApp = createApiApp({
-    readiness: () => ({ mongo: true, startup: true }),
-    requiredReadinessChecks: ['mongo', 'startup'],
+    readiness: () => ({ mongo: true, startup: true, workflowMongo: true }),
+    requiredReadinessChecks: ['mongo', 'workflowMongo', 'startup'],
   });
   assert.equal((await readyApp.request('/readyz')).status, 200);
 });

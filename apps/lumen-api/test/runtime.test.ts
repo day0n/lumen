@@ -2,10 +2,50 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createApiDatabaseLoaders,
   createNotificationRepositoryRuntime,
   createRuntimeInitialization,
   initializeApiRuntimeWithRetry,
 } from '../src/runtime.ts';
+
+test('runtime keeps Studio and workflow database connections distinct and memoized', async () => {
+  const calls: Array<{ appName: string; dbName: string; uri: string }> = [];
+  const connect = (async (options: { appName: string; dbName: string; uri: string }) => {
+    calls.push(options);
+    return { name: options.dbName };
+  }) as Parameters<typeof createApiDatabaseLoaders>[1];
+  const loaders = createApiDatabaseLoaders(
+    {
+      mongoDb: 'studio_test',
+      mongoUri: 'mongodb://database.test/lumen',
+      workflowMongoDb: 'workflow_test',
+    },
+    connect,
+  );
+
+  const [studio, workflow, sharedStudio, sharedWorkflow] = await Promise.all([
+    loaders.getDatabase(),
+    loaders.getWorkflowDatabase(),
+    loaders.getDatabase(),
+    loaders.getWorkflowDatabase(),
+  ]);
+
+  assert.equal(studio, sharedStudio);
+  assert.equal(workflow, sharedWorkflow);
+  assert.notEqual(studio, workflow);
+  assert.deepEqual(calls, [
+    {
+      appName: 'lumen-api',
+      dbName: 'studio_test',
+      uri: 'mongodb://database.test/lumen',
+    },
+    {
+      appName: 'lumen-api-workflow',
+      dbName: 'workflow_test',
+      uri: 'mongodb://database.test/lumen',
+    },
+  ]);
+});
 
 test('notification repository requests initialize indexes without running readiness seed', async () => {
   let factoryCalls = 0;

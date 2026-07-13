@@ -10,6 +10,7 @@ import {
   parseOptions,
   validateHealthProbe,
   validateUnauthorizedApiResponse,
+  validateUnauthorizedHeadResponse,
   validateUnauthorizedMeResponse,
   verifyRelease,
 } from '../scripts/verify-release.mjs';
@@ -35,10 +36,10 @@ test('release verifier checks live direct and public origins', async (context) =
         return { categories: [], items: [] };
       },
     },
-    readiness: () => ({ mongo: true, startup: true }),
+    readiness: () => ({ mongo: true, startup: true, workflowMongo: true }),
     readinessTimeoutMs: 50,
     release: RELEASE,
-    requiredReadinessChecks: ['mongo', 'startup'],
+    requiredReadinessChecks: ['mongo', 'workflowMongo', 'startup'],
   });
   const apiServer = serve({ fetch: apiApp.fetch, hostname: '127.0.0.1', port: 0 });
   context.after(
@@ -87,6 +88,8 @@ test('release verifier checks live direct and public origins', async (context) =
     'GET /api/notifications/official',
     'POST /api/notifications/official/release-verification-probe/read',
     'GET /api/projects?limit=1',
+    'GET /api/projects/release-verification-probe',
+    'HEAD /api/projects/release-verification-probe',
     'GET /api/home/featured',
     'GET /api/home/templates',
   ]);
@@ -123,7 +126,7 @@ test('release verifier polls readiness and validates public routes', async () =>
           if (readinessAttempts === 1) {
             return jsonResponse(
               {
-                checks: { mongo: false, startup: false },
+                checks: { mongo: false, startup: false, workflowMongo: false },
                 ok: false,
                 release: RELEASE,
                 service: 'lumen-api',
@@ -134,7 +137,7 @@ test('release verifier polls readiness and validates public routes', async () =>
           }
           return jsonResponse(
             {
-              checks: { mongo: true, redis: false, startup: true },
+              checks: { mongo: true, redis: false, startup: true, workflowMongo: true },
               ok: true,
               release: RELEASE,
               service: 'lumen-api',
@@ -147,11 +150,12 @@ test('release verifier polls readiness and validates public routes', async () =>
           pathname === '/api/me' ||
           pathname === '/api/notifications/official' ||
           pathname === '/api/notifications/official/release-verification-probe/read' ||
-          pathname === '/api/projects'
+          pathname === '/api/projects' ||
+          pathname === '/api/projects/release-verification-probe'
         ) {
           return jsonResponse(
             { error: { message: 'Please sign in first' }, ok: false },
-            { privateNoStore: true, status: 401 },
+            { emptyBody: init?.method === 'HEAD', privateNoStore: true, status: 401 },
           );
         }
         if (pathname === '/api/home/featured') {
@@ -176,10 +180,14 @@ test('release verifier polls readiness and validates public routes', async () =>
     `GET ${baseUrl}/healthz`,
     `GET ${baseUrl}/readyz`,
     `GET ${baseUrl}/readyz`,
+    `GET ${baseUrl}/api/projects/release-verification-probe`,
+    `HEAD ${baseUrl}/api/projects/release-verification-probe`,
     `GET ${publicBaseUrl}/api/me`,
     `GET ${publicBaseUrl}/api/notifications/official`,
     `POST ${publicBaseUrl}/api/notifications/official/release-verification-probe/read`,
     `GET ${publicBaseUrl}/api/projects?limit=1`,
+    `GET ${publicBaseUrl}/api/projects/release-verification-probe`,
+    `HEAD ${publicBaseUrl}/api/projects/release-verification-probe`,
     `GET ${publicBaseUrl}/api/home/featured`,
     `GET ${publicBaseUrl}/api/home/templates`,
   ]);
@@ -234,7 +242,7 @@ test('public home responses retain release, request id and schema validation', a
           timeoutMs: 1_000,
         },
         {
-          fetch: async (input: URL | RequestInfo) => {
+          fetch: async (input: URL | RequestInfo, init?: RequestInit) => {
             const pathname = new URL(String(input)).pathname;
             if (pathname === '/healthz') {
               return jsonResponse(
@@ -245,7 +253,7 @@ test('public home responses retain release, request id and schema validation', a
             if (pathname === '/readyz') {
               return jsonResponse(
                 {
-                  checks: { mongo: true, startup: true },
+                  checks: { mongo: true, startup: true, workflowMongo: true },
                   ok: true,
                   release: RELEASE,
                   service: 'lumen-api',
@@ -258,11 +266,12 @@ test('public home responses retain release, request id and schema validation', a
               pathname === '/api/me' ||
               pathname === '/api/notifications/official' ||
               pathname === '/api/notifications/official/release-verification-probe/read' ||
-              pathname === '/api/projects'
+              pathname === '/api/projects' ||
+              pathname === '/api/projects/release-verification-probe'
             ) {
               return jsonResponse(
                 { error: { message: 'Please sign in first' }, ok: false },
-                { privateNoStore: true, status: 401 },
+                { emptyBody: init?.method === 'HEAD', privateNoStore: true, status: 401 },
               );
             }
             if (pathname === '/api/home/featured') {
@@ -287,6 +296,7 @@ test('public authenticated route probes require unauthorized API response metada
     '/api/notifications/official',
     '/api/notifications/official/release-verification-probe/read',
     '/api/projects?limit=1',
+    '/api/projects/release-verification-probe',
   ];
   const cases = [
     {
@@ -336,9 +346,36 @@ test('public authenticated route probes require unauthorized API response metada
   }
 });
 
+test('authenticated HEAD probes require metadata and an empty response body', () => {
+  const pathname = '/api/projects/release-verification-probe';
+  const valid = {
+    body: '',
+    response: jsonResponse(undefined, { emptyBody: true, privateNoStore: true, status: 401 }),
+  };
+  assert.doesNotThrow(() => validateUnauthorizedHeadResponse(valid, pathname, RELEASE));
+
+  assert.throws(
+    () =>
+      validateUnauthorizedHeadResponse(
+        {
+          body: 'unexpected',
+          response: jsonResponse(undefined, {
+            emptyBody: true,
+            privateNoStore: true,
+            status: 401,
+          }),
+        },
+        pathname,
+        RELEASE,
+      ),
+    (error: unknown) =>
+      error instanceof ReleaseVerificationError && error.message.includes('body must be empty'),
+  );
+});
+
 test('readiness probes require completed startup initialization', () => {
   const payload = {
-    checks: { mongo: true, startup: false },
+    checks: { mongo: true, startup: false, workflowMongo: true },
     ok: true,
     release: RELEASE,
     service: 'lumen-api',
@@ -359,6 +396,32 @@ test('readiness probes require completed startup initialization', () => {
     (error: unknown) =>
       error instanceof ReleaseVerificationError &&
       error.message.includes('/readyz body.checks.startup must be true'),
+  );
+});
+
+test('readiness probes require the workflow database', () => {
+  const payload = {
+    checks: { mongo: true, startup: true, workflowMongo: false },
+    ok: true,
+    release: RELEASE,
+    service: 'lumen-api',
+    ts: Date.now(),
+  };
+
+  assert.throws(
+    () =>
+      validateHealthProbe(
+        {
+          body: JSON.stringify(payload),
+          payload,
+          response: jsonResponse(payload, { noStore: true }),
+        },
+        RELEASE,
+        true,
+      ),
+    (error: unknown) =>
+      error instanceof ReleaseVerificationError &&
+      error.message.includes('/readyz body.checks.workflowMongo must be true'),
   );
 });
 
@@ -397,6 +460,7 @@ test('release verifier rejects a mismatched running release', () => {
 function jsonResponse(
   payload: unknown,
   options: {
+    emptyBody?: boolean;
     noStore?: boolean;
     privateNoStore?: boolean;
     release?: null | string;
@@ -411,7 +475,7 @@ function jsonResponse(
   }
   if (options.privateNoStore) headers.set('cache-control', 'private, no-store');
   else if (options.noStore) headers.set('cache-control', 'no-store');
-  return new Response(JSON.stringify(payload), {
+  return new Response(options.emptyBody ? null : JSON.stringify(payload), {
     headers,
     status: options.status ?? 200,
   });

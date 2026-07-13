@@ -1,6 +1,7 @@
 import {
   type AuthenticatedUser,
   type NotificationService,
+  type ProjectDetailQueryService,
   type ProjectQueryService,
   UnauthorizedError,
   UserProvisioningRequiredError,
@@ -13,6 +14,7 @@ import {
   ListProjectsInputSchema,
   type OfficialNotificationRecord,
   type ProjectListRecord,
+  type ProjectRecord,
 } from '@lumen/db';
 import { type Context, Hono } from 'hono';
 
@@ -36,6 +38,7 @@ export interface CreateApiAppOptions {
   authenticatedUsers?: AuthenticatedUsers;
   homeQueries?: HomeQueries;
   notifications?: NotificationService<OfficialNotificationRecord>;
+  projectDetails?: ProjectDetailQueryService<ProjectRecord>;
   projectQueries?: ProjectQueryService<ProjectListRecord>;
   release?: string;
   readiness?: () => Promise<ReadinessChecks> | ReadinessChecks;
@@ -151,6 +154,38 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
           query: parsed.data.query,
         });
         return context.json(apiSuccess({ projects }));
+      },
+    );
+  });
+
+  app.get('/api/projects/:projectId', async (context) => {
+    return withAuthenticatedRoute(
+      context,
+      options.authenticatedUsers,
+      'GET /api/projects/:projectId',
+      async (authenticated) => {
+        const requestContext = context.get('requestContext');
+        if (!options.projectDetails) {
+          return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
+        }
+
+        const projectId = context.req.param('projectId');
+        if (!projectId.trim()) {
+          return context.json(apiFailure(projectNotFoundMessage(requestContext.locale)), 404);
+        }
+
+        const project = await options.projectDetails.getProject(
+          authenticated.actor.userId,
+          projectId,
+          {
+            bypassCache: new URL(context.req.url).searchParams.get('fresh') === '1',
+          },
+        );
+        if (!project) {
+          return context.json(apiFailure(projectNotFoundMessage(requestContext.locale)), 404);
+        }
+
+        return context.json(apiSuccess({ project }));
       },
     );
   });
@@ -333,6 +368,10 @@ function invalidNotificationIdMessage(locale: 'en' | 'zh') {
 
 function notificationNotFoundMessage(locale: 'en' | 'zh') {
   return locale === 'zh' ? '通知不存在' : 'Notification not found';
+}
+
+function projectNotFoundMessage(locale: 'en' | 'zh') {
+  return locale === 'zh' ? '项目不存在' : 'Project not found';
 }
 
 function logRouteError(route: string, requestId: string, error: unknown) {
