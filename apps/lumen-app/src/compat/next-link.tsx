@@ -27,6 +27,7 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
     onMouseDown,
     onPointerEnter,
     onTouchStart,
+    prefetch = true,
     replace = false,
     children,
     ...props
@@ -36,6 +37,7 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
   const appHref = toAppPath(href);
 
   const preload = () => {
+    if (!prefetch) return;
     preloadLinkTarget(appHref);
   };
 

@@ -3,6 +3,7 @@
 import { IconArrowUpRight, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { motion } from 'motion/react';
 import { type MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import Link from '../../compat/next-link';
 import { useI18n } from '../../i18n/provider';
 import { useLoginRedirect } from '../../lib/auth-redirect';
 import { cn } from '../../lib/cn';
@@ -15,6 +16,8 @@ interface Slide {
   coverUrl: string;
   accent: string;
 }
+
+const MotionLink = motion.create(Link);
 
 type HomeFeaturedApiResponse =
   | {
@@ -285,10 +288,11 @@ function PosterSlide({
   const opacity = Math.abs(diff) > 1 ? 0 : isCenter ? 1 : 0.58;
 
   return (
-    <motion.a
+    <MotionLink
       href={href}
       aria-label={slide.title}
       onClick={(event) => onClick(event, href)}
+      prefetch={false}
       className="absolute left-1/2 top-1/2 block overflow-hidden rounded-[22px] bg-[#111315] text-left ring-1 ring-white/[0.09]"
       style={{
         boxShadow: isCenter ? '0 28px 86px -56px rgba(255,255,255,0.34)' : undefined,
@@ -333,6 +337,6 @@ function PosterSlide({
           </span>
         </div>
       ) : null}
-    </motion.a>
+    </MotionLink>
   );
 }

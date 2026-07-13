@@ -8,10 +8,16 @@ import {
   IconSparkles,
 } from '@tabler/icons-react';
 import { motion } from 'motion/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '../../compat/next-navigation';
 import { useI18n } from '../../i18n/provider';
 import { useLoginRedirect } from '../../lib/auth-redirect';
+import {
+  isTemplateVideoInViewport,
+  releaseTemplateVideo,
+  requestTemplateVideoPlayback,
+  tryLoadTemplateVideo,
+} from './template-video';
 
 interface TemplateCategory {
   id: string;
@@ -325,18 +331,7 @@ function TemplateCover({ template }: { template: WorkflowTemplate }) {
     'absolute inset-0 h-full w-full scale-[1.18] object-cover transition-transform duration-500 will-change-transform group-hover:scale-[1.21]';
 
   if (template.mediaType === 'video' && !isStaticImageUrl(template.coverUrl)) {
-    return (
-      <video
-        aria-label={template.title}
-        autoPlay
-        className={coverMediaClass}
-        loop
-        muted
-        playsInline
-        preload="metadata"
-        src={template.coverUrl}
-      />
-    );
+    return <LazyTemplateVideo className={coverMediaClass} src={template.coverUrl} />;
   }
 
   return (
@@ -348,6 +343,111 @@ function TemplateCover({ template }: { template: WorkflowTemplate }) {
       src={template.coverUrl}
     />
   );
+}
+
+function LazyTemplateVideo({
+  className,
+  src,
+}: {
+  className: string;
+  src: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || typeof window === 'undefined') return;
+
+    let disposed = false;
+    let loaded = false;
+    let visible = false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+
+    const ensureLoaded = () => {
+      if (disposed || loaded) return;
+      loaded = true;
+      video.src = src;
+      tryLoadTemplateVideo(video);
+    };
+
+    const syncPlayback = (nextVisible: boolean) => {
+      visible = nextVisible;
+      if (visible) ensureLoaded();
+      if (!visible || reducedMotion?.matches || document.visibilityState === 'hidden') {
+        video.pause();
+        return;
+      }
+
+      void requestTemplateVideoPlayback(video);
+    };
+
+    const handleDocumentVisibility = () => syncPlayback(visible);
+    const handleReducedMotion = () => syncPlayback(visible);
+
+    document.addEventListener('visibilitychange', handleDocumentVisibility);
+    reducedMotion?.addEventListener?.('change', handleReducedMotion);
+
+    const Observer = (
+      window as typeof window & {
+        IntersectionObserver?: typeof IntersectionObserver;
+      }
+    ).IntersectionObserver;
+
+    if (!Observer) {
+      const syncFallbackPlayback = () => {
+        syncPlayback(
+          isTemplateVideoInViewport(
+            video.getBoundingClientRect(),
+            window.innerWidth,
+            window.innerHeight,
+          ),
+        );
+      };
+
+      syncFallbackPlayback();
+      window.addEventListener('scroll', syncFallbackPlayback, { passive: true });
+      window.addEventListener('resize', syncFallbackPlayback);
+
+      return () => {
+        disposed = true;
+        document.removeEventListener('visibilitychange', handleDocumentVisibility);
+        reducedMotion?.removeEventListener?.('change', handleReducedMotion);
+        window.removeEventListener('scroll', syncFallbackPlayback);
+        window.removeEventListener('resize', syncFallbackPlayback);
+        releaseTemplateVideo(video, loaded);
+      };
+    }
+
+    const loadObserver = new Observer(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        ensureLoaded();
+        loadObserver.disconnect();
+      },
+      { rootMargin: '160px 0px' },
+    );
+    const playbackObserver = new Observer(
+      (entries) => {
+        const entry = entries.find((candidate) => candidate.target === video);
+        syncPlayback(Boolean(entry?.isIntersecting && entry.intersectionRatio > 0));
+      },
+      { threshold: [0, 0.01] },
+    );
+
+    loadObserver.observe(video);
+    playbackObserver.observe(video);
+
+    return () => {
+      disposed = true;
+      loadObserver.disconnect();
+      playbackObserver.disconnect();
+      document.removeEventListener('visibilitychange', handleDocumentVisibility);
+      reducedMotion?.removeEventListener?.('change', handleReducedMotion);
+      releaseTemplateVideo(video, loaded);
+    };
+  }, [src]);
+
+  return <video ref={videoRef} className={className} loop muted playsInline preload="none" />;
 }
 
 function isStaticImageUrl(value: string) {
