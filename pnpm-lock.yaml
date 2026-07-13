@@ -90,6 +90,9 @@ importers:
 
   apps/lumen-api:
     dependencies:
+      '@clerk/backend':
+        specifier: 3.4.13
+        version: 3.4.13(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@hono/node-server':
         specifier: ^1.13.7
         version: 1.19.14(hono@4.12.23)

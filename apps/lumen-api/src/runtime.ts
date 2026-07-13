@@ -1,10 +1,11 @@
-import { createHomeQueryService } from '@lumen/backend';
+import { createAuthenticatedUserService, createHomeQueryService } from '@lumen/backend';
 import {
   HomeFeaturedItemRecordSchema,
   HomeFeaturedRepository,
   HomeWorkflowTemplateListRecordSchema,
   HomeWorkflowTemplateRepository,
   JsonCache,
+  UserRepository,
   closeMongoDatabases,
   closeRedisClients,
   getMongoDatabase,
@@ -12,6 +13,7 @@ import {
 } from '@lumen/db';
 
 import type { ReadinessChecks } from './app.js';
+import { createIdentityProvider } from './auth/identity-provider.js';
 import type { ApiConfig } from './config.js';
 
 export function createApiRuntime(config: ApiConfig) {
@@ -32,6 +34,11 @@ export function createApiRuntime(config: ApiConfig) {
     await repository.ensureIndexes();
     return repository;
   });
+  const getUserRepository = memoizeAsync(async () => {
+    const repository = new UserRepository(await getDatabase());
+    await repository.ensureIndexes();
+    return repository;
+  });
   const redis = getRedisClient({
     url: config.redisUrl,
     keyPrefix: 'lumen:studio:',
@@ -46,15 +53,25 @@ export function createApiRuntime(config: ApiConfig) {
     getTemplateRepository,
     tracePrefix: 'api',
   });
+  const identityProvider = createIdentityProvider({
+    authorizedParties: config.identityAuthorizedParties,
+    jwtKey: config.identityJwtKey,
+    secretKey: config.identitySecretKey,
+  });
+  const authenticatedUsers = createAuthenticatedUserService({
+    getUserRepository,
+    verifySessionToken: identityProvider.verifySessionToken,
+  });
 
   return {
+    authenticatedUsers,
     homeQueries,
     async readiness(): Promise<ReadinessChecks> {
       const checks: ReadinessChecks = { mongo: false };
       try {
         const database = await getDatabase();
         await database.command({ ping: 1 });
-        await Promise.all([getFeaturedRepository(), getTemplateRepository()]);
+        await Promise.all([getFeaturedRepository(), getTemplateRepository(), getUserRepository()]);
         checks.mongo = true;
       } catch {
         checks.mongo = false;

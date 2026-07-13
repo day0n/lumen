@@ -14,6 +14,8 @@ test('config keeps safe development defaults and accepts explicit deadlines', ()
   const defaults = readApiConfig({});
   assert.equal(defaults.host, '127.0.0.1');
   assert.equal(defaults.environment, 'development');
+  assert.deepEqual(defaults.identityAuthorizedParties, []);
+  assert.equal(defaults.identitySecretKey, '');
   assert.equal(defaults.port, 3003);
   assert.equal(defaults.mongoUri, '');
   assert.equal(defaults.release, 'dev');
@@ -39,7 +41,7 @@ test('config rejects malformed ports and deadlines', () => {
   assert.throws(() => readApiConfig({ API_SHUTDOWN_TIMEOUT_MS: '2147483648' }), /SHUTDOWN/);
 });
 
-test('production config requires persistence and a full release SHA', () => {
+test('production config requires persistence, identity verification and a full release SHA', () => {
   const fullSha = 'a'.repeat(40);
   assert.throws(
     () => readApiConfig({ NODE_ENV: 'production', RELEASE_SHA: fullSha }),
@@ -50,6 +52,16 @@ test('production config requires persistence and a full release SHA', () => {
       readApiConfig({
         NODE_ENV: 'production',
         MONGODB_URI: 'mongodb://127.0.0.1/lumen',
+        RELEASE_SHA: fullSha,
+      }),
+    /CLERK_SECRET_KEY is required/,
+  );
+  assert.throws(
+    () =>
+      readApiConfig({
+        NODE_ENV: 'production',
+        MONGODB_URI: 'mongodb://127.0.0.1/lumen',
+        CLERK_SECRET_KEY: 'secret',
         RELEASE_SHA: 'abc123',
       }),
     /full commit SHA/,
@@ -57,10 +69,22 @@ test('production config requires persistence and a full release SHA', () => {
 
   const config = readApiConfig({
     NODE_ENV: 'production',
+    CLERK_SECRET_KEY: 'secret',
+    CLERK_JWT_KEY: 'public-key',
     MONGODB_URI: 'mongodb://127.0.0.1/lumen',
     GITHUB_SHA: fullSha,
   });
   assert.equal(config.mongoUri, 'mongodb://127.0.0.1/lumen');
+  assert.equal(config.identitySecretKey, 'secret');
+  assert.equal(config.identityJwtKey, 'public-key');
+  assert.deepEqual(config.identityAuthorizedParties, [
+    'https://lumenstudio.tech',
+    'https://www.lumenstudio.tech',
+  ]);
+  assert.throws(
+    () => readApiConfig({ CLERK_AUTHORIZED_PARTIES: 'https://lumen.local/path' }),
+    /invalid origin/,
+  );
   assert.equal(config.release, fullSha);
 });
 

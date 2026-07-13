@@ -12,6 +12,7 @@
     "verify:release": "node scripts/verify-release.mjs"
   },
   "dependencies": {
+    "@clerk/backend": "3.4.13",
     "@hono/node-server": "^1.13.7",
     "@lumen/backend": "workspace:*",
     "@lumen/db": "workspace:*",

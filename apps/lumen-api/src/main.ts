@@ -64,6 +64,7 @@ export function startApiServer() {
   const config = readApiConfig();
   const runtime = createApiRuntime(config);
   const app = createApiApp({
+    authenticatedUsers: runtime.authenticatedUsers,
     homeQueries: runtime.homeQueries,
     readiness: runtime.readiness,
     readinessTimeoutMs: config.readinessTimeoutMs,

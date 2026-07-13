@@ -1,9 +1,17 @@
-import { apiFailure } from '@lumen/backend';
+import {
+  type AuthenticatedUser,
+  UnauthorizedError,
+  UserProvisioningRequiredError,
+  type UserRecordPort,
+  apiFailure,
+  apiSuccess,
+} from '@lumen/backend';
 import { Hono } from 'hono';
 
 import { DEFAULT_API_READINESS_TIMEOUT_MS, MAX_TIMER_TIMEOUT_MS } from './config.js';
 import type { ApiEnv } from './http/context-middleware.js';
 import { requestContextMiddleware } from './http/context-middleware.js';
+import { readSessionToken } from './http/session-token.js';
 
 export type ReadinessChecks = Record<string, boolean>;
 
@@ -12,7 +20,12 @@ export interface HomeQueries {
   listTemplates(locale: 'en' | 'zh'): Promise<unknown>;
 }
 
+export interface AuthenticatedUsers<TUser extends UserRecordPort = UserRecordPort> {
+  requireUser(token: string | null | undefined): Promise<AuthenticatedUser<TUser>>;
+}
+
 export interface CreateApiAppOptions {
+  authenticatedUsers?: AuthenticatedUsers;
   homeQueries?: HomeQueries;
   release?: string;
   readiness?: () => Promise<ReadinessChecks> | ReadinessChecks;
@@ -69,6 +82,38 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
     );
   });
 
+  app.get('/api/me', async (context) => {
+    context.header('cache-control', 'private, no-store');
+    const requestContext = context.get('requestContext');
+    if (!options.authenticatedUsers) {
+      return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
+    }
+
+    try {
+      const authenticated = await options.authenticatedUsers.requireUser(
+        readSessionToken(context.req.raw),
+      );
+      requestContext.actor = authenticated.actor;
+      return context.json(apiSuccess({ user: authenticated.user }));
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        return context.json(apiFailure(unauthorizedMessage(requestContext.locale)), 401);
+      }
+      if (error instanceof UserProvisioningRequiredError) {
+        return context.json(
+          apiFailure(
+            internalErrorMessage(requestContext.locale),
+            undefined,
+            'USER_PROVISIONING_REQUIRED',
+          ),
+          503,
+        );
+      }
+      logRouteError('GET /api/me', requestContext.requestId, error);
+      return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 500);
+    }
+  });
+
   app.get('/api/home/featured', async (context) => {
     const requestContext = context.get('requestContext');
     if (!options.homeQueries) {
@@ -110,6 +155,10 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
 
 function internalErrorMessage(locale: 'en' | 'zh') {
   return locale === 'zh' ? '服务暂时不可用' : 'Internal server error';
+}
+
+function unauthorizedMessage(locale: 'en' | 'zh') {
+  return locale === 'zh' ? '请先登录' : 'Please sign in first';
 }
 
 function logRouteError(route: string, requestId: string, error: unknown) {

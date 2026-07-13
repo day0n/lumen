@@ -1,6 +1,9 @@
 export interface ApiConfig {
   environment: 'development' | 'production' | 'test';
   host: string;
+  identityAuthorizedParties: string[];
+  identityJwtKey?: string;
+  identitySecretKey: string;
   mongoDb: string;
   mongoUri: string;
   port: number;
@@ -13,15 +16,20 @@ export interface ApiConfig {
 export const DEFAULT_API_READINESS_TIMEOUT_MS = 2_000;
 export const DEFAULT_API_SHUTDOWN_TIMEOUT_MS = 10_000;
 export const MAX_TIMER_TIMEOUT_MS = 2_147_483_647;
+const PRODUCTION_AUTHORIZED_PARTIES = ['https://lumenstudio.tech', 'https://www.lumenstudio.tech'];
 
 export function readApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const environment = readEnvironment(env.NODE_ENV);
+  const identitySecretKey = env.CLERK_SECRET_KEY?.trim() || '';
   const mongoUri = env.MONGODB_URI?.trim() || '';
   const release = env.RELEASE_SHA?.trim() || env.GITHUB_SHA?.trim() || 'dev';
 
   if (environment === 'production') {
     if (!mongoUri) {
       throw new Error('MONGODB_URI is required in production');
+    }
+    if (!identitySecretKey) {
+      throw new Error('CLERK_SECRET_KEY is required in production');
     }
     if (!isFullReleaseSha(release)) {
       throw new Error('RELEASE_SHA or GITHUB_SHA must be a full commit SHA in production');
@@ -31,6 +39,12 @@ export function readApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   return {
     environment,
     host: env.API_HOST?.trim() || '127.0.0.1',
+    identityAuthorizedParties: readAuthorizedParties(
+      env.CLERK_AUTHORIZED_PARTIES,
+      environment === 'production' ? PRODUCTION_AUTHORIZED_PARTIES : [],
+    ),
+    identityJwtKey: env.CLERK_JWT_KEY?.trim() || undefined,
+    identitySecretKey,
     mongoDb: env.MONGODB_DB?.trim() || 'lumen_app',
     mongoUri,
     port: readPort(env.API_PORT?.trim() || env.PORT?.trim()),
@@ -77,4 +91,28 @@ function readTimeout(name: string, value: string | undefined, fallback: number):
 
 function isFullReleaseSha(value: string): boolean {
   return /^[0-9a-f]{40}$/i.test(value);
+}
+
+function readAuthorizedParties(value: string | undefined, fallback: string[]): string[] {
+  const entries = value?.trim() ? value.split(',') : fallback;
+  return entries.map((entry) => {
+    const candidate = entry.trim();
+    let url: URL;
+    try {
+      url = new URL(candidate);
+    } catch {
+      throw new Error(`CLERK_AUTHORIZED_PARTIES contains an invalid origin: ${candidate}`);
+    }
+    if (
+      !['http:', 'https:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.pathname !== '/' ||
+      url.search ||
+      url.hash
+    ) {
+      throw new Error(`CLERK_AUTHORIZED_PARTIES contains an invalid origin: ${candidate}`);
+    }
+    return url.origin;
+  });
 }

@@ -38,7 +38,7 @@ module.exports = {
       script: 'dist/main.js',
       interpreter: nodeInterpreter,
       node_args: [`--env-file=${apiEnvFile}`],
-      filter_env: ['MONGODB_', 'REDIS_'],
+      filter_env: ['MONGODB_', 'REDIS_', 'CLERK_'],
       kill_timeout: 15000,
       min_uptime: 10000,
       max_restarts: 5,
