@@ -11,6 +11,7 @@ releases/<full-git-sha>/assets/*
 releases/<full-git-sha>/<approved-public-assets>/*
 releases/<full-git-sha>/release-manifest.json
 releases/<full-git-sha>/_READY.json
+release-claims/<full-git-sha>.json
 ```
 
 Build and stage an immutable app release locally with:
@@ -37,8 +38,28 @@ pnpm verify:frontend --release <full-git-sha>
 The verifier rejects extra or missing files, unsafe paths and symbolic links, schema drift,
 incorrect digests or metadata, and a manifest/READY pair that does not seal the exact directory.
 
-Upload payload objects first, `release-manifest.json` next, and `_READY.json` last. Deploy the
-preview Worker only after every uploaded object has been verified:
+Create the immutable release claim first, upload payload objects next, then
+`release-manifest.json`, and `_READY.json` last. Deploy the preview Worker only after every uploaded
+object has been verified. The publisher implements those barriers, never overwrites or deletes an
+existing key, and audits the complete remote namespace:
+
+```bash
+pnpm run-script frontend:upload --release <full-git-sha> --dry-run
+
+FRONTEND_R2_ACCOUNT_ID=... \
+FRONTEND_R2_BUCKET=... \
+FRONTEND_R2_ACCESS_KEY_ID=... \
+FRONTEND_R2_SECRET_ACCESS_KEY=... \
+pnpm run-script frontend:upload --release <full-git-sha>
+```
+
+Dry runs verify the complete local artifact without reading credentials or initializing a remote
+client. A real publish accepts an already-sealed identical release as a no-write success and fails
+on any remote key, byte, digest, or HTTP metadata conflict. The permanent claim binds the exact
+manifest and READY bytes to the source SHA before new payload objects are written, preventing two
+different artifacts from racing into the same release namespace.
+
+Deploy the preview Worker only after the immutable upload succeeds:
 
 ```bash
 pnpm dlx wrangler@4 deploy \
