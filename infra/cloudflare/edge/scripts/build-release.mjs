@@ -4,6 +4,7 @@ import { execFile, spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
+import { verifyReleaseDirectory } from '../src/release-inventory.mjs';
 import { packageAppRelease } from '../src/release-package.mjs';
 
 const run = promisify(execFile);
@@ -39,6 +40,10 @@ const result = await packageAppRelease({
   iconFile: path.join(repositoryRoot, 'apps', 'lumen-studio', 'src', 'app', 'icon.svg'),
   outputRoot,
 });
+const inventory = await verifyReleaseDirectory({
+  release,
+  releaseDirectory: result.releaseDirectory,
+});
 
 process.stdout.write(
   `${JSON.stringify(
@@ -46,8 +51,9 @@ process.stdout.write(
       release: result.release,
       scope: result.manifest.scope,
       output: result.releaseDirectory,
-      objectCount: result.objectCount,
+      objectCount: inventory.objects.length,
       manifestSha256: result.ready.manifest.sha256,
+      verified: true,
     },
     null,
     2,

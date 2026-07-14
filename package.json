@@ -11,6 +11,7 @@
     "dev:app": "pnpm --filter @lumen/app dev",
     "build:app": "pnpm --filter @lumen/app build",
     "package:frontend": "node infra/cloudflare/edge/scripts/build-release.mjs",
+    "verify:frontend": "node infra/cloudflare/edge/scripts/verify-release.mjs",
     "build:web": "pnpm --filter @lumen/shared build && pnpm --filter @lumen/app build && pnpm --filter @lumen/studio build",
     "build:studio": "pnpm --filter @lumen/studio build",
     "build:api": "pnpm --filter @lumen/api build",

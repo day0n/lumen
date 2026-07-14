@@ -28,6 +28,15 @@ creates Brotli and gzip siblings, and records every payload digest. Build metada
 artifact to the source SHA and the effective public browser configuration. The manifest declares
 `scope: ["app"]`; `_READY.json` binds that manifest to the release SHA.
 
+Re-run the strict local inventory check without rebuilding with:
+
+```bash
+pnpm verify:frontend --release <full-git-sha>
+```
+
+The verifier rejects extra or missing files, unsafe paths and symbolic links, schema drift,
+incorrect digests or metadata, and a manifest/READY pair that does not seal the exact directory.
+
 Upload payload objects first, `release-manifest.json` next, and `_READY.json` last. Deploy the
 preview Worker only after every uploaded object has been verified:
 
