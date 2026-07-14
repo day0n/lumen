@@ -30,6 +30,8 @@ const projectDetailLocation = '~ ^/api/projects/[^/]+$';
 const projectsEntryLocation = '= /api/projects';
 const remakeJobDetailLocation = '~ ^/api/remake/jobs/[^/]+$';
 const workflowStatusLocation = '~ ^/api/projects/[^/]+/workflow-status$';
+const shareReadLocation = '~ ^/api/shares/[^/]+$';
+const shareCloneLocation = '~ ^/api/shares/[^/]+/clone$';
 const legacyApiReadLocations = [...homeReadLocations, '= /api/me'];
 const apiReadLocations = [...legacyApiReadLocations, notificationReadLocation];
 const apiProxyLocations = [
@@ -38,6 +40,8 @@ const apiProxyLocations = [
   projectsEntryLocation,
   projectDetailLocation,
   remakeJobDetailLocation,
+  shareReadLocation,
+  shareCloneLocation,
   workflowStatusLocation,
 ];
 
@@ -90,7 +94,7 @@ test('sends only the intended API reads and notification writes to the API', asy
   const apiLocations = locationDeclarations(server).filter((location) => location.includes('/api'));
 
   assert.deepEqual(apiLocations.sort(), apiProxyLocations.toSorted());
-  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 9);
+  assert.equal(countOccurrences(server, 'proxy_pass http://127.0.0.1:3003;'), 11);
 
   for (const location of apiReadLocations) {
     const block = extractBlock(server, `location ${location}`);
@@ -319,6 +323,47 @@ test('keeps notification writes fail-closed without any Studio fallback', async 
     notificationWrite,
     /\berror_page\b|@lumen_studio_api_read_fallback|proxy_intercept_errors\s+on|\brewrite\b/,
   );
+});
+
+test('routes share previews and clones directly to the independent API', async () => {
+  const source = await readFile(nginxPath, 'utf8');
+  const server = extractBlock(source, 'server');
+  const shareRead = extractBlock(server, `location ${shareReadLocation}`);
+  const shareClone = extractBlock(server, `location ${shareCloneLocation}`);
+
+  assertContainsAll(shareRead, [
+    'if ($request_method !~ ^(GET|HEAD)$)',
+    'return 405;',
+    'proxy_pass http://127.0.0.1:3003;',
+    'proxy_intercept_errors off;',
+    ...forwardedRequestHeaders,
+  ]);
+  assert.doesNotMatch(
+    shareRead,
+    /\berror_page\b|@lumen_studio_api_read_fallback|@lumen_studio_api_passthrough|proxy_hide_header Cache-Control|add_header Cache-Control/,
+  );
+
+  assertContainsAll(shareClone, [
+    'if ($request_method != POST)',
+    'return 405;',
+    'proxy_pass http://127.0.0.1:3003;',
+    'proxy_intercept_errors off;',
+    'proxy_hide_header Cache-Control;',
+    'add_header Cache-Control "private, no-store" always;',
+    ...forwardedRequestHeaders,
+  ]);
+  assert.doesNotMatch(
+    shareClone,
+    /\berror_page\b|@lumen_studio_api_read_fallback|@lumen_studio_api_passthrough/,
+  );
+
+  const readMatcher = new RegExp(shareReadLocation.replace(/^~\s+/, ''));
+  const cloneMatcher = new RegExp(shareCloneLocation.replace(/^~\s+/, ''));
+  assert.equal(readMatcher.test(`/api/shares/${'a'.repeat(32)}`), true);
+  assert.equal(readMatcher.test(`/api/shares/${'a'.repeat(32)}/clone`), false);
+  assert.equal(readMatcher.test(`/api/shares/${'a'.repeat(32)}/`), false);
+  assert.equal(cloneMatcher.test(`/api/shares/${'a'.repeat(32)}/clone`), true);
+  assert.equal(cloneMatcher.test(`/api/shares/${'a'.repeat(32)}/clone/extra`), false);
 });
 
 test('falls back to Studio with the original URI and query on API read failures', async () => {

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import type { Db } from 'mongodb';
 
@@ -86,6 +86,44 @@ export class ProjectHistoryRepository {
     return toProjectHistoryRecord(document);
   }
 
+  async ensureCreatedSnapshot(
+    input: Omit<RecordProjectHistoryInput, 'action'>,
+  ): Promise<ProjectHistoryRecord> {
+    const parsed = RecordProjectHistoryInputSchema.parse({ ...input, action: 'created' });
+    const collection = this.collection();
+    const filter = {
+      owner_id: parsed.ownerId,
+      project_id: parsed.projectId,
+      action: 'created' as const,
+    };
+    const document = ProjectHistoryDocumentSchema.parse({
+      _id: createdSnapshotId(parsed.ownerId, parsed.projectId),
+      owner_id: parsed.ownerId,
+      project_id: parsed.projectId,
+      title: parsed.title,
+      action: 'created',
+      canvas: parsed.canvas,
+      node_count: parsed.canvas.nodes.length,
+      edge_count: parsed.canvas.edges.length,
+      created_at: new Date(),
+    });
+
+    try {
+      const ensured = await collection.findOneAndUpdate(
+        filter,
+        { $setOnInsert: document },
+        { upsert: true, returnDocument: 'after' },
+      );
+      if (ensured) return toProjectHistoryRecord(ensured);
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) throw error;
+    }
+
+    const raced = await collection.findOne(filter);
+    if (!raced) throw new Error('Created project history snapshot could not be ensured');
+    return toProjectHistoryRecord(raced);
+  }
+
   async listLatest(input: ListProjectHistoryInput): Promise<ProjectHistoryRecord[]> {
     const parsed = ListProjectHistoryInputSchema.parse(input);
     const documents = await this.collection()
@@ -156,6 +194,19 @@ export class ProjectHistoryRepository {
   private collection() {
     return this.db.collection<ProjectHistoryDocument>(COLLECTION);
   }
+}
+
+function createdSnapshotId(ownerId: string, projectId: string): string {
+  return `created-${createHash('sha256').update(ownerId).update('\0').update(projectId).digest('hex')}`;
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 11000,
+  );
 }
 
 function toProjectHistoryRecord(document: ProjectHistoryDocument): ProjectHistoryRecord {

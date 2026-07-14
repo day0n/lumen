@@ -101,6 +101,7 @@ export async function startApiServer() {
         notifications: runtime.notifications,
         projectDetails: runtime.projectDetails,
         projectQueries: runtime.projectQueries,
+        projectShares: runtime.projectShares,
         remakeJobQueries: runtime.remakeJobQueries,
         workflowStatusQueries: runtime.workflowStatusQueries,
         readiness: runtime.readiness,

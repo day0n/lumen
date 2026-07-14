@@ -3,9 +3,11 @@ import 'server-only';
 import {
   type ProjectDetailQueryService,
   type ProjectQueryService,
+  type ProjectShareService,
   type WorkflowStatusQueryService,
   createProjectDetailQueryService,
   createProjectQueryService,
+  createProjectShareService,
   createWorkflowStatusQueryService,
 } from '@lumen/backend';
 import {
@@ -16,11 +18,17 @@ import {
   ProjectRecordSchema,
 } from '@lumen/db';
 
-import { getProjectRepository, getStudioCache, getWorkflowNodeResultRepository } from './db';
+import {
+  getProjectHistoryRepository,
+  getProjectRepository,
+  getStudioCache,
+  getWorkflowNodeResultRepository,
+} from './db';
 import { traceStudioStep } from './telemetry';
 
 let projectQueries: ProjectQueryService<ProjectListRecord> | null = null;
 let projectDetailQueries: ProjectDetailQueryService<ProjectRecord> | null = null;
+let projectShares: ProjectShareService | null = null;
 let workflowStatusQueries: WorkflowStatusQueryService | null = null;
 
 export function getStudioProjectQueries(): ProjectQueryService<ProjectListRecord> {
@@ -44,6 +52,17 @@ export function getStudioProjectDetailQueries(): ProjectDetailQueryService<Proje
     tracePrefix: 'studio',
   });
   return projectDetailQueries;
+}
+
+export function getStudioProjectShares(): ProjectShareService {
+  projectShares ??= createProjectShareService<ProjectCanvas, ProjectRecord>({
+    getHistoryRepository: getProjectHistoryRepository,
+    getProjectRepository,
+    invalidateProject: getStudioProjectQueries().invalidateProject,
+    trace: traceStudioStep,
+    tracePrefix: 'studio',
+  });
+  return projectShares;
 }
 
 export function getStudioWorkflowStatusQueries(): WorkflowStatusQueryService {

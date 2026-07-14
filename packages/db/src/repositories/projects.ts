@@ -26,6 +26,12 @@ export interface EnsureProjectShareIdResult {
   created: boolean;
 }
 
+export interface CloneSharedProjectResult {
+  project: ProjectRecord;
+  created: boolean;
+  historyPending: boolean;
+}
+
 export interface ProjectFolderMutationResult {
   projectIds: string[];
   matchedCount: number;
@@ -72,6 +78,13 @@ export class ProjectRepository {
     await collection.createIndex({ owner_id: 1, title: 1 });
     await collection.createIndex({ owner_id: 1, folder_id: 1, updated_at: -1 });
     await collection.createIndex({ share_id: 1 }, { unique: true, sparse: true });
+    await collection.createIndex(
+      { owner_id: 1, active_clone_key: 1 },
+      {
+        unique: true,
+        partialFilterExpression: { active_clone_key: { $exists: true } },
+      },
+    );
   }
 
   async create(input: CreateProjectInput): Promise<ProjectRecord> {
@@ -163,6 +176,7 @@ export class ProjectRepository {
         deleted_at: now,
         updated_at: now,
       },
+      $unset: { active_clone_key: '' },
     });
   }
 
@@ -196,6 +210,94 @@ export class ProjectRepository {
     });
 
     return document ? toProjectRecord(document) : null;
+  }
+
+  async cloneSharedProject(
+    ownerId: string,
+    shareId: string,
+  ): Promise<CloneSharedProjectResult | null> {
+    const normalizedOwnerId = ownerId.trim();
+    const normalizedShareId = shareId.trim();
+    if (!normalizedOwnerId || !normalizedShareId) return null;
+
+    const collection = this.collection();
+    const [sourceDocument, existingClone] = await Promise.all([
+      collection.findOne({
+        share_id: normalizedShareId,
+        deleted_at: { $exists: false },
+      }),
+      collection.findOne({
+        owner_id: normalizedOwnerId,
+        active_clone_key: normalizedShareId,
+        deleted_at: { $exists: false },
+      }),
+    ]);
+    if (existingClone) {
+      return {
+        project: toProjectRecord(existingClone),
+        created: false,
+        historyPending: !existingClone.clone_history_recorded_at,
+      };
+    }
+    if (!sourceDocument) return null;
+    if (sourceDocument.owner_id === normalizedOwnerId) {
+      return {
+        project: toProjectRecord(sourceDocument),
+        created: false,
+        historyPending: false,
+      };
+    }
+
+    const source = ProjectDocumentSchema.parse(sourceDocument);
+    assertCanvasWithinLimit(source.canvas);
+    const now = new Date();
+    const clone = ProjectDocumentSchema.parse({
+      _id: randomUUID(),
+      owner_id: normalizedOwnerId,
+      title: source.title,
+      description: source.description,
+      thumbnail: source.thumbnail,
+      source_share_id: normalizedShareId,
+      active_clone_key: normalizedShareId,
+      status: 'draft',
+      canvas: source.canvas,
+      created_at: now,
+      updated_at: now,
+    });
+
+    try {
+      await collection.insertOne(clone);
+      return { project: toProjectRecord(clone), created: true, historyPending: true };
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) throw error;
+      const raced = await collection.findOne({
+        owner_id: normalizedOwnerId,
+        active_clone_key: normalizedShareId,
+        deleted_at: { $exists: false },
+      });
+      if (!raced) throw error;
+      return {
+        project: toProjectRecord(raced),
+        created: false,
+        historyPending: !raced.clone_history_recorded_at,
+      };
+    }
+  }
+
+  async markSharedProjectHistoryRecorded(
+    ownerId: string,
+    projectId: string,
+    shareId: string,
+  ): Promise<boolean> {
+    const result = await this.collection().updateOne(
+      {
+        _id: projectId,
+        owner_id: ownerId,
+        source_share_id: shareId,
+      },
+      { $set: { clone_history_recorded_at: new Date() } },
+    );
+    return result.matchedCount > 0;
   }
 
   async ensureShareId(
@@ -308,6 +410,7 @@ export class ProjectRepository {
           deleted_at: new Date(),
           updated_at: new Date(),
         },
+        $unset: { active_clone_key: '' },
       },
     );
 
@@ -374,4 +477,13 @@ function toProjectListRecord(document: Omit<ProjectDocument, 'canvas'>): Project
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 11000,
+  );
 }

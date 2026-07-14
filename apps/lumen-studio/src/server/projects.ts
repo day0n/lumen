@@ -15,7 +15,11 @@ import { DEFAULT_LOCALE, type Locale } from '@/i18n/routing';
 import { requireStudioUser } from './auth';
 import { getProjectHistoryRepository, getProjectRepository, getStudioCache } from './db';
 import { ensureProjectShareWithCacheInvalidation } from './project-cache-mutations';
-import { getStudioProjectDetailQueries, getStudioProjectQueries } from './project-query-runtime';
+import {
+  getStudioProjectDetailQueries,
+  getStudioProjectQueries,
+  getStudioProjectShares,
+} from './project-query-runtime';
 import { traceStudioStep } from './telemetry';
 import { reconcileCanvasWithWorkflowResults } from './workflow-canvas-reconcile';
 
@@ -171,34 +175,11 @@ export async function getSharedProjectPreview(shareId: string): Promise<ProjectR
 
 export async function cloneSharedProject(shareId: string): Promise<ProjectRecord | null> {
   const user = await requireStudioUser();
-  const repository = await getProjectRepository();
-  const source = await repository.getByShareId(shareId);
-  if (!source) return null;
-
-  if (source.ownerId === user.id) {
-    return source;
-  }
-
-  const project = await repository.create({
-    ownerId: user.id,
-    title: source.title,
-    description: source.description,
-    thumbnail: source.thumbnail,
-    canvas: source.canvas,
+  const clone = await getStudioProjectShares().cloneForOwner(user.id, shareId);
+  if (!clone) return null;
+  return getStudioProjectDetailQueries().getProject(user.id, clone.projectId, {
+    bypassCache: true,
   });
-
-  await getStudioCache().set(
-    projectDetailCacheKey(user.id, project.id),
-    project,
-    PROJECT_CACHE_TTL_SECONDS,
-  );
-  await clearProjectListCache(user.id);
-  await recordProjectHistory({
-    action: 'created',
-    ownerId: user.id,
-    project,
-  });
-  return project;
 }
 
 export async function deleteStudioProject(projectId: string): Promise<boolean> {

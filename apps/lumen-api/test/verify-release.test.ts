@@ -36,6 +36,14 @@ test('release verifier checks live direct and public origins', async (context) =
         return { categories: [], items: [] };
       },
     },
+    projectShares: {
+      async cloneForOwner() {
+        return null;
+      },
+      async getPreview() {
+        return null;
+      },
+    },
     readiness: () => ({ mongo: true, startup: true, workflowMongo: true }),
     readinessTimeoutMs: 50,
     release: RELEASE,
@@ -79,7 +87,7 @@ test('release verifier checks live direct and public origins', async (context) =
     intervalMs: 10,
     publicBaseUrl,
     release: RELEASE,
-    timeoutMs: 1_000,
+    timeoutMs: 5_000,
   });
 
   assert.deepEqual(result, { baseUrl, publicBaseUrl, release: RELEASE });
@@ -87,6 +95,7 @@ test('release verifier checks live direct and public origins', async (context) =
     'GET /api/me',
     'GET /api/notifications/official',
     'POST /api/notifications/official/release-verification-probe/read',
+    'POST /api/shares/00000000000000000000000000000000/clone',
     'GET /api/projects?limit=1',
     'GET /api/projects/release-verification-probe',
     'HEAD /api/projects/release-verification-probe',
@@ -94,6 +103,8 @@ test('release verifier checks live direct and public origins', async (context) =
     'HEAD /api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe',
     'GET /api/remake/jobs/release-verification-probe',
     'HEAD /api/remake/jobs/release-verification-probe',
+    'GET /api/shares/00000000000000000000000000000000',
+    'HEAD /api/shares/00000000000000000000000000000000',
     'GET /api/home/featured',
     'GET /api/home/templates',
   ]);
@@ -154,6 +165,7 @@ test('release verifier polls readiness and validates public routes', async () =>
           pathname === '/api/me' ||
           pathname === '/api/notifications/official' ||
           pathname === '/api/notifications/official/release-verification-probe/read' ||
+          pathname === '/api/shares/00000000000000000000000000000000/clone' ||
           pathname === '/api/projects' ||
           pathname === '/api/projects/release-verification-probe' ||
           pathname === '/api/projects/release-verification-probe/workflow-status' ||
@@ -162,6 +174,12 @@ test('release verifier polls readiness and validates public routes', async () =>
           return jsonResponse(
             { error: { message: 'Please sign in first' }, ok: false },
             { emptyBody: init?.method === 'HEAD', privateNoStore: true, status: 401 },
+          );
+        }
+        if (pathname === '/api/shares/00000000000000000000000000000000') {
+          return jsonResponse(
+            { error: { code: 'SHARE_NOT_FOUND', message: 'Shared project not found' }, ok: false },
+            { emptyBody: init?.method === 'HEAD', noStore: true, status: 404 },
           );
         }
         if (pathname === '/api/home/featured') {
@@ -192,9 +210,12 @@ test('release verifier polls readiness and validates public routes', async () =>
     `HEAD ${baseUrl}/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe`,
     `GET ${baseUrl}/api/remake/jobs/release-verification-probe`,
     `HEAD ${baseUrl}/api/remake/jobs/release-verification-probe`,
+    `GET ${baseUrl}/api/shares/00000000000000000000000000000000`,
+    `HEAD ${baseUrl}/api/shares/00000000000000000000000000000000`,
     `GET ${publicBaseUrl}/api/me`,
     `GET ${publicBaseUrl}/api/notifications/official`,
     `POST ${publicBaseUrl}/api/notifications/official/release-verification-probe/read`,
+    `POST ${publicBaseUrl}/api/shares/00000000000000000000000000000000/clone`,
     `GET ${publicBaseUrl}/api/projects?limit=1`,
     `GET ${publicBaseUrl}/api/projects/release-verification-probe`,
     `HEAD ${publicBaseUrl}/api/projects/release-verification-probe`,
@@ -202,6 +223,8 @@ test('release verifier polls readiness and validates public routes', async () =>
     `HEAD ${publicBaseUrl}/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe`,
     `GET ${publicBaseUrl}/api/remake/jobs/release-verification-probe`,
     `HEAD ${publicBaseUrl}/api/remake/jobs/release-verification-probe`,
+    `GET ${publicBaseUrl}/api/shares/00000000000000000000000000000000`,
+    `HEAD ${publicBaseUrl}/api/shares/00000000000000000000000000000000`,
     `GET ${publicBaseUrl}/api/home/featured`,
     `GET ${publicBaseUrl}/api/home/templates`,
   ]);
@@ -280,6 +303,7 @@ test('public home responses retain release, request id and schema validation', a
               pathname === '/api/me' ||
               pathname === '/api/notifications/official' ||
               pathname === '/api/notifications/official/release-verification-probe/read' ||
+              pathname === '/api/shares/00000000000000000000000000000000/clone' ||
               pathname === '/api/projects' ||
               pathname === '/api/projects/release-verification-probe' ||
               pathname === '/api/projects/release-verification-probe/workflow-status' ||
@@ -288,6 +312,15 @@ test('public home responses retain release, request id and schema validation', a
               return jsonResponse(
                 { error: { message: 'Please sign in first' }, ok: false },
                 { emptyBody: init?.method === 'HEAD', privateNoStore: true, status: 401 },
+              );
+            }
+            if (pathname === '/api/shares/00000000000000000000000000000000') {
+              return jsonResponse(
+                {
+                  error: { code: 'SHARE_NOT_FOUND', message: 'Shared project not found' },
+                  ok: false,
+                },
+                { emptyBody: init?.method === 'HEAD', noStore: true, status: 404 },
               );
             }
             if (pathname === '/api/home/featured') {
@@ -311,6 +344,7 @@ test('public authenticated route probes require unauthorized API response metada
     '/api/me',
     '/api/notifications/official',
     '/api/notifications/official/release-verification-probe/read',
+    '/api/shares/00000000000000000000000000000000/clone',
     '/api/projects?limit=1',
     '/api/projects/release-verification-probe',
     '/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe',

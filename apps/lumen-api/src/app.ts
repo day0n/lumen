@@ -3,6 +3,7 @@ import {
   type NotificationService,
   type ProjectDetailQueryService,
   type ProjectQueryService,
+  type ProjectShareService,
   type RemakeJobQueryJobLike,
   type RemakeJobQueryService,
   type RemakeJobQueryTaskLike,
@@ -12,6 +13,7 @@ import {
   type WorkflowStatusQueryService,
   apiFailure,
   apiSuccess,
+  isValidProjectShareId,
   parseProjectListSearchParams,
   parseWorkflowStatusNodeIds,
 } from '@lumen/backend';
@@ -45,6 +47,7 @@ export interface CreateApiAppOptions {
   notifications?: NotificationService<OfficialNotificationRecord>;
   projectDetails?: ProjectDetailQueryService<ProjectRecord>;
   projectQueries?: ProjectQueryService<ProjectListRecord>;
+  projectShares?: ProjectShareService;
   remakeJobQueries?: RemakeJobQueryService<RemakeJobQueryJobLike, RemakeJobQueryTaskLike>;
   workflowStatusQueries?: WorkflowStatusQueryService;
   release?: string;
@@ -256,6 +259,44 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
     );
   });
 
+  app.get('/api/shares/:shareId', async (context) => {
+    const requestContext = context.get('requestContext');
+    context.header('cache-control', 'no-store');
+    const shareId = context.req.param('shareId');
+    if (!isValidProjectShareId(shareId)) {
+      return context.json(
+        apiFailure(
+          sharedProjectNotFoundMessage(requestContext.locale),
+          undefined,
+          'SHARE_NOT_FOUND',
+        ),
+        404,
+      );
+    }
+    if (!options.projectShares) {
+      return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
+    }
+
+    try {
+      const preview = await options.projectShares.getPreview(shareId);
+      if (!preview) {
+        return context.json(
+          apiFailure(
+            sharedProjectNotFoundMessage(requestContext.locale),
+            undefined,
+            'SHARE_NOT_FOUND',
+          ),
+          404,
+        );
+      }
+      context.header('cache-control', 'public, max-age=60, stale-while-revalidate=300');
+      return context.json(apiSuccess({ preview }));
+    } catch (error) {
+      logRouteError('GET /api/shares/:shareId', requestContext.requestId, error);
+      return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 500);
+    }
+  });
+
   app.post('/api/notifications/official/:notificationId/read', async (context) => {
     return withAuthenticatedRoute(
       context,
@@ -308,6 +349,61 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
         }
 
         return context.json(apiSuccess({ read: true as const }));
+      },
+    );
+  });
+
+  app.post('/api/shares/:shareId/clone', async (context) => {
+    return withAuthenticatedRoute(
+      context,
+      options.authenticatedUsers,
+      'POST /api/shares/:shareId/clone',
+      async (authenticated, credentialSource) => {
+        const requestContext = context.get('requestContext');
+        if (
+          credentialSource !== 'bearer' &&
+          !trustedCookieOrigins.has(context.req.header('origin') ?? '')
+        ) {
+          return context.json(
+            apiFailure(
+              invalidRequestOriginMessage(requestContext.locale),
+              undefined,
+              'INVALID_REQUEST_ORIGIN',
+            ),
+            403,
+          );
+        }
+
+        const shareId = context.req.param('shareId');
+        if (!isValidProjectShareId(shareId)) {
+          return context.json(
+            apiFailure(
+              sharedProjectNotFoundMessage(requestContext.locale),
+              undefined,
+              'SHARE_NOT_FOUND',
+            ),
+            404,
+          );
+        }
+        if (!options.projectShares) {
+          return context.json(apiFailure(internalErrorMessage(requestContext.locale)), 503);
+        }
+
+        const clone = await options.projectShares.cloneForOwner(
+          authenticated.actor.userId,
+          shareId,
+        );
+        if (!clone) {
+          return context.json(
+            apiFailure(
+              sharedProjectNotFoundMessage(requestContext.locale),
+              undefined,
+              'SHARE_NOT_FOUND',
+            ),
+            404,
+          );
+        }
+        return context.json(apiSuccess(clone));
       },
     );
   });
@@ -438,6 +534,10 @@ function notificationNotFoundMessage(locale: 'en' | 'zh') {
 
 function projectNotFoundMessage(locale: 'en' | 'zh') {
   return locale === 'zh' ? '项目不存在' : 'Project not found';
+}
+
+function sharedProjectNotFoundMessage(locale: 'en' | 'zh') {
+  return locale === 'zh' ? '分享项目不存在' : 'Shared project not found';
 }
 
 function remakeJobNotFoundMessage(locale: 'en' | 'zh') {

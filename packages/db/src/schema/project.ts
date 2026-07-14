@@ -70,6 +70,9 @@ export const ProjectDocumentSchema = z
     status: ProjectStatusSchema.default('draft'),
     thumbnail: z.string().trim().optional(),
     share_id: z.string().trim().min(1).optional(),
+    source_share_id: z.string().trim().min(1).optional(),
+    active_clone_key: z.string().trim().min(1).optional(),
+    clone_history_recorded_at: z.date().optional(),
     /** 文件夹 id；未设置 = "未分类"。 */
     folder_id: z.string().trim().min(1).optional(),
     canvas: ProjectCanvasSchema.default({ nodes: [], edges: [] }),

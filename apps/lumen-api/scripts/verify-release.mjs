@@ -13,6 +13,8 @@ const NOTIFICATION_READ_PROBE_PATH = '/api/notifications/official/release-verifi
 const PROJECT_DETAIL_PATH = '/api/projects/release-verification-probe';
 const PROJECTS_PATH = '/api/projects?limit=1';
 const REMAKE_JOB_DETAIL_PATH = '/api/remake/jobs/release-verification-probe';
+const SHARE_PREVIEW_PATH = '/api/shares/00000000000000000000000000000000';
+const SHARE_CLONE_PATH = '/api/shares/00000000000000000000000000000000/clone';
 const WORKFLOW_STATUS_PATH =
   '/api/projects/release-verification-probe/workflow-status?nodeIds=release-verification-probe';
 
@@ -154,6 +156,16 @@ export async function verifyRelease(options, dependencies = {}) {
     REMAKE_JOB_DETAIL_PATH,
     options.release,
   );
+  validateShareNotFoundResponse(
+    await request(options.baseUrl, SHARE_PREVIEW_PATH),
+    SHARE_PREVIEW_PATH,
+    options.release,
+  );
+  validateShareNotFoundHeadResponse(
+    await requestWithoutJson(options.baseUrl, SHARE_PREVIEW_PATH, 'HEAD'),
+    SHARE_PREVIEW_PATH,
+    options.release,
+  );
 
   validateUnauthorizedMeResponse(await request(publicBaseUrl, '/api/me'), options.release);
   validateUnauthorizedApiResponse(
@@ -164,6 +176,11 @@ export async function verifyRelease(options, dependencies = {}) {
   validateUnauthorizedApiResponse(
     await request(publicBaseUrl, NOTIFICATION_READ_PROBE_PATH, 'POST'),
     NOTIFICATION_READ_PROBE_PATH,
+    options.release,
+  );
+  validateUnauthorizedApiResponse(
+    await request(publicBaseUrl, SHARE_CLONE_PATH, 'POST'),
+    SHARE_CLONE_PATH,
     options.release,
   );
   validateUnauthorizedApiResponse(
@@ -199,6 +216,16 @@ export async function verifyRelease(options, dependencies = {}) {
   validateUnauthorizedHeadResponse(
     await requestWithoutJson(publicBaseUrl, REMAKE_JOB_DETAIL_PATH, 'HEAD'),
     REMAKE_JOB_DETAIL_PATH,
+    options.release,
+  );
+  validateShareNotFoundResponse(
+    await request(publicBaseUrl, SHARE_PREVIEW_PATH),
+    SHARE_PREVIEW_PATH,
+    options.release,
+  );
+  validateShareNotFoundHeadResponse(
+    await requestWithoutJson(publicBaseUrl, SHARE_PREVIEW_PATH, 'HEAD'),
+    SHARE_PREVIEW_PATH,
     options.release,
   );
   validateFeaturedResponse(await request(publicBaseUrl, '/api/home/featured'), options.release);
@@ -289,6 +316,27 @@ export function validateUnauthorizedHeadResponse(result, pathname, expectedRelea
     expectedStatus: 401,
     requireNoStore: true,
     requirePrivate: true,
+  });
+  if (result.body.length !== 0) {
+    throw new ReleaseVerificationError(`${pathname} HEAD response body must be empty`);
+  }
+}
+
+export function validateShareNotFoundResponse(result, pathname, expectedRelease) {
+  validateCommonResponse(result, pathname, expectedRelease, {
+    expectedStatus: 404,
+    requireNoStore: true,
+  });
+  const payload = requireObject(result.payload, `${pathname} JSON body`);
+  assertEqual(payload.ok, false, `${pathname} body.ok`);
+  const error = requireObject(payload.error, `${pathname} body.error`);
+  assertEqual(error.code, 'SHARE_NOT_FOUND', `${pathname} body.error.code`);
+}
+
+export function validateShareNotFoundHeadResponse(result, pathname, expectedRelease) {
+  validateCommonResponse(result, pathname, expectedRelease, {
+    expectedStatus: 404,
+    requireNoStore: true,
   });
   if (result.body.length !== 0) {
     throw new ReleaseVerificationError(`${pathname} HEAD response body must be empty`);

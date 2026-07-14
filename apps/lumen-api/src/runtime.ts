@@ -4,6 +4,7 @@ import {
   createNotificationService,
   createProjectDetailQueryService,
   createProjectQueryService,
+  createProjectShareService,
   createRemakeJobQueryService,
   createWorkflowStatusQueryService,
   seedDefaultOfficialNotifications,
@@ -16,6 +17,7 @@ import {
   JsonCache,
   NotificationRepository,
   type ProjectCanvas,
+  ProjectHistoryRepository,
   ProjectListRecordSchema,
   type ProjectRecord,
   ProjectRecordSchema,
@@ -58,6 +60,11 @@ export function createApiRuntime(config: ApiConfig) {
     await repository.ensureIndexes();
     return repository;
   });
+  const getProjectHistoryRepository = memoizeAsync(async () => {
+    const repository = new ProjectHistoryRepository(await getDatabase());
+    await repository.ensureIndexes();
+    return repository;
+  });
   const getRemakeJobRepository = memoizeAsync(async () => {
     const repository = new RemakeJobRepository(await getDatabase());
     await repository.ensureIndexes();
@@ -79,6 +86,7 @@ export function createApiRuntime(config: ApiConfig) {
       getTemplateRepository(),
       getUserRepository(),
       getProjectRepository(),
+      getProjectHistoryRepository(),
       getRemakeJobRepository(),
       getWorkflowNodeResultRepository(),
       notificationRuntime.initialize(),
@@ -124,6 +132,12 @@ export function createApiRuntime(config: ApiConfig) {
     projectDetailSchema: ProjectRecordSchema,
     tracePrefix: 'api',
   });
+  const projectShares = createProjectShareService<ProjectCanvas, ProjectRecord>({
+    getHistoryRepository: getProjectHistoryRepository,
+    getProjectRepository,
+    invalidateProject: projectQueries.invalidateProject,
+    tracePrefix: 'api',
+  });
   const workflowStatusQueries = createWorkflowStatusQueryService({
     getProjectRepository,
     getWorkflowNodeResultRepository,
@@ -141,6 +155,7 @@ export function createApiRuntime(config: ApiConfig) {
     notifications,
     projectDetails,
     projectQueries,
+    projectShares,
     remakeJobQueries,
     workflowStatusQueries,
     async readiness(): Promise<ReadinessChecks> {
