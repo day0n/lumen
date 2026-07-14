@@ -17,6 +17,20 @@ test('maps static shells without catching backend paths', () => {
     resolveEdgeAction('/app/projects', RELEASE).objectKey,
     `releases/${RELEASE}/app/index.html`,
   );
+  for (const pathname of [
+    '/share',
+    '/share/0123456789abcdef0123456789abcdef',
+    '/zh/share',
+    '/zh/share/0123456789abcdef0123456789abcdef',
+  ]) {
+    assert.deepEqual(resolveEdgeAction(pathname, RELEASE), {
+      type: 'object',
+      kind: 'html',
+      objectKey: `releases/${RELEASE}/share/index.html`,
+      release: RELEASE,
+      status: 200,
+    });
+  }
   assert.deepEqual(resolveEdgeAction('/app/home-posters/selected/agent-pop.webp', RELEASE), {
     type: 'object',
     kind: 'public',
@@ -102,6 +116,10 @@ test('keeps immutable assets pinned to their requested release', () => {
   );
   assert.equal(
     resolveEdgeAction(`/_static/releases/${oldRelease}/app/index.html`, RELEASE).type,
+    'not-found',
+  );
+  assert.equal(
+    resolveEdgeAction(`/_static/releases/${oldRelease}/share/index.html`, RELEASE).type,
     'not-found',
   );
   assert.equal(

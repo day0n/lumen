@@ -9,6 +9,15 @@ const compressBrotli = promisify(brotliCompress);
 const compressGzip = promisify(gzip);
 const FULL_RELEASE_PATTERN = /^[0-9a-f]{40}$/;
 const COMPRESSIBLE_FILE_PATTERN = /\.(?:css|html|js|json|mjs|svg|txt|xml)$/i;
+const RELEASE_SCOPE = ['app', 'share'];
+const RELEASE_SHELLS = {
+  app: 'app/index.html',
+  share: 'share/index.html',
+};
+const BUILD_SHELLS = [
+  { name: 'app', entry: 'index.html', output: RELEASE_SHELLS.app },
+  { name: 'share', entry: 'share.html', output: RELEASE_SHELLS.share },
+];
 const APP_PUBLIC_DIRECTORIES = ['home-posters'];
 const STUDIO_PUBLIC_DIRECTORIES = [
   'home-posters',
@@ -81,11 +90,25 @@ export async function packageAppRelease({
   }
   await copyReleaseFile(iconFile, path.join(releaseDirectory, 'icon.svg'), 'icon.svg');
 
-  const appShell = await readBuildFile(distDirectory, 'index.html', 'built app shell', 'utf8');
-  const appShellPath = path.join(releaseDirectory, 'app', 'index.html');
-  await mkdir(path.dirname(appShellPath), { recursive: true });
-  await writeFile(appShellPath, appShell);
-  await verifyAppShell(appShell, normalizedRelease, releaseDirectory, viteManifest);
+  for (const shell of BUILD_SHELLS) {
+    const html = await readBuildFile(
+      distDirectory,
+      shell.entry,
+      `built ${shell.name} shell`,
+      'utf8',
+    );
+    const outputPath = path.join(releaseDirectory, ...shell.output.split('/'));
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, html);
+    await verifyShell({
+      html,
+      shellName: shell.name,
+      entryKey: shell.entry,
+      release: normalizedRelease,
+      releaseDirectory,
+      viteManifest,
+    });
+  }
 
   const originalFiles = await listReleaseFiles(releaseDirectory);
   const originalFileSet = new Set(originalFiles);
@@ -108,8 +131,8 @@ export async function packageAppRelease({
   const manifest = {
     schemaVersion: 1,
     release: normalizedRelease,
-    scope: ['app'],
-    shells: { app: 'app/index.html' },
+    scope: [...RELEASE_SCOPE],
+    shells: { ...RELEASE_SHELLS },
     assetBase: `/_static/releases/${normalizedRelease}/`,
     buildConfigFingerprint: buildMetadata.buildConfigFingerprint,
     buildMetadataSha256: digest(buildMetadataBytes),
@@ -122,7 +145,7 @@ export async function packageAppRelease({
   const ready = {
     schemaVersion: 1,
     release: normalizedRelease,
-    scope: ['app'],
+    scope: [...RELEASE_SCOPE],
     manifest: {
       path: 'release-manifest.json',
       sha256: digest(manifestBytes),
@@ -191,9 +214,22 @@ function readBuildMetadata(bytes, release) {
 
 function collectBuildAssets(manifest) {
   const manifestKeys = new Set(Object.keys(manifest));
-  const entry = manifest['index.html'];
-  if (!entry || typeof entry !== 'object' || Array.isArray(entry) || entry.isEntry !== true) {
-    throw new Error('Vite manifest is missing the index.html entry');
+  for (const shell of BUILD_SHELLS) {
+    const entry = manifest[shell.entry];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) || entry.isEntry !== true) {
+      throw new Error(`Vite manifest is missing the ${shell.entry} entry`);
+    }
+  }
+  const expectedEntryKeys = BUILD_SHELLS.map((shell) => shell.entry).sort();
+  const actualEntryKeys = Object.entries(manifest)
+    .filter(([, entry]) => entry?.isEntry === true)
+    .map(([key]) => key)
+    .sort();
+  if (
+    actualEntryKeys.length !== expectedEntryKeys.length ||
+    actualEntryKeys.some((key, index) => key !== expectedEntryKeys[index])
+  ) {
+    throw new Error('Vite manifest entry set must be exactly index.html and share.html');
   }
   const files = new Set();
   for (const [manifestKey, manifestEntry] of Object.entries(manifest)) {
@@ -238,19 +274,19 @@ function addBuildAsset(files, filename) {
   files.add(normalized);
 }
 
-async function verifyAppShell(html, release, releaseDirectory, viteManifest) {
+async function verifyShell({ html, shellName, entryKey, release, releaseDirectory, viteManifest }) {
   const immutableBase = `/_static/releases/${release}/`;
-  const references = readHtmlReferences(html);
+  const references = readHtmlReferences(html, shellName);
   const immutableReferences = [];
   for (const reference of references) {
     if (isExternalHtmlReference(reference)) continue;
     if (!reference.startsWith(immutableBase)) {
-      throw new Error(`app shell contains an unversioned local reference: ${reference}`);
+      throw new Error(`${shellName} shell contains an unversioned local reference: ${reference}`);
     }
     immutableReferences.push(reference);
   }
   if (immutableReferences.length === 0) {
-    throw new Error('app shell does not contain versioned release references');
+    throw new Error(`${shellName} shell does not contain versioned release references`);
   }
   const packagedReferences = new Set();
   for (const reference of immutableReferences) {
@@ -258,18 +294,22 @@ async function verifyAppShell(html, release, releaseDirectory, viteManifest) {
       reference.slice(immutableBase.length).split(/[?#]/, 1)[0],
     );
     if (relativePath !== 'icon.svg' && !relativePath.startsWith('assets/')) {
-      throw new Error(`app shell reference is outside the edge asset allowlist: ${reference}`);
+      throw new Error(
+        `${shellName} shell reference is outside the edge asset allowlist: ${reference}`,
+      );
     }
     await requireRegularFile(
       path.join(releaseDirectory, ...relativePath.split('/')),
-      `app shell reference ${reference}`,
+      `${shellName} shell reference ${reference}`,
     );
     packagedReferences.add(relativePath);
   }
-  const entry = viteManifest['index.html'];
+  const entry = viteManifest[entryKey];
   for (const requiredPath of [entry.file, ...(entry.css ?? [])]) {
     if (!packagedReferences.has(requiredPath)) {
-      throw new Error(`app shell does not reference required entry asset: ${requiredPath}`);
+      throw new Error(
+        `${shellName} shell does not reference required entry asset: ${requiredPath}`,
+      );
     }
   }
 }
@@ -303,11 +343,11 @@ async function copyReleaseDirectoryContents(source, target, relativePath) {
   }
 }
 
-function readHtmlReferences(html) {
+function readHtmlReferences(html, shellName) {
   for (const match of html.matchAll(/\b(?:href|src|srcset)\s*=\s*/gi)) {
     const quote = html[match.index + match[0].length];
     if (quote !== '"' && quote !== "'") {
-      throw new Error('app shell contains an unquoted URL attribute');
+      throw new Error(`${shellName} shell contains an unquoted URL attribute`);
     }
   }
   const references = [...html.matchAll(/\b(?:href|src)=["']([^"']+)["']/gi)].map(
@@ -317,7 +357,7 @@ function readHtmlReferences(html) {
     const srcset = match[1].trim();
     if (srcset.startsWith('data:')) {
       if (!/^data:\S+(?:\s+\S+)?$/.test(srcset)) {
-        throw new Error('app shell contains an ambiguous data URL srcset');
+        throw new Error(`${shellName} shell contains an ambiguous data URL srcset`);
       }
       continue;
     }

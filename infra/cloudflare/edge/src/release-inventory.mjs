@@ -8,6 +8,11 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MANIFEST_FILENAME = 'release-manifest.json';
 const READY_FILENAME = '_READY.json';
 const JSON_METADATA = { contentType: 'application/json; charset=utf-8' };
+const RELEASE_SCOPE = ['app', 'share'];
+const RELEASE_SHELLS = {
+  app: 'app/index.html',
+  share: 'share/index.html',
+};
 
 export async function verifyReleaseDirectory({ release, releaseDirectory }) {
   requireRelease(release);
@@ -159,11 +164,13 @@ function verifyManifest(manifest, release) {
   if (manifest.schemaVersion !== 1 || manifest.release !== release) {
     throw new Error('release manifest identity does not match the requested release');
   }
-  requireAppScope(manifest.scope, 'release manifest');
+  requireReleaseScope(manifest.scope, 'release manifest');
   requireRecord(manifest.shells, 'release manifest shells');
-  requireExactKeys(manifest.shells, ['app'], 'release manifest shells');
-  if (manifest.shells.app !== 'app/index.html') {
-    throw new Error('release manifest must declare the app shell');
+  requireExactKeys(manifest.shells, Object.keys(RELEASE_SHELLS), 'release manifest shells');
+  for (const [shellName, shellPath] of Object.entries(RELEASE_SHELLS)) {
+    if (manifest.shells[shellName] !== shellPath) {
+      throw new Error(`release manifest must declare the ${shellName} shell`);
+    }
   }
   if (manifest.assetBase !== `/_static/releases/${release}/`) {
     throw new Error('release manifest asset base does not match the requested release');
@@ -189,8 +196,10 @@ function verifyManifest(manifest, release) {
   if (new Set(paths).size !== paths.length) {
     throw new Error('release manifest paths must be unique');
   }
-  if (!paths.includes(manifest.shells.app)) {
-    throw new Error('release manifest app shell is missing from the payload');
+  for (const [shellName, shellPath] of Object.entries(RELEASE_SHELLS)) {
+    if (!paths.includes(shellPath)) {
+      throw new Error(`release manifest ${shellName} shell is missing from the payload`);
+    }
   }
 }
 
@@ -241,7 +250,7 @@ function verifyReady(ready, release, manifest, manifestBytes, localObjectCount) 
   if (ready.schemaVersion !== 1 || ready.release !== release) {
     throw new Error('release readiness marker identity does not match the requested release');
   }
-  requireAppScope(ready.scope, 'release readiness marker');
+  requireReleaseScope(ready.scope, 'release readiness marker');
   requireRecord(ready.manifest, 'release readiness manifest reference');
   requireExactKeys(ready.manifest, ['path', 'sha256'], 'release readiness manifest reference');
   if (ready.manifest.path !== MANIFEST_FILENAME) {
@@ -318,9 +327,9 @@ function requireRelease(release) {
   }
 }
 
-function requireAppScope(scope, label) {
-  if (!Array.isArray(scope) || scope.length !== 1 || scope[0] !== 'app') {
-    throw new Error(`${label} scope must be exactly app`);
+function requireReleaseScope(scope, label) {
+  if (!Array.isArray(scope) || !arraysEqual(scope, RELEASE_SCOPE)) {
+    throw new Error(`${label} scope must be exactly app, share`);
   }
 }
 

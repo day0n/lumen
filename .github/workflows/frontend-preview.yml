@@ -93,6 +93,8 @@ jobs:
           FRONTEND_PREVIEW_URL: ${{ vars.FRONTEND_PREVIEW_URL }}
         run: |
           test -n "$FRONTEND_PREVIEW_URL"
-          headers="$(curl --fail --silent --show-error --head "${FRONTEND_PREVIEW_URL%/}/app/dashboard")"
-          active_release="$(printf '%s\n' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-lumen-release" { print $2 }')"
-          test "$active_release" = "$RELEASE"
+          for path in "/app/dashboard" "/share/00000000000000000000000000000000"; do
+            headers="$(curl --fail --silent --show-error --head "${FRONTEND_PREVIEW_URL%/}${path}")"
+            active_release="$(printf '%s\n' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-lumen-release" { print $2 }')"
+            test "$active_release" = "$RELEASE"
+          done

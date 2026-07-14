@@ -6,6 +6,7 @@ import { isSafeReleasePath, validateReleasePath } from '../src/release-path.mjs'
 test('accepts canonical relative release object paths', () => {
   for (const filename of [
     'app/index.html',
+    'share/index.html',
     'assets/app-abc123.js',
     'assets/app.js.br',
     'home-posters/你好.webp',

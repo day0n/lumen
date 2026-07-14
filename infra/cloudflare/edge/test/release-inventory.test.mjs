@@ -19,9 +19,22 @@ test('verifies an exact release and returns payload, manifest, then READY upload
 
   assert.equal(verified.release, RELEASE);
   assert.equal(verified.prefix, `releases/${RELEASE}/`);
+  assert.deepEqual(verified.manifest.scope, ['app', 'share']);
+  assert.deepEqual(verified.manifest.shells, {
+    app: 'app/index.html',
+    share: 'share/index.html',
+  });
+  assert.deepEqual(verified.ready.scope, ['app', 'share']);
   assert.deepEqual(
     verified.objects.map((object) => object.path),
-    ['app/index.html', 'assets/app.js', 'assets/app.js.br', 'release-manifest.json', '_READY.json'],
+    [
+      'app/index.html',
+      'assets/app.js',
+      'assets/app.js.br',
+      'share/index.html',
+      'release-manifest.json',
+      '_READY.json',
+    ],
   );
   assert.deepEqual(
     verified.objects.map((object) => object.key),
@@ -33,7 +46,7 @@ test('verifies an exact release and returns payload, manifest, then READY upload
   );
   assert.deepEqual(
     verified.objects.map((object) => object.phase),
-    ['payload', 'payload', 'payload', 'manifest', 'ready'],
+    ['payload', 'payload', 'payload', 'payload', 'manifest', 'ready'],
   );
   assert.ok(verified.objects.every((object) => Buffer.isBuffer(object.bytes)));
   for (const object of verified.objects) {
@@ -60,7 +73,10 @@ test('rejects payload bytes that no longer match the manifest digest', async (co
   await writeFile(path.join(fixture.releaseDirectory, 'app', 'index.html'), '<main>bad</main>');
 
   await assert.rejects(
-    verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+    verifyReleaseDirectory({
+      release: RELEASE,
+      releaseDirectory: fixture.releaseDirectory,
+    }),
     /object hash does not match manifest: app\/index\.html/,
   );
 });
@@ -70,7 +86,10 @@ test('rejects local files that are not in the manifest inventory', async (contex
   await writeFixtureFile(path.join(fixture.releaseDirectory, 'assets', 'unexpected.js'), 'extra');
 
   await assert.rejects(
-    verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+    verifyReleaseDirectory({
+      release: RELEASE,
+      releaseDirectory: fixture.releaseDirectory,
+    }),
     /inventory does not match manifest; extra: assets\/unexpected\.js/,
   );
 });
@@ -82,7 +101,10 @@ test('binds READY identity, raw manifest bytes, and object count', async (contex
     await writeJson(path.join(fixture.releaseDirectory, '_READY.json'), fixture.ready);
 
     await assert.rejects(
-      verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
       /readiness marker identity does not match/,
     );
   });
@@ -94,7 +116,10 @@ test('binds READY identity, raw manifest bytes, and object count', async (contex
     await writeFile(manifestPath, Buffer.concat([rawManifest, Buffer.from(' ')]));
 
     await assert.rejects(
-      verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
       /does not match the raw manifest hash/,
     );
   });
@@ -105,10 +130,113 @@ test('binds READY identity, raw manifest bytes, and object count', async (contex
     await writeJson(path.join(fixture.releaseDirectory, '_READY.json'), fixture.ready);
 
     await assert.rejects(
-      verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
       /object count does not match/,
     );
   });
+});
+
+test('requires the exact app and share scope in the manifest and READY marker', async (context) => {
+  for (const [name, scope] of [
+    ['missing share', ['app']],
+    ['reversed', ['share', 'app']],
+    ['duplicate', ['app', 'share', 'share']],
+    ['extra', ['app', 'share', 'auth']],
+  ]) {
+    await context.test(`manifest scope ${name}`, async (subcontext) => {
+      const fixture = await createRelease(subcontext);
+      fixture.manifest.scope = scope;
+      await resealManifest(fixture);
+
+      await assert.rejects(
+        verifyReleaseDirectory({
+          release: RELEASE,
+          releaseDirectory: fixture.releaseDirectory,
+        }),
+        /release manifest scope must be exactly app, share/,
+      );
+    });
+  }
+
+  await context.test('READY still uses the legacy app-only scope', async (subcontext) => {
+    const fixture = await createRelease(subcontext);
+    fixture.ready.scope = ['app'];
+    await writeJson(path.join(fixture.releaseDirectory, '_READY.json'), fixture.ready);
+
+    await assert.rejects(
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
+      /release readiness marker scope must be exactly app, share/,
+    );
+  });
+});
+
+test('requires exact shell declarations and both shell payloads', async (context) => {
+  await context.test('missing share declaration', async (subcontext) => {
+    const fixture = await createRelease(subcontext);
+    Reflect.deleteProperty(fixture.manifest.shells, 'share');
+    await resealManifest(fixture);
+
+    await assert.rejects(
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
+      /release manifest shells has an invalid schema/,
+    );
+  });
+
+  await context.test('wrong share declaration', async (subcontext) => {
+    const fixture = await createRelease(subcontext);
+    fixture.manifest.shells.share = 'share/other.html';
+    await resealManifest(fixture);
+
+    await assert.rejects(
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
+      /release manifest must declare the share shell/,
+    );
+  });
+
+  await context.test('unexpected shell declaration', async (subcontext) => {
+    const fixture = await createRelease(subcontext);
+    fixture.manifest.shells.auth = 'auth/index.html';
+    await resealManifest(fixture);
+
+    await assert.rejects(
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
+      /release manifest shells has an invalid schema/,
+    );
+  });
+
+  for (const [shellName, shellPath] of [
+    ['app', 'app/index.html'],
+    ['share', 'share/index.html'],
+  ]) {
+    await context.test(`missing ${shellName} payload`, async (subcontext) => {
+      const fixture = await createRelease(subcontext);
+      fixture.manifest.files = fixture.manifest.files.filter((entry) => entry.path !== shellPath);
+      await resealManifest(fixture);
+
+      await assert.rejects(
+        verifyReleaseDirectory({
+          release: RELEASE,
+          releaseDirectory: fixture.releaseDirectory,
+        }),
+        new RegExp(`release manifest ${shellName} shell is missing from the payload`),
+      );
+    });
+  }
 });
 
 test('requires provenance digests to be strings without coercion', async (context) => {
@@ -119,7 +247,10 @@ test('requires provenance digests to be strings without coercion', async (contex
   await resealManifest(fixture);
 
   await assert.rejects(
-    verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+    verifyReleaseDirectory({
+      release: RELEASE,
+      releaseDirectory: fixture.releaseDirectory,
+    }),
     /must be a lowercase SHA-256 digest/,
   );
 });
@@ -131,7 +262,10 @@ test('requires compressed objects to have exact metadata and an uncompressed sib
     await resealManifest(fixture);
 
     await assert.rejects(
-      verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
       /content encoding is invalid: assets\/app\.js\.br/,
     );
   });
@@ -144,6 +278,11 @@ test('requires compressed objects to have exact metadata and an uncompressed sib
         contentType: 'text/html; charset=utf-8',
       },
       {
+        path: 'share/index.html',
+        bytes: '<main>share</main>',
+        contentType: 'text/html; charset=utf-8',
+      },
+      {
         path: 'assets/app.js.br',
         bytes: Buffer.from([1, 2, 3, 4]),
         contentType: 'text/javascript; charset=utf-8',
@@ -152,7 +291,10 @@ test('requires compressed objects to have exact metadata and an uncompressed sib
     ]);
 
     await assert.rejects(
-      verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
       /compressed release object is missing its source sibling/,
     );
   });
@@ -166,7 +308,10 @@ test('rejects symbolic links and source maps in the local inventory', async (con
     await symlink(externalFile, path.join(fixture.releaseDirectory, 'linked.txt'));
 
     await assert.rejects(
-      verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
       /must not contain symbolic links: linked\.txt/,
     );
   });
@@ -176,7 +321,10 @@ test('rejects symbolic links and source maps in the local inventory', async (con
     await writeFixtureFile(path.join(fixture.releaseDirectory, 'assets', 'app.js.map'), '{}');
 
     await assert.rejects(
-      verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
       /unsafe release path: assets\/app\.js\.map/,
     );
   });
@@ -208,8 +356,8 @@ async function createRelease(context, payload = defaultPayload()) {
   const manifest = {
     schemaVersion: 1,
     release: RELEASE,
-    scope: ['app'],
-    shells: { app: 'app/index.html' },
+    scope: ['app', 'share'],
+    shells: { app: 'app/index.html', share: 'share/index.html' },
     assetBase: `/_static/releases/${RELEASE}/`,
     buildConfigFingerprint: 'a'.repeat(64),
     buildMetadataSha256: 'b'.repeat(64),
@@ -229,7 +377,7 @@ async function resealManifest(fixture) {
   fixture.ready = {
     schemaVersion: 1,
     release: RELEASE,
-    scope: ['app'],
+    scope: ['app', 'share'],
     manifest: {
       path: 'release-manifest.json',
       sha256: digest(manifestBytes),
@@ -256,6 +404,11 @@ function defaultPayload() {
       bytes: Buffer.from([1, 2, 3, 4]),
       contentType: 'text/javascript; charset=utf-8',
       contentEncoding: 'br',
+    },
+    {
+      path: 'share/index.html',
+      bytes: '<main>share</main>',
+      contentType: 'text/html; charset=utf-8',
     },
   ];
 }

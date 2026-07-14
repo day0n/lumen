@@ -277,7 +277,7 @@ test('validates inventory bytes, ordering, paths, and concurrency before publish
   ];
   await assert.rejects(
     publishImmutableRelease({ inventory: invalidOrder, store: new FakeStore() }),
-    /invalid phase|release-manifest\.json must be the penultimate/,
+    /invalid phase|does not match inventory object|release-manifest\.json must be the penultimate/,
   );
 
   const missingPhase = structuredCloneInventory(inventory);
@@ -307,6 +307,32 @@ test('binds the manifest and READY schemas to the payload inventory', async () =
     publishImmutableRelease({ inventory, dryRun: true }),
     /release manifest has an invalid schema/,
   );
+});
+
+test('rejects a legacy app-only inventory before touching the store', async () => {
+  const inventory = createInventory(2);
+  const manifestObject = inventory.objects.at(-2);
+  const manifest = JSON.parse(manifestObject.bytes.toString());
+  manifest.scope = ['app'];
+  manifest.shells = { app: 'app/index.html' };
+  replaceObjectBytes(manifestObject, `${JSON.stringify(manifest)}\n`);
+
+  const readyObject = inventory.objects.at(-1);
+  const ready = JSON.parse(readyObject.bytes.toString());
+  ready.scope = ['app'];
+  ready.manifest.sha256 = manifestObject.sha256;
+  replaceObjectBytes(readyObject, `${JSON.stringify(ready)}\n`);
+
+  const store = new Proxy(
+    {},
+    {
+      get() {
+        throw new Error('invalid inventory accessed the store');
+      },
+    },
+  );
+
+  await assert.rejects(publishImmutableRelease({ inventory, store, dryRun: true }), /scope|schema/);
 });
 
 class FakeStore {
@@ -411,19 +437,22 @@ class FakeStore {
 
 function createInventory(payloadCount) {
   const prefix = `releases/${RELEASE}/`;
-  const payload = Array.from({ length: payloadCount }, (_, index) => {
-    if (index === 0) return describeObject('app/index.html', '<main>app</main>\n', 'payload');
-    return describeObject(
-      `assets/chunk-${index}.js`,
-      `export const chunk${index} = ${index};\n`,
-      'payload',
-    );
-  });
+  const payload = [
+    describeObject('app/index.html', '<main>app</main>\n', 'payload'),
+    ...Array.from({ length: payloadCount }, (_, index) =>
+      describeObject(
+        `assets/chunk-${index}.js`,
+        `export const chunk${index} = ${index};\n`,
+        'payload',
+      ),
+    ),
+    describeObject('share/index.html', '<main>share</main>\n', 'payload'),
+  ];
   const manifestBody = `${JSON.stringify({
     schemaVersion: 1,
     release: RELEASE,
-    scope: ['app'],
-    shells: { app: 'app/index.html' },
+    scope: ['app', 'share'],
+    shells: { app: 'app/index.html', share: 'share/index.html' },
     assetBase: `/_static/releases/${RELEASE}/`,
     buildConfigFingerprint: 'a'.repeat(64),
     buildMetadataSha256: 'b'.repeat(64),
@@ -442,7 +471,7 @@ function createInventory(payloadCount) {
     `${JSON.stringify({
       schemaVersion: 1,
       release: RELEASE,
-      scope: ['app'],
+      scope: ['app', 'share'],
       manifest: { path: MANIFEST_PATH, sha256: manifest.sha256 },
       objectCount: payload.length + 2,
     })}\n`,

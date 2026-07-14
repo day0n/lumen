@@ -9,21 +9,28 @@ import worker from '../src/worker.mjs';
 
 const RELEASE = '0123456789abcdef0123456789abcdef01234567';
 
-test('packages only manifest assets and approved app public files', async (context) => {
+test('packages and verifies the app and share shells with approved public files', async (context) => {
   const fixture = await createFixture(context);
   const first = await packageFixture(fixture, path.join(fixture.root, 'output-a'));
   const second = await packageFixture(fixture, path.join(fixture.root, 'output-b'));
 
-  assert.deepEqual(first.manifest.scope, ['app']);
-  assert.deepEqual(first.manifest.shells, { app: 'app/index.html' });
+  assert.deepEqual(first.manifest.scope, ['app', 'share']);
+  assert.deepEqual(first.manifest.shells, {
+    app: 'app/index.html',
+    share: 'share/index.html',
+  });
+  assert.deepEqual(first.ready.scope, ['app', 'share']);
   assert.equal(first.ready.release, RELEASE);
   assert.equal(first.ready.objectCount, first.manifest.files.length + 2);
   assert.equal(first.ready.manifest.sha256.length, 64);
 
   const outputFiles = first.manifest.files.map((file) => file.path);
   assert.ok(outputFiles.includes('app/index.html'));
+  assert.ok(outputFiles.includes('share/index.html'));
   assert.ok(outputFiles.includes('assets/index-abc.js'));
   assert.ok(outputFiles.includes('assets/index-abc.css'));
+  assert.ok(outputFiles.includes('assets/share-abc.js'));
+  assert.ok(outputFiles.includes('assets/share-abc.css'));
   assert.ok(outputFiles.includes('home-posters/selected/poster.webp'));
   assert.ok(outputFiles.includes('home-posters/selected/remote.png'));
   assert.ok(outputFiles.includes('home-templates/covers/template.webp'));
@@ -58,6 +65,14 @@ test('packages only manifest assets and approved app public files', async (conte
   assert.match(shell, new RegExp(`/_static/releases/${RELEASE}/icon\\.svg`));
   assert.doesNotMatch(shell, /\/app\/assets\//);
 
+  const shareShell = await readFile(
+    path.join(first.releaseDirectory, 'share', 'index.html'),
+    'utf8',
+  );
+  assert.match(shareShell, new RegExp(`/_static/releases/${RELEASE}/assets/share-abc\\.js`));
+  assert.match(shareShell, new RegExp(`/_static/releases/${RELEASE}/assets/share-abc\\.css`));
+  assert.match(shareShell, new RegExp(`/_static/releases/${RELEASE}/icon\\.svg`));
+
   assert.equal(
     await readFile(path.join(first.releaseDirectory, 'release-manifest.json'), 'utf8'),
     await readFile(path.join(second.releaseDirectory, 'release-manifest.json'), 'utf8'),
@@ -72,15 +87,115 @@ test('rejects invalid releases and paths outside the build asset allowlist', asy
   assert.throws(() => normalizeRelease('latest'), /full 40-character/);
 
   const fixture = await createFixture(context);
-  await writeFile(
-    path.join(fixture.distDirectory, '.vite', 'manifest.json'),
-    JSON.stringify({ 'index.html': { file: '../private.js', isEntry: true } }),
-  );
+  const manifestPath = path.join(fixture.distDirectory, '.vite', 'manifest.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  manifest['index.html'].file = '../private.js';
+  await writeFile(manifestPath, JSON.stringify(manifest));
 
   await assert.rejects(
     packageFixture(fixture, path.join(fixture.root, 'unsafe-output')),
     /unsafe release path/,
   );
+});
+
+test('requires exactly the app and share Vite page entries', async (context) => {
+  await context.test('missing share entry', async (subcontext) => {
+    const fixture = await createFixture(subcontext);
+    const manifestPath = path.join(fixture.distDirectory, '.vite', 'manifest.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    Reflect.deleteProperty(manifest, 'share.html');
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await assert.rejects(
+      packageFixture(fixture, path.join(fixture.root, 'missing-share-entry-output')),
+      /missing the share\.html entry/,
+    );
+  });
+
+  await context.test('share entry is not a page entry', async (subcontext) => {
+    const fixture = await createFixture(subcontext);
+    const manifestPath = path.join(fixture.distDirectory, '.vite', 'manifest.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest['share.html'].isEntry = false;
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await assert.rejects(
+      packageFixture(fixture, path.join(fixture.root, 'inactive-share-entry-output')),
+      /missing the share\.html entry/,
+    );
+  });
+
+  await context.test('unexpected page entry', async (subcontext) => {
+    const fixture = await createFixture(subcontext);
+    const manifestPath = path.join(fixture.distDirectory, '.vite', 'manifest.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest['admin.html'] = { file: 'assets/index-abc.js', isEntry: true };
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await assert.rejects(
+      packageFixture(fixture, path.join(fixture.root, 'unexpected-entry-output')),
+      /entry set must be exactly index\.html and share\.html/,
+    );
+  });
+});
+
+test('requires the built share shell to exist as a regular build file', async (context) => {
+  const fixture = await createFixture(context);
+  await rm(path.join(fixture.distDirectory, 'share.html'));
+
+  await assert.rejects(
+    packageFixture(fixture, path.join(fixture.root, 'missing-share-shell-output')),
+    /built share shell is missing/,
+  );
+});
+
+test('validates the share shell against its own entry and immutable allowlist', async (context) => {
+  await context.test('unversioned reference', async (subcontext) => {
+    const fixture = await createFixture(subcontext);
+    await writeFile(
+      path.join(fixture.distDirectory, 'share.html'),
+      '<script type="module" src="/unversioned-share.js"></script>',
+    );
+
+    await assert.rejects(
+      packageFixture(fixture, path.join(fixture.root, 'unversioned-share-output')),
+      /share shell contains an unversioned local reference/,
+    );
+  });
+
+  await context.test('app entry cannot stand in for the share entry', async (subcontext) => {
+    const fixture = await createFixture(subcontext);
+    await writeFile(
+      path.join(fixture.distDirectory, 'share.html'),
+      [
+        `<link rel="icon" href="/_static/releases/${RELEASE}/icon.svg">`,
+        `<link rel="stylesheet" href="/_static/releases/${RELEASE}/assets/index-abc.css">`,
+        `<script type="module" src="/_static/releases/${RELEASE}/assets/index-abc.js"></script>`,
+      ].join('\n'),
+    );
+
+    await assert.rejects(
+      packageFixture(fixture, path.join(fixture.root, 'wrong-share-entry-output')),
+      /share shell does not reference required entry asset: assets\/share-abc\.js/,
+    );
+  });
+
+  await context.test('reference outside the immutable asset allowlist', async (subcontext) => {
+    const fixture = await createFixture(subcontext);
+    await writeFile(
+      path.join(fixture.distDirectory, 'share.html'),
+      [
+        `<link rel="stylesheet" href="/_static/releases/${RELEASE}/assets/share-abc.css">`,
+        `<script type="module" src="/_static/releases/${RELEASE}/assets/share-abc.js"></script>`,
+        `<a href="/_static/releases/${RELEASE}/share/index.html">shared</a>`,
+      ].join('\n'),
+    );
+
+    await assert.rejects(
+      packageFixture(fixture, path.join(fixture.root, 'share-allowlist-output')),
+      /share shell reference is outside the edge asset allowlist/,
+    );
+  });
 });
 
 test('fails when the built shell references an asset absent from the manifest', async (context) => {
@@ -201,7 +316,10 @@ test('rejects precompressed key collisions and symlinked build directories', asy
     writeFile(path.join(externalAssets, 'index-abc.js'), 'export const value = 1;'),
     writeFile(path.join(externalAssets, 'index-abc.css'), '.root{}'),
   ]);
-  await rm(path.join(symlinkFixture.distDirectory, 'assets'), { recursive: true, force: true });
+  await rm(path.join(symlinkFixture.distDirectory, 'assets'), {
+    recursive: true,
+    force: true,
+  });
   await symlink(externalAssets, path.join(symlinkFixture.distDirectory, 'assets'), 'dir');
   await assert.rejects(
     packageFixture(symlinkFixture, path.join(symlinkFixture.root, 'symlink-output')),
@@ -222,7 +340,7 @@ test('rejects a symbolic-link output root before removing a release target', asy
   );
 });
 
-test('serves every packaged shell reference through the edge worker', async (context) => {
+test('serves both packaged shells and every immutable shell reference through the edge worker', async (context) => {
   const fixture = await createFixture(context);
   const packaged = await packageFixture(fixture, path.join(fixture.root, 'worker-output'));
   const bucket = {
@@ -245,30 +363,35 @@ test('serves every packaged shell reference through the edge worker', async (con
       };
     },
   };
-  const environment = { ACTIVE_FRONTEND_RELEASE: RELEASE, FRONTEND_BUCKET: bucket };
+  const environment = {
+    ACTIVE_FRONTEND_RELEASE: RELEASE,
+    FRONTEND_BUCKET: bucket,
+  };
   const executionContext = { waitUntil() {} };
 
-  const shellResponse = await worker.fetch(
-    new Request('https://lumenstudio.tech/app/dashboard'),
-    environment,
-    executionContext,
-  );
-  assert.equal(shellResponse.status, 200);
-  assert.equal(shellResponse.headers.get('x-lumen-release'), RELEASE);
-  const shell = await shellResponse.text();
-  const references = [...shell.matchAll(/\b(?:href|src)=["']([^"']+)["']/gi)]
-    .map((match) => match[1])
-    .filter((reference) => reference.startsWith('/_static/releases/'));
-  assert.ok(references.length >= 3);
-
-  for (const reference of references) {
-    const response = await worker.fetch(
-      new Request(`https://lumenstudio.tech${reference}`),
+  for (const pathname of ['/app/dashboard', '/share/0123456789abcdef0123456789abcdef']) {
+    const shellResponse = await worker.fetch(
+      new Request(`https://lumenstudio.tech${pathname}`),
       environment,
       executionContext,
     );
-    assert.equal(response.status, 200, reference);
-    assert.equal(response.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.equal(shellResponse.status, 200, pathname);
+    assert.equal(shellResponse.headers.get('x-lumen-release'), RELEASE);
+    const shell = await shellResponse.text();
+    const references = [...shell.matchAll(/\b(?:href|src)=["']([^"']+)["']/gi)]
+      .map((match) => match[1])
+      .filter((reference) => reference.startsWith('/_static/releases/'));
+    assert.ok(references.length >= 3, pathname);
+
+    for (const reference of references) {
+      const response = await worker.fetch(
+        new Request(`https://lumenstudio.tech${reference}`),
+        environment,
+        executionContext,
+      );
+      assert.equal(response.status, 200, `${pathname}: ${reference}`);
+      assert.equal(response.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    }
   }
 
   const posterResponse = await worker.fetch(
@@ -301,6 +424,14 @@ async function createFixture(context) {
       path.join(distDirectory, 'assets', 'index-abc.css'),
       `.root{color:#fff;background:${'#101010 '.repeat(200)}}\n`,
     ),
+    writeFixtureFile(
+      path.join(distDirectory, 'assets', 'share-abc.js'),
+      `export const share = '${'versioned-share-javascript-'.repeat(200)}';\n`,
+    ),
+    writeFixtureFile(
+      path.join(distDirectory, 'assets', 'share-abc.css'),
+      `.share{color:#fff;background:${'#202020 '.repeat(200)}}\n`,
+    ),
     writeFixtureFile(path.join(distDirectory, 'assets', 'index-abc.js.map'), '{}'),
     writeFixtureFile(path.join(distDirectory, 'assets', 'ignored 2.js'), 'ignored'),
     writeFixtureFile(
@@ -332,6 +463,11 @@ async function createFixture(context) {
         css: ['assets/index-abc.css'],
         isEntry: true,
       },
+      'share.html': {
+        file: 'assets/share-abc.js',
+        css: ['assets/share-abc.css'],
+        isEntry: true,
+      },
     }),
   );
   await writeFixtureFile(
@@ -350,6 +486,15 @@ async function createFixture(context) {
       `<link rel="icon" href="/_static/releases/${RELEASE}/icon.svg">`,
       `<link rel="stylesheet" href="/_static/releases/${RELEASE}/assets/index-abc.css">`,
       `<script type="module" src="/_static/releases/${RELEASE}/assets/index-abc.js"></script>`,
+    ].join('\n'),
+  );
+  await writeFixtureFile(
+    path.join(distDirectory, 'share.html'),
+    [
+      '<!doctype html>',
+      `<link rel="icon" href="/_static/releases/${RELEASE}/icon.svg">`,
+      `<link rel="stylesheet" href="/_static/releases/${RELEASE}/assets/share-abc.css">`,
+      `<script type="module" src="/_static/releases/${RELEASE}/assets/share-abc.js"></script>`,
     ].join('\n'),
   );
 
