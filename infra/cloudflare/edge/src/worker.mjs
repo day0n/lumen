@@ -329,10 +329,31 @@ function hasControlCharacter(value) {
 
 function selectEncoding(request, objectKey) {
   if (!COMPRESSIBLE_ASSET_PATTERN.test(objectKey)) return null;
-  const accepted = request.headers.get('accept-encoding')?.toLowerCase() ?? '';
-  if (accepted.includes('br')) return 'br';
-  if (accepted.includes('gzip')) return 'gzip';
+  const accepted = readAcceptedEncodings(request.headers.get('accept-encoding'));
+  const brotliQuality = accepted.get('br') ?? accepted.get('*') ?? 0;
+  const gzipQuality = accepted.get('gzip') ?? accepted.get('*') ?? 0;
+  if (brotliQuality > 0 && brotliQuality >= gzipQuality) return 'br';
+  if (gzipQuality > 0) return 'gzip';
   return null;
+}
+
+function readAcceptedEncodings(header) {
+  const accepted = new Map();
+  if (!header) return accepted;
+  for (const item of header.split(',')) {
+    const [rawName = '', ...parameters] = item.trim().split(';');
+    const name = rawName.trim().toLowerCase();
+    if (!name) continue;
+    const qualityParameter = parameters.find((parameter) => /^\s*q\s*=/i.test(parameter));
+    const parsedQuality = qualityParameter
+      ? Number.parseFloat(qualityParameter.split('=', 2)[1]?.trim() ?? '')
+      : 1;
+    accepted.set(
+      name,
+      Number.isFinite(parsedQuality) ? Math.min(1, Math.max(0, parsedQuality)) : 0,
+    );
+  }
+  return accepted;
 }
 
 async function readObject(bucket, objectKey, encoding, method) {
@@ -394,6 +415,7 @@ function contentTypeFor(objectKey, existing) {
   if (key.endsWith('.json')) return 'application/json; charset=utf-8';
   if (key.endsWith('.svg')) return 'image/svg+xml';
   if (key.endsWith('.png')) return 'image/png';
+  if (key.endsWith('.jpg') || key.endsWith('.jpeg')) return 'image/jpeg';
   if (key.endsWith('.webp')) return 'image/webp';
   if (key.endsWith('.woff2')) return 'font/woff2';
   if (key.endsWith('.ico')) return 'image/x-icon';

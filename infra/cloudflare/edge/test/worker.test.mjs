@@ -60,6 +60,29 @@ test('serves app public media from the active release', async () => {
   assert.deepEqual(requestedKeys, [`releases/${RELEASE}/home-posters/selected/agent-pop.webp`]);
 });
 
+test('sets the media type for JPEG public assets without bucket metadata', async () => {
+  const response = await worker.fetch(
+    new Request('https://lumenstudio.tech/particle-masks/creator-typing-mask.jpg'),
+    {
+      ACTIVE_FRONTEND_RELEASE: RELEASE,
+      FRONTEND_BUCKET: {
+        async get() {
+          return {
+            body: 'jpeg-bytes',
+            httpEtag: '"jpeg-etag"',
+            size: 10,
+            writeHttpMetadata() {},
+          };
+        },
+      },
+    },
+    { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/jpeg');
+});
+
 test('keeps immutable assets pinned to their requested release', () => {
   const oldRelease = 'abcdef0123456789abcdef0123456789abcdef01';
   assert.deepEqual(resolveEdgeAction(`/_static/releases/${oldRelease}/assets/app.js`, RELEASE), {
@@ -310,6 +333,40 @@ test('uses a precompressed object only when the browser accepts it', async () =>
   assert.deepEqual(requestedKeys, [`releases/${RELEASE}/assets/app.js.br`]);
   assert.equal(response.headers.get('content-encoding'), 'br');
   assert.equal(response.headers.get('vary'), 'Accept-Encoding');
+});
+
+test('honors encoding quality values and ignores disabled encodings', async () => {
+  const requestedKeys = [];
+  const bucket = {
+    async get(key) {
+      requestedKeys.push(key);
+      return {
+        body: 'bytes',
+        httpEtag: `"${key}"`,
+        size: 5,
+        writeHttpMetadata() {},
+      };
+    },
+  };
+  const environment = { ACTIVE_FRONTEND_RELEASE: RELEASE, FRONTEND_BUCKET: bucket };
+  const executionContext = { waitUntil() {} };
+  const url = `https://lumenstudio.tech/_static/releases/${RELEASE}/assets/app.js`;
+
+  const gzipResponse = await worker.fetch(
+    new Request(url, { headers: { 'accept-encoding': 'br;q=0, gzip;q=1' } }),
+    environment,
+    executionContext,
+  );
+  assert.equal(gzipResponse.headers.get('content-encoding'), 'gzip');
+  assert.equal(requestedKeys.at(-1), `releases/${RELEASE}/assets/app.js.gz`);
+
+  const rawResponse = await worker.fetch(
+    new Request(url, { headers: { 'accept-encoding': 'br;q=0, gzip;q=0' } }),
+    environment,
+    executionContext,
+  );
+  assert.equal(rawResponse.headers.get('content-encoding'), null);
+  assert.equal(requestedKeys.at(-1), `releases/${RELEASE}/assets/app.js`);
 });
 
 test('fails closed when the active release or method is invalid', async () => {

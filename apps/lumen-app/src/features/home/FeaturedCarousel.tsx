@@ -6,6 +6,7 @@ import { useI18n } from '../../i18n/provider';
 import { useLoginRedirect } from '../../lib/auth-redirect';
 import { cn } from '../../lib/cn';
 import { isLoginRequiredPath } from '../../lib/protected-paths';
+import { resolveReleaseAssetUrl } from '../../lib/release-asset-url';
 import { ArrowUpRightIcon, ChevronLeftIcon, ChevronRightIcon } from './home-icons';
 
 interface Slide {
@@ -93,7 +94,7 @@ const ZH_FALLBACK_TITLES: Record<string, string> = {
 };
 
 function homePosterUrl(filename: string) {
-  return `${import.meta.env.BASE_URL}home-posters/selected/${filename}`;
+  return resolveReleaseAssetUrl(`${import.meta.env.BASE_URL}home-posters/selected/${filename}`);
 }
 
 function localizeFallbackSlides(locale: 'en' | 'zh'): Slide[] {
@@ -146,7 +147,7 @@ export function FeaturedCarousel() {
             id: item.id,
             title: item.title,
             href: item.ctaHref ?? '/',
-            coverUrl: item.coverUrl ?? '',
+            coverUrl: resolveReleaseAssetUrl(item.coverUrl ?? ''),
             accent: item.accentColor ?? '#79e4ff',
           }));
         setRemoteSlides(slides);

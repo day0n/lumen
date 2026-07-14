@@ -25,6 +25,7 @@
       "@/lib/auth-redirect": ["./src/lib/auth-redirect.ts"],
       "@/lib/cn": ["./src/lib/cn.ts"],
       "@/lib/protected-paths": ["./src/lib/protected-paths.ts"],
+      "@/lib/release-asset-url": ["./src/lib/release-asset-url.ts"],
       "@/*": ["../lumen-studio/src/*"],
       "@app/*": ["./src/*"],
       "next/link": ["./src/compat/next-link.tsx"],

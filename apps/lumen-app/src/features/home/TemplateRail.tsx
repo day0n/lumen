@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '../../compat/next-navigation';
 import { useI18n } from '../../i18n/provider';
 import { useLoginRedirect } from '../../lib/auth-redirect';
+import { resolveReleaseAssetUrl } from '../../lib/release-asset-url';
 import { ArrowRightIcon, LoaderIcon, PlayerPlayIcon, SearchIcon, SparklesIcon } from './home-icons';
 import {
   isTemplateVideoInViewport,
@@ -318,11 +319,12 @@ function WorkflowTemplateCard({
 }
 
 function TemplateCover({ template }: { template: WorkflowTemplate }) {
+  const coverUrl = resolveReleaseAssetUrl(template.coverUrl);
   const coverMediaClass =
     'absolute inset-0 h-full w-full scale-[1.18] object-cover transition-transform duration-500 will-change-transform group-hover:scale-[1.21]';
 
-  if (template.mediaType === 'video' && !isStaticImageUrl(template.coverUrl)) {
-    return <LazyTemplateVideo className={coverMediaClass} src={template.coverUrl} />;
+  if (template.mediaType === 'video' && !isStaticImageUrl(coverUrl)) {
+    return <LazyTemplateVideo className={coverMediaClass} src={coverUrl} />;
   }
 
   return (
@@ -331,7 +333,7 @@ function TemplateCover({ template }: { template: WorkflowTemplate }) {
       className={coverMediaClass}
       draggable={false}
       loading="lazy"
-      src={template.coverUrl}
+      src={coverUrl}
     />
   );
 }

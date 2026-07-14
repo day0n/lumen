@@ -110,3 +110,4 @@ GEMINI.md
 *.tgz
 .tmp/
 tmp/
+.artifacts/

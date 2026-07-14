@@ -7,6 +7,7 @@ import { useI18n } from '@/i18n/provider';
 import { useAppShellChrome } from '@/lib/app-shell-chrome';
 import { useLoginRedirect } from '@/lib/auth-redirect';
 import { cn } from '@/lib/cn';
+import { resolveReleaseAssetUrl } from '@/lib/release-asset-url';
 import {
   IconAlertTriangle,
   IconCheck,
@@ -132,7 +133,7 @@ type MaterialSpiralPanel = {
 };
 
 function buildShowcaseImages(images: ShowcaseImageSet) {
-  return images.map((image) => `/material-showcase/${image}.webp`);
+  return images.map((image) => resolveReleaseAssetUrl(`/material-showcase/${image}.webp`));
 }
 
 const materialCategories = [
