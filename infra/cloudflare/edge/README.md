@@ -62,10 +62,19 @@ different artifacts from racing into the same release namespace.
 Deploy the preview Worker only after the immutable upload succeeds:
 
 ```bash
-pnpm dlx wrangler@4 deploy \
+pnpm dlx wrangler@4.107.0 deploy \
   --config infra/cloudflare/edge/wrangler.toml \
   --var ACTIVE_FRONTEND_RELEASE:<full-git-sha>
 ```
+
+The checked-in `Publish Frontend Preview` workflow performs the same build, immutable upload,
+full remote audit, activation, and required response-header check. Running it again with an older
+sealed SHA is the rollback path. Configure its `frontend-preview` environment with
+`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `FRONTEND_R2_ACCESS_KEY_ID`, and
+`FRONTEND_R2_SECRET_ACCESS_KEY`, and set `FRONTEND_PREVIEW_URL` as an environment variable for the
+required post-deploy check. Restrict that environment to the default branch, require approval, and
+scope both credentials to preview-only resources. The preview bucket is fixed to
+`lumen-frontend-preview` in both the workflow and Worker binding.
 
 Authentication and bucket upload credentials belong in CI secrets and must not be committed. A
 rollback redeploys the edge version with the previous full release SHA; old release objects remain
@@ -76,6 +85,7 @@ Those requests remain on the Studio origin until each page has a real static bui
 work has moved behind an API contract. A production promotion may initially route only `/app/*`,
 versioned static assets, and the approved public asset paths.
 
-The checked-in configuration only enables the provider preview address. Production domain routes
-are intentionally added in a separate promotion change after the static build and rollback checks
-have passed; deploying this scaffold cannot take over production traffic.
+The default configuration only enables the preview address. The separate production configuration
+has `workers_dev = false` and no routes, so it cannot take over production traffic. Production
+domain routes are intentionally added in a later promotion change after the remaining static pages
+and rollback checks have passed.

@@ -1,0 +1,98 @@
+name: Publish Frontend Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Full Git SHA to publish or reactivate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-preview
+  cancel-in-progress: false
+
+jobs:
+  publish-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: frontend-preview
+    steps:
+      - name: Validate release format
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELEASE: ${{ inputs.release }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          test "$WORKFLOW_REF" = "refs/heads/$DEFAULT_BRANCH"
+          if [[ ! "$RELEASE" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release must be a full lowercase Git SHA" >&2
+            exit 1
+          fi
+
+      - name: Check out requested release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release }}
+          fetch-depth: 0
+
+      - name: Validate release identity
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$RELEASE"
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          git merge-base --is-ancestor "$RELEASE" FETCH_HEAD
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify immutable release
+        env:
+          CI: 'true'
+          RELEASE: ${{ inputs.release }}
+        run: pnpm package:frontend --release "$RELEASE"
+
+      - name: Upload and audit immutable release
+        env:
+          RELEASE: ${{ inputs.release }}
+          FRONTEND_R2_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FRONTEND_R2_BUCKET: lumen-frontend-preview
+          FRONTEND_R2_ACCESS_KEY_ID: ${{ secrets.FRONTEND_R2_ACCESS_KEY_ID }}
+          FRONTEND_R2_SECRET_ACCESS_KEY: ${{ secrets.FRONTEND_R2_SECRET_ACCESS_KEY }}
+        run: pnpm run-script frontend:upload --release "$RELEASE"
+
+      - name: Activate preview release
+        env:
+          RELEASE: ${{ inputs.release }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: >-
+          pnpm dlx wrangler@4.107.0 deploy
+          --config infra/cloudflare/edge/wrangler.toml
+          --var "ACTIVE_FRONTEND_RELEASE:$RELEASE"
+
+      - name: Verify preview response
+        env:
+          RELEASE: ${{ inputs.release }}
+          FRONTEND_PREVIEW_URL: ${{ vars.FRONTEND_PREVIEW_URL }}
+        run: |
+          test -n "$FRONTEND_PREVIEW_URL"
+          headers="$(curl --fail --silent --show-error --head "${FRONTEND_PREVIEW_URL%/}/app/dashboard")"
+          active_release="$(printf '%s\n' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-lumen-release" { print $2 }')"
+          test "$active_release" = "$RELEASE"

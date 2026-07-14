@@ -1,11 +1,11 @@
-name = "lumen-frontend-edge-preview"
+name = "lumen-frontend-edge-production"
 main = "src/worker.mjs"
 compatibility_date = "2026-07-01"
-workers_dev = true
+workers_dev = false
 
 [[r2_buckets]]
 binding = "FRONTEND_BUCKET"
-bucket_name = "lumen-frontend-preview"
+bucket_name = "lumen-frontend-prod"
 
 [observability]
 enabled = true

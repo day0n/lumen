@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+const edgeDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repositoryRoot = path.resolve(edgeDirectory, '../../..');
+
+test('keeps preview and production Worker targets isolated', async () => {
+  const [preview, production] = await Promise.all([
+    readFile(path.join(edgeDirectory, 'wrangler.toml'), 'utf8'),
+    readFile(path.join(edgeDirectory, 'wrangler.production.toml'), 'utf8'),
+  ]);
+
+  assert.match(preview, /^name = "lumen-frontend-edge-preview"$/m);
+  assert.match(preview, /^workers_dev = true$/m);
+  assert.match(preview, /^bucket_name = "lumen-frontend-preview"$/m);
+  assert.doesNotMatch(preview, /^\s*(?:route|routes)\s*=/m);
+
+  assert.match(production, /^name = "lumen-frontend-edge-production"$/m);
+  assert.match(production, /^workers_dev = false$/m);
+  assert.match(production, /^bucket_name = "lumen-frontend-prod"$/m);
+  assert.doesNotMatch(production, /^\s*(?:route|routes)\s*=/m);
+});
+
+test('preview workflow audits immutable objects before activation', async () => {
+  const workflow = await readFile(
+    path.join(repositoryRoot, '.github', 'workflows', 'frontend-preview.yml'),
+    'utf8',
+  );
+  const uploadStep = workflow.indexOf('- name: Upload and audit immutable release');
+  const activationStep = workflow.indexOf('- name: Activate preview release');
+
+  assert.ok(uploadStep >= 0);
+  assert.ok(activationStep > uploadStep);
+  assert.match(workflow, /^\s+environment: frontend-preview$/m);
+  assert.match(workflow, /^\s+cancel-in-progress: false$/m);
+  assert.match(workflow, /test "\$WORKFLOW_REF" = "refs\/heads\/\$DEFAULT_BRANCH"/);
+  assert.match(workflow, /git merge-base --is-ancestor "\$RELEASE" FETCH_HEAD/);
+  assert.match(workflow, /FRONTEND_R2_BUCKET: lumen-frontend-preview/);
+  assert.match(workflow, /--config infra\/cloudflare\/edge\/wrangler\.toml/);
+  assert.doesNotMatch(workflow, /wrangler\.production\.toml|lumen-frontend-prod/);
+  assert.doesNotMatch(workflow, /if:.*FRONTEND_PREVIEW_URL/);
+});
