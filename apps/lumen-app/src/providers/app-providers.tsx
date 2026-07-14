@@ -1,6 +1,8 @@
+import { zhCN } from '@clerk/localizations';
 import { ClerkProvider, useAuth } from '@clerk/react';
 import { type ReactNode, useEffect, useRef } from 'react';
 import { I18nProvider } from '../i18n/provider';
+import type { Locale } from '../i18n/routing';
 import {
   clearPrivateApiMemoryCache,
   installApiFetchInterceptor,
@@ -139,7 +141,15 @@ function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-export function AppProviders({ children }: { children: ReactNode }) {
+export function AppProviders({
+  children,
+  enableApiAuthBridge = true,
+  initialLocale,
+}: {
+  children: ReactNode;
+  enableApiAuthBridge?: boolean;
+  initialLocale?: Locale;
+}) {
   const publishableKey = __LUMEN_CLERK_PUBLISHABLE_KEY__;
 
   if (!publishableKey) {
@@ -153,14 +163,15 @@ export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <ClerkProvider
       publishableKey={publishableKey}
-      signInUrl="/sign-in"
-      signUpUrl="/sign-up"
-      afterSignOutUrl="/"
+      localization={initialLocale === 'zh' ? (zhCN as never) : undefined}
+      signInUrl={initialLocale === 'zh' ? '/zh/sign-in' : '/sign-in'}
+      signUpUrl={initialLocale === 'zh' ? '/zh/sign-up' : '/sign-up'}
+      afterSignOutUrl={initialLocale === 'zh' ? '/zh' : '/'}
       signInFallbackRedirectUrl="/app/dashboard"
       signUpFallbackRedirectUrl="/app/dashboard"
     >
-      <I18nProvider>
-        <ApiAuthBridge />
+      <I18nProvider initialLocale={initialLocale}>
+        {enableApiAuthBridge && <ApiAuthBridge />}
         {children}
       </I18nProvider>
     </ClerkProvider>

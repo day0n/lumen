@@ -729,6 +729,14 @@ const en = {
   share: {
     label: 'Shared workflow',
     signInRedirect: 'Sign in to view this shared workflow',
+    loading: 'Loading shared workflow…',
+    cloning: 'Preparing your copy…',
+    notFound: 'This shared workflow is no longer available.',
+    loadFailed: 'The shared workflow could not be loaded.',
+    cloneFailed: 'Your copy could not be created. Please try again.',
+    sessionExpired: 'Your session has expired. Sign in again to create your copy.',
+    signInAgain: 'Sign in again',
+    retry: 'Try again',
   },
   auth: {
     signInPath: '/sign-in',
@@ -1464,6 +1472,14 @@ const zh: typeof en = {
   share: {
     label: '分享工作流',
     signInRedirect: '登录后查看这个分享工作流',
+    loading: '正在读取分享工作流…',
+    cloning: '正在准备你的副本…',
+    notFound: '这个分享工作流已不可用。',
+    loadFailed: '暂时无法读取这个分享工作流。',
+    cloneFailed: '暂时无法创建副本，请重试。',
+    sessionExpired: '登录状态已失效，请重新登录后创建副本。',
+    signInAgain: '重新登录',
+    retry: '重试',
   },
   auth: {
     signInPath: '/sign-in',

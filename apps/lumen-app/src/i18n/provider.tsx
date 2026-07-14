@@ -71,13 +71,13 @@ export function useI18n(): I18nContextValue {
   return value;
 }
 
-function resolveClientLocale(initialLocale: Locale | undefined): Locale {
+export function resolveClientLocale(initialLocale: Locale | undefined): Locale {
+  if (initialLocale) return initialLocale;
+
   if (typeof window !== 'undefined') {
     const stored = readClientStoredLocale();
     if (stored) return stored;
   }
-
-  if (initialLocale) return initialLocale;
 
   const browserLocale = readBrowserLocale();
   if (browserLocale) return browserLocale;

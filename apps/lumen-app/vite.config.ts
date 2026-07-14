@@ -268,6 +268,10 @@ export default defineConfig(({ mode }) => {
       sourcemap: 'hidden',
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
+        input: {
+          app: path.resolve(__dirname, 'index.html'),
+          share: path.resolve(__dirname, 'share.html'),
+        },
         output: {
           manualChunks,
         },

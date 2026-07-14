@@ -121,6 +121,9 @@ importers:
 
   apps/lumen-app:
     dependencies:
+      '@clerk/localizations':
+        specifier: ^4.7.0
+        version: 4.7.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@clerk/react':
         specifier: 6.7.1
         version: 6.7.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
