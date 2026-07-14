@@ -19,19 +19,23 @@ test('verifies an exact release and returns payload, manifest, then READY upload
 
   assert.equal(verified.release, RELEASE);
   assert.equal(verified.prefix, `releases/${RELEASE}/`);
-  assert.deepEqual(verified.manifest.scope, ['app', 'share']);
+  assert.deepEqual(verified.manifest.scope, ['app', 'share', 'landing']);
   assert.deepEqual(verified.manifest.shells, {
     app: 'app/index.html',
     share: 'share/index.html',
+    landing: 'index.html',
+    landingZh: 'zh/index.html',
   });
-  assert.deepEqual(verified.ready.scope, ['app', 'share']);
+  assert.deepEqual(verified.ready.scope, ['app', 'share', 'landing']);
   assert.deepEqual(
     verified.objects.map((object) => object.path),
     [
       'app/index.html',
       'assets/app.js',
       'assets/app.js.br',
+      'index.html',
       'share/index.html',
+      'zh/index.html',
       'release-manifest.json',
       '_READY.json',
     ],
@@ -46,7 +50,7 @@ test('verifies an exact release and returns payload, manifest, then READY upload
   );
   assert.deepEqual(
     verified.objects.map((object) => object.phase),
-    ['payload', 'payload', 'payload', 'payload', 'manifest', 'ready'],
+    ['payload', 'payload', 'payload', 'payload', 'payload', 'payload', 'manifest', 'ready'],
   );
   assert.ok(verified.objects.every((object) => Buffer.isBuffer(object.bytes)));
   for (const object of verified.objects) {
@@ -139,12 +143,13 @@ test('binds READY identity, raw manifest bytes, and object count', async (contex
   });
 });
 
-test('requires the exact app and share scope in the manifest and READY marker', async (context) => {
+test('requires the exact app, share, and landing scope in the manifest and READY marker', async (context) => {
   for (const [name, scope] of [
-    ['missing share', ['app']],
-    ['reversed', ['share', 'app']],
-    ['duplicate', ['app', 'share', 'share']],
-    ['extra', ['app', 'share', 'auth']],
+    ['missing share', ['app', 'landing']],
+    ['missing landing', ['app', 'share']],
+    ['reversed', ['landing', 'share', 'app']],
+    ['duplicate', ['app', 'share', 'landing', 'landing']],
+    ['extra', ['app', 'share', 'landing', 'auth']],
   ]) {
     await context.test(`manifest scope ${name}`, async (subcontext) => {
       const fixture = await createRelease(subcontext);
@@ -156,14 +161,14 @@ test('requires the exact app and share scope in the manifest and READY marker', 
           release: RELEASE,
           releaseDirectory: fixture.releaseDirectory,
         }),
-        /release manifest scope must be exactly app, share/,
+        /release manifest scope must be exactly app, share, landing/,
       );
     });
   }
 
-  await context.test('READY still uses the legacy app-only scope', async (subcontext) => {
+  await context.test('READY still uses the previous app and share scope', async (subcontext) => {
     const fixture = await createRelease(subcontext);
-    fixture.ready.scope = ['app'];
+    fixture.ready.scope = ['app', 'share'];
     await writeJson(path.join(fixture.releaseDirectory, '_READY.json'), fixture.ready);
 
     await assert.rejects(
@@ -171,25 +176,27 @@ test('requires the exact app and share scope in the manifest and READY marker', 
         release: RELEASE,
         releaseDirectory: fixture.releaseDirectory,
       }),
-      /release readiness marker scope must be exactly app, share/,
+      /release readiness marker scope must be exactly app, share, landing/,
     );
   });
 });
 
-test('requires exact shell declarations and both shell payloads', async (context) => {
-  await context.test('missing share declaration', async (subcontext) => {
-    const fixture = await createRelease(subcontext);
-    Reflect.deleteProperty(fixture.manifest.shells, 'share');
-    await resealManifest(fixture);
+test('requires exact shell declarations and every declared shell payload', async (context) => {
+  for (const shellName of ['share', 'landing', 'landingZh']) {
+    await context.test(`missing ${shellName} declaration`, async (subcontext) => {
+      const fixture = await createRelease(subcontext);
+      Reflect.deleteProperty(fixture.manifest.shells, shellName);
+      await resealManifest(fixture);
 
-    await assert.rejects(
-      verifyReleaseDirectory({
-        release: RELEASE,
-        releaseDirectory: fixture.releaseDirectory,
-      }),
-      /release manifest shells has an invalid schema/,
-    );
-  });
+      await assert.rejects(
+        verifyReleaseDirectory({
+          release: RELEASE,
+          releaseDirectory: fixture.releaseDirectory,
+        }),
+        /release manifest shells has an invalid schema/,
+      );
+    });
+  }
 
   await context.test('wrong share declaration', async (subcontext) => {
     const fixture = await createRelease(subcontext);
@@ -205,9 +212,9 @@ test('requires exact shell declarations and both shell payloads', async (context
     );
   });
 
-  await context.test('unexpected shell declaration', async (subcontext) => {
+  await context.test('wrong localized landing declaration', async (subcontext) => {
     const fixture = await createRelease(subcontext);
-    fixture.manifest.shells.auth = 'auth/index.html';
+    fixture.manifest.shells.landingZh = 'landing-zh.html';
     await resealManifest(fixture);
 
     await assert.rejects(
@@ -215,13 +222,34 @@ test('requires exact shell declarations and both shell payloads', async (context
         release: RELEASE,
         releaseDirectory: fixture.releaseDirectory,
       }),
-      /release manifest shells has an invalid schema/,
+      /release manifest must declare the landingZh shell/,
     );
   });
 
   for (const [shellName, shellPath] of [
+    ['auth', 'auth/index.html'],
+    ['notFound', '404.html'],
+  ]) {
+    await context.test(`isolates unexpected ${shellName} declaration`, async (subcontext) => {
+      const fixture = await createRelease(subcontext);
+      fixture.manifest.shells[shellName] = shellPath;
+      await resealManifest(fixture);
+
+      await assert.rejects(
+        verifyReleaseDirectory({
+          release: RELEASE,
+          releaseDirectory: fixture.releaseDirectory,
+        }),
+        /release manifest shells has an invalid schema/,
+      );
+    });
+  }
+
+  for (const [shellName, shellPath] of [
     ['app', 'app/index.html'],
     ['share', 'share/index.html'],
+    ['landing', 'index.html'],
+    ['landingZh', 'zh/index.html'],
   ]) {
     await context.test(`missing ${shellName} payload`, async (subcontext) => {
       const fixture = await createRelease(subcontext);
@@ -280,6 +308,16 @@ test('requires compressed objects to have exact metadata and an uncompressed sib
       {
         path: 'share/index.html',
         bytes: '<main>share</main>',
+        contentType: 'text/html; charset=utf-8',
+      },
+      {
+        path: 'index.html',
+        bytes: '<main>landing</main>',
+        contentType: 'text/html; charset=utf-8',
+      },
+      {
+        path: 'zh/index.html',
+        bytes: '<main>中文首页</main>',
         contentType: 'text/html; charset=utf-8',
       },
       {
@@ -356,8 +394,13 @@ async function createRelease(context, payload = defaultPayload()) {
   const manifest = {
     schemaVersion: 1,
     release: RELEASE,
-    scope: ['app', 'share'],
-    shells: { app: 'app/index.html', share: 'share/index.html' },
+    scope: ['app', 'share', 'landing'],
+    shells: {
+      app: 'app/index.html',
+      share: 'share/index.html',
+      landing: 'index.html',
+      landingZh: 'zh/index.html',
+    },
     assetBase: `/_static/releases/${RELEASE}/`,
     buildConfigFingerprint: 'a'.repeat(64),
     buildMetadataSha256: 'b'.repeat(64),
@@ -377,7 +420,7 @@ async function resealManifest(fixture) {
   fixture.ready = {
     schemaVersion: 1,
     release: RELEASE,
-    scope: ['app', 'share'],
+    scope: ['app', 'share', 'landing'],
     manifest: {
       path: 'release-manifest.json',
       sha256: digest(manifestBytes),
@@ -408,6 +451,16 @@ function defaultPayload() {
     {
       path: 'share/index.html',
       bytes: '<main>share</main>',
+      contentType: 'text/html; charset=utf-8',
+    },
+    {
+      path: 'index.html',
+      bytes: '<main>landing</main>',
+      contentType: 'text/html; charset=utf-8',
+    },
+    {
+      path: 'zh/index.html',
+      bytes: '<main>中文首页</main>',
       contentType: 'text/html; charset=utf-8',
     },
   ];

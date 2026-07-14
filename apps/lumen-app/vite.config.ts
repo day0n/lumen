@@ -270,6 +270,8 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           app: path.resolve(__dirname, 'index.html'),
+          landing: path.resolve(__dirname, 'landing.html'),
+          landingZh: path.resolve(__dirname, 'landing-zh.html'),
           share: path.resolve(__dirname, 'share.html'),
         },
         output: {

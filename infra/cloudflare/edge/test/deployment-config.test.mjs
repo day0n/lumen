@@ -40,6 +40,12 @@ test('preview workflow audits immutable objects before activation', async () => 
   assert.match(workflow, /git merge-base --is-ancestor "\$RELEASE" FETCH_HEAD/);
   assert.match(workflow, /FRONTEND_R2_BUCKET: lumen-frontend-preview/);
   assert.match(workflow, /--config infra\/cloudflare\/edge\/wrangler\.toml/);
+  assert.match(workflow, /done <<'LANDINGS'/);
+  assert.match(workflow, /\/\|en\|en\|Lumen — Turn products into videos that sell/);
+  assert.match(workflow, /\/zh\|zh-CN\|zh\|Lumen — 把商品变成爆款带货视频/);
+  assert.match(workflow, /data-lumen-prerendered/);
+  assert.match(workflow, /data-lumen-static-landing/);
+  assert.match(workflow, /landing first screen is empty/);
   assert.doesNotMatch(workflow, /wrangler\.production\.toml|lumen-frontend-prod/);
   assert.doesNotMatch(workflow, /if:.*FRONTEND_PREVIEW_URL/);
 });

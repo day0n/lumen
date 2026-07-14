@@ -9,14 +9,36 @@ const compressBrotli = promisify(brotliCompress);
 const compressGzip = promisify(gzip);
 const FULL_RELEASE_PATTERN = /^[0-9a-f]{40}$/;
 const COMPRESSIBLE_FILE_PATTERN = /\.(?:css|html|js|json|mjs|svg|txt|xml)$/i;
-const RELEASE_SCOPE = ['app', 'share'];
+const RELEASE_SCOPE = ['app', 'share', 'landing'];
 const RELEASE_SHELLS = {
   app: 'app/index.html',
   share: 'share/index.html',
+  landing: 'index.html',
+  landingZh: 'zh/index.html',
 };
 const BUILD_SHELLS = [
   { name: 'app', entry: 'index.html', output: RELEASE_SHELLS.app },
   { name: 'share', entry: 'share.html', output: RELEASE_SHELLS.share },
+  {
+    name: 'landing',
+    entry: 'landing.html',
+    output: RELEASE_SHELLS.landing,
+    document: {
+      lang: 'en',
+      marker: 'en',
+      title: 'Lumen — Turn products into videos that sell',
+    },
+  },
+  {
+    name: 'landingZh',
+    entry: 'landing-zh.html',
+    output: RELEASE_SHELLS.landingZh,
+    document: {
+      lang: 'zh-CN',
+      marker: 'zh',
+      title: 'Lumen — 把商品变成爆款带货视频',
+    },
+  },
 ];
 const APP_PUBLIC_DIRECTORIES = ['home-posters'];
 const STUDIO_PUBLIC_DIRECTORIES = [
@@ -25,6 +47,10 @@ const STUDIO_PUBLIC_DIRECTORIES = [
   'material-showcase',
   'particle-masks',
 ];
+const ALLOWED_CONNECTION_HINT_ORIGINS = new Set([
+  'https://clerk.lumenstudio.tech',
+  'https://img.clerk.com',
+]);
 
 export async function packageAppRelease({
   release,
@@ -107,6 +133,7 @@ export async function packageAppRelease({
       release: normalizedRelease,
       releaseDirectory,
       viteManifest,
+      documentContract: shell.document,
     });
   }
 
@@ -229,7 +256,7 @@ function collectBuildAssets(manifest) {
     actualEntryKeys.length !== expectedEntryKeys.length ||
     actualEntryKeys.some((key, index) => key !== expectedEntryKeys[index])
   ) {
-    throw new Error('Vite manifest entry set must be exactly index.html and share.html');
+    throw new Error(`Vite manifest entry set must be exactly ${expectedEntryKeys.join(', ')}`);
   }
   const files = new Set();
   for (const [manifestKey, manifestEntry] of Object.entries(manifest)) {
@@ -274,12 +301,24 @@ function addBuildAsset(files, filename) {
   files.add(normalized);
 }
 
-async function verifyShell({ html, shellName, entryKey, release, releaseDirectory, viteManifest }) {
+async function verifyShell({
+  html,
+  shellName,
+  entryKey,
+  release,
+  releaseDirectory,
+  viteManifest,
+  documentContract,
+}) {
   const immutableBase = `/_static/releases/${release}/`;
   const references = readHtmlReferences(html, shellName);
   const immutableReferences = [];
+  const allowedEntryAssets = collectEntryAssetClosure(viteManifest, entryKey);
   for (const reference of references) {
-    if (isExternalHtmlReference(reference)) continue;
+    if (reference.startsWith('#')) continue;
+    if (isExternalHtmlReference(reference)) {
+      throw new Error(`${shellName} shell contains an external resource reference: ${reference}`);
+    }
     if (!reference.startsWith(immutableBase)) {
       throw new Error(`${shellName} shell contains an unversioned local reference: ${reference}`);
     }
@@ -312,6 +351,71 @@ async function verifyShell({ html, shellName, entryKey, release, releaseDirector
       );
     }
   }
+  for (const relativePath of packagedReferences) {
+    if (relativePath !== 'icon.svg' && !allowedEntryAssets.has(relativePath)) {
+      throw new Error(
+        `${shellName} shell references an asset outside its entry closure: ${relativePath}`,
+      );
+    }
+  }
+  if (documentContract) verifyLandingDocument(html, shellName, documentContract);
+}
+
+function collectEntryAssetClosure(viteManifest, entryKey) {
+  const assets = new Set();
+  const visited = new Set();
+  const queue = [entryKey];
+
+  while (queue.length > 0) {
+    const key = queue.shift();
+    if (!key || visited.has(key)) continue;
+    visited.add(key);
+
+    const entry = viteManifest[key];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`Vite manifest entry closure is missing ${key}`);
+    }
+    for (const filename of [entry.file, ...(entry.css ?? []), ...(entry.assets ?? [])]) {
+      assets.add(validateReleasePath(filename));
+    }
+    queue.push(...(entry.imports ?? []));
+  }
+
+  return assets;
+}
+
+function verifyLandingDocument(html, shellName, contract) {
+  const htmlTag = html.match(/<html\b[^>]*>/i)?.[0] ?? '';
+  const title = html.match(/<title>([\s\S]*?)<\/title>/i)?.[1].trim();
+  const rootMatch = html.match(/<div\b[^>]*\bid\s*=\s*(["'])root\1[^>]*>/i);
+  const rootTag = rootMatch?.[0] ?? '';
+  const afterRoot = rootMatch ? html.slice(rootMatch.index + rootTag.length).trimStart() : '';
+
+  if (!hasHtmlAttribute(htmlTag, 'lang', contract.lang)) {
+    throw new Error(`${shellName} shell must declare html lang ${contract.lang}`);
+  }
+  if (title !== contract.title) {
+    throw new Error(`${shellName} shell has an invalid title`);
+  }
+  if (!hasHtmlAttribute(rootTag, 'data-lumen-prerendered', 'true')) {
+    throw new Error(`${shellName} shell is missing the prerender marker`);
+  }
+  if (!hasHtmlAttribute(rootTag, 'data-lumen-static-landing', contract.marker)) {
+    throw new Error(`${shellName} shell is missing the static landing marker`);
+  }
+  if (!afterRoot || afterRoot.startsWith('</div>')) {
+    throw new Error(`${shellName} shell has an empty static first screen`);
+  }
+}
+
+function hasHtmlAttribute(tag, name, value) {
+  return new RegExp(`\\b${escapePattern(name)}\\s*=\\s*(["'])${escapePattern(value)}\\1`, 'i').test(
+    tag,
+  );
+}
+
+function escapePattern(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function copyReleaseDirectoryContents(source, target, relativePath) {
@@ -344,37 +448,87 @@ async function copyReleaseDirectoryContents(source, target, relativePath) {
 }
 
 function readHtmlReferences(html, shellName) {
-  for (const match of html.matchAll(/\b(?:href|src|srcset)\s*=\s*/gi)) {
-    const quote = html[match.index + match[0].length];
-    if (quote !== '"' && quote !== "'") {
-      throw new Error(`${shellName} shell contains an unquoted URL attribute`);
-    }
-  }
-  const references = [...html.matchAll(/\b(?:href|src)=["']([^"']+)["']/gi)].map(
-    (match) => match[1],
-  );
-  for (const match of html.matchAll(/\bsrcset=["']([^"']+)["']/gi)) {
-    const srcset = match[1].trim();
-    if (srcset.startsWith('data:')) {
-      if (!/^data:\S+(?:\s+\S+)?$/.test(srcset)) {
-        throw new Error(`${shellName} shell contains an ambiguous data URL srcset`);
+  const references = [];
+  for (const tagMatch of html.matchAll(/<([a-z][a-z0-9:-]*)\b([^<>]*)>/gi)) {
+    const tagName = tagMatch[1].toLowerCase();
+    const attributes = tagMatch[2];
+    for (const attributeMatch of attributes.matchAll(/\b(href|src|srcset)\s*=\s*/gi)) {
+      const attributeName = attributeMatch[1].toLowerCase();
+      const valueStart = attributeMatch.index + attributeMatch[0].length;
+      const quote = attributes[valueStart];
+      if (quote !== '"' && quote !== "'") {
+        throw new Error(`${shellName} shell contains an unquoted URL attribute`);
       }
-      continue;
-    }
-    for (const candidate of srcset.split(',')) {
-      const [reference] = candidate.trim().split(/\s+/, 1);
-      if (reference) references.push(reference);
+      const valueEnd = attributes.indexOf(quote, valueStart + 1);
+      if (valueEnd < 0) {
+        throw new Error(`${shellName} shell contains an unterminated URL attribute`);
+      }
+      const value = attributes.slice(valueStart + 1, valueEnd);
+      if (attributeName === 'href' && (tagName === 'a' || tagName === 'area')) continue;
+      if (
+        attributeName === 'href' &&
+        tagName === 'link' &&
+        isAllowedNonAssetLink(attributes, value)
+      ) {
+        continue;
+      }
+      if (attributeName !== 'srcset') {
+        references.push(value);
+        continue;
+      }
+
+      const srcset = value.trim();
+      if (srcset.startsWith('data:')) {
+        if (!/^data:\S+(?:\s+\S+)?$/.test(srcset)) {
+          throw new Error(`${shellName} shell contains an ambiguous data URL srcset`);
+        }
+        continue;
+      }
+      for (const candidate of srcset.split(',')) {
+        const [reference] = candidate.trim().split(/\s+/, 1);
+        if (reference) references.push(reference);
+      }
     }
   }
   return references;
 }
 
 function isExternalHtmlReference(reference) {
+  return reference.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(reference);
+}
+
+function isAllowedNonAssetLink(attributes, href) {
+  const relation = readQuotedHtmlAttribute(attributes, 'rel');
+  if (!relation) return false;
+  const tokens = relation.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  if (tokens.every((token) => token === 'alternate' || token === 'canonical')) return true;
+  if (tokens.length !== 1 || (tokens[0] !== 'dns-prefetch' && tokens[0] !== 'preconnect')) {
+    return false;
+  }
+  return isAllowedConnectionHint(href);
+}
+
+function isAllowedConnectionHint(href) {
+  let url;
+  try {
+    url = new URL(href.startsWith('//') ? `https:${href}` : href);
+  } catch {
+    return false;
+  }
   return (
-    reference.startsWith('#') ||
-    reference.startsWith('//') ||
-    /^[a-z][a-z0-9+.-]*:/i.test(reference)
+    ALLOWED_CONNECTION_HINT_ORIGINS.has(url.origin) &&
+    url.pathname === '/' &&
+    !url.search &&
+    !url.hash &&
+    !url.username &&
+    !url.password
   );
+}
+
+function readQuotedHtmlAttribute(attributes, name) {
+  const match = attributes.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'])(.*?)\\1`, 'i'));
+  return match?.[2] ?? null;
 }
 
 async function copyReleaseTree(source, target, relativePath) {

@@ -309,17 +309,17 @@ test('binds the manifest and READY schemas to the payload inventory', async () =
   );
 });
 
-test('rejects a legacy app-only inventory before touching the store', async () => {
+test('rejects the previous app and share inventory before touching the store', async () => {
   const inventory = createInventory(2);
   const manifestObject = inventory.objects.at(-2);
   const manifest = JSON.parse(manifestObject.bytes.toString());
-  manifest.scope = ['app'];
-  manifest.shells = { app: 'app/index.html' };
+  manifest.scope = ['app', 'share'];
+  manifest.shells = { app: 'app/index.html', share: 'share/index.html' };
   replaceObjectBytes(manifestObject, `${JSON.stringify(manifest)}\n`);
 
   const readyObject = inventory.objects.at(-1);
   const ready = JSON.parse(readyObject.bytes.toString());
-  ready.scope = ['app'];
+  ready.scope = ['app', 'share'];
   ready.manifest.sha256 = manifestObject.sha256;
   replaceObjectBytes(readyObject, `${JSON.stringify(ready)}\n`);
 
@@ -446,13 +446,20 @@ function createInventory(payloadCount) {
         'payload',
       ),
     ),
+    describeObject('index.html', '<main>landing</main>\n', 'payload'),
     describeObject('share/index.html', '<main>share</main>\n', 'payload'),
+    describeObject('zh/index.html', '<main>中文首页</main>\n', 'payload'),
   ];
   const manifestBody = `${JSON.stringify({
     schemaVersion: 1,
     release: RELEASE,
-    scope: ['app', 'share'],
-    shells: { app: 'app/index.html', share: 'share/index.html' },
+    scope: ['app', 'share', 'landing'],
+    shells: {
+      app: 'app/index.html',
+      share: 'share/index.html',
+      landing: 'index.html',
+      landingZh: 'zh/index.html',
+    },
     assetBase: `/_static/releases/${RELEASE}/`,
     buildConfigFingerprint: 'a'.repeat(64),
     buildMetadataSha256: 'b'.repeat(64),
@@ -471,7 +478,7 @@ function createInventory(payloadCount) {
     `${JSON.stringify({
       schemaVersion: 1,
       release: RELEASE,
-      scope: ['app', 'share'],
+      scope: ['app', 'share', 'landing'],
       manifest: { path: MANIFEST_PATH, sha256: manifest.sha256 },
       objectCount: payload.length + 2,
     })}\n`,

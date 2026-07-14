@@ -93,8 +93,52 @@ jobs:
           FRONTEND_PREVIEW_URL: ${{ vars.FRONTEND_PREVIEW_URL }}
         run: |
           test -n "$FRONTEND_PREVIEW_URL"
+          preview_base="${FRONTEND_PREVIEW_URL%/}"
           for path in "/app/dashboard" "/share/00000000000000000000000000000000"; do
-            headers="$(curl --fail --silent --show-error --head "${FRONTEND_PREVIEW_URL%/}${path}")"
+            headers="$(curl --fail --silent --show-error --head "${preview_base}${path}")"
             active_release="$(printf '%s\n' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-lumen-release" { print $2 }')"
             test "$active_release" = "$RELEASE"
           done
+
+          response_directory="$(mktemp -d)"
+          trap 'rm -rf "$response_directory"' EXIT
+          while IFS='|' read -r path expected_lang expected_marker expected_title; do
+            headers_file="$response_directory/${expected_marker}.headers"
+            body_file="$response_directory/${expected_marker}.html"
+            status="$(curl --silent --show-error --dump-header "$headers_file" --output "$body_file" --write-out '%{http_code}' "${preview_base}${path}")"
+            test "$status" = "200"
+            active_release="$(tr -d '\r' < "$headers_file" | awk -F': ' 'tolower($1) == "x-lumen-release" { print $2 }')"
+            test "$active_release" = "$RELEASE"
+
+            LANDING_BODY_FILE="$body_file" \
+            EXPECTED_LANG="$expected_lang" \
+            EXPECTED_MARKER="$expected_marker" \
+            EXPECTED_TITLE="$expected_title" \
+              node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const html = readFileSync(process.env.LANDING_BODY_FILE, 'utf8');
+          const expectedLang = process.env.EXPECTED_LANG;
+          const expectedMarker = process.env.EXPECTED_MARKER;
+          const expectedTitle = process.env.EXPECTED_TITLE;
+          const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const hasAttribute = (tag, name, value) =>
+            new RegExp(`\\b${escapePattern(name)}\\s*=\\s*(["'])${escapePattern(value)}\\1`, 'i').test(tag);
+          const htmlTag = html.match(/<html\b[^>]*>/i)?.[0] ?? '';
+          const title = html.match(/<title>([\s\S]*?)<\/title>/i)?.[1].trim();
+          const rootMatch = html.match(/<div\b[^>]*\bid\s*=\s*(["'])root\1[^>]*>/i);
+          const rootTag = rootMatch?.[0] ?? '';
+          const afterRoot = rootMatch ? html.slice(rootMatch.index + rootTag.length).trimStart() : '';
+
+          if (!hasAttribute(htmlTag, 'lang', expectedLang)) throw new Error(`missing landing lang ${expectedLang}`);
+          if (title !== expectedTitle) throw new Error(`unexpected landing title: ${title ?? '<missing>'}`);
+          if (!hasAttribute(rootTag, 'data-lumen-prerendered', 'true')) throw new Error('missing prerender marker');
+          if (!hasAttribute(rootTag, 'data-lumen-static-landing', expectedMarker)) {
+            throw new Error(`missing static landing marker ${expectedMarker}`);
+          }
+          if (!afterRoot || afterRoot.startsWith('</div>')) throw new Error('landing first screen is empty');
+          NODE
+          done <<'LANDINGS'
+          /|en|en|Lumen — Turn products into videos that sell
+          /zh|zh-CN|zh|Lumen — 把商品变成爆款带货视频
+          LANDINGS

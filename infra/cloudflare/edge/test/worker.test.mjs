@@ -13,6 +13,13 @@ test('maps static shells without catching backend paths', () => {
     release: RELEASE,
     status: 200,
   });
+  assert.deepEqual(resolveEdgeAction('/zh', RELEASE), {
+    type: 'object',
+    kind: 'html',
+    objectKey: `releases/${RELEASE}/zh/index.html`,
+    release: RELEASE,
+    status: 200,
+  });
   assert.equal(
     resolveEdgeAction('/app/projects', RELEASE).objectKey,
     `releases/${RELEASE}/app/index.html`,
@@ -123,6 +130,14 @@ test('keeps immutable assets pinned to their requested release', () => {
     'not-found',
   );
   assert.equal(
+    resolveEdgeAction(`/_static/releases/${oldRelease}/index.html`, RELEASE).type,
+    'not-found',
+  );
+  assert.equal(
+    resolveEdgeAction(`/_static/releases/${oldRelease}/zh/index.html`, RELEASE).type,
+    'not-found',
+  );
+  assert.equal(
     resolveEdgeAction(`/_static/releases/${oldRelease}/private.txt`, RELEASE).type,
     'not-found',
   );
@@ -142,6 +157,11 @@ test('keeps immutable assets pinned to their requested release', () => {
 });
 
 test('normalizes legacy and locale-prefixed routes', () => {
+  assert.deepEqual(resolveEdgeAction('/zh/', RELEASE), {
+    type: 'redirect',
+    pathname: '/zh',
+    locale: 'zh',
+  });
   assert.deepEqual(resolveEdgeAction('/home', RELEASE), {
     type: 'redirect',
     pathname: '/app/home',
@@ -285,6 +305,75 @@ test('serves an app shell with release and cache headers', async () => {
   assert.deepEqual(requestedKeys, [`releases/${RELEASE}/app/index.html`]);
   assert.equal(response.headers.get('x-lumen-release'), RELEASE);
   assert.equal(response.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+});
+
+test('serves English and Chinese landing shells from distinct release objects', async () => {
+  const requestedKeys = [];
+  const bodies = new Map([
+    [`releases/${RELEASE}/index.html`, '<html lang="en"><title>English landing</title></html>'],
+    [`releases/${RELEASE}/zh/index.html`, '<html lang="zh-CN"><title>中文首页</title></html>'],
+  ]);
+  const bucket = {
+    async get(key) {
+      requestedKeys.push(key);
+      const body = bodies.get(key);
+      if (!body) return null;
+      return {
+        body,
+        httpEtag: `"${key}"`,
+        size: body.length,
+        writeHttpMetadata(headers) {
+          headers.set('content-type', 'text/html; charset=utf-8');
+        },
+      };
+    },
+  };
+  const environment = {
+    ACTIVE_FRONTEND_RELEASE: RELEASE,
+    FRONTEND_BUCKET: bucket,
+  };
+  const context = { waitUntil() {} };
+
+  const english = await worker.fetch(
+    new Request('https://lumenstudio.tech/', {
+      headers: { cookie: 'lumen_locale=en' },
+    }),
+    environment,
+    context,
+  );
+  const chinese = await worker.fetch(
+    new Request('https://lumenstudio.tech/zh'),
+    environment,
+    context,
+  );
+
+  assert.equal(english.status, 200);
+  assert.match(await english.text(), /lang="en"/);
+  assert.equal(chinese.status, 200);
+  assert.match(await chinese.text(), /lang="zh-CN"/);
+  assert.deepEqual(requestedKeys, [
+    `releases/${RELEASE}/index.html`,
+    `releases/${RELEASE}/zh/index.html`,
+  ]);
+  for (const response of [english, chinese]) {
+    assert.equal(response.headers.get('x-lumen-release'), RELEASE);
+    assert.equal(response.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+  }
+});
+
+test('redirects the trailing-slash Chinese landing path to its canonical URL', async () => {
+  const response = await worker.fetch(
+    new Request('https://lumenstudio.tech/zh/?source=bookmark'),
+    {
+      ACTIVE_FRONTEND_RELEASE: RELEASE,
+      FRONTEND_BUCKET: {},
+    },
+    { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get('location'), 'https://lumenstudio.tech/zh?source=bookmark');
+  assert.match(response.headers.get('set-cookie') ?? '', /lumen_locale=zh/);
 });
 
 test('supports HEAD and conditional requests without returning a body', async () => {

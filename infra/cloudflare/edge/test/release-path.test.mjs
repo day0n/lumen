@@ -7,6 +7,8 @@ test('accepts canonical relative release object paths', () => {
   for (const filename of [
     'app/index.html',
     'share/index.html',
+    'index.html',
+    'zh/index.html',
     'assets/app-abc123.js',
     'assets/app.js.br',
     'home-posters/你好.webp',

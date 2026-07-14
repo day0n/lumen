@@ -106,6 +106,9 @@ export default {
 export function resolveEdgeAction(pathname, activeRelease) {
   if (!FULL_RELEASE_PATTERN.test(activeRelease)) return { type: 'not-found' };
   if (hasUnsafePath(pathname)) return { type: 'not-found' };
+  if (pathname === '/zh/') {
+    return { type: 'redirect', pathname: '/zh', locale: 'zh' };
+  }
 
   const dirtyAppMatch = pathname.match(/^\/app\/(?:en|zh)\/app(?:\/(.*))?$/);
   if (dirtyAppMatch) {

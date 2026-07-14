@@ -3,12 +3,14 @@
 This component only routes versioned static releases from the private frontend bucket. It does not
 handle API, WebSocket, Agent, monitoring, database, or background-task traffic.
 
-The release scope contains the Vite app and the static shared-workflow entry. Release objects use
-this layout:
+The release scope contains the Vite app, the static shared-workflow entry, and build-time
+prerendered English and Chinese landing entries. Release objects use this layout:
 
 ```text
 releases/<full-git-sha>/app/index.html
 releases/<full-git-sha>/share/index.html
+releases/<full-git-sha>/index.html
+releases/<full-git-sha>/zh/index.html
 releases/<full-git-sha>/assets/*
 releases/<full-git-sha>/<approved-public-assets>/*
 releases/<full-git-sha>/release-manifest.json
@@ -29,8 +31,9 @@ shell reference was emitted with the same full release SHA. Runtime URLs for app
 are pinned to that release as well. The packager copies only approved public asset directories,
 creates Brotli and gzip siblings, and records every payload digest. Build metadata binds the
 artifact to the source SHA and the effective public browser configuration. The manifest declares
-the exact `scope: ["app", "share"]` and both shell paths; `_READY.json` binds that manifest to the
-release SHA.
+the exact `scope: ["app", "share", "landing"]` and all four shell paths; `_READY.json` binds that
+manifest to the release SHA. The landing entries are distinct Vite inputs so their language,
+metadata, prerendered first screen, and entry assets cannot be mixed across locales.
 
 Re-run the strict local inventory check without rebuilding with:
 
@@ -71,9 +74,10 @@ pnpm dlx wrangler@4.107.0 deploy \
 ```
 
 The checked-in `Publish Frontend Preview` workflow performs the same build, immutable upload,
-full remote audit, activation, and required response-header checks for both app and share shells.
-Running it again with an older sealed SHA is the rollback path. Configure its `frontend-preview`
-environment with
+full remote audit, activation, and required response-header checks for app and share. It also GETs
+both landing pages and verifies the active release, locale-specific `lang` and title, prerender
+marker, and non-empty static first screen. Running it again with an older sealed SHA is the rollback
+path. Configure its `frontend-preview` environment with
 `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `FRONTEND_R2_ACCESS_KEY_ID`, and
 `FRONTEND_R2_SECRET_ACCESS_KEY`, and set `FRONTEND_PREVIEW_URL` as an environment variable for the
 required post-deploy check. Restrict that environment to the default branch, require approval, and
@@ -84,11 +88,12 @@ Authentication and bucket upload credentials belong in CI secrets and must not b
 rollback redeploys the edge version with the previous full release SHA; old release objects remain
 available for existing browser tabs.
 
-The release must never create placeholder root, locale, auth, or not-found shells. Those requests
-remain on the Studio origin until each page has a real static build and its server work has moved
-behind an API contract. The share shell is a real static entry whose reads and clone mutation use
-the independent API. A production promotion may initially route only `/app/*`, `/share/*`,
-`/zh/share/*`, versioned static assets, and the approved public asset paths.
+The release must never create placeholder auth or not-found shells. Those requests remain on the
+Studio origin until each page has a real static build and its server work has moved behind an API
+contract. The root and `/zh` objects are real prerendered landing entries; the share shell is a real
+static entry whose reads and clone mutation use the independent API. A production promotion may
+initially route only `/`, `/zh`, `/app/*`, `/share/*`, `/zh/share/*`, versioned static assets, and
+the approved public asset paths.
 
 The default configuration only enables the preview address. The separate production configuration
 has `workers_dev = false` and no routes, so it cannot take over production traffic. Production
