@@ -1,3 +1,5 @@
+import { isSafeReleasePath } from './release-path.mjs';
+
 const FULL_RELEASE_PATTERN = /^[0-9a-f]{40}$/;
 const COMPRESSIBLE_ASSET_PATTERN = /\.(?:css|html|js|json|mjs|svg|txt|xml)$/i;
 
@@ -155,7 +157,7 @@ export function resolveEdgeAction(pathname, activeRelease) {
       !release ||
       !assetPath ||
       !FULL_RELEASE_PATTERN.test(release) ||
-      hasUnsafePath(assetPath) ||
+      !isSafeReleasePath(assetPath) ||
       !isPublishedAssetPath(assetPath)
     ) {
       return { type: 'not-found' };

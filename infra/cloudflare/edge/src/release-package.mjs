@@ -3,6 +3,7 @@ import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:f
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { brotliCompress, gzip, constants as zlibConstants } from 'node:zlib';
+import { validateReleasePath } from './release-path.mjs';
 
 const compressBrotli = promisify(brotliCompress);
 const compressGzip = promisify(gzip);
@@ -30,9 +31,14 @@ export async function packageAppRelease({
     requireDirectory(appPublicDirectory, 'app public directory'),
     requireDirectory(studioPublicDirectory, 'studio public directory'),
     requireRegularFile(iconFile, 'app icon'),
+    prepareOutputRoot(outputRoot),
   ]);
 
   const releaseDirectory = path.join(outputRoot, normalizedRelease);
+  const existingRelease = await lstat(releaseDirectory).catch(() => null);
+  if (existingRelease && (!existingRelease.isDirectory() || existingRelease.isSymbolicLink())) {
+    throw new Error(`release output target is unsafe: ${releaseDirectory}`);
+  }
   await rm(releaseDirectory, { recursive: true, force: true });
   await mkdir(releaseDirectory, { recursive: true });
 
@@ -460,37 +466,21 @@ async function listReleaseFiles(directory, relativeDirectory = '') {
   return files.sort();
 }
 
-function validateReleasePath(filename) {
-  if (!filename || path.posix.isAbsolute(filename) || filename.includes('\\')) {
-    throw new Error(`unsafe release path: ${filename}`);
-  }
-  const normalized = path.posix.normalize(filename);
-  const parts = normalized.split('/');
-  if (
-    normalized !== filename ||
-    parts.some(
-      (part) =>
-        !part || part === '.' || part === '..' || part.startsWith('.') || hasControlCharacter(part),
-    ) ||
-    normalized.toLowerCase().endsWith('.map')
-  ) {
-    throw new Error(`unsafe release path: ${filename}`);
-  }
-  return normalized;
-}
-
-function hasControlCharacter(value) {
-  for (const character of value) {
-    const code = character.charCodeAt(0);
-    if (code <= 31 || code === 127) return true;
-  }
-  return false;
-}
-
 async function requireDirectory(filename, label) {
   const stats = await lstat(filename).catch(() => null);
   if (!stats?.isDirectory() || stats.isSymbolicLink()) {
     throw new Error(`${label} is missing or is not a directory: ${filename}`);
+  }
+}
+
+async function prepareOutputRoot(filename) {
+  if (typeof filename !== 'string' || filename.length === 0) {
+    throw new Error('release output root is required');
+  }
+  await mkdir(filename, { recursive: true });
+  const stats = await lstat(filename).catch(() => null);
+  if (!stats?.isDirectory() || stats.isSymbolicLink()) {
+    throw new Error(`release output root is missing or unsafe: ${filename}`);
   }
 }
 

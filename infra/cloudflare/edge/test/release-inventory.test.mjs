@@ -111,6 +111,19 @@ test('binds READY identity, raw manifest bytes, and object count', async (contex
   });
 });
 
+test('requires provenance digests to be strings without coercion', async (context) => {
+  const fixture = await createRelease(context);
+  fixture.manifest.buildConfigFingerprint = ['a'.repeat(64)];
+  fixture.manifest.buildMetadataSha256 = ['b'.repeat(64)];
+  fixture.manifest.sourceManifestSha256 = ['c'.repeat(64)];
+  await resealManifest(fixture);
+
+  await assert.rejects(
+    verifyReleaseDirectory({ release: RELEASE, releaseDirectory: fixture.releaseDirectory }),
+    /must be a lowercase SHA-256 digest/,
+  );
+});
+
 test('requires compressed objects to have exact metadata and an uncompressed sibling', async (context) => {
   await context.test('content encoding', async (subcontext) => {
     const fixture = await createRelease(subcontext);

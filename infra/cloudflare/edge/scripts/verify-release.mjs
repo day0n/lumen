@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
 import { verifyReleaseDirectory } from '../src/release-inventory.mjs';
+import { ensureSafeDirectoryChain } from '../src/release-local-directory.mjs';
 
 const run = promisify(execFile);
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -21,7 +22,7 @@ const release = (values.release ?? process.env.GITHUB_SHA ?? (await readHeadRele
   .toLowerCase();
 const releaseDirectory = values['release-directory']
   ? path.resolve(values['release-directory'])
-  : path.join(repositoryRoot, '.artifacts', 'frontend', 'releases', release);
+  : path.join(await readDefaultReleaseRoot(), release);
 const inventory = await verifyReleaseDirectory({ release, releaseDirectory });
 
 process.stdout.write(
@@ -43,4 +44,11 @@ process.stdout.write(
 async function readHeadRelease() {
   const { stdout } = await run('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot });
   return stdout.trim();
+}
+
+async function readDefaultReleaseRoot() {
+  return ensureSafeDirectoryChain({
+    baseDirectory: repositoryRoot,
+    segments: ['.artifacts', 'frontend', 'releases'],
+  });
 }

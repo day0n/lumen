@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
 import { verifyReleaseDirectory } from '../src/release-inventory.mjs';
+import { ensureSafeDirectoryChain } from '../src/release-local-directory.mjs';
 import { packageAppRelease } from '../src/release-package.mjs';
 
 const run = promisify(execFile);
@@ -25,7 +26,7 @@ if (release !== headRelease) {
 await requireCleanWorktree('before frontend build');
 const outputRoot = values['output-root']
   ? path.resolve(values['output-root'])
-  : path.join(repositoryRoot, '.artifacts', 'frontend', 'releases');
+  : await ensureDefaultReleaseRoot(true);
 
 await runAppBuild(release);
 if ((await readHeadRelease()).toLowerCase() !== release) {
@@ -44,6 +45,11 @@ const inventory = await verifyReleaseDirectory({
   release,
   releaseDirectory: result.releaseDirectory,
 });
+if ((await readHeadRelease()).toLowerCase() !== release) {
+  throw new Error('repository HEAD changed during frontend packaging');
+}
+await requireCleanWorktree('after frontend packaging');
+if (!values['output-root']) await ensureDefaultReleaseRoot(false);
 
 process.stdout.write(
   `${JSON.stringify(
@@ -63,6 +69,14 @@ process.stdout.write(
 async function readHeadRelease() {
   const { stdout } = await run('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot });
   return stdout.trim();
+}
+
+async function ensureDefaultReleaseRoot(create) {
+  return ensureSafeDirectoryChain({
+    baseDirectory: repositoryRoot,
+    segments: ['.artifacts', 'frontend', 'releases'],
+    create,
+  });
 }
 
 async function requireCleanWorktree(stage) {

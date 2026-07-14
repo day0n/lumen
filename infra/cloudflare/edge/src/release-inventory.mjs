@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { validateReleasePath } from './release-path.mjs';
 
 const FULL_RELEASE_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -87,6 +88,57 @@ export async function verifyReleaseDirectory({ release, releaseDirectory }) {
   };
 }
 
+export function verifyReleaseInventoryObjects({ release, objects }) {
+  requireRelease(release);
+  if (!Array.isArray(objects) || objects.length < 2) {
+    throw new Error('release inventory must contain manifest and READY objects');
+  }
+
+  const payloadObjects = objects.slice(0, -2);
+  const manifestObject = objects.at(-2);
+  const readyObject = objects.at(-1);
+  if (
+    manifestObject?.relativePath !== MANIFEST_FILENAME ||
+    readyObject?.relativePath !== READY_FILENAME
+  ) {
+    throw new Error('release inventory metadata objects are out of order');
+  }
+
+  const manifestBytes = normalizeObjectBytes(manifestObject.bytes, MANIFEST_FILENAME);
+  const readyBytes = normalizeObjectBytes(readyObject.bytes, READY_FILENAME);
+  if (
+    manifestObject.contentType !== JSON_METADATA.contentType ||
+    manifestObject.contentEncoding !== undefined ||
+    readyObject.contentType !== JSON_METADATA.contentType ||
+    readyObject.contentEncoding !== undefined
+  ) {
+    throw new Error('release manifest and READY objects must use canonical JSON metadata');
+  }
+  const manifest = parseJson(manifestBytes, 'release manifest');
+  const ready = parseJson(readyBytes, 'release readiness marker');
+  verifyManifest(manifest, release);
+  verifyReady(ready, release, manifest, manifestBytes, objects.length);
+
+  if (manifest.files.length !== payloadObjects.length) {
+    throw new Error('release manifest payload count does not match inventory objects');
+  }
+  for (let index = 0; index < manifest.files.length; index += 1) {
+    const entry = manifest.files[index];
+    const object = payloadObjects[index];
+    if (
+      object.relativePath !== entry.path ||
+      object.size !== entry.size ||
+      object.sha256 !== entry.sha256 ||
+      object.contentType !== entry.contentType ||
+      (object.contentEncoding ?? undefined) !== entry.contentEncoding
+    ) {
+      throw new Error(`release manifest file does not match inventory object: ${entry.path}`);
+    }
+  }
+
+  return { manifest, ready };
+}
+
 function verifyManifest(manifest, release) {
   requireRecord(manifest, 'release manifest');
   requireExactKeys(
@@ -117,7 +169,7 @@ function verifyManifest(manifest, release) {
     throw new Error('release manifest asset base does not match the requested release');
   }
   for (const field of ['buildConfigFingerprint', 'buildMetadataSha256', 'sourceManifestSha256']) {
-    if (!SHA256_PATTERN.test(manifest[field])) {
+    if (typeof manifest[field] !== 'string' || !SHA256_PATTERN.test(manifest[field])) {
       throw new Error(`release manifest ${field} must be a lowercase SHA-256 digest`);
     }
   }
@@ -157,7 +209,7 @@ function verifyManifestEntry(entry) {
   if (!Number.isSafeInteger(entry.size) || entry.size < 0) {
     throw new Error(`release object size is invalid: ${relativePath}`);
   }
-  if (!SHA256_PATTERN.test(entry.sha256)) {
+  if (typeof entry.sha256 !== 'string' || !SHA256_PATTERN.test(entry.sha256)) {
     throw new Error(`release object hash is invalid: ${relativePath}`);
   }
 
@@ -195,7 +247,7 @@ function verifyReady(ready, release, manifest, manifestBytes, localObjectCount) 
   if (ready.manifest.path !== MANIFEST_FILENAME) {
     throw new Error('release readiness marker references an invalid manifest path');
   }
-  if (!SHA256_PATTERN.test(ready.manifest.sha256)) {
+  if (typeof ready.manifest.sha256 !== 'string' || !SHA256_PATTERN.test(ready.manifest.sha256)) {
     throw new Error('release readiness marker contains an invalid manifest hash');
   }
   if (ready.manifest.sha256 !== digest(manifestBytes)) {
@@ -253,6 +305,13 @@ function parseJson(bytes, label) {
   }
 }
 
+function normalizeObjectBytes(bytes, label) {
+  if (Buffer.isBuffer(bytes)) return bytes;
+  if (bytes instanceof Uint8Array) return Buffer.from(bytes);
+  if (bytes instanceof ArrayBuffer) return Buffer.from(new Uint8Array(bytes));
+  throw new TypeError(`${label} must provide bytes`);
+}
+
 function requireRelease(release) {
   if (typeof release !== 'string' || !FULL_RELEASE_PATTERN.test(release)) {
     throw new Error('release must be a full 40-character lowercase git SHA');
@@ -277,30 +336,6 @@ function requireExactKeys(value, expectedKeys, label) {
   if (!arraysEqual(actualKeys, sortedExpectedKeys)) {
     throw new Error(`${label} has an invalid schema`);
   }
-}
-
-function validateReleasePath(filename) {
-  if (
-    typeof filename !== 'string' ||
-    !filename ||
-    path.posix.isAbsolute(filename) ||
-    filename.includes('\\')
-  ) {
-    throw new Error(`unsafe release path: ${filename}`);
-  }
-  const normalized = path.posix.normalize(filename);
-  const parts = normalized.split('/');
-  if (
-    normalized !== filename ||
-    parts.some(
-      (part) =>
-        !part || part === '.' || part === '..' || part.startsWith('.') || hasControlCharacter(part),
-    ) ||
-    normalized.toLowerCase().endsWith('.map')
-  ) {
-    throw new Error(`unsafe release path: ${filename}`);
-  }
-  return normalized;
 }
 
 function compressionFor(filename) {
@@ -350,12 +385,4 @@ function digest(bytes) {
 
 function arraysEqual(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function hasControlCharacter(value) {
-  for (const character of value) {
-    const code = character.charCodeAt(0);
-    if (code <= 31 || code === 127) return true;
-  }
-  return false;
 }

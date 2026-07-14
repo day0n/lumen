@@ -209,6 +209,19 @@ test('rejects precompressed key collisions and symlinked build directories', asy
   );
 });
 
+test('rejects a symbolic-link output root before removing a release target', async (context) => {
+  const fixture = await createFixture(context);
+  const externalOutput = path.join(fixture.root, 'external-output');
+  const linkedOutput = path.join(fixture.root, 'linked-output');
+  await mkdir(externalOutput);
+  await symlink(externalOutput, linkedOutput);
+
+  await assert.rejects(
+    packageFixture(fixture, linkedOutput),
+    /release output root is missing or unsafe/,
+  );
+});
+
 test('serves every packaged shell reference through the edge worker', async (context) => {
   const fixture = await createFixture(context);
   const packaged = await packageFixture(fixture, path.join(fixture.root, 'worker-output'));

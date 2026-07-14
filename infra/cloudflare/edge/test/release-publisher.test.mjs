@@ -21,8 +21,9 @@ test('dry-run validates and plans the release without touching the store', async
 
   assert.equal(result.state, 'dry-run');
   assert.equal(result.putCount, 0);
+  assert.equal(result.plannedPuts[0], `release-claims/${RELEASE}.json`);
   assert.deepEqual(
-    result.plannedPuts,
+    result.plannedPuts.slice(1),
     inventory.objects.map((object) => object.key),
   );
 });
@@ -36,7 +37,7 @@ test('fills a payload subset with bounded concurrency and writes barriers in ord
 
   assert.equal(result.state, 'sealed');
   assert.equal(result.action, 'published');
-  assert.equal(result.putCount, inventory.objects.length - 1);
+  assert.equal(result.putCount, inventory.objects.length);
   assert.ok(store.maximumActivePuts > 1);
   assert.ok(store.maximumActivePuts <= 2);
 
@@ -58,7 +59,7 @@ test('fills a payload subset with bounded concurrency and writes barriers in ord
   );
 
   assert.deepEqual(
-    [...store.objects.keys()].sort(),
+    releaseKeys(store, inventory.prefix),
     inventory.objects.map((object) => object.key).sort(),
   );
 });
@@ -91,9 +92,9 @@ test('accepts a concurrent identical create without overcounting it', async () =
   const result = await publishImmutableRelease({ inventory, store });
 
   assert.equal(result.state, 'sealed');
-  assert.equal(result.putCount, inventory.objects.length - 1);
+  assert.equal(result.putCount, inventory.objects.length);
   assert.deepEqual(
-    [...store.objects.keys()].sort(),
+    releaseKeys(store, inventory.prefix),
     inventory.objects.map((object) => object.key).sort(),
   );
 });
@@ -111,6 +112,26 @@ test('rejects a concurrent conflicting create without overwriting it', async () 
   assert.equal(store.objects.get(racedObject.key).bytes.toString(), 'concurrent-conflict');
   assert.equal(store.objects.has(inventory.objects.at(-2).key), false);
   assert.equal(store.objects.has(inventory.objects.at(-1).key), false);
+});
+
+test('a permanent claim blocks a different inventory for the same release', async () => {
+  const firstInventory = createInventory(2);
+  const failedPayload = firstInventory.objects[0];
+  const store = new FakeStore({ failKeys: [failedPayload.key] });
+  await assert.rejects(publishImmutableRelease({ inventory: firstInventory, store }), /failed PUT/);
+  assert.equal(store.objects.has(`release-claims/${RELEASE}.json`), true);
+
+  const differentInventory = structuredCloneInventory(firstInventory);
+  replaceObjectBytes(differentInventory.objects[0], '<main>different app</main>\n');
+  resealInventory(differentInventory);
+  store.failKeys.clear();
+
+  await assert.rejects(
+    publishImmutableRelease({ inventory: differentInventory, store }),
+    /conflicts with inventory: release-claims/,
+  );
+  assert.equal(store.objects.has(differentInventory.objects.at(-2).key), false);
+  assert.equal(store.objects.has(differentInventory.objects.at(-1).key), false);
 });
 
 test('treats READY as sealed and refuses to repair a missing object', async () => {
@@ -135,12 +156,26 @@ test('writes only READY when a complete matching manifest barrier already exists
   const result = await publishImmutableRelease({ inventory, store });
 
   assert.equal(result.action, 'sealed-existing-manifest');
-  assert.equal(result.putCount, 1);
+  assert.equal(result.putCount, 2);
   assert.deepEqual(
     store.events
       .filter((event) => event.type === 'put-start')
       .map((event) => event.object.relativePath),
-    ['_READY.json'],
+    [`release-claims/${RELEASE}.json`, '_READY.json'],
+  );
+});
+
+test('does not write READY when the namespace changes before the final barrier', async () => {
+  const inventory = createInventory(3);
+  const store = new FakeStore({ unexpectedOnListCall: 2 });
+  for (const object of inventory.objects.slice(0, -1)) store.seed(object);
+
+  await assert.rejects(publishImmutableRelease({ inventory, store }), /READY barrier.*unexpected/);
+
+  assert.equal(store.objects.has(inventory.objects.at(-1).key), false);
+  assert.equal(
+    store.events.some((event) => event.type === 'put-start' && event.object.phase === 'ready'),
+    false,
   );
 });
 
@@ -258,6 +293,22 @@ test('validates inventory bytes, ordering, paths, and concurrency before publish
   );
 });
 
+test('binds the manifest and READY schemas to the payload inventory', async () => {
+  const inventory = createInventory(2);
+  const manifest = JSON.parse(inventory.objects.at(-2).bytes.toString());
+  manifest.scope = undefined;
+  replaceObjectBytes(inventory.objects.at(-2), `${JSON.stringify(manifest)}\n`);
+
+  const ready = JSON.parse(inventory.objects.at(-1).bytes.toString());
+  ready.manifest.sha256 = inventory.objects.at(-2).sha256;
+  replaceObjectBytes(inventory.objects.at(-1), `${JSON.stringify(ready)}\n`);
+
+  await assert.rejects(
+    publishImmutableRelease({ inventory, dryRun: true }),
+    /release manifest has an invalid schema/,
+  );
+});
+
 class FakeStore {
   constructor({
     putDelay = 0,
@@ -265,6 +316,7 @@ class FakeStore {
     corruptAfterPutKeys = [],
     raceKeys = [],
     conflictingRaceKeys = [],
+    unexpectedOnListCall = null,
   } = {}) {
     this.objects = new Map();
     this.events = [];
@@ -273,6 +325,8 @@ class FakeStore {
     this.corruptAfterPutKeys = new Set(corruptAfterPutKeys);
     this.raceKeys = new Set(raceKeys);
     this.conflictingRaceKeys = new Set(conflictingRaceKeys);
+    this.unexpectedOnListCall = unexpectedOnListCall;
+    this.listCallCount = 0;
     this.activePuts = 0;
     this.maximumActivePuts = 0;
   }
@@ -289,6 +343,13 @@ class FakeStore {
   }
 
   async list(prefix) {
+    this.listCallCount += 1;
+    if (this.listCallCount === this.unexpectedOnListCall) {
+      this.objects.set(
+        `${prefix}concurrent-unexpected.js`,
+        createStoredObject(describeObject('assets/concurrent-unexpected.js')),
+      );
+    }
     this.events.push({ type: 'list', prefix });
     return {
       objects: [...this.objects.keys()]
@@ -304,7 +365,7 @@ class FakeStore {
     if (!object) return null;
     return {
       size: object.size,
-      customMetadata: { sha256: object.sha256 },
+      customMetadata: { sha256: object.sha256, release: releaseForKey(key) },
       httpMetadata: {
         contentType: object.contentType,
         ...(object.contentEncoding ? { contentEncoding: object.contentEncoding } : {}),
@@ -350,20 +411,29 @@ class FakeStore {
 
 function createInventory(payloadCount) {
   const prefix = `releases/${RELEASE}/`;
-  const payload = Array.from({ length: payloadCount }, (_, index) =>
-    describeObject(
+  const payload = Array.from({ length: payloadCount }, (_, index) => {
+    if (index === 0) return describeObject('app/index.html', '<main>app</main>\n', 'payload');
+    return describeObject(
       `assets/chunk-${index}.js`,
       `export const chunk${index} = ${index};\n`,
       'payload',
-    ),
-  );
+    );
+  });
   const manifestBody = `${JSON.stringify({
     schemaVersion: 1,
     release: RELEASE,
-    files: payload.map(({ relativePath, size, sha256 }) => ({
+    scope: ['app'],
+    shells: { app: 'app/index.html' },
+    assetBase: `/_static/releases/${RELEASE}/`,
+    buildConfigFingerprint: 'a'.repeat(64),
+    buildMetadataSha256: 'b'.repeat(64),
+    sourceManifestSha256: 'c'.repeat(64),
+    files: payload.map(({ relativePath, size, sha256, contentType, contentEncoding }) => ({
       path: relativePath,
       size,
       sha256,
+      contentType,
+      ...(contentEncoding ? { contentEncoding } : {}),
     })),
   })}\n`;
   const manifest = describeObject(MANIFEST_PATH, manifestBody, 'manifest');
@@ -372,6 +442,7 @@ function createInventory(payloadCount) {
     `${JSON.stringify({
       schemaVersion: 1,
       release: RELEASE,
+      scope: ['app'],
       manifest: { path: MANIFEST_PATH, sha256: manifest.sha256 },
       objectCount: payload.length + 2,
     })}\n`,
@@ -398,11 +469,39 @@ function describeObject(relativePath, contents = relativePath, phase = 'payload'
     bytes,
     size: bytes.byteLength,
     sha256: digest(bytes),
-    contentType: relativePath.endsWith('.json')
-      ? 'application/json; charset=utf-8'
-      : 'text/javascript; charset=utf-8',
+    contentType: contentTypeFor(relativePath),
     phase,
   };
+}
+
+function replaceObjectBytes(object, contents) {
+  object.bytes = Buffer.from(contents);
+  object.size = object.bytes.byteLength;
+  object.sha256 = digest(object.bytes);
+}
+
+function resealInventory(inventory) {
+  const manifestObject = inventory.objects.at(-2);
+  const readyObject = inventory.objects.at(-1);
+  const manifest = JSON.parse(manifestObject.bytes.toString());
+  manifest.files = inventory.objects.slice(0, -2).map((object) => ({
+    path: object.relativePath,
+    size: object.size,
+    sha256: object.sha256,
+    contentType: object.contentType,
+    ...(object.contentEncoding ? { contentEncoding: object.contentEncoding } : {}),
+  }));
+  replaceObjectBytes(manifestObject, `${JSON.stringify(manifest)}\n`);
+
+  const ready = JSON.parse(readyObject.bytes.toString());
+  ready.manifest.sha256 = manifestObject.sha256;
+  replaceObjectBytes(readyObject, `${JSON.stringify(ready)}\n`);
+}
+
+function contentTypeFor(relativePath) {
+  if (relativePath.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (relativePath.endsWith('.html')) return 'text/html; charset=utf-8';
+  return 'text/javascript; charset=utf-8';
 }
 
 function createStoredObject(object) {
@@ -413,6 +512,16 @@ function createStoredObject(object) {
     contentType: object.contentType,
     contentEncoding: object.contentEncoding,
   };
+}
+
+function releaseForKey(key) {
+  return key.startsWith('release-claims/')
+    ? key.slice('release-claims/'.length, -'.json'.length)
+    : key.split('/')[1];
+}
+
+function releaseKeys(store, prefix) {
+  return [...store.objects.keys()].filter((key) => key.startsWith(prefix)).sort();
 }
 
 function structuredCloneInventory(inventory) {

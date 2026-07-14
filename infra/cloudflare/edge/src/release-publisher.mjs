@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
+import { verifyReleaseInventoryObjects } from './release-inventory.mjs';
+import { hasControlCharacter, validateReleasePath } from './release-path.mjs';
 
 const FULL_RELEASE_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MANIFEST_PATH = 'release-manifest.json';
 const READY_PATH = '_READY.json';
+const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
 
 export async function publishImmutableRelease({
   inventory: rawInventory,
@@ -13,6 +16,10 @@ export async function publishImmutableRelease({
 }) {
   const inventory = normalizeInventory(rawInventory);
   const uploadConcurrency = normalizeConcurrency(concurrency);
+  const manifest = inventory.objects.at(-2);
+  const ready = inventory.objects.at(-1);
+  const payload = inventory.objects.slice(0, -2);
+  const claim = createPublishClaim(inventory, manifest, ready);
 
   if (dryRun) {
     return {
@@ -23,15 +30,12 @@ export async function publishImmutableRelease({
       dryRun: true,
       objectCount: inventory.objects.length,
       putCount: 0,
-      plannedPuts: inventory.objects.map((object) => object.key),
+      plannedPuts: [claim.key, ...inventory.objects.map((object) => object.key)],
     };
   }
 
   requireStore(store);
 
-  const manifest = inventory.objects.at(-2);
-  const ready = inventory.objects.at(-1);
-  const payload = inventory.objects.slice(0, -2);
   const expectedByKey = new Map(inventory.objects.map((object) => [object.key, object]));
   const initialKeys = await listKeys(store, inventory.prefix);
   requireNoUnknownKeys(initialKeys, expectedByKey, inventory.prefix);
@@ -43,38 +47,73 @@ export async function publishImmutableRelease({
   if (initialKeySet.has(ready.key)) {
     action = 'already-sealed';
     await auditExactRelease(store, inventory, uploadConcurrency);
-  } else if (initialKeySet.has(manifest.key)) {
-    action = 'sealed-existing-manifest';
-    requireExactKeys(
-      initialKeys,
-      inventory.objects.slice(0, -1).map((object) => object.key),
-      'a release with a manifest but no READY marker',
-    );
-    await auditObjects(store, [...payload, manifest], uploadConcurrency);
-    putCount += await ensureObject(store, ready);
-    await auditExactRelease(store, inventory, uploadConcurrency);
   } else {
-    action = 'published';
-    requirePayloadSubset(initialKeys, new Set(payload.map((object) => object.key)));
+    if (initialKeySet.has(manifest.key)) {
+      action = 'sealed-existing-manifest';
+      requireExactKeys(
+        initialKeys,
+        inventory.objects.slice(0, -1).map((object) => object.key),
+        'a release with a manifest but no READY marker',
+      );
+      await auditObjects(store, [...payload, manifest], uploadConcurrency);
+      putCount += await ensureObject(store, claim);
+    } else {
+      action = 'published';
+      requirePayloadSubset(initialKeys, new Set(payload.map((object) => object.key)));
 
-    const initiallyPresent = payload.filter((object) => initialKeySet.has(object.key));
-    await auditObjects(store, initiallyPresent, uploadConcurrency);
+      const initiallyPresent = payload.filter((object) => initialKeySet.has(object.key));
+      await auditObjects(store, initiallyPresent, uploadConcurrency);
 
-    const missingPayload = payload.filter((object) => !initialKeySet.has(object.key));
-    const payloadPuts = await mapWithConcurrency(missingPayload, uploadConcurrency, (object) =>
-      ensureObject(store, object),
-    );
-    putCount += payloadPuts.reduce((total, count) => total + count, 0);
+      // The permanent claim prevents two different inventories from racing under
+      // the same source SHA. It lives outside the release namespace so READY can
+      // still seal an exact, immutable object set.
+      putCount += await ensureObject(store, claim);
 
-    // The manifest is a one-way barrier: every payload object must be durable
-    // and byte-for-byte identical before it can be created.
-    await auditObjects(store, payload, uploadConcurrency);
-    putCount += await ensureObject(store, manifest);
-    await auditObject(store, manifest);
+      const missingPayload = payload.filter((object) => !initialKeySet.has(object.key));
+      const payloadPuts = await mapWithConcurrency(missingPayload, uploadConcurrency, (object) =>
+        ensureObject(store, object),
+      );
+      putCount += payloadPuts.reduce((total, count) => total + count, 0);
 
-    // READY seals the namespace. It is always the final write.
-    putCount += await ensureObject(store, ready);
-    await auditExactRelease(store, inventory, uploadConcurrency);
+      // The manifest is a one-way barrier: every payload object must be durable,
+      // byte-for-byte identical, and the complete namespace before it is created.
+      await auditObjects(store, payload, uploadConcurrency);
+      const beforeManifest = await listKeys(store, inventory.prefix);
+      if (beforeManifest.includes(ready.key)) {
+        await auditExactRelease(store, inventory, uploadConcurrency);
+      } else if (beforeManifest.includes(manifest.key)) {
+        requireExactKeys(
+          beforeManifest,
+          [...payload, manifest].map((object) => object.key),
+          'release manifest barrier',
+        );
+        await auditObject(store, manifest);
+      } else {
+        requireExactKeys(
+          beforeManifest,
+          payload.map((object) => object.key),
+          'release payload barrier',
+        );
+        putCount += await ensureObject(store, manifest);
+        await auditObject(store, manifest);
+      }
+    }
+
+    // READY is the final release write. Re-list immediately before sealing so
+    // an unexpected or incomplete namespace is never intentionally finalized.
+    const beforeReady = await listKeys(store, inventory.prefix);
+    if (beforeReady.includes(ready.key)) {
+      await auditExactRelease(store, inventory, uploadConcurrency);
+    } else {
+      requireExactKeys(
+        beforeReady,
+        [...payload, manifest].map((object) => object.key),
+        'release READY barrier',
+      );
+      await auditObjects(store, [...payload, manifest], uploadConcurrency);
+      putCount += await ensureObject(store, ready);
+      await auditExactRelease(store, inventory, uploadConcurrency);
+    }
   }
 
   return {
@@ -89,11 +128,33 @@ export async function publishImmutableRelease({
   };
 }
 
+function createPublishClaim(inventory, manifest, ready) {
+  const relativePath = `release-claims/${inventory.release}.json`;
+  const bytes = Buffer.from(
+    `${JSON.stringify({
+      schemaVersion: 1,
+      release: inventory.release,
+      manifestSha256: manifest.sha256,
+      readySha256: ready.sha256,
+      objectCount: inventory.objects.length,
+    })}\n`,
+  );
+  return {
+    key: relativePath,
+    relativePath,
+    bytes,
+    size: bytes.byteLength,
+    sha256: digest(bytes),
+    contentType: JSON_CONTENT_TYPE,
+    phase: 'claim',
+  };
+}
+
 function normalizeInventory(inventory) {
   if (!inventory || typeof inventory !== 'object' || Array.isArray(inventory)) {
     throw new TypeError('release inventory must be an object');
   }
-  if (!FULL_RELEASE_PATTERN.test(inventory.release)) {
+  if (typeof inventory.release !== 'string' || !FULL_RELEASE_PATTERN.test(inventory.release)) {
     throw new Error('release inventory requires a full lowercase git SHA');
   }
   const expectedPrefix = `releases/${inventory.release}/`;
@@ -128,6 +189,7 @@ function normalizeInventory(inventory) {
     keys.add(object.key);
     relativePaths.add(object.relativePath);
   }
+  verifyReleaseInventoryObjects({ release: inventory.release, objects });
 
   return { release: inventory.release, prefix: inventory.prefix, objects };
 }
@@ -136,7 +198,7 @@ function normalizeObject(object, prefix, index, objectCount) {
   if (!object || typeof object !== 'object' || Array.isArray(object)) {
     throw new TypeError(`release inventory object ${index} must be an object`);
   }
-  const relativePath = validateRelativePath(object.relativePath);
+  const relativePath = validateReleasePath(object.relativePath);
   if (object.key !== `${prefix}${relativePath}`) {
     throw new Error(`release inventory key does not match its prefix: ${object.key}`);
   }
@@ -144,7 +206,11 @@ function normalizeObject(object, prefix, index, objectCount) {
   if (!Number.isSafeInteger(object.size) || object.size < 0 || object.size !== bytes.byteLength) {
     throw new Error(`release inventory size does not match bytes: ${relativePath}`);
   }
-  if (!SHA256_PATTERN.test(object.sha256) || digest(bytes) !== object.sha256) {
+  if (
+    typeof object.sha256 !== 'string' ||
+    !SHA256_PATTERN.test(object.sha256) ||
+    digest(bytes) !== object.sha256
+  ) {
     throw new Error(`release inventory sha256 does not match bytes: ${relativePath}`);
   }
   if (
@@ -179,33 +245,6 @@ function normalizeObject(object, prefix, index, objectCount) {
     ...(object.contentEncoding ? { contentEncoding: object.contentEncoding } : {}),
     phase: inferredPhase,
   };
-}
-
-function validateRelativePath(relativePath) {
-  if (
-    typeof relativePath !== 'string' ||
-    relativePath.length === 0 ||
-    relativePath.startsWith('/') ||
-    relativePath.includes('\\') ||
-    relativePath.includes('?') ||
-    relativePath.includes('#') ||
-    hasControlCharacter(relativePath)
-  ) {
-    throw new Error(`unsafe release inventory path: ${relativePath}`);
-  }
-  const parts = relativePath.split('/');
-  if (parts.some((part) => part.length === 0 || part === '.' || part === '..')) {
-    throw new Error(`unsafe release inventory path: ${relativePath}`);
-  }
-  return relativePath;
-}
-
-function hasControlCharacter(value) {
-  for (const character of value) {
-    const code = character.charCodeAt(0);
-    if (code <= 31 || code === 127) return true;
-  }
-  return false;
 }
 
 function normalizeConcurrency(concurrency) {
@@ -295,6 +334,15 @@ async function auditObject(store, object) {
   if (actualMetadata.sha256 !== object.sha256) {
     throw new Error(`release object sha256 metadata conflicts with inventory: ${object.key}`);
   }
+  if (actualMetadata.release !== releaseFromObjectKey(object.key)) {
+    throw new Error(`release object release metadata conflicts with inventory: ${object.key}`);
+  }
+  if (
+    !actualMetadata.customMetadata ||
+    !arraysEqual(Object.keys(actualMetadata.customMetadata).sort(), ['release', 'sha256'])
+  ) {
+    throw new Error(`release object custom metadata conflicts with inventory: ${object.key}`);
+  }
   if (actualMetadata.contentType !== object.contentType) {
     throw new Error(`release object content type conflicts with inventory: ${object.key}`);
   }
@@ -319,10 +367,18 @@ function readMetadata(metadata) {
   return {
     size: metadata.size,
     sha256: metadata.sha256 ?? metadata.customMetadata?.sha256,
+    release: metadata.release ?? metadata.customMetadata?.release,
+    customMetadata: metadata.customMetadata,
     contentType: metadata.contentType ?? metadata.httpMetadata?.contentType,
     contentEncoding:
       metadata.contentEncoding ?? metadata.httpMetadata?.contentEncoding ?? undefined,
   };
+}
+
+function releaseFromObjectKey(key) {
+  const match = /^(?:releases\/([0-9a-f]{40})\/|release-claims\/([0-9a-f]{40})\.json$)/.exec(key);
+  if (!match) throw new Error(`release object key has no release identity: ${key}`);
+  return match[1] ?? match[2];
 }
 
 async function ensureObject(store, object) {
@@ -385,4 +441,8 @@ function normalizeBytes(bytes, label) {
 
 function digest(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+function arraysEqual(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
