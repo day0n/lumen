@@ -86,6 +86,7 @@ jobs:
           NEXT_DIST_DIR: .next-ci
         run: |
           pnpm package:frontend --release "$GITHUB_SHA"
+          pnpm run-script frontend:upload --release "$GITHUB_SHA" --dry-run
           pnpm --filter @lumen/studio build
           pnpm --filter @lumen/api build
           pnpm --filter @lumen/agent build
