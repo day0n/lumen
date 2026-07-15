@@ -887,8 +887,6 @@ async function createFixture(context) {
 
   const distDirectory = path.join(root, 'dist');
   const appPublicDirectory = path.join(root, 'app-public');
-  const studioPublicDirectory = path.join(root, 'studio-public');
-  const iconFile = path.join(root, 'icon.svg');
 
   await Promise.all([
     writeFixtureFile(
@@ -963,20 +961,20 @@ async function createFixture(context) {
     ),
     writeFixtureFile(path.join(appPublicDirectory, 'private.txt'), 'not-approved'),
     writeFixtureFile(
-      path.join(studioPublicDirectory, 'home-posters', 'selected', 'remote.png'),
+      path.join(appPublicDirectory, 'home-posters', 'selected', 'remote.png'),
       'remote-poster',
     ),
     writeFixtureFile(
-      path.join(studioPublicDirectory, 'home-templates', 'covers', 'template.webp'),
+      path.join(appPublicDirectory, 'home-templates', 'covers', 'template.webp'),
       'template',
     ),
+    writeFixtureFile(path.join(appPublicDirectory, 'material-showcase', 'item.webp'), 'showcase'),
+    writeFixtureFile(path.join(appPublicDirectory, 'particle-masks', 'sparkle.png'), 'mask'),
+    writeFixtureFile(path.join(appPublicDirectory, 'particle-masks', 'typing.jpg'), 'photo'),
     writeFixtureFile(
-      path.join(studioPublicDirectory, 'material-showcase', 'item.webp'),
-      'showcase',
+      path.join(appPublicDirectory, 'icon.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
     ),
-    writeFixtureFile(path.join(studioPublicDirectory, 'particle-masks', 'sparkle.png'), 'mask'),
-    writeFixtureFile(path.join(studioPublicDirectory, 'particle-masks', 'typing.jpg'), 'photo'),
-    writeFixtureFile(iconFile, '<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
   ]);
   await writeFixtureFile(
     path.join(distDirectory, '.vite', 'manifest.json'),
@@ -1171,8 +1169,6 @@ async function createFixture(context) {
     root,
     distDirectory,
     appPublicDirectory,
-    studioPublicDirectory,
-    iconFile,
   };
 }
 
@@ -1181,8 +1177,6 @@ async function packageFixture(fixture, outputRoot) {
     release: RELEASE,
     distDirectory: fixture.distDirectory,
     appPublicDirectory: fixture.appPublicDirectory,
-    studioPublicDirectory: fixture.studioPublicDirectory,
-    iconFile: fixture.iconFile,
     outputRoot,
   });
 }

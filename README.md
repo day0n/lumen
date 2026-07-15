@@ -29,6 +29,8 @@ lumen/
 中英文首页、中英文登录和中英文 404 八个静态入口；发布器按完整 Git SHA 将入口、哈希资源、
 压缩副本和校验清单写入私有对象存储，边缘路由只读取已封存的 release。`/api/*`、
 `/v1/agent/*`、`/ws/*` 和监控请求原样回源，页面和后端可以独立发布、独立回滚。
+前端组件、样式、图标和公共媒体均由 `lumen-app` 自己持有，构建与 release 打包不会读取
+`lumen-studio` 目录。
 
 `lumen-studio` 仍然保留，但它已经是后端兼容服务，不再是前端发布单元。尚未迁移的 API、
 `/ws/flow` 和后台事件镜像继续由它承担；`lumen-api` 承接已经抽离的 API。Studio 中保留一份
@@ -186,6 +188,7 @@ pnpm install
 
 # 配置环境变量（每个服务一份）
 cp apps/lumen-studio/.env.example apps/lumen-studio/.env.local
+cp apps/lumen-app/.env.example    apps/lumen-app/.env.local
 cp apps/lumen-api/.env.example    apps/lumen-api/.env.local
 cp apps/lumen-agent/.env.example  apps/lumen-agent/.env.local
 cp apps/lumen-engine/.env.example apps/lumen-engine/.env.local

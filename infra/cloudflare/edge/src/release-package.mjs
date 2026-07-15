@@ -90,8 +90,7 @@ const BUILD_SHELLS = [
     },
   },
 ];
-const APP_PUBLIC_DIRECTORIES = ['home-posters'];
-const STUDIO_PUBLIC_DIRECTORIES = [
+const APP_PUBLIC_DIRECTORIES = [
   'home-posters',
   'home-templates',
   'material-showcase',
@@ -106,15 +105,13 @@ export async function packageAppRelease({
   release,
   distDirectory,
   appPublicDirectory,
-  studioPublicDirectory,
-  iconFile,
   outputRoot,
 }) {
   const normalizedRelease = normalizeRelease(release);
+  const iconFile = path.join(appPublicDirectory, 'icon.svg');
   await Promise.all([
     requireDirectory(distDirectory, 'app build directory'),
     requireDirectory(appPublicDirectory, 'app public directory'),
-    requireDirectory(studioPublicDirectory, 'studio public directory'),
     requireRegularFile(iconFile, 'app icon'),
     prepareOutputRoot(outputRoot),
   ]);
@@ -153,13 +150,6 @@ export async function packageAppRelease({
   for (const directoryName of APP_PUBLIC_DIRECTORIES) {
     await copyReleaseDirectoryContents(
       path.join(appPublicDirectory, directoryName),
-      path.join(releaseDirectory, directoryName),
-      directoryName,
-    );
-  }
-  for (const directoryName of STUDIO_PUBLIC_DIRECTORIES) {
-    await copyReleaseDirectoryContents(
-      path.join(studioPublicDirectory, directoryName),
       path.join(releaseDirectory, directoryName),
       directoryName,
     );

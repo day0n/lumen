@@ -37,8 +37,6 @@ const result = await packageAppRelease({
   release,
   distDirectory: path.join(repositoryRoot, 'apps', 'lumen-app', 'dist'),
   appPublicDirectory: path.join(repositoryRoot, 'apps', 'lumen-app', 'public'),
-  studioPublicDirectory: path.join(repositoryRoot, 'apps', 'lumen-studio', 'public'),
-  iconFile: path.join(repositoryRoot, 'apps', 'lumen-studio', 'src', 'app', 'icon.svg'),
   outputRoot,
 });
 const inventory = await verifyReleaseDirectory({
