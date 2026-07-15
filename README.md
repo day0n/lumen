@@ -11,34 +11,48 @@ monorepo（pnpm workspace）。
 ```
 lumen/
 ├── apps/
-│   ├── lumen-app/       Vite + React 19 + TanStack Router SPA（用户主界面，画布 / 项目 / Agent 面板）
-│   ├── lumen-studio/    Node 自定义 server + Next.js（BFF / API / WebSocket gateway，并把 lumen-app 的 dist 当静态资源服）
+│   ├── lumen-app/       可独立发布的静态前端（应用 / 分享 / 首页 / 登录 / 404）
+│   ├── lumen-api/       独立 Hono API（逐步承接 Studio API）
+│   ├── lumen-studio/    旧 API 兼容层 / WebSocket gateway / 后台事件镜像 / 源站回退
 │   ├── lumen-agent/     Hono SSE Agent 服务
 │   └── lumen-engine/    工作流执行引擎
+├── infra/
+│   ├── cloudflare/edge/ 静态 release 打包、对象存储发布和边缘路由
+│   └── nginx/           源站 API / Agent / WebSocket 分流
 └── packages/
     ├── shared/          跨服务的 zod schema / 协议
+    ├── backend/         API 与 Studio 共用的后端业务服务
     └── db/              MongoDB / Redis 连接和仓储
 ```
 
-前端拆分：用户实际访问的 UI（画布、项目列表、Agent 面板、首页等）现在跑在 Vite 打出的 SPA 里，路径以 `/app` 为前缀；`lumen-studio` 的 Next.js 主要承担 API 路由（`/api/*` 与 `/app/api/*`）、WebSocket gateway（`/ws/flow`）、Sentry tunnel（`/monitoring`）以及静态资源分发。开发模式下 Vite 起在 :3002，代理 `/api` / `/ws` / `/monitoring` 到 lumen-studio :3000；生产模式下两者跑在同一个进程：`server.ts` 自定义 Node server 既挂 Next.js handler，又把 `../lumen-app/dist` 作为 `/app/*` 的静态资源直接吐出去。
+前端拆分后，浏览器页面不再依赖服务端渲染进程。`lumen-app` 一次构建产出应用、分享、
+中英文首页、中英文登录和中英文 404 八个静态入口；发布器按完整 Git SHA 将入口、哈希资源、
+压缩副本和校验清单写入私有对象存储，边缘路由只读取已封存的 release。`/api/*`、
+`/v1/agent/*`、`/ws/*` 和监控请求原样回源，页面和后端可以独立发布、独立回滚。
+
+`lumen-studio` 仍然保留，但它已经是后端兼容服务，不再是前端发布单元。尚未迁移的 API、
+`/ws/flow` 和后台事件镜像继续由它承担；`lumen-api` 承接已经抽离的 API。Studio 中保留一份
+静态应用构建作为紧急源站回退，待 API 和长连接职责继续拆出、边缘生产运行稳定后再删除。
 
 ## 运行时拓扑
 
-```
-Frontend ──── WebSocket ────► lumen-studio :3000
-                                   │
-                                   ▼ XADD lumen:flow:tasks
-                              Redis Stream
-                                   │
-                                   ▼ XREADGROUP
-                              lumen-engine :3002
-                                   │
-                                   ▼ PUBLISH flow:events:{connId}
-                              Redis Pub/Sub
-                                   ▲
-Frontend ──── WebSocket ────► lumen-studio  ─┘
-
-Frontend ──── SSE ──────────► lumen-agent  :3001  （对话）
+```text
+浏览器 ── 页面 / JS / CSS / 公共媒体 ──► Edge router ──► 私有静态 release
+   │
+   ├── /api/* ───────────────────────► 源站 Nginx
+   │                                      ├─► lumen-api :3003（已迁移 API）
+   │                                      └─► lumen-studio :3000（兼容 API）
+   ├── /v1/agent/* ──────────────────► lumen-agent :3001
+   └── /ws/flow ─────────────────────► lumen-studio :3000
+                                              │
+                                              ▼ XADD lumen:flow:tasks
+                                         Redis Stream
+                                              │ XREADGROUP
+                                              ▼
+                                         lumen-engine
+                                              │ PUBLISH flow:events:{connId}
+                                              ▼
+                                         Redis Pub/Sub ──► lumen-studio ──► 浏览器
 ```
 
 工作流通信走 studio 自己的 WebSocket（`/ws/flow`），agent 只负责 SSE 对话，两条管道完全解耦。
@@ -172,13 +186,16 @@ pnpm install
 
 # 配置环境变量（每个服务一份）
 cp apps/lumen-studio/.env.example apps/lumen-studio/.env.local
+cp apps/lumen-api/.env.example    apps/lumen-api/.env.local
 cp apps/lumen-agent/.env.example  apps/lumen-agent/.env.local
 cp apps/lumen-engine/.env.example apps/lumen-engine/.env.local
 # 填入 MongoDB / Redis / API keys
 
-# 起服务（三个终端）
-pnpm dev:studio   # http://localhost:3000
-pnpm dev:agent    # http://localhost:3001
+# 常用本地进程（按开发范围启动）
+pnpm dev:studio   # 源站兼容 API / WebSocket，http://localhost:3000
+pnpm dev:agent    # Agent，http://localhost:3001
+pnpm dev:app      # 静态前端开发服务器，http://localhost:3002
+pnpm dev:api      # 独立 API，http://localhost:3003
 pnpm dev:engine   # 后台消费
 
 # Lint & format
@@ -363,9 +380,11 @@ Sentry 串一条 trace_id 贯通四个进程，pino / 浏览器 console 与 Sent
 ## 部署
 
 - **生产服务器**：DigitalOcean Droplet ，域名 `https://lumenstudio.tech`
-- **进程管理**：PM2，按 `ecosystem.config.cjs` 同机起三个进程 — `lumen-studio :3000`（tsx 直跑 `server.ts`，自定义 Node server 同时挂 Next.js + WebSocket + lumen-app SPA 静态资源）、`lumen-agent :3001`（编译后 `dist/main.js`）、`lumen-engine`（后台 consumer，`dist/main.js`）
-- **CI / CD**：GitHub Actions `.github/workflows/deploy.yml`，`push origin main` 触发 → `appleboy/ssh-action` SSH 到生产机执行 `~/lumen/deploy.sh`：拉代码、`pnpm install`、按需构建 lumen-app（Vite）/ lumen-studio（Next）/ lumen-agent / lumen-engine、`pm2 reload ecosystem.config.cjs`，全过程在 `flock` 锁内串行，避免并发部署冲突
-- **静态资源**：`lumen-app` Vite 产物 `dist/` 由 `lumen-studio` 自定义 server 直接吐到 `/app/*`，不走 CDN
+- **后端进程**：PM2 按 `ecosystem.config.cjs` 启动 `lumen-studio :3000`、`lumen-agent :3001`、`lumen-api :3003` 和后台 `lumen-engine`。`deploy.yml` 在主分支推送后执行 `deploy.sh`，先验证独立 API，再安全切换 Nginx，最后重载其余后端进程。
+- **静态发布**：每个完整 Git SHA 对应一个不可变前端 release，包含八个静态入口、哈希资源、预压缩副本、manifest 和 READY 屏障。Preview 与 Production 使用不同的 Worker、bucket、凭据和受保护环境。
+- **生产切换**：普通主分支部署不会自动接管域名。只有受保护的 `Activate Frontend Production` 手动工作流会上传并激活指定 SHA；它同时检查主域名、`www` 别名、所有静态入口和 `/api/me` 回源。失败会自动删除生产 Route，让流量回到源站。
+- **回滚**：重新激活上一个已封存 SHA 是常规前端回滚；`Bypass Frontend Production Edge` 会审计并删除边缘层拥有的两条 Route，是不依赖前端 release 的紧急源站回退。
+- **源站静态副本**：`deploy.sh` 暂时仍构建 `lumen-app` 并由 Studio 提供 `/app/*`，只作为旁路后的恢复面，不是切换后的主前端路径。
 
 ## 移动端适配
 
