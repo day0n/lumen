@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 import { type ServerType, serve } from '@hono/node-server';
 
 import { createApiApp } from './app.js';
@@ -210,4 +211,12 @@ function forceCloseServer(server: ServerType) {
   if ('closeAllConnections' in server && typeof server.closeAllConnections === 'function') {
     server.closeAllConnections();
   }
+}
+
+const entryPath = process.env.pm_exec_path || process.argv[1];
+if (entryPath && import.meta.url === pathToFileURL(entryPath).href) {
+  void startApiServer().catch((error) => {
+    console.error('[lumen-api] startup failed', { error });
+    process.exitCode = 1;
+  });
 }

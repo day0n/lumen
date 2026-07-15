@@ -14,7 +14,7 @@ const tsxLoader = pathToFileURL(require.resolve('tsx')).href;
 const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
 const ecosystemPath = path.join(repositoryRoot, 'ecosystem.config.cjs');
 const deployPath = path.join(repositoryRoot, 'deploy.sh');
-const apiEntryPath = path.join(repositoryRoot, 'apps/lumen-api/src/entry.ts');
+const apiEntryPath = path.join(repositoryRoot, 'apps/lumen-api/src/main.ts');
 const RELEASE = '0123456789abcdef0123456789abcdef01234567';
 
 test('process configuration starts the API with an explicit release and env file', async (context) => {
@@ -51,7 +51,7 @@ test('process configuration starts the API with an explicit release and env file
 
   assert.ok(api);
   assert.equal(api.cwd, './apps/lumen-api');
-  assert.equal(api.script, 'dist/entry.js');
+  assert.equal(api.script, 'dist/main.js');
   assert.deepEqual(api.node_args, [`--env-file=${envFile}`]);
   assert.equal(api.env.NODE_ENV, 'production');
   assert.equal(api.env.API_HOST, '127.0.0.1');
@@ -66,7 +66,7 @@ test('process configuration starts the API with an explicit release and env file
   assert.equal(api.restart_delay, 2000);
 });
 
-test('API process entry starts when loaded by the process manager', async () => {
+test('API main entry starts when dynamically loaded by the process manager', async () => {
   await assert.rejects(
     execFileAsync(
       process.execPath,
@@ -83,6 +83,7 @@ test('API process entry starts when loaded by the process manager', async () => 
           CLERK_SECRET_KEY: '',
           MONGODB_URI: '',
           NODE_ENV: 'production',
+          pm_exec_path: apiEntryPath,
           RELEASE_SHA: RELEASE,
         },
       },

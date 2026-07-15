@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @lumen/db build && pnpm --filter @lumen/backend build && tsx watch src/entry.ts",
+    "dev": "pnpm --filter @lumen/db build && pnpm --filter @lumen/backend build && tsx watch src/main.ts",
     "build": "pnpm --filter @lumen/db build && pnpm --filter @lumen/backend build && tsc -p tsconfig.json",
-    "start": "NODE_ENV=production node dist/entry.js",
+    "start": "NODE_ENV=production node dist/main.js",
     "test": "pnpm --filter @lumen/db build && pnpm --filter @lumen/backend build && tsx --test test/*.test.ts",
     "typecheck": "pnpm --filter @lumen/db build && pnpm --filter @lumen/backend build && tsc --noEmit",
     "verify:release": "node scripts/verify-release.mjs"
