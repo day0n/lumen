@@ -75,6 +75,10 @@ function releaseHtmlAssetPlugin(releaseAssetBase: string): PluginOption {
     apply: 'build',
     transformIndexHtml(html) {
       if (!releaseAssetBase) return html;
+      const releasedIconUrl = `${releaseAssetBase}icon.svg`;
+      if (html.includes(`"${releasedIconUrl}"`) || html.includes(`'${releasedIconUrl}'`)) {
+        return html;
+      }
       const rewritten = html.replace(/(["'])\/icon\.svg\1/g, `$1${releaseAssetBase}icon.svg$1`);
       if (rewritten === html) throw new Error('release build did not find the app icon reference');
       return rewritten;
