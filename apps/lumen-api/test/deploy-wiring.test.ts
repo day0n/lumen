@@ -14,6 +14,7 @@ const tsxLoader = pathToFileURL(require.resolve('tsx')).href;
 const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
 const ecosystemPath = path.join(repositoryRoot, 'ecosystem.config.cjs');
 const deployPath = path.join(repositoryRoot, 'deploy.sh');
+const deployWorkflowPath = path.join(repositoryRoot, '.github/workflows/deploy.yml');
 const apiEntryPath = path.join(repositoryRoot, 'apps/lumen-api/src/main.ts');
 const RELEASE = '0123456789abcdef0123456789abcdef01234567';
 
@@ -125,6 +126,9 @@ test('deployment verifies the API before activating its public routes and Studio
     'RELEASE_SHA="$(git rev-parse --verify HEAD)"',
     'API_ENV_FILE="$APP_DIR/apps/lumen-api/.env.local"',
     'pnpm build:api',
+    'FRONTEND_ENV_SOURCE="$APP_DIR/apps/lumen-app/.env.local"',
+    'node apps/lumen-app/scripts/prepare-public-build-env.mjs',
+    'LUMEN_REQUIRE_PUBLIC_CONFIG=1 pnpm build:app',
     'pm2 startOrReload ecosystem.config.cjs --only lumen-api --update-env',
     'pnpm --filter @lumen/api verify:release',
     'echo "==> Activating the public API proxy..."',
@@ -143,7 +147,9 @@ test('deployment verifies the API before activating its public routes and Studio
   }
 
   assert.match(source, /apps\/lumen-studio\/\.env\.local/);
+  assert.match(source, /apps\/lumen-app\/\.env\.production\.local/);
   assert.match(source, /chmod 600 "\$LUMEN_API_ENV_FILE"/);
+  assert.match(source, /chmod 600 "\$FRONTEND_BUILD_ENV"/);
   assert.match(source, /--base-url http:\/\/127\.0\.0\.1:3003/);
   assert.match(source, /infra\/nginx\/lumenstudio\.tech\.conf/);
   assert.match(source, /infra\/nginx\/activate-site\.sh/);
@@ -151,6 +157,19 @@ test('deployment verifies the API before activating its public routes and Studio
   assert.match(source, /\/etc\/nginx\/sites-enabled\/lumenstudio\.tech/);
   assert.match(source, /^set -euo pipefail$/m);
   assert.doesNotMatch(source, /proxy_pass\s+http:\/\/127\.0\.0\.1:3003/);
+});
+
+test('production workflow refreshes the checkout before loading the deploy script', async () => {
+  const source = await readFile(deployWorkflowPath, 'utf8');
+  const pullIndex = source.indexOf('git pull --ff-only origin main');
+  const executeIndex = source.indexOf('exec bash ./deploy.sh');
+
+  assert.ok(pullIndex >= 0, 'production workflow must update the checkout');
+  assert.ok(executeIndex > pullIndex, 'production workflow must execute the updated deploy script');
+  assert.match(
+    source,
+    /git checkout -- apps\/lumen-studio\/next-env\.d\.ts apps\/lumen-studio\/tsconfig\.json/,
+  );
 });
 
 function restoreEnvironment(name: string, value: string | undefined) {

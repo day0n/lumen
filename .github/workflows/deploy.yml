@@ -19,4 +19,8 @@ jobs:
           host: 159.89.192.52
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: bash ~/lumen/deploy.sh
+          script: |
+            cd ~/lumen
+            git checkout -- apps/lumen-studio/next-env.d.ts apps/lumen-studio/tsconfig.json 2>/dev/null || true
+            git pull --ff-only origin main
+            exec bash ./deploy.sh

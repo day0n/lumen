@@ -92,8 +92,19 @@ pnpm build:shared
 echo "==> Building API..."
 pnpm build:api
 
+FRONTEND_ENV_SOURCE="$APP_DIR/apps/lumen-app/.env.local"
+if [ ! -f "$FRONTEND_ENV_SOURCE" ]; then
+  FRONTEND_ENV_SOURCE="$STUDIO_ENV_FILE"
+  echo "==> apps/lumen-app/.env.local not found; migrating public frontend config from Studio."
+fi
+FRONTEND_BUILD_ENV="$APP_DIR/apps/lumen-app/.env.production.local"
+node apps/lumen-app/scripts/prepare-public-build-env.mjs \
+  --source "$FRONTEND_ENV_SOURCE" \
+  --output "$FRONTEND_BUILD_ENV"
+chmod 600 "$FRONTEND_BUILD_ENV"
+
 echo "==> Building studio app..."
-pnpm build:app
+LUMEN_REQUIRE_PUBLIC_CONFIG=1 pnpm build:app
 
 echo "==> Building studio..."
 STUDIO_RELEASE_ID="$(git rev-parse --short HEAD)-$(date +%Y%m%d%H%M%S)"
