@@ -1,0 +1,137 @@
+name: Activate Frontend Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Full Git SHA to activate or reactivate
+        required: true
+        type: string
+      confirmation:
+        description: Type activate-production
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-production
+  cancel-in-progress: false
+
+jobs:
+  activate-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: frontend-production
+    steps:
+      - name: Validate request
+        env:
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          FRONTEND_PRODUCTION_URL: ${{ vars.FRONTEND_PRODUCTION_URL }}
+          RELEASE: ${{ inputs.release }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          test "$WORKFLOW_REF" = "refs/heads/$DEFAULT_BRANCH"
+          test "$CONFIRMATION" = "activate-production"
+          test "$FRONTEND_PRODUCTION_URL" = "https://lumenstudio.tech"
+          if [[ ! "$CLOUDFLARE_ZONE_ID" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "CLOUDFLARE_ZONE_ID is invalid" >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release must be a full lowercase Git SHA" >&2
+            exit 1
+          fi
+
+      - name: Check out requested release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release }}
+          fetch-depth: 0
+
+      - name: Validate release identity
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$RELEASE"
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          git merge-base --is-ancestor "$RELEASE" FETCH_HEAD
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify immutable release
+        env:
+          CI: 'true'
+          RELEASE: ${{ inputs.release }}
+        run: pnpm package:frontend --release "$RELEASE"
+
+      - name: Upload and audit immutable release
+        env:
+          RELEASE: ${{ inputs.release }}
+          FRONTEND_R2_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FRONTEND_R2_BUCKET: lumen-frontend-prod
+          FRONTEND_R2_ACCESS_KEY_ID: ${{ secrets.FRONTEND_R2_ACCESS_KEY_ID }}
+          FRONTEND_R2_SECRET_ACCESS_KEY: ${{ secrets.FRONTEND_R2_SECRET_ACCESS_KEY }}
+        run: pnpm run-script frontend:upload --release "$RELEASE"
+
+      - name: Arm automatic route bypass
+        id: route_rollback
+        run: echo "armed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Activate production release
+        id: activate
+        env:
+          RELEASE: ${{ inputs.release }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: >-
+          pnpm dlx wrangler@4.107.0 deploy
+          --config infra/cloudflare/edge/wrangler.production-active.toml
+          --var "ACTIVE_FRONTEND_RELEASE:$RELEASE"
+          --var "ORIGIN_PASSTHROUGH_ENABLED:true"
+
+      - name: Verify production release and origin passthrough
+        env:
+          RELEASE: ${{ inputs.release }}
+          FRONTEND_PRODUCTION_URL: ${{ vars.FRONTEND_PRODUCTION_URL }}
+        run: >-
+          node infra/cloudflare/edge/scripts/verify-deployment.mjs
+          --base-url "$FRONTEND_PRODUCTION_URL"
+          --release "$RELEASE"
+          --attempts 12
+          --delay-ms 5000
+          --require-origin-passthrough
+
+      - name: Verify production alias and origin passthrough
+        env:
+          RELEASE: ${{ inputs.release }}
+        run: >-
+          node infra/cloudflare/edge/scripts/verify-deployment.mjs
+          --base-url "https://www.lumenstudio.tech"
+          --release "$RELEASE"
+          --attempts 12
+          --delay-ms 5000
+          --require-origin-passthrough
+
+      - name: Bypass edge routes after failed activation
+        if: ${{ failure() && steps.route_rollback.outputs.armed == 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: node infra/cloudflare/edge/scripts/remove-production-routes.mjs

@@ -1,0 +1,66 @@
+name: Bypass Frontend Production Edge
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type bypass-production-edge
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-production
+  cancel-in-progress: false
+
+jobs:
+  bypass-production-edge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: frontend-production
+    steps:
+      - name: Validate request
+        env:
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          FRONTEND_PRODUCTION_URL: ${{ vars.FRONTEND_PRODUCTION_URL }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          test "$WORKFLOW_REF" = "refs/heads/$DEFAULT_BRANCH"
+          test "$CONFIRMATION" = "bypass-production-edge"
+          test "$FRONTEND_PRODUCTION_URL" = "https://lumenstudio.tech"
+          [[ "$CLOUDFLARE_ZONE_ID" =~ ^[0-9a-fA-F]{32}$ ]]
+
+      - name: Check out default branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Remove and audit production edge routes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: node infra/cloudflare/edge/scripts/remove-production-routes.mjs
+
+      - name: Verify origin is reachable
+        env:
+          FRONTEND_PRODUCTION_URL: ${{ vars.FRONTEND_PRODUCTION_URL }}
+        run: |
+          test -n "$FRONTEND_PRODUCTION_URL"
+          response_directory="$(mktemp -d)"
+          trap 'rm -rf "$response_directory"' EXIT
+          status="$(curl --silent --show-error --dump-header "$response_directory/headers" --output "$response_directory/body" --write-out '%{http_code}' "${FRONTEND_PRODUCTION_URL%/}/api/me")"
+          test "$status" = "401"
+          tr -d '\r' < "$response_directory/headers" | grep -iq '^content-type: application/json'
+          API_BODY_FILE="$response_directory/body" node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const payload = JSON.parse(readFileSync(process.env.API_BODY_FILE, 'utf8'));
+          if (!payload || payload.ok !== false) throw new Error('origin API response is invalid');
+          NODE

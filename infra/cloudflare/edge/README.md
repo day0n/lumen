@@ -114,7 +114,29 @@ cannot accidentally reach the production origin. Origin-owned paths also remain 
 active frontend release is missing or invalid; a frontend configuration error must not take down
 backend traffic.
 
-The default configuration only enables the preview address. The separate production configuration
-has `workers_dev = false` and no routes, so it cannot take over production traffic. Production
-domain routes are intentionally added in a later promotion change after the remaining static pages
-and rollback checks have passed.
+The default configuration only enables the preview address. The dormant
+`wrangler.production.toml` configuration has `workers_dev = false` and no routes, so it cannot take
+over production traffic. `wrangler.production-active.toml` is the separately named activation
+configuration and declares only `lumenstudio.tech/*` and `www.lumenstudio.tech/*` as origin-backed
+routes. Merely merging these files does not change production.
+
+The protected `Activate Frontend Production` workflow is the only checked-in activation path. It
+requires a full default-branch Git SHA plus the exact confirmation text, rebuilds and audits the
+immutable release, uploads to `lumen-frontend-prod`, deploys the active route configuration, and
+then verifies every localized shell, recovery status, release header, and unauthenticated API
+response. A failed post-activation check automatically removes both routes, returning all traffic
+to the existing origin. Reactivating a previous sealed SHA is the normal frontend rollback.
+
+Configure the `frontend-production` environment with required reviewers, default-branch
+restrictions, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`,
+`FRONTEND_R2_ACCESS_KEY_ID`, and `FRONTEND_R2_SECRET_ACCESS_KEY`. Set
+`FRONTEND_PRODUCTION_URL=https://lumenstudio.tech` as an environment variable. The token must be
+limited to the production Worker, bucket, and the two declared zone routes. The separate
+`Bypass Frontend Production Edge` workflow is the emergency origin-only path; it removes and
+re-audits only routes owned by `lumen-frontend-edge-production` and refuses unexpected ownership.
+
+The existing Studio process remains part of the backend after this cutover. It continues to serve
+API routes that have not moved to the independent API, the flow WebSocket gateway, and background
+event mirrors. Its static app copy is retained as the immediate origin fallback and can be removed
+only after those backend responsibilities have moved and the production edge has completed a
+stable observation window.
