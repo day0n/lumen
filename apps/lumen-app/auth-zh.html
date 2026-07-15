@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#090a0b" />
+    <meta name="google" content="notranslate" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="description" content="登录 Lumen" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" sizes="any" />
+    <link rel="dns-prefetch" href="https://clerk.lumenstudio.tech" />
+    <link rel="dns-prefetch" href="https://img.clerk.com" />
+    <link rel="preconnect" href="https://clerk.lumenstudio.tech" crossorigin />
+    <link rel="preconnect" href="https://img.clerk.com" crossorigin />
+    <title>账户 — Lumen</title>
+    <script type="module" src="/src/auth-zh-main.tsx"></script>
+  </head>
+  <body>
+    <div id="root" data-lumen-static-auth="zh">
+      <main class="auth-page">
+        <div class="auth-backdrop" aria-hidden="true"><span class="auth-light"></span><span class="auth-grid"></span><span class="auth-vignette"></span></div>
+        <div class="auth-content">
+          <a class="auth-brand" href="/zh" aria-label="Lumen"><span class="auth-mark" aria-hidden="true"><span class="auth-mark-glow"></span><span class="auth-mark-shine"></span></span><span>Lumen</span></a>
+          <div class="auth-card-wrap"><output class="auth-loading" aria-live="polite"><span class="auth-spinner" aria-hidden="true"></span><span>正在加载登录组件…</span></output></div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

@@ -36,6 +36,14 @@ export default {
       url.pathname = '/zh';
       return redirectResponse(url, 302, null, true);
     }
+    if (
+      (matchesPathSegment(url.pathname, '/sign-in') ||
+        matchesPathSegment(url.pathname, '/sign-up')) &&
+      preferredLocale(request) === 'zh'
+    ) {
+      url.pathname = `/zh${url.pathname}`;
+      return redirectResponse(url, 302, 'zh', true);
+    }
 
     const action = resolveEdgeAction(url.pathname, release);
     if (action.type === 'redirect') {
@@ -183,7 +191,7 @@ export function resolveEdgeAction(pathname, activeRelease) {
     return shellAction(activeRelease, 'auth/index.html');
   }
   if (matchesPathSegment(pathname, '/zh/sign-in') || matchesPathSegment(pathname, '/zh/sign-up')) {
-    return shellAction(activeRelease, 'auth/index.html');
+    return shellAction(activeRelease, 'auth/zh/index.html');
   }
   if (matchesPathSegment(pathname, '/share') || matchesPathSegment(pathname, '/zh/share')) {
     return shellAction(activeRelease, 'share/index.html');

@@ -46,6 +46,12 @@ test('preview workflow audits immutable objects before activation', async () => 
   assert.match(workflow, /data-lumen-prerendered/);
   assert.match(workflow, /data-lumen-static-landing/);
   assert.match(workflow, /landing first screen is empty/);
+  assert.match(workflow, /done <<'AUTH_PAGES'/);
+  assert.match(workflow, /\/sign-in\|en\|en\|Account — Lumen/);
+  assert.match(workflow, /\/zh\/sign-up\|zh-CN\|zh\|账户 — Lumen/);
+  assert.match(workflow, /data-lumen-static-auth/);
+  assert.match(workflow, /auth page must remain noindex/);
+  assert.match(workflow, /auth loading screen is empty/);
   assert.doesNotMatch(workflow, /wrangler\.production\.toml|lumen-frontend-prod/);
   assert.doesNotMatch(workflow, /if:.*FRONTEND_PREVIEW_URL/);
 });

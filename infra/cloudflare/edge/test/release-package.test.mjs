@@ -9,19 +9,21 @@ import worker from '../src/worker.mjs';
 
 const RELEASE = '0123456789abcdef0123456789abcdef01234567';
 
-test('packages and verifies app, share, and localized landing shells', async (context) => {
+test('packages and verifies app, share, landing, and auth shells', async (context) => {
   const fixture = await createFixture(context);
   const first = await packageFixture(fixture, path.join(fixture.root, 'output-a'));
   const second = await packageFixture(fixture, path.join(fixture.root, 'output-b'));
 
-  assert.deepEqual(first.manifest.scope, ['app', 'share', 'landing']);
+  assert.deepEqual(first.manifest.scope, ['app', 'share', 'landing', 'auth']);
   assert.deepEqual(first.manifest.shells, {
     app: 'app/index.html',
     share: 'share/index.html',
     landing: 'index.html',
     landingZh: 'zh/index.html',
+    auth: 'auth/index.html',
+    authZh: 'auth/zh/index.html',
   });
-  assert.deepEqual(first.ready.scope, ['app', 'share', 'landing']);
+  assert.deepEqual(first.ready.scope, ['app', 'share', 'landing', 'auth']);
   assert.equal(first.ready.release, RELEASE);
   assert.equal(first.ready.objectCount, first.manifest.files.length + 2);
   assert.equal(first.ready.manifest.sha256.length, 64);
@@ -31,6 +33,8 @@ test('packages and verifies app, share, and localized landing shells', async (co
   assert.ok(outputFiles.includes('share/index.html'));
   assert.ok(outputFiles.includes('index.html'));
   assert.ok(outputFiles.includes('zh/index.html'));
+  assert.ok(outputFiles.includes('auth/index.html'));
+  assert.ok(outputFiles.includes('auth/zh/index.html'));
   assert.ok(outputFiles.includes('assets/index-abc.js'));
   assert.ok(outputFiles.includes('assets/index-abc.css'));
   assert.ok(outputFiles.includes('assets/share-abc.js'));
@@ -39,6 +43,10 @@ test('packages and verifies app, share, and localized landing shells', async (co
   assert.ok(outputFiles.includes('assets/landing-abc.css'));
   assert.ok(outputFiles.includes('assets/landing-zh-abc.js'));
   assert.ok(outputFiles.includes('assets/landing-zh-abc.css'));
+  assert.ok(outputFiles.includes('assets/auth-abc.js'));
+  assert.ok(outputFiles.includes('assets/auth-abc.css'));
+  assert.ok(outputFiles.includes('assets/auth-zh-abc.js'));
+  assert.ok(outputFiles.includes('assets/auth-zh-abc.css'));
   assert.ok(outputFiles.includes('home-posters/selected/poster.webp'));
   assert.ok(outputFiles.includes('home-posters/selected/remote.png'));
   assert.ok(outputFiles.includes('home-templates/covers/template.webp'));
@@ -80,6 +88,27 @@ test('packages and verifies app, share, and localized landing shells', async (co
   assert.match(shareShell, new RegExp(`/_static/releases/${RELEASE}/assets/share-abc\\.js`));
   assert.match(shareShell, new RegExp(`/_static/releases/${RELEASE}/assets/share-abc\\.css`));
   assert.match(shareShell, new RegExp(`/_static/releases/${RELEASE}/icon\\.svg`));
+
+  const authShell = await readFile(path.join(first.releaseDirectory, 'auth', 'index.html'), 'utf8');
+  assert.match(authShell, /<html lang="en">/);
+  assert.match(authShell, /<title>Account — Lumen<\/title>/);
+  assert.match(authShell, /name="robots" content="noindex, nofollow"/);
+  assert.match(authShell, /data-lumen-static-auth="en"/);
+  assert.match(authShell, /auth-loading/);
+  assert.match(authShell, new RegExp(`/_static/releases/${RELEASE}/assets/auth-abc\\.js`));
+  assert.match(authShell, new RegExp(`/_static/releases/${RELEASE}/assets/auth-abc\\.css`));
+
+  const authZhShell = await readFile(
+    path.join(first.releaseDirectory, 'auth', 'zh', 'index.html'),
+    'utf8',
+  );
+  assert.match(authZhShell, /<html lang="zh-CN">/);
+  assert.match(authZhShell, /<title>账户 — Lumen<\/title>/);
+  assert.match(authZhShell, /name="robots" content="noindex, nofollow"/);
+  assert.match(authZhShell, /data-lumen-static-auth="zh"/);
+  assert.match(authZhShell, /auth-loading/);
+  assert.match(authZhShell, new RegExp(`/_static/releases/${RELEASE}/assets/auth-zh-abc\\.js`));
+  assert.match(authZhShell, new RegExp(`/_static/releases/${RELEASE}/assets/auth-zh-abc\\.css`));
 
   const landingShell = await readFile(path.join(first.releaseDirectory, 'index.html'), 'utf8');
   assert.match(landingShell, /<html lang="en">/);
@@ -131,7 +160,7 @@ test('rejects invalid releases and paths outside the build asset allowlist', asy
   );
 });
 
-test('requires exactly the app, share, and localized landing Vite page entries', async (context) => {
+test('requires exactly the app, share, landing, and auth Vite page entries', async (context) => {
   await context.test('missing share entry', async (subcontext) => {
     const fixture = await createFixture(subcontext);
     const manifestPath = path.join(fixture.distDirectory, '.vite', 'manifest.json');
@@ -158,7 +187,7 @@ test('requires exactly the app, share, and localized landing Vite page entries',
     );
   });
 
-  for (const entryName of ['landing.html', 'landing-zh.html']) {
+  for (const entryName of ['auth.html', 'auth-zh.html', 'landing.html', 'landing-zh.html']) {
     await context.test(`missing ${entryName} entry`, async (subcontext) => {
       const fixture = await createFixture(subcontext);
       const manifestPath = path.join(fixture.distDirectory, '.vite', 'manifest.json');
@@ -173,7 +202,7 @@ test('requires exactly the app, share, and localized landing Vite page entries',
     });
   }
 
-  for (const unexpectedEntry of ['auth.html', '404.html']) {
+  for (const unexpectedEntry of ['404.html']) {
     await context.test(`isolates unexpected ${unexpectedEntry} entry`, async (subcontext) => {
       const fixture = await createFixture(subcontext);
       const manifestPath = path.join(fixture.distDirectory, '.vite', 'manifest.json');
@@ -189,7 +218,7 @@ test('requires exactly the app, share, and localized landing Vite page entries',
           fixture,
           path.join(fixture.root, `unexpected-${unexpectedEntry}-entry-output`),
         ),
-        /entry set must be exactly index\.html, landing-zh\.html, landing\.html, share\.html/,
+        /entry set must be exactly auth-zh\.html, auth\.html, index\.html, landing-zh\.html, landing\.html, share\.html/,
       );
     });
   }
@@ -198,6 +227,8 @@ test('requires exactly the app, share, and localized landing Vite page entries',
 test('requires every built release shell to exist as a regular build file', async (context) => {
   for (const [shellName, entryName] of [
     ['share', 'share.html'],
+    ['auth', 'auth.html'],
+    ['authZh', 'auth-zh.html'],
     ['landing', 'landing.html'],
     ['landingZh', 'landing-zh.html'],
   ]) {
@@ -277,6 +308,47 @@ test('validates each localized landing shell against its own Vite entry', async 
       otherScript: 'assets/landing-abc.js',
       otherStyle: 'assets/landing-abc.css',
       requiredScript: 'assets/landing-zh-abc.js',
+    },
+  ]) {
+    await context.test(`${definition.shellName} cannot use another entry`, async (subcontext) => {
+      const fixture = await createFixture(subcontext);
+      await writeFile(
+        path.join(fixture.distDirectory, definition.entryName),
+        [
+          `<link rel="icon" href="/_static/releases/${RELEASE}/icon.svg">`,
+          `<link rel="stylesheet" href="/_static/releases/${RELEASE}/${definition.otherStyle}">`,
+          `<script type="module" src="/_static/releases/${RELEASE}/${definition.otherScript}"></script>`,
+        ].join('\n'),
+      );
+
+      await assert.rejects(
+        packageFixture(
+          fixture,
+          path.join(fixture.root, `wrong-${definition.shellName}-entry-output`),
+        ),
+        new RegExp(
+          `${definition.shellName} shell does not reference required entry asset: ${definition.requiredScript.replace('.', '\\.')}`,
+        ),
+      );
+    });
+  }
+});
+
+test('validates each localized auth shell against its own Vite entry', async (context) => {
+  for (const definition of [
+    {
+      shellName: 'auth',
+      entryName: 'auth.html',
+      otherScript: 'assets/share-abc.js',
+      otherStyle: 'assets/share-abc.css',
+      requiredScript: 'assets/auth-abc.js',
+    },
+    {
+      shellName: 'authZh',
+      entryName: 'auth-zh.html',
+      otherScript: 'assets/auth-abc.js',
+      otherStyle: 'assets/auth-abc.css',
+      requiredScript: 'assets/auth-zh-abc.js',
     },
   ]) {
     await context.test(`${definition.shellName} cannot use another entry`, async (subcontext) => {
@@ -401,6 +473,53 @@ test('requires localized landing metadata and a prerendered first screen', async
 
       await assert.rejects(
         packageFixture(fixture, path.join(fixture.root, `invalid-${definition.name}-output`)),
+        definition.error,
+      );
+    });
+  }
+});
+
+test('requires localized auth metadata, noindex, and a static loading screen', async (context) => {
+  for (const definition of [
+    {
+      name: 'English lang',
+      entryName: 'auth.html',
+      replace: ['<html lang="en">', '<html lang="zh-CN">'],
+      error: /auth shell must declare html lang en/,
+    },
+    {
+      name: 'Chinese title',
+      entryName: 'auth-zh.html',
+      replace: ['<title>账户 — Lumen</title>', '<title>Wrong title</title>'],
+      error: /authZh shell has an invalid title/,
+    },
+    {
+      name: 'static marker',
+      entryName: 'auth.html',
+      replace: ['data-lumen-static-auth="en"', 'data-lumen-static-auth="other"'],
+      error: /auth shell is missing the static auth marker/,
+    },
+    {
+      name: 'robots metadata',
+      entryName: 'auth-zh.html',
+      replace: ['content="noindex, nofollow"', 'content="index, follow"'],
+      error: /authZh shell must remain noindex/,
+    },
+    {
+      name: 'loading screen',
+      entryName: 'auth-zh.html',
+      replace: ['class="auth-loading"', 'class="other"'],
+      error: /authZh shell has an empty static auth screen/,
+    },
+  ]) {
+    await context.test(definition.name, async (subcontext) => {
+      const fixture = await createFixture(subcontext);
+      const filename = path.join(fixture.distDirectory, definition.entryName);
+      const html = await readFile(filename, 'utf8');
+      await writeFile(filename, html.replace(...definition.replace));
+
+      await assert.rejects(
+        packageFixture(fixture, path.join(fixture.root, `invalid-auth-${definition.name}-output`)),
         definition.error,
       );
     });
@@ -581,6 +700,8 @@ test('serves every packaged shell and immutable shell reference through the edge
   for (const pathname of [
     '/app/dashboard',
     '/share/0123456789abcdef0123456789abcdef',
+    '/sign-in/verify',
+    '/zh/sign-up',
     '/',
     '/zh',
   ]) {
@@ -647,6 +768,22 @@ async function createFixture(context) {
       `.share{color:#fff;background:${'#202020 '.repeat(200)}}\n`,
     ),
     writeFixtureFile(
+      path.join(distDirectory, 'assets', 'auth-abc.js'),
+      `export const auth = '${'versioned-auth-javascript-'.repeat(200)}';\n`,
+    ),
+    writeFixtureFile(
+      path.join(distDirectory, 'assets', 'auth-abc.css'),
+      `.auth{color:#fff;background:${'#252525 '.repeat(200)}}\n`,
+    ),
+    writeFixtureFile(
+      path.join(distDirectory, 'assets', 'auth-zh-abc.js'),
+      `export const authZh = '${'versioned-auth-zh-javascript-'.repeat(200)}';\n`,
+    ),
+    writeFixtureFile(
+      path.join(distDirectory, 'assets', 'auth-zh-abc.css'),
+      `.auth-zh{color:#fff;background:${'#282828 '.repeat(200)}}\n`,
+    ),
+    writeFixtureFile(
       path.join(distDirectory, 'assets', 'landing-abc.js'),
       `export const landing = '${'versioned-landing-javascript-'.repeat(200)}';\n`,
     ),
@@ -698,6 +835,16 @@ async function createFixture(context) {
         css: ['assets/share-abc.css'],
         isEntry: true,
       },
+      'auth.html': {
+        file: 'assets/auth-abc.js',
+        css: ['assets/auth-abc.css'],
+        isEntry: true,
+      },
+      'auth-zh.html': {
+        file: 'assets/auth-zh-abc.js',
+        css: ['assets/auth-zh-abc.css'],
+        isEntry: true,
+      },
       'landing.html': {
         file: 'assets/landing-abc.js',
         css: ['assets/landing-abc.css'],
@@ -739,6 +886,46 @@ async function createFixture(context) {
       `<link rel="icon" href="/_static/releases/${RELEASE}/icon.svg">`,
       `<link rel="stylesheet" href="/_static/releases/${RELEASE}/assets/share-abc.css">`,
       `<script type="module" src="/_static/releases/${RELEASE}/assets/share-abc.js"></script>`,
+    ].join('\n'),
+  );
+  await writeFixtureFile(
+    path.join(distDirectory, 'auth.html'),
+    [
+      '<!doctype html>',
+      '<html lang="en">',
+      '<head>',
+      '<title>Account — Lumen</title>',
+      '<meta name="robots" content="noindex, nofollow">',
+      '<link rel="dns-prefetch" href="https://clerk.lumenstudio.tech">',
+      '<link rel="preconnect" href="https://img.clerk.com" crossorigin>',
+      `<link rel="icon" href="/_static/releases/${RELEASE}/icon.svg">`,
+      `<link rel="stylesheet" href="/_static/releases/${RELEASE}/assets/auth-abc.css">`,
+      '</head>',
+      '<body>',
+      '<div id="root" data-lumen-static-auth="en"><div class="auth-loading">Loading account</div></div>',
+      `<script type="module" src="/_static/releases/${RELEASE}/assets/auth-abc.js"></script>`,
+      '</body>',
+      '</html>',
+    ].join('\n'),
+  );
+  await writeFixtureFile(
+    path.join(distDirectory, 'auth-zh.html'),
+    [
+      '<!doctype html>',
+      '<html lang="zh-CN">',
+      '<head>',
+      '<title>账户 — Lumen</title>',
+      '<meta name="robots" content="noindex, nofollow">',
+      '<link rel="dns-prefetch" href="https://clerk.lumenstudio.tech">',
+      '<link rel="preconnect" href="https://img.clerk.com" crossorigin>',
+      `<link rel="icon" href="/_static/releases/${RELEASE}/icon.svg">`,
+      `<link rel="stylesheet" href="/_static/releases/${RELEASE}/assets/auth-zh-abc.css">`,
+      '</head>',
+      '<body>',
+      '<div id="root" data-lumen-static-auth="zh"><div class="auth-loading">正在加载账户</div></div>',
+      `<script type="module" src="/_static/releases/${RELEASE}/assets/auth-zh-abc.js"></script>`,
+      '</body>',
+      '</html>',
     ].join('\n'),
   );
   await writeFixtureFile(

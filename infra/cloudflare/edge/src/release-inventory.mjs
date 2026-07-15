@@ -8,12 +8,14 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MANIFEST_FILENAME = 'release-manifest.json';
 const READY_FILENAME = '_READY.json';
 const JSON_METADATA = { contentType: 'application/json; charset=utf-8' };
-const RELEASE_SCOPE = ['app', 'share', 'landing'];
+const RELEASE_SCOPE = ['app', 'share', 'landing', 'auth'];
 const RELEASE_SHELLS = {
   app: 'app/index.html',
   share: 'share/index.html',
   landing: 'index.html',
   landingZh: 'zh/index.html',
+  auth: 'auth/index.html',
+  authZh: 'auth/zh/index.html',
 };
 
 export async function verifyReleaseDirectory({ release, releaseDirectory }) {
@@ -331,7 +333,7 @@ function requireRelease(release) {
 
 function requireReleaseScope(scope, label) {
   if (!Array.isArray(scope) || !arraysEqual(scope, RELEASE_SCOPE)) {
-    throw new Error(`${label} scope must be exactly app, share, landing`);
+    throw new Error(`${label} scope must be exactly app, share, landing, auth`);
   }
 }
 

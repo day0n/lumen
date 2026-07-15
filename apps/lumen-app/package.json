@@ -9,7 +9,7 @@
     "dev": "vite --host 0.0.0.0",
     "prebuild": "pnpm run deps:build",
     "build": "tsc --noEmit && vite build && tsx scripts/prerender-landing.ts && pnpm run verify:bundle",
-    "verify:bundle": "tsx test/verify-canvas-bundle.ts && tsx test/verify-landing-bundle.ts",
+    "verify:bundle": "tsx test/verify-canvas-bundle.ts && tsx test/verify-landing-bundle.ts && tsx test/verify-auth-bundle.ts",
     "test": "tsx --test test/*.test.ts",
     "pretypecheck": "pnpm run deps:build",
     "typecheck": "tsc --noEmit",

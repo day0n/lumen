@@ -1,9 +1,9 @@
-import { ClerkAuthShell } from '@/components/auth/ClerkAuthShell';
-import { LumenMark } from '@/components/ui/LumenMark';
 import { SignIn, useAuth } from '@clerk/react';
 import { useEffect, useRef, useState } from 'react';
+import { LumenMark } from '../../components/shell/LumenMark';
 import { useI18n } from '../../i18n/provider';
 import { type Locale, localePath } from '../../i18n/routing';
+import { ClerkAuthShell } from '../auth/ClerkAuthShell';
 
 const SHARE_ID_PATTERN = /^[0-9a-f]{32}$/;
 const CLONE_TIMEOUT_MS = 15_000;

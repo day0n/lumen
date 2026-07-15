@@ -19,20 +19,24 @@ test('verifies an exact release and returns payload, manifest, then READY upload
 
   assert.equal(verified.release, RELEASE);
   assert.equal(verified.prefix, `releases/${RELEASE}/`);
-  assert.deepEqual(verified.manifest.scope, ['app', 'share', 'landing']);
+  assert.deepEqual(verified.manifest.scope, ['app', 'share', 'landing', 'auth']);
   assert.deepEqual(verified.manifest.shells, {
     app: 'app/index.html',
     share: 'share/index.html',
     landing: 'index.html',
     landingZh: 'zh/index.html',
+    auth: 'auth/index.html',
+    authZh: 'auth/zh/index.html',
   });
-  assert.deepEqual(verified.ready.scope, ['app', 'share', 'landing']);
+  assert.deepEqual(verified.ready.scope, ['app', 'share', 'landing', 'auth']);
   assert.deepEqual(
     verified.objects.map((object) => object.path),
     [
       'app/index.html',
       'assets/app.js',
       'assets/app.js.br',
+      'auth/index.html',
+      'auth/zh/index.html',
       'index.html',
       'share/index.html',
       'zh/index.html',
@@ -50,7 +54,18 @@ test('verifies an exact release and returns payload, manifest, then READY upload
   );
   assert.deepEqual(
     verified.objects.map((object) => object.phase),
-    ['payload', 'payload', 'payload', 'payload', 'payload', 'payload', 'manifest', 'ready'],
+    [
+      'payload',
+      'payload',
+      'payload',
+      'payload',
+      'payload',
+      'payload',
+      'payload',
+      'payload',
+      'manifest',
+      'ready',
+    ],
   );
   assert.ok(verified.objects.every((object) => Buffer.isBuffer(object.bytes)));
   for (const object of verified.objects) {
@@ -143,13 +158,14 @@ test('binds READY identity, raw manifest bytes, and object count', async (contex
   });
 });
 
-test('requires the exact app, share, and landing scope in the manifest and READY marker', async (context) => {
+test('requires the exact app, share, landing, and auth scope', async (context) => {
   for (const [name, scope] of [
-    ['missing share', ['app', 'landing']],
-    ['missing landing', ['app', 'share']],
-    ['reversed', ['landing', 'share', 'app']],
-    ['duplicate', ['app', 'share', 'landing', 'landing']],
-    ['extra', ['app', 'share', 'landing', 'auth']],
+    ['missing share', ['app', 'landing', 'auth']],
+    ['missing landing', ['app', 'share', 'auth']],
+    ['missing auth', ['app', 'share', 'landing']],
+    ['reversed', ['auth', 'landing', 'share', 'app']],
+    ['duplicate', ['app', 'share', 'landing', 'auth', 'auth']],
+    ['extra', ['app', 'share', 'landing', 'auth', 'not-found']],
   ]) {
     await context.test(`manifest scope ${name}`, async (subcontext) => {
       const fixture = await createRelease(subcontext);
@@ -161,14 +177,14 @@ test('requires the exact app, share, and landing scope in the manifest and READY
           release: RELEASE,
           releaseDirectory: fixture.releaseDirectory,
         }),
-        /release manifest scope must be exactly app, share, landing/,
+        /release manifest scope must be exactly app, share, landing, auth/,
       );
     });
   }
 
-  await context.test('READY still uses the previous app and share scope', async (subcontext) => {
+  await context.test('READY still uses the previous scope', async (subcontext) => {
     const fixture = await createRelease(subcontext);
-    fixture.ready.scope = ['app', 'share'];
+    fixture.ready.scope = ['app', 'share', 'landing'];
     await writeJson(path.join(fixture.releaseDirectory, '_READY.json'), fixture.ready);
 
     await assert.rejects(
@@ -176,13 +192,13 @@ test('requires the exact app, share, and landing scope in the manifest and READY
         release: RELEASE,
         releaseDirectory: fixture.releaseDirectory,
       }),
-      /release readiness marker scope must be exactly app, share, landing/,
+      /release readiness marker scope must be exactly app, share, landing, auth/,
     );
   });
 });
 
 test('requires exact shell declarations and every declared shell payload', async (context) => {
-  for (const shellName of ['share', 'landing', 'landingZh']) {
+  for (const shellName of ['share', 'landing', 'landingZh', 'auth', 'authZh']) {
     await context.test(`missing ${shellName} declaration`, async (subcontext) => {
       const fixture = await createRelease(subcontext);
       Reflect.deleteProperty(fixture.manifest.shells, shellName);
@@ -226,10 +242,21 @@ test('requires exact shell declarations and every declared shell payload', async
     );
   });
 
-  for (const [shellName, shellPath] of [
-    ['auth', 'auth/index.html'],
-    ['notFound', '404.html'],
-  ]) {
+  await context.test('wrong localized auth declaration', async (subcontext) => {
+    const fixture = await createRelease(subcontext);
+    fixture.manifest.shells.authZh = 'auth-zh.html';
+    await resealManifest(fixture);
+
+    await assert.rejects(
+      verifyReleaseDirectory({
+        release: RELEASE,
+        releaseDirectory: fixture.releaseDirectory,
+      }),
+      /release manifest must declare the authZh shell/,
+    );
+  });
+
+  for (const [shellName, shellPath] of [['notFound', '404.html']]) {
     await context.test(`isolates unexpected ${shellName} declaration`, async (subcontext) => {
       const fixture = await createRelease(subcontext);
       fixture.manifest.shells[shellName] = shellPath;
@@ -250,6 +277,8 @@ test('requires exact shell declarations and every declared shell payload', async
     ['share', 'share/index.html'],
     ['landing', 'index.html'],
     ['landingZh', 'zh/index.html'],
+    ['auth', 'auth/index.html'],
+    ['authZh', 'auth/zh/index.html'],
   ]) {
     await context.test(`missing ${shellName} payload`, async (subcontext) => {
       const fixture = await createRelease(subcontext);
@@ -308,6 +337,16 @@ test('requires compressed objects to have exact metadata and an uncompressed sib
       {
         path: 'share/index.html',
         bytes: '<main>share</main>',
+        contentType: 'text/html; charset=utf-8',
+      },
+      {
+        path: 'auth/index.html',
+        bytes: '<main>auth</main>',
+        contentType: 'text/html; charset=utf-8',
+      },
+      {
+        path: 'auth/zh/index.html',
+        bytes: '<main>中文账户</main>',
         contentType: 'text/html; charset=utf-8',
       },
       {
@@ -394,12 +433,14 @@ async function createRelease(context, payload = defaultPayload()) {
   const manifest = {
     schemaVersion: 1,
     release: RELEASE,
-    scope: ['app', 'share', 'landing'],
+    scope: ['app', 'share', 'landing', 'auth'],
     shells: {
       app: 'app/index.html',
       share: 'share/index.html',
       landing: 'index.html',
       landingZh: 'zh/index.html',
+      auth: 'auth/index.html',
+      authZh: 'auth/zh/index.html',
     },
     assetBase: `/_static/releases/${RELEASE}/`,
     buildConfigFingerprint: 'a'.repeat(64),
@@ -420,7 +461,7 @@ async function resealManifest(fixture) {
   fixture.ready = {
     schemaVersion: 1,
     release: RELEASE,
-    scope: ['app', 'share', 'landing'],
+    scope: ['app', 'share', 'landing', 'auth'],
     manifest: {
       path: 'release-manifest.json',
       sha256: digest(manifestBytes),
@@ -451,6 +492,16 @@ function defaultPayload() {
     {
       path: 'share/index.html',
       bytes: '<main>share</main>',
+      contentType: 'text/html; charset=utf-8',
+    },
+    {
+      path: 'auth/index.html',
+      bytes: '<main>auth</main>',
+      contentType: 'text/html; charset=utf-8',
+    },
+    {
+      path: 'auth/zh/index.html',
+      bytes: '<main>中文账户</main>',
       contentType: 'text/html; charset=utf-8',
     },
     {

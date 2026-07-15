@@ -9,21 +9,46 @@ const compressBrotli = promisify(brotliCompress);
 const compressGzip = promisify(gzip);
 const FULL_RELEASE_PATTERN = /^[0-9a-f]{40}$/;
 const COMPRESSIBLE_FILE_PATTERN = /\.(?:css|html|js|json|mjs|svg|txt|xml)$/i;
-const RELEASE_SCOPE = ['app', 'share', 'landing'];
+const RELEASE_SCOPE = ['app', 'share', 'landing', 'auth'];
 const RELEASE_SHELLS = {
   app: 'app/index.html',
   share: 'share/index.html',
   landing: 'index.html',
   landingZh: 'zh/index.html',
+  auth: 'auth/index.html',
+  authZh: 'auth/zh/index.html',
 };
 const BUILD_SHELLS = [
   { name: 'app', entry: 'index.html', output: RELEASE_SHELLS.app },
   { name: 'share', entry: 'share.html', output: RELEASE_SHELLS.share },
   {
+    name: 'auth',
+    entry: 'auth.html',
+    output: RELEASE_SHELLS.auth,
+    document: {
+      kind: 'auth',
+      lang: 'en',
+      marker: 'en',
+      title: 'Account — Lumen',
+    },
+  },
+  {
+    name: 'authZh',
+    entry: 'auth-zh.html',
+    output: RELEASE_SHELLS.authZh,
+    document: {
+      kind: 'auth',
+      lang: 'zh-CN',
+      marker: 'zh',
+      title: '账户 — Lumen',
+    },
+  },
+  {
     name: 'landing',
     entry: 'landing.html',
     output: RELEASE_SHELLS.landing,
     document: {
+      kind: 'landing',
       lang: 'en',
       marker: 'en',
       title: 'Lumen — Turn products into videos that sell',
@@ -34,6 +59,7 @@ const BUILD_SHELLS = [
     entry: 'landing-zh.html',
     output: RELEASE_SHELLS.landingZh,
     document: {
+      kind: 'landing',
       lang: 'zh-CN',
       marker: 'zh',
       title: 'Lumen — 把商品变成爆款带货视频',
@@ -358,7 +384,12 @@ async function verifyShell({
       );
     }
   }
-  if (documentContract) verifyLandingDocument(html, shellName, documentContract);
+  if (documentContract?.kind === 'landing') {
+    verifyLandingDocument(html, shellName, documentContract);
+  }
+  if (documentContract?.kind === 'auth') {
+    verifyAuthDocument(html, shellName, documentContract);
+  }
 }
 
 function collectEntryAssetClosure(viteManifest, entryKey) {
@@ -405,6 +436,33 @@ function verifyLandingDocument(html, shellName, contract) {
   }
   if (!afterRoot || afterRoot.startsWith('</div>')) {
     throw new Error(`${shellName} shell has an empty static first screen`);
+  }
+}
+
+function verifyAuthDocument(html, shellName, contract) {
+  const htmlTag = html.match(/<html\b[^>]*>/i)?.[0] ?? '';
+  const title = html.match(/<title>([\s\S]*?)<\/title>/i)?.[1].trim();
+  const rootMatch = html.match(/<div\b[^>]*\bid\s*=\s*(["'])root\1[^>]*>/i);
+  const rootTag = rootMatch?.[0] ?? '';
+  const afterRoot = rootMatch ? html.slice(rootMatch.index + rootTag.length).trimStart() : '';
+  const robotsTag = [...html.matchAll(/<meta\b[^>]*>/gi)]
+    .map((match) => match[0])
+    .find((tag) => hasHtmlAttribute(tag, 'name', 'robots'));
+
+  if (!hasHtmlAttribute(htmlTag, 'lang', contract.lang)) {
+    throw new Error(`${shellName} shell must declare html lang ${contract.lang}`);
+  }
+  if (title !== contract.title) {
+    throw new Error(`${shellName} shell has an invalid title`);
+  }
+  if (!hasHtmlAttribute(rootTag, 'data-lumen-static-auth', contract.marker)) {
+    throw new Error(`${shellName} shell is missing the static auth marker`);
+  }
+  if (!robotsTag || !hasHtmlAttribute(robotsTag, 'content', 'noindex, nofollow')) {
+    throw new Error(`${shellName} shell must remain noindex`);
+  }
+  if (!afterRoot || afterRoot.startsWith('</div>') || !afterRoot.includes('auth-loading')) {
+    throw new Error(`${shellName} shell has an empty static auth screen`);
   }
 }
 

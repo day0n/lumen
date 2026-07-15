@@ -94,7 +94,7 @@ jobs:
         run: |
           test -n "$FRONTEND_PREVIEW_URL"
           preview_base="${FRONTEND_PREVIEW_URL%/}"
-          for path in "/app/dashboard" "/share/00000000000000000000000000000000"; do
+          for path in "/app/dashboard" "/share/00000000000000000000000000000000" "/sign-in" "/zh/sign-up"; do
             headers="$(curl --fail --silent --show-error --head "${preview_base}${path}")"
             active_release="$(printf '%s\n' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-lumen-release" { print $2 }')"
             test "$active_release" = "$RELEASE"
@@ -142,3 +142,51 @@ jobs:
           /|en|en|Lumen — Turn products into videos that sell
           /zh|zh-CN|zh|Lumen — 把商品变成爆款带货视频
           LANDINGS
+
+          while IFS='|' read -r path expected_lang expected_marker expected_title; do
+            headers_file="$response_directory/auth-${expected_marker}.headers"
+            body_file="$response_directory/auth-${expected_marker}.html"
+            status="$(curl --silent --show-error --dump-header "$headers_file" --output "$body_file" --write-out '%{http_code}' "${preview_base}${path}")"
+            test "$status" = "200"
+            active_release="$(tr -d '\r' < "$headers_file" | awk -F': ' 'tolower($1) == "x-lumen-release" { print $2 }')"
+            test "$active_release" = "$RELEASE"
+
+            AUTH_BODY_FILE="$body_file" \
+            EXPECTED_LANG="$expected_lang" \
+            EXPECTED_MARKER="$expected_marker" \
+            EXPECTED_TITLE="$expected_title" \
+              node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const html = readFileSync(process.env.AUTH_BODY_FILE, 'utf8');
+          const expectedLang = process.env.EXPECTED_LANG;
+          const expectedMarker = process.env.EXPECTED_MARKER;
+          const expectedTitle = process.env.EXPECTED_TITLE;
+          const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const hasAttribute = (tag, name, value) =>
+            new RegExp(`\\b${escapePattern(name)}\\s*=\\s*(["'])${escapePattern(value)}\\1`, 'i').test(tag);
+          const htmlTag = html.match(/<html\b[^>]*>/i)?.[0] ?? '';
+          const title = html.match(/<title>([\s\S]*?)<\/title>/i)?.[1].trim();
+          const rootMatch = html.match(/<div\b[^>]*\bid\s*=\s*(["'])root\1[^>]*>/i);
+          const rootTag = rootMatch?.[0] ?? '';
+          const afterRoot = rootMatch ? html.slice(rootMatch.index + rootTag.length).trimStart() : '';
+          const robotsTag = [...html.matchAll(/<meta\b[^>]*>/gi)]
+            .map((match) => match[0])
+            .find((tag) => hasAttribute(tag, 'name', 'robots'));
+
+          if (!hasAttribute(htmlTag, 'lang', expectedLang)) throw new Error(`missing auth lang ${expectedLang}`);
+          if (title !== expectedTitle) throw new Error(`unexpected auth title: ${title ?? '<missing>'}`);
+          if (!hasAttribute(rootTag, 'data-lumen-static-auth', expectedMarker)) {
+            throw new Error(`missing static auth marker ${expectedMarker}`);
+          }
+          if (!robotsTag || !hasAttribute(robotsTag, 'content', 'noindex, nofollow')) {
+            throw new Error('auth page must remain noindex');
+          }
+          if (!afterRoot || afterRoot.startsWith('</div>') || !afterRoot.includes('auth-loading')) {
+            throw new Error('auth loading screen is empty');
+          }
+          NODE
+          done <<'AUTH_PAGES'
+          /sign-in|en|en|Account — Lumen
+          /zh/sign-up|zh-CN|zh|账户 — Lumen
+          AUTH_PAGES

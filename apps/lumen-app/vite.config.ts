@@ -91,6 +91,7 @@ const manualChunks = (id: string): string | undefined => {
   if (startsWithPackage(id, ['@tanstack/react-router', '@tanstack/router-core'])) {
     return 'router-vendor';
   }
+  if (hasPackage(id, ['@clerk/localizations'])) return 'clerk-localizations';
   if (startsWithPackage(id, ['@clerk/'])) return 'clerk-vendor';
   if (startsWithPackage(id, ['@sentry/'])) return 'sentry-vendor';
   if (hasPackage(id, ['@mantine/core', '@mantine/hooks', '@floating-ui/react'])) return 'ui-vendor';
@@ -270,6 +271,8 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           app: path.resolve(__dirname, 'index.html'),
+          auth: path.resolve(__dirname, 'auth.html'),
+          authZh: path.resolve(__dirname, 'auth-zh.html'),
           landing: path.resolve(__dirname, 'landing.html'),
           landingZh: path.resolve(__dirname, 'landing-zh.html'),
           share: path.resolve(__dirname, 'share.html'),

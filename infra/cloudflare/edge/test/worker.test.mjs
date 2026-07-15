@@ -24,6 +24,29 @@ test('maps static shells without catching backend paths', () => {
     resolveEdgeAction('/app/projects', RELEASE).objectKey,
     `releases/${RELEASE}/app/index.html`,
   );
+  for (const pathname of ['/sign-in', '/sign-in/verify', '/sign-up', '/sign-up/continue']) {
+    assert.deepEqual(resolveEdgeAction(pathname, RELEASE), {
+      type: 'object',
+      kind: 'html',
+      objectKey: `releases/${RELEASE}/auth/index.html`,
+      release: RELEASE,
+      status: 200,
+    });
+  }
+  for (const pathname of [
+    '/zh/sign-in',
+    '/zh/sign-in/verify',
+    '/zh/sign-up',
+    '/zh/sign-up/continue',
+  ]) {
+    assert.deepEqual(resolveEdgeAction(pathname, RELEASE), {
+      type: 'object',
+      kind: 'html',
+      objectKey: `releases/${RELEASE}/auth/zh/index.html`,
+      release: RELEASE,
+      status: 200,
+    });
+  }
   for (const pathname of [
     '/share',
     '/share/0123456789abcdef0123456789abcdef',
@@ -138,6 +161,14 @@ test('keeps immutable assets pinned to their requested release', () => {
     'not-found',
   );
   assert.equal(
+    resolveEdgeAction(`/_static/releases/${oldRelease}/auth/index.html`, RELEASE).type,
+    'not-found',
+  );
+  assert.equal(
+    resolveEdgeAction(`/_static/releases/${oldRelease}/auth/zh/index.html`, RELEASE).type,
+    'not-found',
+  );
+  assert.equal(
     resolveEdgeAction(`/_static/releases/${oldRelease}/private.txt`, RELEASE).type,
     'not-found',
   );
@@ -202,6 +233,11 @@ test('normalizes legacy and locale-prefixed routes', () => {
   assert.deepEqual(resolveEdgeAction('/en/materials', RELEASE), {
     type: 'redirect',
     pathname: '/app/materials',
+    locale: 'en',
+  });
+  assert.deepEqual(resolveEdgeAction('/en/sign-in/verify', RELEASE), {
+    type: 'redirect',
+    pathname: '/sign-in/verify',
     locale: 'en',
   });
 });
@@ -272,6 +308,59 @@ test('uses the explicit locale cookie before browser preference', () => {
     ),
     'zh',
   );
+});
+
+test('redirects unprefixed auth routes to the Chinese shell for Chinese clients', async () => {
+  const response = await worker.fetch(
+    new Request('https://lumenstudio.tech/sign-in/verify?redirect_url=%2Fapp%2Fhome', {
+      headers: { 'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8' },
+    }),
+    {
+      ACTIVE_FRONTEND_RELEASE: RELEASE,
+      FRONTEND_BUCKET: {},
+    },
+    { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 302);
+  assert.equal(
+    response.headers.get('location'),
+    'https://lumenstudio.tech/zh/sign-in/verify?redirect_url=%2Fapp%2Fhome',
+  );
+  assert.match(response.headers.get('set-cookie') ?? '', /lumen_locale=zh/);
+  assert.equal(response.headers.get('vary'), 'Cookie, Accept-Language');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+});
+
+test('keeps unprefixed auth routes English when the locale cookie is English', async () => {
+  const requestedKeys = [];
+  const body = '<html lang="en"><div data-lumen-static-auth="en">Account</div></html>';
+  const response = await worker.fetch(
+    new Request('https://lumenstudio.tech/sign-up', {
+      headers: {
+        cookie: 'lumen_locale=en',
+        'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      },
+    }),
+    {
+      ACTIVE_FRONTEND_RELEASE: RELEASE,
+      FRONTEND_BUCKET: {
+        async get(key) {
+          requestedKeys.push(key);
+          return {
+            body,
+            httpEtag: '"auth-en"',
+            size: body.length,
+            writeHttpMetadata() {},
+          };
+        },
+      },
+    },
+    { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(requestedKeys, [`releases/${RELEASE}/auth/index.html`]);
 });
 
 test('serves an app shell with release and cache headers', async () => {
@@ -354,6 +443,64 @@ test('serves English and Chinese landing shells from distinct release objects', 
   assert.deepEqual(requestedKeys, [
     `releases/${RELEASE}/index.html`,
     `releases/${RELEASE}/zh/index.html`,
+  ]);
+  for (const response of [english, chinese]) {
+    assert.equal(response.headers.get('x-lumen-release'), RELEASE);
+    assert.equal(response.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+  }
+});
+
+test('serves English and Chinese auth routes from distinct release objects', async () => {
+  const requestedKeys = [];
+  const bodies = new Map([
+    [
+      `releases/${RELEASE}/auth/index.html`,
+      '<html lang="en"><meta name="robots" content="noindex, nofollow"><div data-lumen-static-auth="en">Account</div></html>',
+    ],
+    [
+      `releases/${RELEASE}/auth/zh/index.html`,
+      '<html lang="zh-CN"><meta name="robots" content="noindex, nofollow"><div data-lumen-static-auth="zh">账户</div></html>',
+    ],
+  ]);
+  const bucket = {
+    async get(key) {
+      requestedKeys.push(key);
+      const body = bodies.get(key);
+      if (!body) return null;
+      return {
+        body,
+        httpEtag: `"${key}"`,
+        size: body.length,
+        writeHttpMetadata(headers) {
+          headers.set('content-type', 'text/html; charset=utf-8');
+        },
+      };
+    },
+  };
+  const environment = {
+    ACTIVE_FRONTEND_RELEASE: RELEASE,
+    FRONTEND_BUCKET: bucket,
+  };
+  const context = { waitUntil() {} };
+
+  const english = await worker.fetch(
+    new Request('https://lumenstudio.tech/sign-in/verify'),
+    environment,
+    context,
+  );
+  const chinese = await worker.fetch(
+    new Request('https://lumenstudio.tech/zh/sign-up/continue'),
+    environment,
+    context,
+  );
+
+  assert.equal(english.status, 200);
+  assert.match(await english.text(), /data-lumen-static-auth="en"/);
+  assert.equal(chinese.status, 200);
+  assert.match(await chinese.text(), /data-lumen-static-auth="zh"/);
+  assert.deepEqual(requestedKeys, [
+    `releases/${RELEASE}/auth/index.html`,
+    `releases/${RELEASE}/auth/zh/index.html`,
   ]);
   for (const response of [english, chinese]) {
     assert.equal(response.headers.get('x-lumen-release'), RELEASE);
