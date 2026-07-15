@@ -1,0 +1,12 @@
+/**
+ * 隐藏滚动条但保留滚动能力 — 用于横向 carousel-like 区块
+ */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

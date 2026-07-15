@@ -5,7 +5,7 @@
     "noEmit": true,
     "allowJs": true,
     "baseUrl": ".",
-    "types": ["vite/client"],
+    "types": ["vite/client", "node"],
     "paths": {
       "@/i18n/messages": ["./src/i18n/messages.ts"],
       "@/i18n/provider": ["./src/i18n/provider.tsx"],
@@ -26,7 +26,7 @@
       "@/lib/cn": ["./src/lib/cn.ts"],
       "@/lib/protected-paths": ["./src/lib/protected-paths.ts"],
       "@/lib/release-asset-url": ["./src/lib/release-asset-url.ts"],
-      "@/*": ["../lumen-studio/src/*"],
+      "@/*": ["./src/*"],
       "@app/*": ["./src/*"],
       "next/link": ["./src/compat/next-link.tsx"],
       "next/navigation": ["./src/compat/next-navigation.ts"],
@@ -34,20 +34,6 @@
       "@sentry/nextjs": ["./src/compat/sentry-next.ts"]
     }
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "../lumen-studio/src/components/**/*.ts",
-    "../lumen-studio/src/components/**/*.tsx",
-    "../lumen-studio/src/features/**/*.ts",
-    "../lumen-studio/src/features/**/*.tsx",
-    "../lumen-studio/src/hooks/**/*.ts",
-    "../lumen-studio/src/hooks/**/*.tsx",
-    "../lumen-studio/src/app/hot-videos/page.tsx",
-    "../lumen-studio/src/i18n/**/*.ts",
-    "../lumen-studio/src/i18n/**/*.tsx",
-    "../lumen-studio/src/lib/**/*.ts",
-    "../lumen-studio/src/lib/**/*.tsx"
-  ],
-  "exclude": ["node_modules", "dist", "../lumen-studio/src/i18n/server.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
 }

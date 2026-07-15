@@ -9,8 +9,6 @@ import { type PluginOption, defineConfig, loadEnv } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const studioRoot = path.resolve(__dirname, '../lumen-studio');
-const studioSrc = path.resolve(studioRoot, 'src');
 const fullReleasePattern = /^[0-9a-f]{40}$/;
 
 const normalizePath = (id: string) => id.replace(/\\/g, '/');
@@ -107,7 +105,6 @@ const manualChunks = (id: string): string | undefined => {
 export default defineConfig(({ mode }) => {
   const env = {
     ...loadEnv(mode, path.resolve(__dirname, '../..'), ''),
-    ...loadEnv(mode, studioRoot, ''),
     ...loadEnv(mode, __dirname, ''),
   };
   const frontendRelease = readFrontendRelease();
@@ -123,6 +120,15 @@ export default defineConfig(({ mode }) => {
     env.VITE_SENTRY_TRACES_SAMPLE_RATE ?? env.SENTRY_TRACES_SAMPLE_RATE,
     mode === 'production' ? 0.1 : 1,
   );
+  if (process.env.LUMEN_REQUIRE_PUBLIC_CONFIG === '1') {
+    const missing = [
+      !clerkPublishableKey.trim() ? 'VITE_CLERK_PUBLISHABLE_KEY' : '',
+      !sentryDsn.trim() ? 'VITE_SENTRY_DSN' : '',
+    ].filter(Boolean);
+    if (missing.length > 0) {
+      throw new Error(`required frontend build configuration is missing: ${missing.join(', ')}`);
+    }
+  }
   const publicBuildConfig = {
     mode,
     nextPublicAgentUrl,
@@ -155,7 +161,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: releaseAssetBase,
-    envDir: studioRoot,
+    envDir: __dirname,
     plugins,
     resolve: {
       alias: [
@@ -233,7 +239,7 @@ export default defineConfig(({ mode }) => {
           find: '@/lib/release-asset-url',
           replacement: path.resolve(__dirname, 'src/lib/release-asset-url.ts'),
         },
-        { find: '@', replacement: studioSrc },
+        { find: '@', replacement: path.resolve(__dirname, 'src') },
         { find: 'next/link', replacement: path.resolve(__dirname, 'src/compat/next-link.tsx') },
         {
           find: 'next/navigation',
@@ -293,6 +299,7 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/app/, ''),
         },
         '/api': 'http://localhost:3000',
+        '/v1/agent': 'http://localhost:3001',
         '/icon.svg': 'http://localhost:3000',
         '/ws': {
           target: 'ws://localhost:3000',

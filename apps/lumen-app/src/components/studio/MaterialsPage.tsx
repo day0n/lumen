@@ -1,0 +1,1233 @@
+'use client';
+
+import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
+import { Topbar } from '@/components/home/Topbar';
+import { SpotlightCard } from '@/components/studio/dashboard-motion';
+import { useI18n } from '@/i18n/provider';
+import { useAppShellChrome } from '@/lib/app-shell-chrome';
+import { useLoginRedirect } from '@/lib/auth-redirect';
+import { cn } from '@/lib/cn';
+import { resolveReleaseAssetUrl } from '@/lib/release-asset-url';
+import {
+  IconAlertTriangle,
+  IconCheck,
+  IconChevronDown,
+  IconLayoutCollage,
+  IconLoader2,
+  IconPhoto,
+  IconPlus,
+  IconSparkles,
+  IconTrash,
+  IconUpload,
+  IconX,
+} from '@tabler/icons-react';
+import { motion } from 'motion/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
+import type {
+  Group as ThreeGroup,
+  Mesh as ThreeMesh,
+  MeshBasicMaterial as ThreeMeshBasicMaterial,
+  PlaneGeometry as ThreePlaneGeometry,
+  Texture as ThreeTexture,
+  WebGLRenderer as ThreeWebGLRenderer,
+} from 'three';
+
+type MaterialAssetCategory = 'character' | 'scene' | 'item';
+type MaterialAssetKind = 'image' | 'video' | 'audio';
+
+type MaterialAssetRecord = {
+  id: string;
+  category: MaterialAssetCategory | 'my_assets';
+  kind: MaterialAssetKind;
+  title: string;
+  url: string;
+  thumbnailUrl?: string;
+  source: 'workflow_result' | 'user_upload' | 'manual';
+  contentType?: string;
+  size?: number;
+  metadata?: {
+    subcategory?: string;
+    originalName?: string;
+    sellingPoints?: string[];
+    batchId?: string;
+    position?: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
+type LibraryMaterialAsset = MaterialAssetRecord & {
+  category: MaterialAssetCategory;
+};
+
+type MaterialAssetsApiResponse =
+  | {
+      ok: true;
+      data: {
+        assets: MaterialAssetRecord[];
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        message: string;
+      };
+    };
+
+type SellingPointsApiResponse =
+  | {
+      ok: true;
+      data: {
+        points: string[];
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        message: string;
+      };
+    };
+
+type UploadPreview = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
+
+const MAX_UPLOAD_IMAGES = 9;
+type MaterialCategoryConfig = {
+  id: MaterialAssetCategory;
+  accent: string;
+  glowColor: string;
+  glowColors: readonly [string, string, string];
+  showcaseImages: readonly string[];
+};
+
+type ShowcaseImageSet = readonly [
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+];
+
+type ShowcaseMotionState = {
+  pointerX: number;
+  pointerY: number;
+  wheelRotation: number;
+};
+
+type MaterialSpiralPanel = {
+  mesh: ThreeMesh<ThreePlaneGeometry, ThreeMeshBasicMaterial>;
+  material: ThreeMeshBasicMaterial;
+  texture: ThreeTexture;
+  baseAngle: number;
+  baseY: number;
+  waveOffset: number;
+};
+
+function buildShowcaseImages(images: ShowcaseImageSet) {
+  return images.map((image) => resolveReleaseAssetUrl(`/material-showcase/${image}.webp`));
+}
+
+const materialCategories = [
+  {
+    id: 'item',
+    accent: '#79e4ff',
+    glowColor: '193 100 74',
+    glowColors: ['#79e4ff', '#f5c76a', '#c084fc'],
+    showcaseImages: buildShowcaseImages([
+      'character-01',
+      'character-03',
+      'character-05',
+      'character-07',
+      'character-09',
+      'character-15',
+      'character-19',
+      'item-09',
+      'scene-02',
+      'scene-03',
+    ]),
+  },
+  {
+    id: 'character',
+    accent: '#ff5fbf',
+    glowColor: '323 100 69',
+    glowColors: ['#ff5fbf', '#c084fc', '#38bdf8'],
+    showcaseImages: buildShowcaseImages([
+      'ai-model-01',
+      'ai-model-02',
+      'ai-model-03',
+      'ai-model-04',
+      'ai-model-05',
+      'ai-model-06',
+      'character-02',
+      'item-06',
+      'scene-11',
+      'scene-18',
+    ]),
+  },
+  {
+    id: 'scene',
+    accent: '#f5c76a',
+    glowColor: '42 90 69',
+    glowColors: ['#f5c76a', '#38bdf8', '#f472b6'],
+    showcaseImages: buildShowcaseImages([
+      'character-10',
+      'character-11',
+      'character-12',
+      'character-13',
+      'item-02',
+      'item-08',
+      'item-14',
+      'scene-12',
+      'scene-14',
+      'scene-16',
+    ]),
+  },
+] satisfies MaterialCategoryConfig[];
+
+const accentByCategory: Record<MaterialAssetCategory, string> = {
+  item: '#79e4ff',
+  character: '#ff5fbf',
+  scene: '#f5c76a',
+};
+
+const subcategoryOptions: Record<MaterialAssetCategory, string[]> = {
+  item: ['美妆护肤', '家居清洁', '数码配件', '服饰鞋包', '食品饮品', '宠物用品', '运动户外'],
+  character: ['口播讲解', '开箱体验', '试用演示', '测评对比', '剧情出镜'],
+  scene: ['白底主图', '细节特写', '平铺组合', '生活方式', '使用前后'],
+};
+
+export function MaterialsPage() {
+  const { locale, t } = useI18n();
+  const appShellChrome = useAppShellChrome();
+  const { isLoaded: authLoaded, isSignedIn, requireLogin } = useLoginRedirect();
+  const [activeCategory, setActiveCategory] = useState<MaterialAssetCategory>('item');
+  const [assetsByCategory, setAssetsByCategory] = useState<
+    Partial<Record<MaterialAssetCategory, LibraryMaterialAsset[]>>
+  >({});
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const showcaseRef = useRef<HTMLDivElement | null>(null);
+  const [showcaseMotion, setShowcaseMotion] = useState<ShowcaseMotionState>({
+    pointerX: 0,
+    pointerY: 0,
+    wheelRotation: 0,
+  });
+
+  useEffect(() => {
+    if (!authLoaded) return;
+    if (!isSignedIn) {
+      requireLogin('/materials');
+      return;
+    }
+
+    const controller = new AbortController();
+    async function loadAssets() {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          category: activeCategory,
+          limit: '80',
+        });
+        const response = await fetch(`/api/material-assets?${params.toString()}`, {
+          signal: controller.signal,
+          headers: { 'x-lumen-locale': locale },
+        });
+        const payload = (await response.json()) as MaterialAssetsApiResponse;
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.ok ? t('materials.readFailed') : payload.error.message);
+        }
+        const libraryAssets = payload.data.assets
+          .filter(isLibraryAsset)
+          .filter((asset) => asset.category === activeCategory);
+        setAssetsByCategory((current) => ({ ...current, [activeCategory]: libraryAssets }));
+        setLoadError(null);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setLoadError(error instanceof Error ? error.message : t('materials.readFailed'));
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+
+    void loadAssets();
+    return () => controller.abort();
+  }, [activeCategory, authLoaded, isSignedIn, locale, requireLogin, t]);
+
+  const visibleAssets = useMemo(
+    () => assetsByCategory[activeCategory] ?? [],
+    [activeCategory, assetsByCategory],
+  );
+
+  const handleShowcasePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const preview = showcaseRef.current;
+    const rect = preview?.getBoundingClientRect();
+    if (!rect) return;
+    const pointerX = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
+    const pointerY = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const dx = x - centerX;
+    const dy = y - centerY;
+    const edgeScaleX = dx === 0 ? Number.POSITIVE_INFINITY : centerX / Math.abs(dx);
+    const edgeScaleY = dy === 0 ? Number.POSITIVE_INFINITY : centerY / Math.abs(dy);
+    const edgeProximity = Math.min(Math.max(1 / Math.min(edgeScaleX, edgeScaleY), 0), 1);
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+    preview?.style.setProperty('--edge-proximity', `${(edgeProximity * 100).toFixed(3)}`);
+    preview?.style.setProperty(
+      '--cursor-angle',
+      `${(angle < 0 ? angle + 360 : angle).toFixed(3)}deg`,
+    );
+    setShowcaseMotion((current) => ({
+      ...current,
+      pointerX: Math.max(-1, Math.min(1, pointerX)),
+      pointerY: Math.max(-1, Math.min(1, pointerY)),
+    }));
+  }, []);
+
+  const handleShowcasePointerLeave = useCallback(() => {
+    showcaseRef.current?.style.setProperty('--edge-proximity', '0');
+    setShowcaseMotion((current) => ({ ...current, pointerX: 0, pointerY: 0 }));
+  }, []);
+
+  const handleDelete = useCallback(
+    async (asset: LibraryMaterialAsset) => {
+      const response = await fetch(`/api/material-assets/${encodeURIComponent(asset.id)}`, {
+        method: 'DELETE',
+        headers: { 'x-lumen-locale': locale },
+      });
+      const payload = (await response.json()) as
+        | { ok: true; data: { deleted: true } }
+        | { ok: false; error: { message: string } };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.ok ? t('materials.deleteFailed') : payload.error.message);
+      }
+      setAssetsByCategory((current) => ({
+        ...current,
+        [asset.category]: (current[asset.category] ?? []).filter((item) => item.id !== asset.id),
+      }));
+    },
+    [locale, t],
+  );
+
+  const activeAccent = accentByCategory[activeCategory];
+  const activeCategoryConfig =
+    materialCategories.find((category) => category.id === activeCategory) ?? materialCategories[0]!;
+  const activeCategoryIndex = Math.max(
+    0,
+    materialCategories.findIndex((category) => category.id === activeCategory),
+  );
+
+  return (
+    <div className="relative min-h-screen text-white">
+      {!appShellChrome && <AuroraBackdrop />}
+      {!appShellChrome && <Topbar />}
+
+      <main className="relative z-10 mx-auto max-w-[1280px] px-4 pb-nav-mobile pt-24 sm:px-6 sm:pt-28">
+        <section className="relative overflow-hidden rounded-[22px] bg-[#111315]/82 p-3 shadow-[0_30px_90px_-58px_rgba(0,0,0,0.9)] ring-1 ring-white/[0.08] sm:p-4 md:grid md:grid-cols-[minmax(0,1fr)_360px] md:gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:56px_56px] opacity-40"
+          />
+          <div className="relative z-10 flex min-h-[248px] flex-col p-2 sm:p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.055] px-2.5 text-[12px] font-bold text-white/70 ring-1 ring-white/[0.07]">
+                <IconLayoutCollage size={15} stroke={2.1} />
+                {t('materials.title')}
+              </span>
+              <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-lg bg-white/[0.045] px-2 text-[12px] font-bold text-white/48 ring-1 ring-white/[0.06]">
+                {visibleAssets.length}
+              </span>
+            </div>
+
+            <div className="mt-8 max-w-[620px]">
+              <h1 className="text-[34px] font-black leading-none text-white sm:text-[46px] lg:text-[56px]">
+                {t(`materials.categories.${activeCategory}.title`)}
+              </h1>
+              <p className="mt-3 max-w-[520px] text-[13px] font-medium leading-6 text-white/52 sm:text-[14px]">
+                {t(`materials.categories.${activeCategory}.desc`)}
+              </p>
+            </div>
+
+            <div className="mt-8 grid gap-2 sm:grid-cols-3 md:mt-auto">
+              {materialCategories.map((category) => {
+                const active = activeCategory === category.id;
+                const count = assetsByCategory[category.id]?.length;
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    data-testid={`material-category-${category.id}`}
+                    onClick={() => setActiveCategory(category.id)}
+                    className={cn(
+                      'group min-h-[74px] rounded-xl px-3 py-3 text-left ring-1 transition-colors',
+                      active
+                        ? 'bg-white/[0.09] text-white ring-white/[0.16]'
+                        : 'bg-white/[0.035] text-white/58 ring-white/[0.06] hover:bg-white/[0.06] hover:text-white/78 hover:ring-white/[0.1]',
+                    )}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors',
+                          active
+                            ? 'bg-white/[0.11] text-white ring-white/[0.16]'
+                            : 'bg-white/[0.045] text-white/38 ring-white/[0.07] group-hover:text-white/58',
+                        )}
+                      >
+                        <IconLayoutCollage size={14} stroke={2.1} />
+                      </span>
+                      <span className="min-w-0 truncate text-[13px] font-bold">
+                        {t(`materials.categories.${category.id}.title`)}
+                      </span>
+                      {typeof count === 'number' ? (
+                        <span className="ml-auto rounded-full bg-black/24 px-2 py-0.5 text-[11px] font-bold text-white/52">
+                          {count}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-2 line-clamp-2 block text-[11px] font-medium leading-4 text-white/40 group-hover:text-white/50">
+                      {t(`materials.categories.${category.id}.desc`)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div
+            ref={showcaseRef}
+            onPointerMove={handleShowcasePointerMove}
+            onPointerLeave={handleShowcasePointerLeave}
+            className="material-category-glow relative z-10 mt-3 min-h-[248px] overflow-hidden rounded-[18px] md:mt-0"
+            style={
+              {
+                '--lumen-border-glow-hsl': activeCategoryConfig.glowColor,
+                '--lumen-border-glow-one': activeCategoryConfig.glowColors[0],
+                '--lumen-border-glow-two': activeCategoryConfig.glowColors[1],
+                '--lumen-border-glow-three': activeCategoryConfig.glowColors[2],
+                '--lumen-border-glow-bg': 'rgba(9, 12, 15, 0.62)',
+                '--lumen-border-glow-mask': 'rgba(9, 12, 15, 0.76)',
+                '--lumen-border-fill-opacity': '0.2',
+              } as React.CSSProperties
+            }
+          >
+            <span aria-hidden className="material-category-edge-light" />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-8 top-8 h-[220px] opacity-85 blur-3xl"
+              style={{
+                background: `radial-gradient(circle at 50% 48%, ${activeAccent}45, transparent 68%)`,
+              }}
+            />
+            <MaterialSpiralScene
+              images={activeCategoryConfig.showcaseImages}
+              accent={activeAccent}
+              index={activeCategoryIndex}
+              active
+              motionState={showcaseMotion}
+            />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#08090b] via-[#08090b]/74 to-transparent px-4 pb-4 pt-16">
+              <div className="flex items-end gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[18px] font-black text-white">
+                    {t(`materials.categories.${activeCategory}.title`)}
+                  </div>
+                  <div className="mt-1 text-[12px] font-semibold text-white/44">
+                    {t('materials.title')}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-lg bg-white/[0.07] px-2 py-1 text-[11px] font-bold text-white/52 ring-1 ring-white/[0.08]">
+                  {visibleAssets.length}
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {loadError ? (
+          <div className="mt-5 flex items-center gap-2 rounded-xl bg-[#2a171a]/72 px-4 py-3 text-[13px] text-[#ffabb6] ring-1 ring-[#ff5d73]/16">
+            <IconAlertTriangle size={16} stroke={2.2} />
+            {loadError}
+          </div>
+        ) : null}
+
+        <section className="mt-5">
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.055] text-white/60 ring-1 ring-white/[0.08]">
+                <IconLayoutCollage size={17} stroke={2.1} />
+              </span>
+              <h2 className="text-[18px] font-extrabold text-white">
+                {t(`materials.categories.${activeCategory}.title`)}
+              </h2>
+              <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-white/[0.05] px-2 text-[12px] font-bold text-white/52 ring-1 ring-white/[0.07]">
+                {visibleAssets.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setUploadOpen(true)}
+              className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-[13px] font-bold text-[#111315] shadow-[0_14px_34px_-22px_rgba(255,255,255,0.9)] transition-transform active:scale-[0.97]"
+            >
+              <IconUpload size={16} stroke={2.3} />
+              {t('materials.upload')}
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="flex h-[280px] items-center justify-center rounded-[18px] bg-[#1c1e20]/92 text-[13px] text-white/48 ring-1 ring-white/[0.07]">
+              <IconLoader2 size={18} className="mr-2 animate-spin" stroke={2.2} />
+              {t('common.loading')}
+            </div>
+          ) : visibleAssets.length === 0 ? (
+            <div className="flex h-[300px] flex-col items-center justify-center rounded-[18px] bg-[#1c1e20]/92 text-center ring-1 ring-white/[0.07]">
+              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.04] text-white/30 ring-1 ring-white/[0.06]">
+                <IconLayoutCollage size={30} stroke={1.6} />
+              </span>
+              <div className="mt-4 text-[14px] font-semibold text-white/56">
+                {t('materials.empty')}
+              </div>
+              <button
+                type="button"
+                onClick={() => setUploadOpen(true)}
+                className="mt-5 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/[0.06] px-3.5 text-[12px] font-semibold text-white/78 ring-1 ring-white/[0.08] transition-colors hover:bg-white/[0.1] hover:text-white"
+              >
+                <IconUpload size={15} stroke={2.3} />
+                {t('materials.upload')}
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {visibleAssets.map((asset, index) => (
+                <MaterialCard
+                  key={asset.id}
+                  asset={asset}
+                  index={index}
+                  onDelete={() => handleDelete(asset)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
+
+      {uploadOpen ? (
+        <UploadMaterialDialog
+          activeCategory={activeCategory}
+          onClose={() => setUploadOpen(false)}
+          onUploaded={(uploaded) => {
+            setAssetsByCategory((current) => {
+              const next = { ...current };
+              for (const asset of uploaded.filter(isLibraryAsset)) {
+                next[asset.category] = [asset, ...(next[asset.category] ?? [])];
+              }
+              return next;
+            });
+            if (uploaded[0] && isLibraryAsset(uploaded[0])) {
+              setActiveCategory(uploaded[0].category);
+            }
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function MaterialSpiralScene({
+  images,
+  accent,
+  index,
+  active,
+  motionState,
+}: {
+  images: readonly string[];
+  accent: string;
+  index: number;
+  active: boolean;
+  motionState: ShowcaseMotionState;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activeRef = useRef(active);
+  const motionRef = useRef(motionState);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
+    motionRef.current = motionState;
+  }, [motionState]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || images.length === 0) return;
+
+    let disposed = false;
+    let frameId = 0;
+    let renderer: ThreeWebGLRenderer | null = null;
+    let root: ThreeGroup | null = null;
+    let geometry: ThreePlaneGeometry | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    const panels: MaterialSpiralPanel[] = [];
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const initialize = async () => {
+      const THREE = await import('three');
+      if (disposed) return;
+
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.Fog(0x050708, 3.2, 6.8);
+
+      const localCamera = new THREE.PerspectiveCamera(37, 1, 0.1, 100);
+      localCamera.position.set(0, 0.02, 4.22);
+
+      const localRenderer = new THREE.WebGLRenderer({
+        canvas,
+        alpha: true,
+        antialias: true,
+        powerPreference: 'high-performance',
+      });
+      localRenderer.setClearColor(0x000000, 0);
+      localRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.8));
+      localRenderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer = localRenderer;
+
+      const localRoot = new THREE.Group();
+      localRoot.rotation.set(-0.06, index * 0.52, -0.07);
+      localRoot.scale.setScalar(activeRef.current ? 1.08 : 0.98);
+      root = localRoot;
+      scene.add(localRoot);
+
+      geometry = new THREE.PlaneGeometry(0.58, 0.78, 1, 1);
+      const loader = new THREE.TextureLoader();
+      const anisotropy = Math.min(8, localRenderer.capabilities.getMaxAnisotropy());
+      const panelsPerTurn = 8;
+      const rowCount = 2;
+      const panelCount = panelsPerTurn * rowCount;
+
+      for (let panelIndex = 0; panelIndex < panelCount; panelIndex += 1) {
+        const image = images[panelIndex % images.length];
+        if (!image) continue;
+
+        const row = Math.floor(panelIndex / panelsPerTurn);
+        const slot = panelIndex % panelsPerTurn;
+        const baseAngle = (slot / panelsPerTurn) * Math.PI * 2 + row * 0.42 + index * 0.18;
+        const radius = 0.96 + row * 0.04;
+        const baseY = (0.5 - row) * 0.58;
+        const texture = loader.load(image);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = anisotropy;
+
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          opacity: 0.92,
+          side: THREE.DoubleSide,
+          fog: true,
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(Math.sin(baseAngle) * radius, baseY, Math.cos(baseAngle) * radius);
+        mesh.rotation.y = baseAngle;
+        mesh.rotation.z = -0.035 + row * 0.025;
+        mesh.renderOrder = panelIndex;
+        localRoot.add(mesh);
+
+        panels.push({
+          mesh,
+          material,
+          texture,
+          baseAngle,
+          baseY,
+          waveOffset: panelIndex * 0.48 + index,
+        });
+      }
+
+      const resize = () => {
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(1, Math.floor(rect.width));
+        const height = Math.max(1, Math.floor(rect.height));
+        localRenderer.setSize(width, height, false);
+        localCamera.aspect = width / height;
+        localCamera.updateProjectionMatrix();
+      };
+
+      resizeObserver = new ResizeObserver(resize);
+      resizeObserver.observe(canvas);
+      resize();
+
+      let autoRotation = index * 0.52;
+      let easedRotation = autoRotation;
+
+      const render = (time: number) => {
+        if (disposed) return;
+
+        const motion = motionRef.current;
+        if (!prefersReducedMotion) {
+          autoRotation += activeRef.current ? 0.0048 : 0.0026;
+        }
+        const targetRotation = autoRotation + motion.wheelRotation * 0.012 + motion.pointerX * 0.46;
+        easedRotation += (targetRotation - easedRotation) * 0.075;
+
+        localRoot.rotation.y = easedRotation;
+        localRoot.rotation.x += (-motion.pointerY * 0.18 - localRoot.rotation.x) * 0.08;
+        localRoot.rotation.z += (-0.07 + motion.pointerX * 0.045 - localRoot.rotation.z) * 0.08;
+
+        const targetScale = activeRef.current ? 1.1 : 0.98;
+        const nextScale = localRoot.scale.x + (targetScale - localRoot.scale.x) * 0.08;
+        localRoot.scale.setScalar(nextScale);
+
+        const baseOpacity = activeRef.current ? 0.98 : 0.68;
+        const waveTime = time * 0.001;
+        for (const panel of panels) {
+          const facing = (Math.cos(panel.baseAngle + easedRotation) + 1) / 2;
+          const panelScale = 0.88 + facing * 0.13;
+          panel.mesh.scale.set(panelScale, panelScale, 1);
+          panel.mesh.position.y = panel.baseY + Math.sin(waveTime * 0.7 + panel.waveOffset) * 0.025;
+          panel.material.opacity = baseOpacity * (0.28 + facing * 0.78);
+        }
+
+        localRenderer.render(scene, localCamera);
+        frameId = window.requestAnimationFrame(render);
+      };
+
+      frameId = window.requestAnimationFrame(render);
+    };
+
+    void initialize();
+
+    return () => {
+      disposed = true;
+      if (frameId) window.cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
+      for (const panel of panels) {
+        panel.material.dispose();
+        panel.texture.dispose();
+      }
+      geometry?.dispose();
+      if (root) root.clear();
+      renderer?.dispose();
+    };
+  }, [images, index]);
+
+  return (
+    <span aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+      <span
+        className="absolute inset-x-5 top-8 h-[220px] rounded-full opacity-70 blur-3xl"
+        style={{ background: `radial-gradient(circle at 50% 48%, ${accent}35, transparent 68%)` }}
+      />
+      <span className="absolute inset-x-8 top-[48%] h-px bg-gradient-to-r from-transparent via-white/18 to-transparent opacity-70" />
+      <canvas
+        ref={canvasRef}
+        className="absolute h-full w-full"
+        style={{
+          inset: '-24px',
+          height: 'calc(100% + 48px)',
+          width: 'calc(100% + 48px)',
+        }}
+        data-testid={`material-spiral-${index}`}
+      />
+    </span>
+  );
+}
+
+function MaterialCard({
+  asset,
+  index,
+  onDelete,
+}: {
+  asset: LibraryMaterialAsset;
+  index: number;
+  onDelete: () => Promise<void>;
+}) {
+  const { locale, t } = useI18n();
+  const [deleting, setDeleting] = useState(false);
+  const points = asset.metadata?.sellingPoints ?? [];
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.42, delay: index * 0.03, ease: [0.32, 0.72, 0, 1] }}
+      className="group overflow-hidden rounded-[18px] bg-[#1c1e20] ring-1 ring-white/[0.07] transition-colors hover:bg-[#222528] hover:ring-white/[0.12]"
+    >
+      <SpotlightCard className="h-full" spotlightColor="rgba(255, 255, 255, 0.08)">
+        <button
+          type="button"
+          onClick={() => window.open(asset.url, '_blank', 'noopener,noreferrer')}
+          className="relative block aspect-[4/3] w-full overflow-hidden bg-black"
+        >
+          {asset.thumbnailUrl || asset.url ? (
+            <img
+              src={asset.thumbnailUrl ?? asset.url}
+              alt={asset.title}
+              decoding="async"
+              loading="lazy"
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+            />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-white/26">
+              <IconPhoto size={34} stroke={1.8} />
+            </span>
+          )}
+          <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white/82 backdrop-blur">
+            {asset.metadata?.subcategory ?? t(`materials.categories.${asset.category}.title`)}
+          </span>
+        </button>
+
+        <div className="space-y-3 p-3.5">
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[14px] font-bold text-white">{asset.title}</div>
+              <div className="mt-1 truncate text-[11px] text-white/38">
+                {formatMaterialDate(asset.updatedAt, locale)} · {formatBytes(asset.size)}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  await onDelete();
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/32 transition-colors hover:bg-white/[0.08] hover:text-white/78 disabled:opacity-45"
+              aria-label={t('materials.delete')}
+            >
+              {deleting ? (
+                <IconLoader2 size={15} className="animate-spin" />
+              ) : (
+                <IconTrash size={15} />
+              )}
+            </button>
+          </div>
+          {points.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {points.slice(0, 3).map((point) => (
+                <span
+                  key={point}
+                  className="max-w-full truncate rounded-lg bg-white/[0.045] px-2 py-1 text-[10.5px] font-medium text-white/52 ring-1 ring-white/[0.06]"
+                  title={point}
+                >
+                  {point}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </SpotlightCard>
+    </motion.article>
+  );
+}
+
+function UploadMaterialDialog({
+  activeCategory,
+  onClose,
+  onUploaded,
+}: {
+  activeCategory: MaterialAssetCategory;
+  onClose: () => void;
+  onUploaded: (assets: MaterialAssetRecord[]) => void;
+}) {
+  const { locale, t } = useI18n();
+  const category = activeCategory;
+  const accent = accentByCategory[category];
+  const [title, setTitle] = useState('');
+  const [subcategory, setSubcategory] = useState(subcategoryOptions[activeCategory][0] ?? '');
+  const [sellingPointsText, setSellingPointsText] = useState('');
+  const [files, setFiles] = useState<UploadPreview[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [generatingPoints, setGeneratingPoints] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const filesRef = useRef<UploadPreview[]>([]);
+
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !uploading) onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose, uploading]);
+
+  useEffect(() => {
+    return () => {
+      for (const file of filesRef.current) URL.revokeObjectURL(file.previewUrl);
+    };
+  }, []);
+
+  const handleAddFiles = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const selected = Array.from(event.target.files ?? []);
+      event.target.value = '';
+      if (selected.length === 0) return;
+
+      setFiles((current) => {
+        const slots = MAX_UPLOAD_IMAGES - current.length;
+        if (slots <= 0) {
+          setError(t('materials.maxImages', { count: MAX_UPLOAD_IMAGES }));
+          return current;
+        }
+        const accepted = selected.slice(0, slots).filter((file) => file.type.startsWith('image/'));
+        if (accepted.length !== selected.length) {
+          setError(t('materials.imageOnly'));
+        } else {
+          setError(null);
+        }
+        return [
+          ...current,
+          ...accepted.map((file) => ({
+            id: `${file.name}-${file.size}-${crypto.randomUUID()}`,
+            file,
+            previewUrl: URL.createObjectURL(file),
+          })),
+        ];
+      });
+    },
+    [t],
+  );
+
+  const removeFile = useCallback((id: string) => {
+    setFiles((current) => {
+      const target = current.find((file) => file.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return current.filter((file) => file.id !== id);
+    });
+  }, []);
+
+  const handleGeneratePoints = useCallback(async () => {
+    if (!title.trim()) {
+      setError(t('materials.nameRequired'));
+      return;
+    }
+    setGeneratingPoints(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/material-assets/selling-points', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-lumen-locale': locale,
+        },
+        body: JSON.stringify({ title, category, subcategory }),
+      });
+      const payload = (await response.json()) as SellingPointsApiResponse;
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.ok ? t('materials.pointsFailed') : payload.error.message);
+      }
+      setSellingPointsText(payload.data.points.filter(Boolean).join('\n'));
+    } catch (pointError) {
+      setError(pointError instanceof Error ? pointError.message : t('materials.pointsFailed'));
+    } finally {
+      setGeneratingPoints(false);
+    }
+  }, [category, locale, subcategory, t, title]);
+
+  const handleSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!title.trim()) {
+        setError(t('materials.nameRequired'));
+        return;
+      }
+      if (files.length === 0) {
+        setError(t('materials.fileRequired'));
+        return;
+      }
+
+      const form = new FormData();
+      form.append('title', title.trim());
+      form.append('category', category);
+      form.append('subcategory', subcategory);
+      const sellingPoints = sellingPointsText
+        .split(/\r?\n/)
+        .map((point) => point.trim())
+        .filter(Boolean);
+      for (const point of sellingPoints) {
+        if (point.trim()) form.append('sellingPoints', point.trim());
+      }
+      for (const preview of files) form.append('files', preview.file);
+
+      setUploading(true);
+      setUploadProgress(0);
+      setError(null);
+      try {
+        const uploaded = await uploadMaterialAssets(form, locale, setUploadProgress);
+        onUploaded(uploaded);
+        onClose();
+      } catch (uploadError) {
+        setError(uploadError instanceof Error ? uploadError.message : t('materials.uploadFailed'));
+      } finally {
+        setUploading(false);
+      }
+    },
+    [category, files, locale, onClose, onUploaded, sellingPointsText, subcategory, t, title],
+  );
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 px-4 py-8 backdrop-blur-xl">
+      <motion.form
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}
+        onSubmit={handleSubmit}
+        className="max-h-[92vh] w-full max-w-[580px] overflow-y-auto rounded-[22px] bg-[#17191c] p-6 text-white shadow-[0_40px_120px_-50px_rgba(0,0,0,0.95)] ring-1 ring-white/[0.09]"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex items-center gap-3">
+            <span
+              className="flex h-11 w-11 items-center justify-center rounded-xl"
+              style={{ backgroundColor: `${accent}1a`, color: accent }}
+            >
+              <IconUpload size={20} stroke={2.1} />
+            </span>
+            <div>
+              <h2 className="text-[19px] font-bold text-white">{t('materials.dialogTitle')}</h2>
+              <p
+                className="mt-1.5 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold"
+                style={{ backgroundColor: `${accent}1a`, color: accent }}
+              >
+                {t(`materials.categories.${category}.title`)}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={uploading}
+            className="ml-auto flex h-9 w-9 items-center justify-center rounded-xl text-white/44 transition-colors hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
+            aria-label={t('common.close')}
+          >
+            <IconX size={18} />
+          </button>
+        </div>
+
+        <div className="mt-6">
+          <div className="mb-2 flex items-center justify-between text-[12px] font-semibold text-white/52">
+            <span>{t('materials.images')}</span>
+            <span>
+              {t('materials.uploadedCount', { count: files.length, max: MAX_UPLOAD_IMAGES })}
+            </span>
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            <button
+              type="button"
+              disabled={uploading || files.length >= MAX_UPLOAD_IMAGES}
+              onClick={() => fileInputRef.current?.click()}
+              className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl bg-white/[0.03] text-white/42 ring-1 ring-dashed ring-white/16 transition-colors hover:bg-white/[0.06] hover:text-white/75 hover:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <IconPlus size={20} stroke={2.2} />
+              <span className="text-[11px] font-semibold">{t('materials.pickImages')}</span>
+            </button>
+            {files.map((file) => (
+              <div
+                key={file.id}
+                className="group relative aspect-square overflow-hidden rounded-xl bg-black ring-1 ring-white/[0.08]"
+              >
+                <img src={file.previewUrl} alt="" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={() => removeFile(file.id)}
+                  className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-lg bg-black/60 text-white/78 opacity-0 ring-1 ring-white/[0.14] transition-opacity group-hover:opacity-100 disabled:opacity-0"
+                  aria-label={t('common.remove')}
+                >
+                  <IconX size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <input
+            ref={fileInputRef}
+            className="sr-only"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleAddFiles}
+          />
+        </div>
+
+        <label className="mt-5 block">
+          <span className="mb-2 block text-[12px] font-semibold text-white/52">
+            {t('materials.name')}
+          </span>
+          <input
+            value={title}
+            disabled={uploading}
+            onChange={(event) => setTitle(event.target.value)}
+            className="h-11 w-full rounded-xl bg-[#111315] px-3.5 text-[13px] text-white outline-none ring-1 ring-white/[0.08] transition-colors placeholder:text-white/26 focus:ring-white/24"
+            placeholder={t('materials.namePlaceholder')}
+          />
+        </label>
+
+        <label className="mt-4 block">
+          <span className="mb-2 block text-[12px] font-semibold text-white/52">
+            {t('materials.subcategory')}
+          </span>
+          <span className="relative block">
+            <select
+              value={subcategory}
+              disabled={uploading}
+              onChange={(event) => setSubcategory(event.target.value)}
+              className="h-11 w-full appearance-none rounded-xl bg-[#111315] px-3.5 pr-10 text-[13px] text-white outline-none ring-1 ring-white/[0.08] transition-colors focus:ring-white/24"
+            >
+              {subcategoryOptions[category].map((option) => (
+                <option key={option} value={option} className="bg-[#17191c] text-white">
+                  {option}
+                </option>
+              ))}
+            </select>
+            <IconChevronDown
+              size={16}
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/36"
+            />
+          </span>
+        </label>
+
+        <div className="mt-5">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-[12px] font-semibold text-white/52">
+              {t('materials.sellingPoints')}
+            </span>
+            <button
+              type="button"
+              disabled={uploading || generatingPoints}
+              onClick={handleGeneratePoints}
+              className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-white/[0.05] px-2.5 text-[11px] font-semibold text-white/72 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.09] hover:text-white disabled:opacity-50"
+            >
+              {generatingPoints ? (
+                <IconLoader2 size={14} className="animate-spin" />
+              ) : (
+                <IconSparkles size={14} stroke={2.2} />
+              )}
+              {t('materials.generatePoints')}
+            </button>
+          </div>
+          <textarea
+            value={sellingPointsText}
+            disabled={uploading}
+            onChange={(event) => setSellingPointsText(event.target.value)}
+            className="min-h-[108px] w-full resize-none rounded-xl bg-[#111315] px-3.5 py-3 text-[13px] leading-5 text-white outline-none ring-1 ring-white/[0.08] transition-colors placeholder:text-white/26 focus:ring-white/24"
+            placeholder={t('materials.sellingPointPlaceholder')}
+          />
+        </div>
+
+        {uploading ? (
+          <div className="mt-5 rounded-xl bg-white/[0.035] p-3 ring-1 ring-white/[0.07]">
+            <div className="mb-2 flex items-center justify-between text-[12px] font-semibold text-white/58">
+              <span>{t('materials.uploading')}</span>
+              <span>{uploadProgress}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-black/40">
+              <div
+                className="h-full rounded-full transition-all duration-200"
+                style={{ width: `${uploadProgress}%`, backgroundColor: accent }}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="mt-4 rounded-xl bg-[#2a171a]/72 px-3 py-2 text-[12px] font-medium text-[#ffabb6] ring-1 ring-[#ff5d73]/16">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex items-center gap-2">
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={onClose}
+            className="h-10 flex-1 rounded-xl bg-white/[0.05] text-[13px] font-semibold text-white/72 ring-1 ring-white/[0.07] transition-colors hover:bg-white/[0.09] hover:text-white disabled:opacity-50"
+          >
+            {t('common.close')}
+          </button>
+          <button
+            type="submit"
+            disabled={uploading}
+            className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-white text-[13px] font-bold text-[#111315] transition-transform active:scale-[0.97] disabled:opacity-50"
+          >
+            {uploading ? (
+              <IconLoader2 size={15} className="animate-spin" />
+            ) : (
+              <IconCheck size={15} stroke={2.4} />
+            )}
+            {t('materials.confirmUpload')}
+          </button>
+        </div>
+      </motion.form>
+    </div>
+  );
+}
+
+function uploadMaterialAssets(
+  form: FormData,
+  locale: string,
+  onProgress: (progress: number) => void,
+): Promise<MaterialAssetRecord[]> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', '/api/material-assets');
+    request.setRequestHeader('x-lumen-locale', locale);
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable) {
+        onProgress(35);
+        return;
+      }
+      onProgress(Math.min(96, Math.round((event.loaded / event.total) * 100)));
+    };
+    request.onload = () => {
+      try {
+        const payload = JSON.parse(request.responseText) as MaterialAssetsApiResponse;
+        if (request.status < 200 || request.status >= 300 || !payload.ok) {
+          reject(new Error(payload.ok ? `HTTP ${request.status}` : payload.error.message));
+          return;
+        }
+        onProgress(100);
+        resolve(payload.data.assets);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error('Upload failed'));
+      }
+    };
+    request.onerror = () => reject(new Error('Upload failed'));
+    request.send(form);
+  });
+}
+
+function isLibraryAsset(asset: MaterialAssetRecord): asset is LibraryMaterialAsset {
+  return asset.category === 'item' || asset.category === 'character' || asset.category === 'scene';
+}
+
+function formatBytes(value?: number) {
+  if (!value) return '0 KB';
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatMaterialDate(value: string, locale: 'en' | 'zh') {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+  }).format(date);
+}

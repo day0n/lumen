@@ -6,3 +6,5 @@ export * from './material.js';
 export * from './template.js';
 export * from './workflow.js';
 export * from './remake.js';
+export * from './remake-api.js';
+export * from './hot-video.js';

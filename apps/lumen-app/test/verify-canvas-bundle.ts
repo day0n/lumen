@@ -85,6 +85,13 @@ assert.ok(
 const allSourceMaps = await Promise.all(
   assetNames.filter((name) => name.endsWith('.js.map')).map(readSourceMap),
 );
+for (const sourceMap of allSourceMaps) {
+  assert.equal(
+    sourceMap.sources.some((source) => normalizePath(source).includes('/lumen-studio/')),
+    false,
+    'the static frontend bundle contains a lumen-studio source',
+  );
+}
 const canvasRouteSourceMaps = allSourceMaps.filter((sourceMap) =>
   sourceMap.sources.some((source) => source.endsWith('/src/features/canvas/CanvasRoute.tsx')),
 );

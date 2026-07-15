@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { readWorkflowStatusResults } from '../../lumen-studio/src/features/workflow/reconcile-workflow-nodes.ts';
+import { readWorkflowStatusResults } from '../src/features/workflow/reconcile-workflow-nodes.ts';
 
 const result = {
   error: null,

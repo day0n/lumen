@@ -1,0 +1,33 @@
+/* Scoped to the analytics dashboard shell. */
+
+.dashboard-analytics-shell {
+  position: relative;
+}
+
+.dashboard-analytics-ambient {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 480px;
+  opacity: 0.9;
+  background: radial-gradient(
+      ellipse 80% 55% at 50% -10%,
+      rgba(121, 228, 255, 0.14),
+      transparent 62%
+    ), radial-gradient(circle at 85% 12%, rgba(245, 199, 106, 0.08), transparent 38%),
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: auto, auto, 48px 48px, 48px 48px;
+  mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-analytics-ambient {
+    background-size: auto, auto, 64px 64px, 64px 64px;
+  }
+}
+
+.dashboard-analytics-pill-glow {
+  box-shadow: 0 0 0 1px rgba(121, 228, 255, 0.12), 0 0 24px rgba(121, 228, 255, 0.08);
+}

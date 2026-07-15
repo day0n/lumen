@@ -48,14 +48,3 @@ test('home route and warmup load the app-owned page', async () => {
   assert.match(warmup, /import\(['"]\.\.\/features\/home\/HomePage['"]\)/);
   assert.doesNotMatch(warmup, /\/api\/projects\?limit=3/);
 });
-
-test('home public media is served by both runtime paths', async () => {
-  const server = await readFile(new URL('../../lumen-studio/server.ts', import.meta.url), 'utf8');
-  const edgeWorker = await readFile(
-    new URL('../../../infra/cloudflare/edge/src/worker.mjs', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(server, /appPathname\.startsWith\('\/app\/home-posters\/'\)/);
-  assert.match(edgeWorker, /readPublicAssetPath\(pathname\.slice\('\/app'\.length\)\)/);
-});
