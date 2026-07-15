@@ -13,6 +13,7 @@ const LEGACY_REDIRECTS = new Map([
   ['/canvas/projects', '/app/projects'],
   ['/canvas/new', '/app/canvas/new'],
 ]);
+const ORIGIN_PATH_PREFIXES = ['/api', '/trpc', '/ws', '/monitoring'];
 
 export default {
   async fetch(request, env, context) {
@@ -46,6 +47,12 @@ export default {
     }
 
     const action = resolveEdgeAction(url.pathname, release);
+    if (action.type === 'object' && action.status === 404 && action.locale === 'en') {
+      if (preferredLocale(request) === 'zh') {
+        url.pathname = `/zh${url.pathname}`;
+        return redirectResponse(url, 302, 'zh', true);
+      }
+    }
     if (action.type === 'redirect') {
       url.pathname = action.pathname;
       if (action.search) {
@@ -227,14 +234,11 @@ export function resolveEdgeAction(pathname, activeRelease) {
     };
   }
 
-  if (pathname.startsWith('/zh/')) {
-    return {
-      ...shellAction(activeRelease, '404.html'),
-      status: 404,
-    };
+  if (requiresOriginResponse(pathname) || looksLikeAssetRequest(pathname)) {
+    return { type: 'not-found' };
   }
 
-  return { type: 'not-found' };
+  return notFoundShellAction(activeRelease, pathname.startsWith('/zh/') ? 'zh' : 'en');
 }
 
 export function preferredLocale(request) {
@@ -265,6 +269,14 @@ function shellAction(release, filename) {
     objectKey: `releases/${release}/${filename}`,
     release,
     status: 200,
+  };
+}
+
+function notFoundShellAction(release, locale) {
+  return {
+    ...shellAction(release, locale === 'zh' ? 'zh/404.html' : '404.html'),
+    locale,
+    status: 404,
   };
 }
 
@@ -305,6 +317,19 @@ function isPublishedAssetPath(assetPath) {
 
 function matchesPathSegment(pathname, route) {
   return pathname === route || pathname.startsWith(`${route}/`);
+}
+
+function requiresOriginResponse(pathname) {
+  return (
+    ORIGIN_PATH_PREFIXES.some((prefix) => matchesPathSegment(pathname, prefix)) ||
+    pathname.startsWith('/_') ||
+    pathname.startsWith('/.')
+  );
+}
+
+function looksLikeAssetRequest(pathname) {
+  const finalSegment = pathname.split('/').at(-1) ?? '';
+  return /\.[a-z0-9]{1,12}$/i.test(finalSegment);
 }
 
 function hasUnsafePath(path) {

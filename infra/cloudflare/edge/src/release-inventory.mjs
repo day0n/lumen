@@ -8,7 +8,7 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MANIFEST_FILENAME = 'release-manifest.json';
 const READY_FILENAME = '_READY.json';
 const JSON_METADATA = { contentType: 'application/json; charset=utf-8' };
-const RELEASE_SCOPE = ['app', 'share', 'landing', 'auth'];
+const RELEASE_SCOPE = ['app', 'share', 'landing', 'auth', 'not-found'];
 const RELEASE_SHELLS = {
   app: 'app/index.html',
   share: 'share/index.html',
@@ -16,6 +16,8 @@ const RELEASE_SHELLS = {
   landingZh: 'zh/index.html',
   auth: 'auth/index.html',
   authZh: 'auth/zh/index.html',
+  notFound: '404.html',
+  notFoundZh: 'zh/404.html',
 };
 
 export async function verifyReleaseDirectory({ release, releaseDirectory }) {
@@ -333,7 +335,7 @@ function requireRelease(release) {
 
 function requireReleaseScope(scope, label) {
   if (!Array.isArray(scope) || !arraysEqual(scope, RELEASE_SCOPE)) {
-    throw new Error(`${label} scope must be exactly app, share, landing, auth`);
+    throw new Error(`${label} scope must be exactly app, share, landing, auth, not-found`);
   }
 }
 

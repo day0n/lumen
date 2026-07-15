@@ -275,6 +275,8 @@ export default defineConfig(({ mode }) => {
           authZh: path.resolve(__dirname, 'auth-zh.html'),
           landing: path.resolve(__dirname, 'landing.html'),
           landingZh: path.resolve(__dirname, 'landing-zh.html'),
+          notFound: path.resolve(__dirname, 'not-found.html'),
+          notFoundZh: path.resolve(__dirname, 'not-found-zh.html'),
           share: path.resolve(__dirname, 'share.html'),
         },
         output: {

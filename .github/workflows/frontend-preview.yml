@@ -190,3 +190,51 @@ jobs:
           /sign-in|en|en|Account — Lumen
           /zh/sign-up|zh-CN|zh|账户 — Lumen
           AUTH_PAGES
+
+          while IFS='|' read -r path expected_lang expected_marker expected_title; do
+            headers_file="$response_directory/not-found-${expected_marker}.headers"
+            body_file="$response_directory/not-found-${expected_marker}.html"
+            status="$(curl --silent --show-error --dump-header "$headers_file" --output "$body_file" --write-out '%{http_code}' "${preview_base}${path}")"
+            test "$status" = "404"
+            active_release="$(tr -d '\r' < "$headers_file" | awk -F': ' 'tolower($1) == "x-lumen-release" { print $2 }')"
+            test "$active_release" = "$RELEASE"
+
+            NOT_FOUND_BODY_FILE="$body_file" \
+            EXPECTED_LANG="$expected_lang" \
+            EXPECTED_MARKER="$expected_marker" \
+            EXPECTED_TITLE="$expected_title" \
+              node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const html = readFileSync(process.env.NOT_FOUND_BODY_FILE, 'utf8');
+          const expectedLang = process.env.EXPECTED_LANG;
+          const expectedMarker = process.env.EXPECTED_MARKER;
+          const expectedTitle = process.env.EXPECTED_TITLE;
+          const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const hasAttribute = (tag, name, value) =>
+            new RegExp(`\\b${escapePattern(name)}\\s*=\\s*(["'])${escapePattern(value)}\\1`, 'i').test(tag);
+          const htmlTag = html.match(/<html\b[^>]*>/i)?.[0] ?? '';
+          const title = html.match(/<title>([\s\S]*?)<\/title>/i)?.[1].trim();
+          const rootMatch = html.match(/<div\b[^>]*\bid\s*=\s*(["'])root\1[^>]*>/i);
+          const rootTag = rootMatch?.[0] ?? '';
+          const afterRoot = rootMatch ? html.slice(rootMatch.index + rootTag.length).trimStart() : '';
+          const robotsTag = [...html.matchAll(/<meta\b[^>]*>/gi)]
+            .map((match) => match[0])
+            .find((tag) => hasAttribute(tag, 'name', 'robots'));
+
+          if (!hasAttribute(htmlTag, 'lang', expectedLang)) throw new Error(`missing not-found lang ${expectedLang}`);
+          if (title !== expectedTitle) throw new Error(`unexpected not-found title: ${title ?? '<missing>'}`);
+          if (!hasAttribute(rootTag, 'data-lumen-static-not-found', expectedMarker)) {
+            throw new Error(`missing static not-found marker ${expectedMarker}`);
+          }
+          if (!robotsTag || !hasAttribute(robotsTag, 'content', 'noindex, nofollow')) {
+            throw new Error('not-found page must remain noindex');
+          }
+          if (!afterRoot || !afterRoot.includes('not-found-content') || !afterRoot.includes('404')) {
+            throw new Error('not-found recovery screen is empty');
+          }
+          NODE
+          done <<'NOT_FOUND_PAGES'
+          /missing-static-page|en|en|Page not found — Lumen
+          /zh/missing-static-page|zh-CN|zh|页面不存在 — Lumen
+          NOT_FOUND_PAGES

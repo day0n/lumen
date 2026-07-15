@@ -9,12 +9,12 @@ import worker from '../src/worker.mjs';
 
 const RELEASE = '0123456789abcdef0123456789abcdef01234567';
 
-test('packages and verifies app, share, landing, and auth shells', async (context) => {
+test('packages and verifies every localized frontend shell', async (context) => {
   const fixture = await createFixture(context);
   const first = await packageFixture(fixture, path.join(fixture.root, 'output-a'));
   const second = await packageFixture(fixture, path.join(fixture.root, 'output-b'));
 
-  assert.deepEqual(first.manifest.scope, ['app', 'share', 'landing', 'auth']);
+  assert.deepEqual(first.manifest.scope, ['app', 'share', 'landing', 'auth', 'not-found']);
   assert.deepEqual(first.manifest.shells, {
     app: 'app/index.html',
     share: 'share/index.html',
@@ -22,8 +22,10 @@ test('packages and verifies app, share, landing, and auth shells', async (contex
     landingZh: 'zh/index.html',
     auth: 'auth/index.html',
     authZh: 'auth/zh/index.html',
+    notFound: '404.html',
+    notFoundZh: 'zh/404.html',
   });
-  assert.deepEqual(first.ready.scope, ['app', 'share', 'landing', 'auth']);
+  assert.deepEqual(first.ready.scope, ['app', 'share', 'landing', 'auth', 'not-found']);
   assert.equal(first.ready.release, RELEASE);
   assert.equal(first.ready.objectCount, first.manifest.files.length + 2);
   assert.equal(first.ready.manifest.sha256.length, 64);
@@ -35,6 +37,8 @@ test('packages and verifies app, share, landing, and auth shells', async (contex
   assert.ok(outputFiles.includes('zh/index.html'));
   assert.ok(outputFiles.includes('auth/index.html'));
   assert.ok(outputFiles.includes('auth/zh/index.html'));
+  assert.ok(outputFiles.includes('404.html'));
+  assert.ok(outputFiles.includes('zh/404.html'));
   assert.ok(outputFiles.includes('assets/index-abc.js'));
   assert.ok(outputFiles.includes('assets/index-abc.css'));
   assert.ok(outputFiles.includes('assets/share-abc.js'));
@@ -47,6 +51,10 @@ test('packages and verifies app, share, landing, and auth shells', async (contex
   assert.ok(outputFiles.includes('assets/auth-abc.css'));
   assert.ok(outputFiles.includes('assets/auth-zh-abc.js'));
   assert.ok(outputFiles.includes('assets/auth-zh-abc.css'));
+  assert.ok(outputFiles.includes('assets/not-found-abc.js'));
+  assert.ok(outputFiles.includes('assets/not-found-abc.css'));
+  assert.ok(outputFiles.includes('assets/not-found-zh-abc.js'));
+  assert.ok(outputFiles.includes('assets/not-found-zh-abc.css'));
   assert.ok(outputFiles.includes('home-posters/selected/poster.webp'));
   assert.ok(outputFiles.includes('home-posters/selected/remote.png'));
   assert.ok(outputFiles.includes('home-templates/covers/template.webp'));
@@ -110,6 +118,36 @@ test('packages and verifies app, share, landing, and auth shells', async (contex
   assert.match(authZhShell, new RegExp(`/_static/releases/${RELEASE}/assets/auth-zh-abc\\.js`));
   assert.match(authZhShell, new RegExp(`/_static/releases/${RELEASE}/assets/auth-zh-abc\\.css`));
 
+  const notFoundShell = await readFile(path.join(first.releaseDirectory, '404.html'), 'utf8');
+  assert.match(notFoundShell, /<html lang="en">/);
+  assert.match(notFoundShell, /<title>Page not found — Lumen<\/title>/);
+  assert.match(notFoundShell, /name="robots" content="noindex, nofollow"/);
+  assert.match(notFoundShell, /data-lumen-static-not-found="en"/);
+  assert.match(notFoundShell, /not-found-content/);
+  assert.match(notFoundShell, new RegExp(`/_static/releases/${RELEASE}/assets/not-found-abc\\.js`));
+  assert.match(
+    notFoundShell,
+    new RegExp(`/_static/releases/${RELEASE}/assets/not-found-abc\\.css`),
+  );
+
+  const notFoundZhShell = await readFile(
+    path.join(first.releaseDirectory, 'zh', '404.html'),
+    'utf8',
+  );
+  assert.match(notFoundZhShell, /<html lang="zh-CN">/);
+  assert.match(notFoundZhShell, /<title>页面不存在 — Lumen<\/title>/);
+  assert.match(notFoundZhShell, /name="robots" content="noindex, nofollow"/);
+  assert.match(notFoundZhShell, /data-lumen-static-not-found="zh"/);
+  assert.match(notFoundZhShell, /not-found-content/);
+  assert.match(
+    notFoundZhShell,
+    new RegExp(`/_static/releases/${RELEASE}/assets/not-found-zh-abc\\.js`),
+  );
+  assert.match(
+    notFoundZhShell,
+    new RegExp(`/_static/releases/${RELEASE}/assets/not-found-zh-abc\\.css`),
+  );
+
   const landingShell = await readFile(path.join(first.releaseDirectory, 'index.html'), 'utf8');
   assert.match(landingShell, /<html lang="en">/);
   assert.match(landingShell, /<title>Lumen — Turn products into videos that sell<\/title>/);
@@ -160,7 +198,7 @@ test('rejects invalid releases and paths outside the build asset allowlist', asy
   );
 });
 
-test('requires exactly the app, share, landing, and auth Vite page entries', async (context) => {
+test('requires exactly the declared frontend Vite page entries', async (context) => {
   await context.test('missing share entry', async (subcontext) => {
     const fixture = await createFixture(subcontext);
     const manifestPath = path.join(fixture.distDirectory, '.vite', 'manifest.json');
@@ -187,7 +225,14 @@ test('requires exactly the app, share, landing, and auth Vite page entries', asy
     );
   });
 
-  for (const entryName of ['auth.html', 'auth-zh.html', 'landing.html', 'landing-zh.html']) {
+  for (const entryName of [
+    'auth.html',
+    'auth-zh.html',
+    'landing.html',
+    'landing-zh.html',
+    'not-found.html',
+    'not-found-zh.html',
+  ]) {
     await context.test(`missing ${entryName} entry`, async (subcontext) => {
       const fixture = await createFixture(subcontext);
       const manifestPath = path.join(fixture.distDirectory, '.vite', 'manifest.json');
@@ -218,7 +263,7 @@ test('requires exactly the app, share, landing, and auth Vite page entries', asy
           fixture,
           path.join(fixture.root, `unexpected-${unexpectedEntry}-entry-output`),
         ),
-        /entry set must be exactly auth-zh\.html, auth\.html, index\.html, landing-zh\.html, landing\.html, share\.html/,
+        /entry set must be exactly auth-zh\.html, auth\.html, index\.html, landing-zh\.html, landing\.html, not-found-zh\.html, not-found\.html, share\.html/,
       );
     });
   }
@@ -231,6 +276,8 @@ test('requires every built release shell to exist as a regular build file', asyn
     ['authZh', 'auth-zh.html'],
     ['landing', 'landing.html'],
     ['landingZh', 'landing-zh.html'],
+    ['notFound', 'not-found.html'],
+    ['notFoundZh', 'not-found-zh.html'],
   ]) {
     await context.test(`missing ${shellName} shell`, async (subcontext) => {
       const fixture = await createFixture(subcontext);
@@ -349,6 +396,47 @@ test('validates each localized auth shell against its own Vite entry', async (co
       otherScript: 'assets/auth-abc.js',
       otherStyle: 'assets/auth-abc.css',
       requiredScript: 'assets/auth-zh-abc.js',
+    },
+  ]) {
+    await context.test(`${definition.shellName} cannot use another entry`, async (subcontext) => {
+      const fixture = await createFixture(subcontext);
+      await writeFile(
+        path.join(fixture.distDirectory, definition.entryName),
+        [
+          `<link rel="icon" href="/_static/releases/${RELEASE}/icon.svg">`,
+          `<link rel="stylesheet" href="/_static/releases/${RELEASE}/${definition.otherStyle}">`,
+          `<script type="module" src="/_static/releases/${RELEASE}/${definition.otherScript}"></script>`,
+        ].join('\n'),
+      );
+
+      await assert.rejects(
+        packageFixture(
+          fixture,
+          path.join(fixture.root, `wrong-${definition.shellName}-entry-output`),
+        ),
+        new RegExp(
+          `${definition.shellName} shell does not reference required entry asset: ${definition.requiredScript.replace('.', '\\.')}`,
+        ),
+      );
+    });
+  }
+});
+
+test('validates each localized not-found shell against its own Vite entry', async (context) => {
+  for (const definition of [
+    {
+      shellName: 'notFound',
+      entryName: 'not-found.html',
+      otherScript: 'assets/share-abc.js',
+      otherStyle: 'assets/share-abc.css',
+      requiredScript: 'assets/not-found-abc.js',
+    },
+    {
+      shellName: 'notFoundZh',
+      entryName: 'not-found-zh.html',
+      otherScript: 'assets/not-found-abc.js',
+      otherStyle: 'assets/not-found-abc.css',
+      requiredScript: 'assets/not-found-zh-abc.js',
     },
   ]) {
     await context.test(`${definition.shellName} cannot use another entry`, async (subcontext) => {
@@ -526,6 +614,56 @@ test('requires localized auth metadata, noindex, and a static loading screen', a
   }
 });
 
+test('requires localized not-found metadata, noindex, and static recovery content', async (context) => {
+  for (const definition of [
+    {
+      name: 'English lang',
+      entryName: 'not-found.html',
+      replace: ['<html lang="en">', '<html lang="zh-CN">'],
+      error: /notFound shell must declare html lang en/,
+    },
+    {
+      name: 'Chinese title',
+      entryName: 'not-found-zh.html',
+      replace: ['<title>页面不存在 — Lumen</title>', '<title>Wrong title</title>'],
+      error: /notFoundZh shell has an invalid title/,
+    },
+    {
+      name: 'static marker',
+      entryName: 'not-found.html',
+      replace: ['data-lumen-static-not-found="en"', 'data-lumen-static-not-found="other"'],
+      error: /notFound shell is missing the static not-found marker/,
+    },
+    {
+      name: 'robots metadata',
+      entryName: 'not-found-zh.html',
+      replace: ['content="noindex, nofollow"', 'content="index, follow"'],
+      error: /notFoundZh shell must remain noindex/,
+    },
+    {
+      name: 'recovery screen',
+      entryName: 'not-found-zh.html',
+      replace: ['class="not-found-content"', 'class="other"'],
+      error: /notFoundZh shell has an empty static recovery screen/,
+    },
+  ]) {
+    await context.test(definition.name, async (subcontext) => {
+      const fixture = await createFixture(subcontext);
+      const filename = path.join(fixture.distDirectory, definition.entryName);
+      const html = await readFile(filename, 'utf8');
+      await writeFile(filename, html.replace(...definition.replace));
+
+      await assert.rejects(
+        packageFixture(
+          fixture,
+          path.join(fixture.root, `invalid-not-found-${definition.name}-output`),
+        ),
+        definition.error,
+      );
+    });
+  }
+});
+
 test('fails when the built shell references an asset absent from the manifest', async (context) => {
   const fixture = await createFixture(context);
   await writeFile(
@@ -697,20 +835,22 @@ test('serves every packaged shell and immutable shell reference through the edge
   };
   const executionContext = { waitUntil() {} };
 
-  for (const pathname of [
-    '/app/dashboard',
-    '/share/0123456789abcdef0123456789abcdef',
-    '/sign-in/verify',
-    '/zh/sign-up',
-    '/',
-    '/zh',
+  for (const [pathname, expectedStatus] of [
+    ['/app/dashboard', 200],
+    ['/share/0123456789abcdef0123456789abcdef', 200],
+    ['/sign-in/verify', 200],
+    ['/zh/sign-up', 200],
+    ['/', 200],
+    ['/zh', 200],
+    ['/missing-page', 404],
+    ['/zh/missing-page', 404],
   ]) {
     const shellResponse = await worker.fetch(
       new Request(`https://lumenstudio.tech${pathname}`),
       environment,
       executionContext,
     );
-    assert.equal(shellResponse.status, 200, pathname);
+    assert.equal(shellResponse.status, expectedStatus, pathname);
     assert.equal(shellResponse.headers.get('x-lumen-release'), RELEASE);
     const shell = await shellResponse.text();
     const references = [...shell.matchAll(/\b(?:href|src)=["']([^"']+)["']/gi)]
@@ -784,6 +924,22 @@ async function createFixture(context) {
       `.auth-zh{color:#fff;background:${'#282828 '.repeat(200)}}\n`,
     ),
     writeFixtureFile(
+      path.join(distDirectory, 'assets', 'not-found-abc.js'),
+      `export const notFound = '${'versioned-not-found-javascript-'.repeat(200)}';\n`,
+    ),
+    writeFixtureFile(
+      path.join(distDirectory, 'assets', 'not-found-abc.css'),
+      `.not-found{color:#fff;background:${'#292929 '.repeat(200)}}\n`,
+    ),
+    writeFixtureFile(
+      path.join(distDirectory, 'assets', 'not-found-zh-abc.js'),
+      `export const notFoundZh = '${'versioned-not-found-zh-javascript-'.repeat(200)}';\n`,
+    ),
+    writeFixtureFile(
+      path.join(distDirectory, 'assets', 'not-found-zh-abc.css'),
+      `.not-found-zh{color:#fff;background:${'#2b2b2b '.repeat(200)}}\n`,
+    ),
+    writeFixtureFile(
       path.join(distDirectory, 'assets', 'landing-abc.js'),
       `export const landing = '${'versioned-landing-javascript-'.repeat(200)}';\n`,
     ),
@@ -843,6 +999,16 @@ async function createFixture(context) {
       'auth-zh.html': {
         file: 'assets/auth-zh-abc.js',
         css: ['assets/auth-zh-abc.css'],
+        isEntry: true,
+      },
+      'not-found.html': {
+        file: 'assets/not-found-abc.js',
+        css: ['assets/not-found-abc.css'],
+        isEntry: true,
+      },
+      'not-found-zh.html': {
+        file: 'assets/not-found-zh-abc.js',
+        css: ['assets/not-found-zh-abc.css'],
         isEntry: true,
       },
       'landing.html': {
@@ -924,6 +1090,42 @@ async function createFixture(context) {
       '<body>',
       '<div id="root" data-lumen-static-auth="zh"><div class="auth-loading">正在加载账户</div></div>',
       `<script type="module" src="/_static/releases/${RELEASE}/assets/auth-zh-abc.js"></script>`,
+      '</body>',
+      '</html>',
+    ].join('\n'),
+  );
+  await writeFixtureFile(
+    path.join(distDirectory, 'not-found.html'),
+    [
+      '<!doctype html>',
+      '<html lang="en">',
+      '<head>',
+      '<title>Page not found — Lumen</title>',
+      '<meta name="robots" content="noindex, nofollow">',
+      `<link rel="icon" href="/_static/releases/${RELEASE}/icon.svg">`,
+      `<link rel="stylesheet" href="/_static/releases/${RELEASE}/assets/not-found-abc.css">`,
+      '</head>',
+      '<body>',
+      '<div id="root" data-lumen-static-not-found="en"><main class="not-found-content">404 — Page not found</main></div>',
+      `<script type="module" src="/_static/releases/${RELEASE}/assets/not-found-abc.js"></script>`,
+      '</body>',
+      '</html>',
+    ].join('\n'),
+  );
+  await writeFixtureFile(
+    path.join(distDirectory, 'not-found-zh.html'),
+    [
+      '<!doctype html>',
+      '<html lang="zh-CN">',
+      '<head>',
+      '<title>页面不存在 — Lumen</title>',
+      '<meta name="robots" content="noindex, nofollow">',
+      `<link rel="icon" href="/_static/releases/${RELEASE}/icon.svg">`,
+      `<link rel="stylesheet" href="/_static/releases/${RELEASE}/assets/not-found-zh-abc.css">`,
+      '</head>',
+      '<body>',
+      '<div id="root" data-lumen-static-not-found="zh"><main class="not-found-content">404 — 页面不存在</main></div>',
+      `<script type="module" src="/_static/releases/${RELEASE}/assets/not-found-zh-abc.js"></script>`,
       '</body>',
       '</html>',
     ].join('\n'),

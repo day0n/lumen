@@ -69,8 +69,32 @@ test('maps static shells without catching backend paths', () => {
     status: 200,
   });
   assert.equal(resolveEdgeAction('/app/assets/missing.js', RELEASE).type, 'not-found');
-  assert.equal(resolveEdgeAction('/api/projects', RELEASE).type, 'not-found');
-  assert.equal(resolveEdgeAction('/ws/flow', RELEASE).type, 'not-found');
+  for (const pathname of [
+    '/api/projects',
+    '/trpc/projects.list',
+    '/ws/flow',
+    '/monitoring',
+    '/_next/static/chunk.js',
+    '/robots.txt',
+  ]) {
+    assert.equal(resolveEdgeAction(pathname, RELEASE).type, 'not-found', pathname);
+  }
+  assert.deepEqual(resolveEdgeAction('/missing-page', RELEASE), {
+    type: 'object',
+    kind: 'html',
+    objectKey: `releases/${RELEASE}/404.html`,
+    release: RELEASE,
+    locale: 'en',
+    status: 404,
+  });
+  assert.deepEqual(resolveEdgeAction('/zh/missing-page', RELEASE), {
+    type: 'object',
+    kind: 'html',
+    objectKey: `releases/${RELEASE}/zh/404.html`,
+    release: RELEASE,
+    locale: 'zh',
+    status: 404,
+  });
 });
 
 test('serves app public media from the active release', async () => {
@@ -169,6 +193,14 @@ test('keeps immutable assets pinned to their requested release', () => {
     'not-found',
   );
   assert.equal(
+    resolveEdgeAction(`/_static/releases/${oldRelease}/404.html`, RELEASE).type,
+    'not-found',
+  );
+  assert.equal(
+    resolveEdgeAction(`/_static/releases/${oldRelease}/zh/404.html`, RELEASE).type,
+    'not-found',
+  );
+  assert.equal(
     resolveEdgeAction(`/_static/releases/${oldRelease}/private.txt`, RELEASE).type,
     'not-found',
   );
@@ -263,12 +295,15 @@ test('serves all app-owned public asset families from the active release', () =>
   );
 });
 
-test('does not overmatch reserved server-rendered route names', () => {
+test('does not overmatch reserved frontend route names', () => {
   assert.equal(
     resolveEdgeAction('/zh/sign-injected', RELEASE).objectKey,
+    `releases/${RELEASE}/zh/404.html`,
+  );
+  assert.equal(
+    resolveEdgeAction('/shareholder/report', RELEASE).objectKey,
     `releases/${RELEASE}/404.html`,
   );
-  assert.equal(resolveEdgeAction('/shareholder/report', RELEASE).type, 'not-found');
 });
 
 test('preserves redirect query parameters while adding the route action', async () => {
@@ -361,6 +396,27 @@ test('keeps unprefixed auth routes English when the locale cookie is English', a
 
   assert.equal(response.status, 200);
   assert.deepEqual(requestedKeys, [`releases/${RELEASE}/auth/index.html`]);
+});
+
+test('redirects an unprefixed missing page to the Chinese recovery URL', async () => {
+  const response = await worker.fetch(
+    new Request('https://lumenstudio.tech/missing-page?source=bookmark', {
+      headers: { 'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8' },
+    }),
+    {
+      ACTIVE_FRONTEND_RELEASE: RELEASE,
+      FRONTEND_BUCKET: {},
+    },
+    { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 302);
+  assert.equal(
+    response.headers.get('location'),
+    'https://lumenstudio.tech/zh/missing-page?source=bookmark',
+  );
+  assert.match(response.headers.get('set-cookie') ?? '', /lumen_locale=zh/);
+  assert.equal(response.headers.get('vary'), 'Cookie, Accept-Language');
 });
 
 test('serves an app shell with release and cache headers', async () => {
@@ -505,6 +561,67 @@ test('serves English and Chinese auth routes from distinct release objects', asy
   for (const response of [english, chinese]) {
     assert.equal(response.headers.get('x-lumen-release'), RELEASE);
     assert.equal(response.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+  }
+});
+
+test('serves localized static recovery pages with a 404 status', async () => {
+  const requestedKeys = [];
+  const bodies = new Map([
+    [
+      `releases/${RELEASE}/404.html`,
+      '<html lang="en"><meta name="robots" content="noindex, nofollow"><main data-lumen-static-not-found="en">404</main></html>',
+    ],
+    [
+      `releases/${RELEASE}/zh/404.html`,
+      '<html lang="zh-CN"><meta name="robots" content="noindex, nofollow"><main data-lumen-static-not-found="zh">404</main></html>',
+    ],
+  ]);
+  const bucket = {
+    async get(key) {
+      requestedKeys.push(key);
+      const body = bodies.get(key);
+      if (!body) return null;
+      return {
+        body,
+        httpEtag: `"${key}"`,
+        size: body.length,
+        writeHttpMetadata(headers) {
+          headers.set('content-type', 'text/html; charset=utf-8');
+        },
+      };
+    },
+  };
+  const environment = {
+    ACTIVE_FRONTEND_RELEASE: RELEASE,
+    FRONTEND_BUCKET: bucket,
+  };
+  const context = { waitUntil() {} };
+
+  const english = await worker.fetch(
+    new Request('https://lumenstudio.tech/missing-page', {
+      headers: { cookie: 'lumen_locale=en' },
+    }),
+    environment,
+    context,
+  );
+  const chinese = await worker.fetch(
+    new Request('https://lumenstudio.tech/zh/missing-page'),
+    environment,
+    context,
+  );
+
+  assert.equal(english.status, 404);
+  assert.match(await english.text(), /data-lumen-static-not-found="en"/);
+  assert.equal(chinese.status, 404);
+  assert.match(await chinese.text(), /data-lumen-static-not-found="zh"/);
+  assert.deepEqual(requestedKeys, [
+    `releases/${RELEASE}/404.html`,
+    `releases/${RELEASE}/zh/404.html`,
+  ]);
+  for (const response of [english, chinese]) {
+    assert.equal(response.headers.get('x-lumen-release'), RELEASE);
+    assert.equal(response.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+    assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
   }
 });
 

@@ -9,7 +9,7 @@ const compressBrotli = promisify(brotliCompress);
 const compressGzip = promisify(gzip);
 const FULL_RELEASE_PATTERN = /^[0-9a-f]{40}$/;
 const COMPRESSIBLE_FILE_PATTERN = /\.(?:css|html|js|json|mjs|svg|txt|xml)$/i;
-const RELEASE_SCOPE = ['app', 'share', 'landing', 'auth'];
+const RELEASE_SCOPE = ['app', 'share', 'landing', 'auth', 'not-found'];
 const RELEASE_SHELLS = {
   app: 'app/index.html',
   share: 'share/index.html',
@@ -17,6 +17,8 @@ const RELEASE_SHELLS = {
   landingZh: 'zh/index.html',
   auth: 'auth/index.html',
   authZh: 'auth/zh/index.html',
+  notFound: '404.html',
+  notFoundZh: 'zh/404.html',
 };
 const BUILD_SHELLS = [
   { name: 'app', entry: 'index.html', output: RELEASE_SHELLS.app },
@@ -63,6 +65,28 @@ const BUILD_SHELLS = [
       lang: 'zh-CN',
       marker: 'zh',
       title: 'Lumen — 把商品变成爆款带货视频',
+    },
+  },
+  {
+    name: 'notFound',
+    entry: 'not-found.html',
+    output: RELEASE_SHELLS.notFound,
+    document: {
+      kind: 'not-found',
+      lang: 'en',
+      marker: 'en',
+      title: 'Page not found — Lumen',
+    },
+  },
+  {
+    name: 'notFoundZh',
+    entry: 'not-found-zh.html',
+    output: RELEASE_SHELLS.notFoundZh,
+    document: {
+      kind: 'not-found',
+      lang: 'zh-CN',
+      marker: 'zh',
+      title: '页面不存在 — Lumen',
     },
   },
 ];
@@ -390,6 +414,9 @@ async function verifyShell({
   if (documentContract?.kind === 'auth') {
     verifyAuthDocument(html, shellName, documentContract);
   }
+  if (documentContract?.kind === 'not-found') {
+    verifyNotFoundDocument(html, shellName, documentContract);
+  }
 }
 
 function collectEntryAssetClosure(viteManifest, entryKey) {
@@ -463,6 +490,38 @@ function verifyAuthDocument(html, shellName, contract) {
   }
   if (!afterRoot || afterRoot.startsWith('</div>') || !afterRoot.includes('auth-loading')) {
     throw new Error(`${shellName} shell has an empty static auth screen`);
+  }
+}
+
+function verifyNotFoundDocument(html, shellName, contract) {
+  const htmlTag = html.match(/<html\b[^>]*>/i)?.[0] ?? '';
+  const title = html.match(/<title>([\s\S]*?)<\/title>/i)?.[1].trim();
+  const rootMatch = html.match(/<div\b[^>]*\bid\s*=\s*(["'])root\1[^>]*>/i);
+  const rootTag = rootMatch?.[0] ?? '';
+  const afterRoot = rootMatch ? html.slice(rootMatch.index + rootTag.length).trimStart() : '';
+  const robotsTag = [...html.matchAll(/<meta\b[^>]*>/gi)]
+    .map((match) => match[0])
+    .find((tag) => hasHtmlAttribute(tag, 'name', 'robots'));
+
+  if (!hasHtmlAttribute(htmlTag, 'lang', contract.lang)) {
+    throw new Error(`${shellName} shell must declare html lang ${contract.lang}`);
+  }
+  if (title !== contract.title) {
+    throw new Error(`${shellName} shell has an invalid title`);
+  }
+  if (!hasHtmlAttribute(rootTag, 'data-lumen-static-not-found', contract.marker)) {
+    throw new Error(`${shellName} shell is missing the static not-found marker`);
+  }
+  if (!robotsTag || !hasHtmlAttribute(robotsTag, 'content', 'noindex, nofollow')) {
+    throw new Error(`${shellName} shell must remain noindex`);
+  }
+  if (
+    !afterRoot ||
+    afterRoot.startsWith('</div>') ||
+    !afterRoot.includes('not-found-content') ||
+    !afterRoot.includes('404')
+  ) {
+    throw new Error(`${shellName} shell has an empty static recovery screen`);
   }
 }
 
