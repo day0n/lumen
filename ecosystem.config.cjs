@@ -35,7 +35,7 @@ module.exports = {
     {
       name: 'lumen-api',
       cwd: './apps/lumen-api',
-      script: 'dist/main.js',
+      script: 'dist/entry.js',
       interpreter: nodeInterpreter,
       node_args: [`--env-file=${apiEnvFile}`],
       filter_env: ['MONGODB_', 'WORKFLOW_MONGODB_', 'REDIS_', 'CLERK_'],

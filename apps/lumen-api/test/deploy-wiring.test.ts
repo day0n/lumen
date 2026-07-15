@@ -5,13 +5,16 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
+const tsxLoader = pathToFileURL(require.resolve('tsx')).href;
 const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
 const ecosystemPath = path.join(repositoryRoot, 'ecosystem.config.cjs');
 const deployPath = path.join(repositoryRoot, 'deploy.sh');
+const apiEntryPath = path.join(repositoryRoot, 'apps/lumen-api/src/entry.ts');
 const RELEASE = '0123456789abcdef0123456789abcdef01234567';
 
 test('process configuration starts the API with an explicit release and env file', async (context) => {
@@ -48,7 +51,7 @@ test('process configuration starts the API with an explicit release and env file
 
   assert.ok(api);
   assert.equal(api.cwd, './apps/lumen-api');
-  assert.equal(api.script, 'dist/main.js');
+  assert.equal(api.script, 'dist/entry.js');
   assert.deepEqual(api.node_args, [`--env-file=${envFile}`]);
   assert.equal(api.env.NODE_ENV, 'production');
   assert.equal(api.env.API_HOST, '127.0.0.1');
@@ -61,6 +64,36 @@ test('process configuration starts the API with an explicit release and env file
   assert.equal(api.min_uptime, 10000);
   assert.equal(api.max_restarts, 5);
   assert.equal(api.restart_delay, 2000);
+});
+
+test('API process entry starts when loaded by the process manager', async () => {
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        '--import',
+        tsxLoader,
+        '--eval',
+        `import(${JSON.stringify(pathToFileURL(apiEntryPath).href)})`,
+      ],
+      {
+        cwd: repositoryRoot,
+        env: {
+          ...process.env,
+          CLERK_SECRET_KEY: '',
+          MONGODB_URI: '',
+          NODE_ENV: 'production',
+          RELEASE_SHA: RELEASE,
+        },
+      },
+    ),
+    (error: unknown) => {
+      const stderr = String((error as { stderr?: string }).stderr);
+      assert.match(stderr, /\[lumen-api\] startup failed/);
+      assert.match(stderr, /MONGODB_URI is required in production/);
+      return true;
+    },
+  );
 });
 
 test('process configuration rejects missing env files and short releases', async (context) => {
