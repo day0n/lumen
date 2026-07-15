@@ -52,6 +52,10 @@ test('preview workflow audits immutable objects before activation', async () => 
   assert.match(workflow, /test "\$WORKFLOW_REF" = "refs\/heads\/\$DEFAULT_BRANCH"/);
   assert.match(workflow, /git merge-base --is-ancestor "\$RELEASE" FETCH_HEAD/);
   assert.match(workflow, /FRONTEND_R2_BUCKET: lumen-frontend-preview/);
+  assert.match(workflow, /LUMEN_REQUIRE_PUBLIC_CONFIG: '1'/);
+  assert.match(workflow, /VITE_CLERK_PUBLISHABLE_KEY:.*secrets\.VITE_CLERK_PUBLISHABLE_KEY/);
+  assert.match(workflow, /VITE_SENTRY_DSN:.*secrets\.VITE_SENTRY_DSN/);
+  assert.match(workflow, /VITE_SENTRY_ENVIRONMENT: preview/);
   assert.match(workflow, /--config infra\/cloudflare\/edge\/wrangler\.toml/);
   assert.match(workflow, /done <<'LANDINGS'/);
   assert.match(workflow, /\/\|en\|en\|Lumen — Turn products into videos that sell/);
@@ -100,6 +104,10 @@ test('production workflows require approval, verify origin traffic, and retain a
   assert.match(activation, /test "\$WORKFLOW_REF" = "refs\/heads\/\$DEFAULT_BRANCH"/);
   assert.match(activation, /git merge-base --is-ancestor "\$RELEASE" FETCH_HEAD/);
   assert.match(activation, /FRONTEND_R2_BUCKET: lumen-frontend-prod/);
+  assert.match(activation, /LUMEN_REQUIRE_PUBLIC_CONFIG: '1'/);
+  assert.match(activation, /VITE_CLERK_PUBLISHABLE_KEY:.*secrets\.VITE_CLERK_PUBLISHABLE_KEY/);
+  assert.match(activation, /VITE_SENTRY_DSN:.*secrets\.VITE_SENTRY_DSN/);
+  assert.match(activation, /VITE_SENTRY_ENVIRONMENT: production/);
   assert.match(activation, /wrangler\.production-active\.toml/);
   assert.match(activation, /ORIGIN_PASSTHROUGH_ENABLED:true/);
   assert.match(activation, /verify-deployment\.mjs/);
@@ -117,4 +125,16 @@ test('production workflows require approval, verify origin traffic, and retain a
   assert.match(bypass, /CLOUDFLARE_ZONE_ID/);
   assert.match(bypass, /test "\$status" = "401"/);
   assert.match(bypass, /origin API response is invalid/);
+});
+
+test('frontend release packaging reads only app-owned build and public assets', async () => {
+  const [buildScript, packageSource] = await Promise.all([
+    readFile(path.join(edgeDirectory, 'scripts', 'build-release.mjs'), 'utf8'),
+    readFile(path.join(edgeDirectory, 'src', 'release-package.mjs'), 'utf8'),
+  ]);
+
+  assert.doesNotMatch(buildScript, /lumen-studio|studioPublicDirectory/);
+  assert.doesNotMatch(packageSource, /studioPublicDirectory|STUDIO_PUBLIC_DIRECTORIES/);
+  assert.match(buildScript, /apps', 'lumen-app', 'public/);
+  assert.match(packageSource, /path\.join\(appPublicDirectory, 'icon\.svg'\)/);
 });

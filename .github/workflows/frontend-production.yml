@@ -78,7 +78,11 @@ jobs:
       - name: Build and verify immutable release
         env:
           CI: 'true'
+          LUMEN_REQUIRE_PUBLIC_CONFIG: '1'
           RELEASE: ${{ inputs.release }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_SENTRY_ENVIRONMENT: production
         run: pnpm package:frontend --release "$RELEASE"
 
       - name: Upload and audit immutable release

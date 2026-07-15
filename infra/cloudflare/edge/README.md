@@ -89,9 +89,11 @@ older sealed SHA is the rollback path. It also verifies that unknown English and
 paths return localized static recovery pages with an HTTP 404 status. Configure its
 `frontend-preview` environment with
 `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `FRONTEND_R2_ACCESS_KEY_ID`, and
-`FRONTEND_R2_SECRET_ACCESS_KEY`, and set `FRONTEND_PREVIEW_URL` as an environment variable for the
-required post-deploy check. Restrict that environment to the default branch, require approval, and
-scope both credentials to preview-only resources. The preview bucket is fixed to
+`FRONTEND_R2_SECRET_ACCESS_KEY`. It also requires `VITE_CLERK_PUBLISHABLE_KEY` and
+`VITE_SENTRY_DSN` so an activatable release cannot be built without browser authentication and
+telemetry configuration. Set `FRONTEND_PREVIEW_URL` as an environment variable for the required
+post-deploy check. Restrict that environment to the default branch, require approval, and scope
+both credentials to preview-only resources. The preview bucket is fixed to
 `lumen-frontend-preview` in both the workflow and Worker binding.
 
 Authentication and bucket upload credentials belong in CI secrets and must not be committed. A
@@ -129,7 +131,8 @@ to the existing origin. Reactivating a previous sealed SHA is the normal fronten
 
 Configure the `frontend-production` environment with required reviewers, default-branch
 restrictions, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`,
-`FRONTEND_R2_ACCESS_KEY_ID`, and `FRONTEND_R2_SECRET_ACCESS_KEY`. Set
+`FRONTEND_R2_ACCESS_KEY_ID`, `FRONTEND_R2_SECRET_ACCESS_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`, and
+`VITE_SENTRY_DSN`. Set
 `FRONTEND_PRODUCTION_URL=https://lumenstudio.tech` as an environment variable. The token must be
 limited to the production Worker, bucket, and the two declared zone routes. The separate
 `Bypass Frontend Production Edge` workflow is the emergency origin-only path; it removes and
