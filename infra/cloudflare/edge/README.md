@@ -1,7 +1,8 @@
 # Frontend edge release router
 
-This component only routes versioned static releases from the private frontend bucket. It does not
-handle API, WebSocket, Agent, monitoring, database, or background-task traffic.
+This component serves versioned static releases from the private frontend bucket. It never executes
+API, WebSocket, Agent, monitoring, database, or background-task work. When deployed as a route in
+front of the existing origin, those origin-owned requests can be forwarded unchanged.
 
 The release scope contains the Vite app, static shared-workflow and authentication entries, and
 build-time prerendered English and Chinese landing entries. Release objects use this layout:
@@ -105,6 +106,13 @@ and perform identity work from the browser. A production promotion may route `/`
 `/share/*`, `/zh/share/*`, `/sign-in/*`, `/sign-up/*`, `/zh/sign-in/*`, `/zh/sign-up/*`, versioned
 static assets, approved public assets, and other browser document paths handled by the recovery
 shells.
+
+Origin passthrough is explicit and fail-closed. `/api`, `/trpc`, `/v1/agent`, `/ws`, `/monitoring`,
+internal runtime paths, and non-release asset requests are forwarded with the original request only
+when `ORIGIN_PASSTHROUGH_ENABLED=true`. The preview configuration does not set that value, so it
+cannot accidentally reach the production origin. Origin-owned paths also remain available when the
+active frontend release is missing or invalid; a frontend configuration error must not take down
+backend traffic.
 
 The default configuration only enables the preview address. The separate production configuration
 has `workers_dev = false` and no routes, so it cannot take over production traffic. Production

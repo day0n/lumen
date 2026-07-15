@@ -13,10 +13,17 @@ const LEGACY_REDIRECTS = new Map([
   ['/canvas/projects', '/app/projects'],
   ['/canvas/new', '/app/canvas/new'],
 ]);
-const ORIGIN_PATH_PREFIXES = ['/api', '/trpc', '/ws', '/monitoring'];
+const ORIGIN_PATH_PREFIXES = ['/api', '/trpc', '/v1/agent', '/ws', '/monitoring'];
 
 export default {
   async fetch(request, env, context) {
+    const url = new URL(request.url);
+    const release = env.ACTIVE_FRONTEND_RELEASE?.trim().toLowerCase() ?? '';
+    const action = resolveEdgeAction(url.pathname, release);
+
+    if (action.type === 'origin') {
+      return proxyOriginRequest(request, env);
+    }
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return new Response('Method not allowed', {
         status: 405,
@@ -24,7 +31,6 @@ export default {
       });
     }
 
-    const release = env.ACTIVE_FRONTEND_RELEASE?.trim().toLowerCase();
     if (!release || !FULL_RELEASE_PATTERN.test(release)) {
       return new Response('Frontend release is unavailable', {
         status: 503,
@@ -32,7 +38,6 @@ export default {
       });
     }
 
-    const url = new URL(request.url);
     if (url.pathname === '/' && preferredLocale(request) === 'zh') {
       url.pathname = '/zh';
       return redirectResponse(url, 302, null, true);
@@ -46,7 +51,6 @@ export default {
       return redirectResponse(url, 302, 'zh', true);
     }
 
-    const action = resolveEdgeAction(url.pathname, release);
     if (action.type === 'object' && action.status === 404 && action.locale === 'en') {
       if (preferredLocale(request) === 'zh') {
         url.pathname = `/zh${url.pathname}`;
@@ -119,8 +123,11 @@ export default {
 };
 
 export function resolveEdgeAction(pathname, activeRelease) {
-  if (!FULL_RELEASE_PATTERN.test(activeRelease)) return { type: 'not-found' };
   if (hasUnsafePath(pathname)) return { type: 'not-found' };
+  if (requiresOriginResponse(pathname)) {
+    return { type: 'origin' };
+  }
+  if (!FULL_RELEASE_PATTERN.test(activeRelease)) return { type: 'not-found' };
   if (pathname === '/zh/') {
     return { type: 'redirect', pathname: '/zh', locale: 'zh' };
   }
@@ -234,9 +241,7 @@ export function resolveEdgeAction(pathname, activeRelease) {
     };
   }
 
-  if (requiresOriginResponse(pathname) || looksLikeAssetRequest(pathname)) {
-    return { type: 'not-found' };
-  }
+  if (looksLikeAssetRequest(pathname)) return { type: 'origin' };
 
   return notFoundShellAction(activeRelease, pathname.startsWith('/zh/') ? 'zh' : 'en');
 }
@@ -278,6 +283,25 @@ function notFoundShellAction(release, locale) {
     locale,
     status: 404,
   };
+}
+
+async function proxyOriginRequest(request, env) {
+  if (env.ORIGIN_PASSTHROUGH_ENABLED !== 'true') {
+    return new Response('Not found', {
+      status: 404,
+      headers: { 'cache-control': 'no-store' },
+    });
+  }
+
+  try {
+    const fetcher = env.ORIGIN_FETCHER?.fetch?.bind(env.ORIGIN_FETCHER) ?? fetch;
+    return await fetcher(request);
+  } catch {
+    return new Response('Origin is unavailable', {
+      status: 502,
+      headers: { 'cache-control': 'no-store' },
+    });
+  }
 }
 
 function resolveLegacyRedirect(pathname) {
@@ -322,7 +346,7 @@ function matchesPathSegment(pathname, route) {
 function requiresOriginResponse(pathname) {
   return (
     ORIGIN_PATH_PREFIXES.some((prefix) => matchesPathSegment(pathname, prefix)) ||
-    pathname.startsWith('/_') ||
+    (pathname.startsWith('/_') && !matchesPathSegment(pathname, '/_static')) ||
     pathname.startsWith('/.')
   );
 }

@@ -72,12 +72,13 @@ test('maps static shells without catching backend paths', () => {
   for (const pathname of [
     '/api/projects',
     '/trpc/projects.list',
+    '/v1/agent/runs',
     '/ws/flow',
     '/monitoring',
     '/_next/static/chunk.js',
     '/robots.txt',
   ]) {
-    assert.equal(resolveEdgeAction(pathname, RELEASE).type, 'not-found', pathname);
+    assert.equal(resolveEdgeAction(pathname, RELEASE).type, 'origin', pathname);
   }
   assert.deepEqual(resolveEdgeAction('/missing-page', RELEASE), {
     type: 'object',
@@ -95,6 +96,90 @@ test('maps static shells without catching backend paths', () => {
     locale: 'zh',
     status: 404,
   });
+});
+
+test('passes backend requests through only when production passthrough is enabled', async () => {
+  const requests = [];
+  const originFetcher = {
+    async fetch(request) {
+      requests.push(request);
+      return new Response(await request.text(), {
+        status: 202,
+        headers: { 'x-origin-response': 'true' },
+      });
+    },
+  };
+  const request = new Request('https://lumenstudio.tech/api/projects?source=edge', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Project' }),
+    headers: { 'content-type': 'application/json' },
+  });
+
+  const response = await worker.fetch(
+    request,
+    {
+      ACTIVE_FRONTEND_RELEASE: '',
+      ORIGIN_FETCHER: originFetcher,
+      ORIGIN_PASSTHROUGH_ENABLED: 'true',
+    },
+    { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 202);
+  assert.equal(response.headers.get('x-origin-response'), 'true');
+  assert.equal(await response.text(), JSON.stringify({ name: 'Project' }));
+  assert.deepEqual(requests, [request]);
+});
+
+test('keeps origin passthrough closed in preview and handles origin failures', async () => {
+  let calls = 0;
+  const disabled = await worker.fetch(
+    new Request('https://preview.example.workers.dev/v1/agent/runs', { method: 'POST' }),
+    {
+      ACTIVE_FRONTEND_RELEASE: RELEASE,
+      ORIGIN_FETCHER: {
+        async fetch() {
+          calls += 1;
+          return new Response('unexpected');
+        },
+      },
+    },
+    { waitUntil() {} },
+  );
+  assert.equal(disabled.status, 404);
+  assert.equal(disabled.headers.get('cache-control'), 'no-store');
+  assert.equal(calls, 0);
+
+  const unavailable = await worker.fetch(
+    new Request('https://lumenstudio.tech/ws/flow'),
+    {
+      ACTIVE_FRONTEND_RELEASE: RELEASE,
+      ORIGIN_FETCHER: {
+        async fetch() {
+          throw new Error('offline');
+        },
+      },
+      ORIGIN_PASSTHROUGH_ENABLED: 'true',
+    },
+    { waitUntil() {} },
+  );
+  assert.equal(unavailable.status, 502);
+  assert.equal(unavailable.headers.get('cache-control'), 'no-store');
+});
+
+test('rejects non-read methods for frontend documents', async () => {
+  const response = await worker.fetch(
+    new Request('https://lumenstudio.tech/app/dashboard', { method: 'POST' }),
+    {
+      ACTIVE_FRONTEND_RELEASE: RELEASE,
+      FRONTEND_BUCKET: {},
+      ORIGIN_PASSTHROUGH_ENABLED: 'true',
+    },
+    { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 405);
+  assert.equal(response.headers.get('allow'), 'GET, HEAD');
 });
 
 test('serves app public media from the active release', async () => {
