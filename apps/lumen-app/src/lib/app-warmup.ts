@@ -8,9 +8,6 @@ export function warmCurrentAppRoute(pathname = window.location.pathname) {
   if (routePath === '/' || routePath.startsWith('/home')) {
     return import('../features/home/HomePage');
   }
-  if (routePath.startsWith('/dashboard')) {
-    return import('@/components/studio/DashboardPage');
-  }
   if (routePath.startsWith('/hot-videos')) {
     return import('@/components/studio/HotVideosPage');
   }
@@ -63,9 +60,6 @@ function dataUrlsForRoute(routePath: string) {
   }
   if (routePath.startsWith('/hot-videos')) {
     return ['/api/hot-videos?limit=24'];
-  }
-  if (routePath.startsWith('/dashboard')) {
-    return ['/api/tiktok-dashboard?range=30d&region=global&channel=all&objective=sales&nonce=0'];
   }
   return [];
 }

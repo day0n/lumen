@@ -98,7 +98,7 @@ export const REDUCED_MOTION =
 | M3 | P1 | 顶栏保存/分享反馈 | [Linear](https://designspells.com/spells/progress-indicator-animation-in-linear) | `CanvasWorkbench.tsx`（`CanvasTopbar`） |
 | M4 | P1 | Agent 聊天动效 | [Granola chatbox](https://designspells.com/spells/chatbox-animations-in-granola)、[Paper agent-at-work](https://designspells.com/spells/agent-at-work-indicator-in-paper) | `ChatPanel.tsx` |
 | M5 | P1 | 节点 running / success | [Paper](https://designspells.com/spells/agent-at-work-indicator-in-paper)、[mymind achievement](https://designspells.com/spells/achievement-unlocked-animation-in-mymind) | `CanvasWorkbench.tsx`（`LumenFlowNode`）、`globals.css` |
-| M6 | P2 | 侧栏/列表空状态 | [Basedash](https://designspells.com/spells/interactive-empty-state-graphics-in-basedash) | `PanelEmptyState`、`MaterialsPage.tsx`、`DashboardPage.tsx` |
+| M6 | P2 | 侧栏/列表空状态 | [Basedash](https://designspells.com/spells/interactive-empty-state-graphics-in-basedash) | `PanelEmptyState`、`MaterialsPage.tsx` |
 | M7 | P2 | 工作区项目卡片 | [Joodle grid](https://designspells.com/spells/interactive-grid-of-doodle-entires-on-joodle) | `WorkspacePage.tsx` |
 | M8 | P2 | 快捷键欢迎引导 | [Perplexity onboarding](https://designspells.com/spells/keyboard-shortcut-tutorial-in-perplexity-s-onboarding) | `ChatPanel.tsx`（`WelcomeMessage`） |
 | M9 | P2 | 多步授权流 | [Codex permissions](https://designspells.com/spells/permissions-flow-in-codex) | 新建 `components/onboarding/`（待产品定稿） |
@@ -334,7 +334,6 @@ historyPanelOpen ? <ProjectHistoryPanel ... /> : null
 2. 替换：
    - `PanelEmptyState`（`CanvasWorkbench.tsx` 内）
    - `MaterialsPage.tsx` 空态
-   - `DashboardPage.tsx` — `EmptyState`
 
 **验收**
 
@@ -404,8 +403,7 @@ apps/lumen-studio/
 │   │   └── ChatPanel.tsx                       # M4 M8
 │   ├── components/studio/
 │   │   ├── WorkspacePage.tsx                   # M7
-│   │   ├── MaterialsPage.tsx                   # M6
-│   │   └── DashboardPage.tsx                 # M6
+│   │   └── MaterialsPage.tsx                   # M6
 │   ├── hooks/use-is-mobile.ts                  # 断点定义
 │   └── i18n/messages.ts                        # 文案
 └── docs/

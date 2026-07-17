@@ -9,7 +9,7 @@ function IndexRoute() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    void navigate({ to: '/dashboard', replace: true } as never);
+    void navigate({ to: '/home', replace: true } as never);
   }, [navigate]);
 
   return null;

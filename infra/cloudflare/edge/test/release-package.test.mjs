@@ -836,7 +836,7 @@ test('serves every packaged shell and immutable shell reference through the edge
   const executionContext = { waitUntil() {} };
 
   for (const [pathname, expectedStatus] of [
-    ['/app/dashboard', 200],
+    ['/app/home', 200],
     ['/share/0123456789abcdef0123456789abcdef', 200],
     ['/sign-in/verify', 200],
     ['/zh/sign-up', 200],

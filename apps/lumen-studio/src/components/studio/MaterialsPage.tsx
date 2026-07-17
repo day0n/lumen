@@ -2,7 +2,7 @@
 
 import { AuroraBackdrop } from '@/components/home/AuroraBackdrop';
 import { Topbar } from '@/components/home/Topbar';
-import { SpotlightCard } from '@/components/studio/dashboard-motion';
+import { SpotlightCard } from '@/components/ui/SpotlightCard';
 import { useI18n } from '@/i18n/provider';
 import { useAppShellChrome } from '@/lib/app-shell-chrome';
 import { useLoginRedirect } from '@/lib/auth-redirect';

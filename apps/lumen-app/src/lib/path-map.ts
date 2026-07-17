@@ -14,7 +14,7 @@ export function toAppPath(href: string): string {
   let nextPath = pathname;
 
   if (pathname === '/home') nextPath = '/app/home';
-  else if (pathname === '/dashboard') nextPath = '/app/dashboard';
+  else if (pathname === '/dashboard') nextPath = '/app/home';
   else if (pathname === '/materials') nextPath = '/app/materials';
   else if (pathname === '/hot-videos') nextPath = '/app/hot-videos';
   else if (pathname === '/agent-chat') {
@@ -41,7 +41,7 @@ export function toRouterPath(href: string): { to: string; search: Record<string,
 }
 
 export function currentAppRedirectUrl(): string {
-  if (typeof window === 'undefined') return '/app/dashboard';
+  if (typeof window === 'undefined') return '/app/home';
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
 

@@ -26,7 +26,7 @@ test('verifies every static shell and production origin passthrough', async () =
   assert.deepEqual(
     requests.map((request) => request.pathname),
     [
-      '/app/dashboard',
+      '/app/home',
       '/share/00000000000000000000000000000000',
       '/sign-in',
       '/zh/sign-up',
@@ -51,14 +51,14 @@ test('rejects stale releases and malformed recovery pages', async () => {
       baseUrl: 'https://lumenstudio.tech',
       fetchImpl: async (url) => {
         const response = responseFor(url.pathname);
-        if (url.pathname === '/app/dashboard') {
+        if (url.pathname === '/app/home') {
           response.headers.set('x-lumen-release', 'f'.repeat(40));
         }
         return response;
       },
       release: RELEASE,
     }),
-    /\/app\/dashboard returned release/,
+    /\/app\/home returned release/,
   );
 
   await assert.rejects(

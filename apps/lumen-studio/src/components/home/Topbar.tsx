@@ -186,7 +186,7 @@ export function Topbar() {
         </div>
       </div>
 
-      <nav className="fixed inset-x-4 bottom-4 z-50 grid grid-cols-5 gap-1 rounded-2xl bg-[#111315]/92 p-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] ring-1 ring-white/[0.08] backdrop-blur-xl lg:hidden">
+      <nav className="fixed inset-x-4 bottom-4 z-50 grid grid-cols-4 gap-1 rounded-2xl bg-[#111315]/92 p-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] ring-1 ring-white/[0.08] backdrop-blur-xl lg:hidden">
         {navItems.map((item) => {
           const Icon = item.icon;
           const href = inAppShell ? item.appHref : localePath(item.href);

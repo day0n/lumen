@@ -37,7 +37,7 @@ export function parseAuthPathname(pathname: string): AuthRoute | null {
 export function prepareAuthRedirect(
   currentUrl: URL,
   mode: AuthMode | undefined,
-  fallback = '/app/dashboard',
+  fallback = '/app/home',
 ) {
   const priority =
     mode === 'sign-up'
@@ -61,7 +61,7 @@ export function prepareAuthRedirect(
       .map((value) => normalizeSameOriginRedirect(value, currentUrl.origin))
       .find((value): value is string => Boolean(value)) ??
     normalizeSameOriginRedirect(fallback, currentUrl.origin) ??
-    '/app/dashboard';
+    '/app/home';
   let changed = false;
   for (const name of AUTH_REDIRECT_PARAMETERS) {
     if (currentUrl.searchParams.has(name)) {

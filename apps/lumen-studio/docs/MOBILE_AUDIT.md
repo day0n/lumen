@@ -11,8 +11,7 @@
 | `/canvas/:id` | **高** | 左栏 left-24 | **h-screen overflow-hidden** | 工具栏 44 边缘 | 顶栏文字+分享挤 | 侧栏 left-24 | **高** | 中 | **未专门适配** | 右侧面板挡画布 |
 | `/materials` | 中 | 弹窗/预览 | min-h-screen | 部分 | 底栏 | 大图预览 | 表单 | 中 | N/A | N/A |
 | `/hot-videos` | 中 | 详情双栏 | 部分 overflow | 部分 | 底栏 | 详情 lg 双栏 | 搜索 | 视频多 | N/A | N/A |
-| `/dashboard` | **高** | 宽表格 | 可滚动 | 密集按钮 | 筛选一行挤 | 无 sheet | 搜索 | 图表多 | N/A | N/A |
 | `/sign-in` | 低 | Clerk 默认 | OK | Clerk | N/A | N/A | OK | 低 | N/A | N/A |
 | `/share/:id` | 低 | — | — | — | — | — | — | — | 只读 | N/A |
 
-**优先修复顺序**：基础设施 → 内容页 → Dashboard → ChatPanel → Canvas 分支。
+**优先修复顺序**：基础设施 → 内容页 → ChatPanel → Canvas 分支。

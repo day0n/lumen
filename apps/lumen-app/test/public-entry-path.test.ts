@@ -11,7 +11,7 @@ test('home and hot videos are public app entries', () => {
 });
 
 test('workspace routes remain protected', () => {
-  assert.equal(isPublicEntryPath('/app/dashboard'), false);
+  assert.equal(isPublicEntryPath('/app/unknown'), false);
   assert.equal(isPublicEntryPath('/app/projects'), false);
   assert.equal(isPublicEntryPath('/app/materials'), false);
   assert.equal(isPublicEntryPath('/app/canvas/new'), false);

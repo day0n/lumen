@@ -1,7 +1,6 @@
 import { Route as rootRouteImport } from './routes/__root';
 import { Route as CanvasProjectIdRouteImport } from './routes/canvas.$projectId';
 import { Route as CanvasNewRouteImport } from './routes/canvas.new';
-import { Route as DashboardRouteImport } from './routes/dashboard';
 import { Route as HomeRouteImport } from './routes/home';
 import { Route as HotVideosRouteImport } from './routes/hot-videos';
 import { Route as IndexRouteImport } from './routes/index';
@@ -18,11 +17,6 @@ const MaterialsRoute = MaterialsRouteImport.update({
   path: '/materials',
   getParentRoute: () => rootRouteImport,
 } as unknown as Parameters<typeof MaterialsRouteImport.update>[0]);
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as unknown as Parameters<typeof DashboardRouteImport.update>[0]);
 const HomeRoute = HomeRouteImport.update({
   id: '/home',
   path: '/home',
@@ -51,7 +45,6 @@ const CanvasProjectIdRoute = CanvasProjectIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
-  '/dashboard': typeof DashboardRoute;
   '/home': typeof HomeRoute;
   '/hot-videos': typeof HotVideosRoute;
   '/materials': typeof MaterialsRoute;
@@ -61,7 +54,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute;
-  '/dashboard': typeof DashboardRoute;
   '/home': typeof HomeRoute;
   '/hot-videos': typeof HotVideosRoute;
   '/materials': typeof MaterialsRoute;
@@ -72,7 +64,6 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   '/': typeof IndexRoute;
-  '/dashboard': typeof DashboardRoute;
   '/home': typeof HomeRoute;
   '/hot-videos': typeof HotVideosRoute;
   '/materials': typeof MaterialsRoute;
@@ -84,7 +75,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | '/'
-    | '/dashboard'
     | '/home'
     | '/hot-videos'
     | '/materials'
@@ -94,7 +84,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo;
   to:
     | '/'
-    | '/dashboard'
     | '/home'
     | '/hot-videos'
     | '/materials'
@@ -104,7 +93,6 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/dashboard'
     | '/home'
     | '/hot-videos'
     | '/materials'
@@ -115,7 +103,6 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
-  DashboardRoute: typeof DashboardRoute;
   HomeRoute: typeof HomeRoute;
   HotVideosRoute: typeof HotVideosRoute;
   MaterialsRoute: typeof MaterialsRoute;
@@ -138,13 +125,6 @@ declare module '@tanstack/react-router' {
       path: '/materials';
       fullPath: '/materials';
       preLoaderRoute: typeof MaterialsRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    '/dashboard': {
-      id: '/dashboard';
-      path: '/dashboard';
-      fullPath: '/dashboard';
-      preLoaderRoute: typeof DashboardRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     '/home': {
@@ -187,7 +167,6 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  DashboardRoute: DashboardRoute,
   HomeRoute: HomeRoute,
   HotVideosRoute: HotVideosRoute,
   MaterialsRoute: MaterialsRoute,

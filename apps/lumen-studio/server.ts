@@ -150,9 +150,16 @@ async function main() {
 }
 
 function serveStudioApp(rawUrl: string, res: import('node:http').ServerResponse) {
-  const { pathname } = parse(rawUrl);
+  const { pathname, search } = parse(rawUrl);
   const appPathname = normalizeStudioAppPath(pathname ?? '');
   if (!appPathname) return false;
+  if (appPathname === '/app/dashboard') {
+    res.statusCode = 308;
+    res.setHeader('location', `/app/home${search ?? ''}`);
+    res.setHeader('cache-control', 'public, max-age=3600');
+    res.end();
+    return true;
+  }
   if (!studioAppBuildAvailable) {
     res.statusCode = 503;
     res.setHeader('content-type', 'text/plain; charset=utf-8');

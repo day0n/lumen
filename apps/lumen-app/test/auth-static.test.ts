@@ -79,7 +79,7 @@ test('auth redirects skip unsafe higher-priority values and constrain the fallba
   );
 
   assert.equal(safeLowerPriority.redirectUrl, '/app/projects');
-  assert.equal(unsafeFallback.redirectUrl, '/app/dashboard');
+  assert.equal(unsafeFallback.redirectUrl, '/app/home');
 });
 
 test('auth redirects reject cross-origin, executable, credentialed, and recursive targets', () => {

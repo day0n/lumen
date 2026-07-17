@@ -395,7 +395,7 @@ Sentry 串一条 trace_id 贯通四个进程，pino / 浏览器 console 与 Sent
 
 | Hook | 断点 | 用途 |
 |---|---|---|
-| `useIsMobile()` | `max-width: 1023px`（< Tailwind `lg`） | 顶栏在桌面、底部 tab bar 在手机 / 平板；项目列表、Dashboard、HotVideos、Materials 等页面切换布局；Agent ChatPanel 整屏覆盖而不是侧边抽屉 |
+| `useIsMobile()` | `max-width: 1023px`（< Tailwind `lg`） | 顶栏在桌面、底部 tab bar 在手机 / 平板；项目列表、主页、爆款复刻、素材库等页面切换布局；Agent ChatPanel 整屏覆盖而不是侧边抽屉 |
 | `useIsMobileCanvas()` | `max-width: 767px`（< Tailwind `md`） | 画布专用：手机上启用 `MobileCanvasFitView` 自动适配视口、`connectionRadius` 调大到 58 方便手指连边、关闭 `panOnScroll`、面板（素材 / 历史 / 节点配置）以全屏 sheet 形式弹出而非侧栏 |
 
 实现要点：

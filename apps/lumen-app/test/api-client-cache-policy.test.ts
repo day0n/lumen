@@ -6,7 +6,7 @@ import { canUseApiMemoryCache, shouldInvalidateCanonicalApiCache } from '../src/
 test('anonymous memory caching is limited to explicitly public API responses', () => {
   const anonymousHeaders = new Headers();
 
-  for (const pathname of ['/api/home/featured', '/api/home/templates', '/api/tiktok-dashboard']) {
+  for (const pathname of ['/api/home/featured', '/api/home/templates']) {
     assert.equal(canUseApiMemoryCache({ pathname, headers: anonymousHeaders }), true, pathname);
   }
 
@@ -44,7 +44,6 @@ test('public path matching does not authorize lookalike private paths', () => {
   const headers = new Headers();
   assert.equal(canUseApiMemoryCache({ pathname: '/api/home/featured-private', headers }), false);
   assert.equal(canUseApiMemoryCache({ pathname: '/api/home/templates/private', headers }), false);
-  assert.equal(canUseApiMemoryCache({ pathname: '/api/tiktok-dashboard-private', headers }), false);
 });
 
 test('explicit refresh requests bypass both public and private memory caching', () => {

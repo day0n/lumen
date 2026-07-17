@@ -169,7 +169,7 @@ test('keeps origin passthrough closed in preview and handles origin failures', a
 
 test('rejects non-read methods for frontend documents', async () => {
   const response = await worker.fetch(
-    new Request('https://lumenstudio.tech/app/dashboard', { method: 'POST' }),
+    new Request('https://lumenstudio.tech/app/home', { method: 'POST' }),
     {
       ACTIVE_FRONTEND_RELEASE: RELEASE,
       FRONTEND_BUCKET: {},
@@ -314,6 +314,12 @@ test('normalizes legacy and locale-prefixed routes', () => {
     type: 'redirect',
     pathname: '/app/home',
   });
+  for (const pathname of ['/app', '/dashboard', '/app/dashboard']) {
+    assert.deepEqual(resolveEdgeAction(pathname, RELEASE), {
+      type: 'redirect',
+      pathname: '/app/home',
+    });
+  }
   assert.deepEqual(resolveEdgeAction('/zh/app/projects', RELEASE), {
     type: 'redirect',
     pathname: '/app/projects',

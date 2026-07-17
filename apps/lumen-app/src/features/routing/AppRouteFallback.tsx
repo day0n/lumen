@@ -9,7 +9,6 @@ const gridCounts = {
   home: 4,
   projects: 8,
   materials: 8,
-  dashboard: 6,
   hotVideos: 8,
 } as const;
 
@@ -21,13 +20,11 @@ export function AppRouteFallback() {
 
   const kind = pathname.includes('materials')
     ? 'materials'
-    : pathname.includes('dashboard')
-      ? 'dashboard'
-      : pathname.includes('hot-videos')
-        ? 'hotVideos'
-        : pathname.includes('home')
-          ? 'home'
-          : 'projects';
+    : pathname.includes('hot-videos')
+      ? 'hotVideos'
+      : pathname.includes('home')
+        ? 'home'
+        : 'projects';
   const count = gridCounts[kind];
 
   const content = (

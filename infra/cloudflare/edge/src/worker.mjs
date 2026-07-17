@@ -6,7 +6,8 @@ const COMPRESSIBLE_ASSET_PATTERN = /\.(?:css|html|js|json|mjs|svg|txt|xml)$/i;
 const LEGACY_REDIRECTS = new Map([
   ['/home', '/app/home'],
   ['/hot-videos', '/app/hot-videos'],
-  ['/dashboard', '/app/dashboard'],
+  ['/dashboard', '/app/home'],
+  ['/app/dashboard', '/app/home'],
   ['/materials', '/app/materials'],
   ['/agent-chat', '/app/canvas/new?agent=chat'],
   ['/canvas', '/app/projects'],
@@ -171,7 +172,7 @@ export function resolveEdgeAction(pathname, activeRelease) {
   const legacyRedirect = resolveLegacyRedirect(pathname);
   if (legacyRedirect) return legacyRedirect;
   if (pathname === '/app') {
-    return { type: 'redirect', pathname: '/app/dashboard' };
+    return { type: 'redirect', pathname: '/app/home' };
   }
 
   const versionedAsset = pathname.match(/^\/_static\/releases\/([^/]+)\/(.+)$/);

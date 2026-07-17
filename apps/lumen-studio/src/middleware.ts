@@ -15,7 +15,8 @@ import {
 
 const PROTECTED_PREFIXES = ['/agent-chat', '/canvas', '/materials'] as const;
 const LEGACY_APP_ROUTES = new Map<string, string>([
-  ['/dashboard', '/app/dashboard'],
+  ['/dashboard', '/app/home'],
+  ['/app/dashboard', '/app/home'],
   ['/materials', '/app/materials'],
   ['/canvas/projects', '/app/projects'],
   ['/canvas/new', '/app/canvas/new'],
@@ -87,7 +88,7 @@ export default clerkMiddleware(
     const appRedirectPath = getLegacyAppRedirectPath(normalizedPath);
     if (appRedirectPath) {
       const redirectUrl = request.nextUrl.clone();
-      // 历史 /dashboard 等路径只指向 SPA（/app/*），不再带 locale 前缀。
+      // 历史页面路径只指向 SPA（/app/*），不再带 locale 前缀。
       redirectUrl.pathname = appRedirectPath;
       if (normalizedPath === '/agent-chat') {
         redirectUrl.searchParams.set('agent', 'chat');

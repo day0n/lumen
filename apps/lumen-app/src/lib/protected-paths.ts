@@ -4,7 +4,6 @@ const LOGIN_REQUIRED_PREFIXES = [
   '/agent-chat',
   '/canvas',
   '/materials',
-  '/app/dashboard',
   '/app/projects',
   '/app/canvas',
   '/app/materials',

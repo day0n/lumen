@@ -5,7 +5,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const SHARE_ID = '00000000000000000000000000000000';
 
 const shellChecks = [
-  { path: '/app/dashboard', status: 200 },
+  { path: '/app/home', status: 200 },
   { path: `/share/${SHARE_ID}`, status: 200 },
   { path: '/sign-in', status: 200 },
   { path: '/zh/sign-up', status: 200 },

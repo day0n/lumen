@@ -1,15 +1,14 @@
 'use client';
 
-import { motion } from 'motion/react';
 import { LumenMark } from '@/components/ui/LumenMark';
 import { cn } from '@/lib/cn';
+import { motion } from 'motion/react';
 
 const navItems = [
   { label: '主页', active: true },
   { label: '工作室' },
   { label: '素材库' },
   { label: '爆款参考' },
-  { label: '数据看板' },
 ];
 
 export function Topbar() {
@@ -87,8 +86,7 @@ export function Topbar() {
               aria-hidden
               className="absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100"
               style={{
-                background:
-                  'linear-gradient(135deg, rgba(255,255,255,0.18), transparent 50%)',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.18), transparent 50%)',
               }}
             />
           </button>

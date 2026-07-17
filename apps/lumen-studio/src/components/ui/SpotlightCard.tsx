@@ -1,10 +1,7 @@
 'use client';
 
-/**
- * Adapted from React Bits (https://reactbits.dev/animations/spotlight) — SpotlightCard-TS-TW
- */
-import { type ReactNode, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { type ReactNode, useRef, useState } from 'react';
 
 export interface SpotlightCardProps {
   children: ReactNode;

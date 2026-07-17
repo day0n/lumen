@@ -167,8 +167,8 @@ export function AppProviders({
       signInUrl={initialLocale === 'zh' ? '/zh/sign-in' : '/sign-in'}
       signUpUrl={initialLocale === 'zh' ? '/zh/sign-up' : '/sign-up'}
       afterSignOutUrl={initialLocale === 'zh' ? '/zh' : '/'}
-      signInFallbackRedirectUrl="/app/dashboard"
-      signUpFallbackRedirectUrl="/app/dashboard"
+      signInFallbackRedirectUrl="/app/home"
+      signUpFallbackRedirectUrl="/app/home"
     >
       <I18nProvider initialLocale={initialLocale}>
         {enableApiAuthBridge && <ApiAuthBridge />}

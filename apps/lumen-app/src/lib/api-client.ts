@@ -53,15 +53,10 @@ const apiCacheTtlByPath: Array<[pathname: string, ttlMs: number]> = [
   ['/api/material-assets', 5 * 60_000],
   ['/api/folders', 5 * 60_000],
   ['/api/hot-videos', 30 * 60_000],
-  ['/api/tiktok-dashboard', 60_000],
   ['/api/me', 60_000],
 ];
 
-const anonymousCacheableApiPaths = [
-  '/api/home/featured',
-  '/api/home/templates',
-  '/api/tiktok-dashboard',
-];
+const anonymousCacheableApiPaths = ['/api/home/featured', '/api/home/templates'];
 
 const anonymousApiCacheScope: ApiMemoryCacheScope = {
   kind: 'anonymous',

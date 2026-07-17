@@ -98,7 +98,7 @@ jobs:
         run: |
           test -n "$FRONTEND_PREVIEW_URL"
           preview_base="${FRONTEND_PREVIEW_URL%/}"
-          for path in "/app/dashboard" "/share/00000000000000000000000000000000" "/sign-in" "/zh/sign-up"; do
+          for path in "/app/home" "/share/00000000000000000000000000000000" "/sign-in" "/zh/sign-up"; do
             headers="$(curl --fail --silent --show-error --head "${preview_base}${path}")"
             active_release="$(printf '%s\n' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-lumen-release" { print $2 }')"
             test "$active_release" = "$RELEASE"

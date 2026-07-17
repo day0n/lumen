@@ -6,7 +6,6 @@ export const APP_HOME_ROUTE = '/app/home';
 export const APP_PROJECTS_ROUTE = '/app/projects';
 export const APP_HOT_VIDEOS_ROUTE = '/app/hot-videos';
 export const APP_MATERIALS_ROUTE = '/app/materials';
-export const APP_DASHBOARD_ROUTE = '/app/dashboard';
 export const APP_CANVAS_NEW_ROUTE = '/app/canvas/new';
 
 export function useHomeRoutePreload() {
